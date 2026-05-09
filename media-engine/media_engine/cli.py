@@ -12,7 +12,8 @@ from .curation import SAMPLE_NOURBIT_TRANSCRIPT, curate_dry_run
 from .db import DEFAULT_DB, ROOT, connect, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
 from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
-from .rendering import render_minimal_ffmpeg
+from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
+from .youtube_pipeline import choose_nourbit_premium_candidate, download_youtube_section, fetch_youtube_transcript
 
 
 def profile_dict(row: dict[str, Any]) -> dict[str, Any]:
@@ -101,6 +102,101 @@ def cmd_render(args: argparse.Namespace) -> None:
     conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (candidate["id"],))
     conn.commit()
     print(json.dumps({"render_job": job_id, "output_path": output_path}, indent=2, ensure_ascii=False))
+
+
+def insert_candidate(conn, candidate: dict[str, Any]) -> None:
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO clip_candidates
+          (id, profile_id, source_id, start_ms, end_ms, title_hook, viral_reason,
+           transcript_span, risk_flags_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            candidate["id"],
+            candidate["profile_id"],
+            candidate["source_id"],
+            candidate["start_ms"],
+            candidate["end_ms"],
+            candidate["title_hook"],
+            candidate["viral_reason"],
+            candidate["transcript_span"],
+            json.dumps(candidate["risk_flags"], ensure_ascii=False),
+            candidate["status"],
+        ),
+    )
+    conn.commit()
+
+
+def cmd_premium_test(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    initialize(conn)
+    profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (args.profile,))
+    if not profile:
+        seed_profile(conn, load_json(ROOT / "profiles" / "nourbit.json"))
+        profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (args.profile,))
+    source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (args.source_id,))
+    if not source:
+        seed_source(conn, load_json(ROOT / "sources" / "nourbit_nouraniyyahofficial.json"))
+        source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (args.source_id,))
+    if not profile or not source:
+        raise SystemExit("profile/source seed failed")
+
+    entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
+    candidate = choose_nourbit_premium_candidate(args.profile, args.source_id, entries)
+    insert_candidate(conn, candidate)
+    source_clip = download_youtube_section(args.youtube_url, args.profile, candidate)
+    attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
+    if args.renderer == "remotion":
+        output_path, contract = render_premium_remotion(
+            candidate,
+            profile,
+            source_clip,
+            args.youtube_url,
+            attribution,
+        )
+    else:
+        output_path, contract = render_premium_ffmpeg(
+            candidate,
+            profile,
+            source_clip,
+            args.youtube_url,
+            attribution,
+        )
+    job_id = Path(output_path).stem
+    conn.execute(
+        """
+        INSERT INTO render_jobs
+          (id, candidate_id, preset, crop_strategy, caption_style, status, output_path, metadata_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            job_id,
+            candidate["id"],
+            PREMIUM_PRESET,
+            contract["cropStrategy"],
+            contract["captionStyle"],
+            "rendered",
+            output_path,
+            json.dumps(contract, ensure_ascii=False),
+        ),
+    )
+    conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (candidate["id"],))
+    conn.commit()
+    print(
+        json.dumps(
+            {
+                "candidate_id": candidate["id"],
+                "start": contract["startTimecode"],
+                "end": contract["endTimecode"],
+                "title_hook": candidate["title_hook"],
+                "source_clip": source_clip,
+                "output_path": output_path,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
 
 def cmd_review(args: argparse.Namespace) -> None:
@@ -213,6 +309,14 @@ def build_parser() -> argparse.ArgumentParser:
     render = sub.add_parser("render")
     render.add_argument("--candidate-id", required=True)
     render.set_defaults(func=cmd_render)
+
+    premium_test = sub.add_parser("premium-test")
+    premium_test.add_argument("--profile", default="nourbit")
+    premium_test.add_argument("--source-id", default="nourbit_nouraniyyahofficial")
+    premium_test.add_argument("--youtube-url", required=True)
+    premium_test.add_argument("--source-attribution", default="")
+    premium_test.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="ffmpeg")
+    premium_test.set_defaults(func=cmd_premium_test)
 
     review = sub.add_parser("review")
     review.add_argument("--profile", default="nourbit")
