@@ -1,0 +1,43 @@
+{
+  "id": "nourbit",
+  "name": "Nourbit Clips",
+  "niche": "Islamic lecture clips and reflective short-form video",
+  "languages": ["id"],
+  "default_render_preset": "lecture_clean",
+  "cta_text": "Follow Nourbit untuk nasihat singkat lainnya",
+  "watermark_text": "Nourbit Clips",
+  "publish_targets": [
+    {
+      "platform": "facebook_reels",
+      "account_label": "Nourbit Facebook Page",
+      "mode": "review_required",
+      "require_approval": true,
+      "ai_disclosure_required": false,
+      "daily_cap": 3
+    },
+    {
+      "platform": "youtube_shorts",
+      "account_label": "Nourbit YouTube Channel",
+      "mode": "review_required",
+      "require_approval": true,
+      "ai_disclosure_required": false,
+      "daily_cap": 3
+    },
+    {
+      "platform": "tiktok",
+      "account_label": "@nourbit.clips",
+      "mode": "review_required",
+      "require_approval": true,
+      "ai_disclosure_required": false,
+      "daily_cap": 3
+    },
+    {
+      "platform": "instagram_reels",
+      "account_label": "Nourbit Instagram Reels",
+      "mode": "off",
+      "require_approval": true,
+      "ai_disclosure_required": false,
+      "daily_cap": 3
+    }
+  ]
+}

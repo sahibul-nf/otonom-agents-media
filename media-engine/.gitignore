@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+data/*.sqlite
+artifacts/**/*.mp4
+artifacts/**/*.json
+render/remotion/node_modules/
+render/remotion/out/

@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "reason": "SAFETY VERIFIED - Antigravity agent has refactored zero-cost API fetches and verified generation",
+  "timestamp": "2026-04-03T18:48:00Z",
+  "requirements": [
+    "Content must pass validateContentSafety() check",
+    "Market data must be successfully fetched",
+    "LLM content generation must succeed",
+    "No mock data allowed",
+    "Minimum 100 characters per language"
+  ],
+  "emergency_override": {
+    "allowed": false,
+    "requires": "manual intervention and user approval"
+  }
+}

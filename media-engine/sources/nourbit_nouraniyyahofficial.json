@@ -1,0 +1,16 @@
+{
+  "id": "nourbit_nouraniyyahofficial",
+  "profile_id": "nourbit",
+  "source_url": "https://www.youtube.com/@nouraniyyahofficial",
+  "owner_type": "community_public_channel",
+  "permission_status": "public_third_party",
+  "permission_evidence": "",
+  "allowed_use": ["draft_clip_generation", "manual_review"],
+  "monetization_allowed": false,
+  "attribution_rule": "Credit the source channel in metadata/caption when publishing is enabled.",
+  "publish_restrictions": [
+    "auto_publish_blocked_until_permission_recorded",
+    "manual_review_required",
+    "monetization_blocked_until_permission_recorded"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "techtalk-autonomous",
+  "version": "4.0.0",
+  "description": "TechTalk Autonomous Content Creation System — Production Active v4.0",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "sharp": "^0.34.5"
+  }
+}

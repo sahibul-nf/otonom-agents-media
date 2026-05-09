@@ -1,0 +1,60 @@
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+**/fb_pages.json
+**/service-account*.json
+**/oauth*.json
+**/credentials.json
+**/client_secret*.json
+
+# App runtime state snapshots
+techtalk-autonomous/config/posting_history.json
+techtalk-autonomous/config/reply_history.json
+techtalk-autonomous/config/performance_audit.json
+techtalk-autonomous/config/techtalk_state.json
+techtalk-autonomous/config/last_style.txt
+techtalk-autonomous/config/last_topic.txt
+
+# Runtime data
+logs/
+**/logs/
+**/*.log
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+**/data/
+**/artifacts/
+**/archives/
+
+# Dependencies and build output
+node_modules/
+**/node_modules/
+dist/
+build/
+out/
+.cache/
+__pycache__/
+*.pyc
+
+# Local tool state
+.specstory/
+media-engine/.specstory/
+
+# Generated media
+*.mp4
+*.mov
+*.m4v
+*.mp3
+*.wav
+*.aac
+*.srt
