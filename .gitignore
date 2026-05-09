@@ -16,6 +16,11 @@
 **/oauth*.json
 **/credentials.json
 **/client_secret*.json
+**/cookies*.txt
+**/*cookies*.txt
+**/po-token*.json
+**/*token*.secret
+media-engine/secrets/
 
 # App runtime state snapshots
 techtalk-autonomous/config/posting_history.json

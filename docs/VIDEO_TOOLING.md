@@ -23,3 +23,7 @@ Source references:
 
 - https://hyperframes.heygen.com/quickstart
 - https://github.com/heygen-com/hyperframes
+
+## YouTube Download Notes
+
+For public YouTube sources that reject normal `yt-dlp` downloads with HTTP 403, use the PO Token workflow in [YTDLP_PO_TOKEN_SETUP.md](YTDLP_PO_TOKEN_SETUP.md). Keep cookies, browser exports, and generated token files outside git.
