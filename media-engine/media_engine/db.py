@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS clip_candidates (
   viral_reason TEXT NOT NULL,
   transcript_span TEXT NOT NULL,
   risk_flags_json TEXT NOT NULL,
+  score_json TEXT NOT NULL DEFAULT '{}',
+  curation_metadata_json TEXT NOT NULL DEFAULT '{}',
+  caption_source TEXT NOT NULL DEFAULT 'youtube',
   status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -101,8 +104,27 @@ def connect(db_path: Path | str = DEFAULT_DB) -> sqlite3.Connection:
     return conn
 
 
+SCHEMA_UPGRADES = {
+    "clip_candidates": {
+        "score_json": "TEXT NOT NULL DEFAULT '{}'",
+        "curation_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+        "caption_source": "TEXT NOT NULL DEFAULT 'youtube'",
+    }
+}
+
+
+def ensure_schema_upgrades(conn: sqlite3.Connection) -> None:
+    for table, columns in SCHEMA_UPGRADES.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for column, definition in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+    conn.commit()
+
+
 def initialize(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    ensure_schema_upgrades(conn)
     conn.commit()
 
 

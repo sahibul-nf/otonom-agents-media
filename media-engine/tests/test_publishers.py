@@ -19,13 +19,22 @@ class PublisherTests(unittest.TestCase):
         initialize(conn)
         conn.execute("INSERT INTO media_profiles VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", ("nourbit", "Nourbit", "niche", "[]", "lecture_clean", "cta", "wm"))
         conn.execute("INSERT INTO source_manifests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", ("src", "nourbit", "url", "community", "public_third_party", "", "[]", 0, "", "[]"))
-        conn.execute("INSERT INTO clip_candidates VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", ("clip", "nourbit", "src", 0, 1000, "Hook", "Reason", "Text", "[]", "approved"))
+        conn.execute(
+            """
+            INSERT INTO clip_candidates
+              (id, profile_id, source_id, start_ms, end_ms, title_hook, viral_reason,
+               transcript_span, risk_flags_json, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("clip", "nourbit", "src", 0, 1000, "Hook", "Reason", "Text", "[]", "approved"),
+        )
         source = {"permission_status": "public_third_party", "permission_evidence": ""}
         target = {"platform": "facebook_reels", "mode": "auto_publish", "require_approval": 1}
         candidate = {"id": "clip", "title_hook": "Hook", "status": "approved"}
         attempt = create_dry_run_attempt(conn, source, target, candidate, {"output_path": "/tmp/clip.mp4"})
         self.assertEqual(attempt["status"], "blocked")
         self.assertIn("public third-party", attempt["error"])
+        conn.close()
 
 
 if __name__ == "__main__":

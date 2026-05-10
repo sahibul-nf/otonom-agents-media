@@ -121,6 +121,13 @@
         color: var(--muted);
         font-size: 12px;
       }
+      .score-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 10px 0;
+      }
+      .score-row .badge strong { color: var(--text); }
       .danger { color: var(--danger); }
       .status {
         min-height: 18px;
@@ -195,7 +202,14 @@
           <article class="panel">
             <div class="clip-title">${item.title_hook}</div>
             <div class="muted">Source: ${item.source}</div>
+            <div class="score-row">
+              <span class="badge">Overall <strong>${item.score?.overall_score ?? "-"}</strong></span>
+              <span class="badge">Viral <strong>${item.score?.viral_score ?? "-"}</strong></span>
+              <span class="badge">Hook <strong>${item.score?.hook_score ?? "-"}</strong></span>
+              <span class="badge">Caption <strong>${item.score?.caption_confidence ?? "-"}</strong></span>
+            </div>
             <p><span class="badge">${item.status}</span></p>
+            <p class="muted">Caption: ${item.caption_source || "youtube"} · LLM: ${item.curation_metadata?.llm_provider || "none"}</p>
             <p class="muted">${item.risk}</p>
             ${item.id ? `<button class="primary" data-action="approve" data-candidate-id="${item.id}">Approve</button>` : `<button class="primary" disabled>Approve</button>`}
             ${item.output_path ? `<button class="warn" data-action="export" data-path="${item.output_path}">Export</button>` : `<button class="warn" disabled>Export</button>`}
@@ -229,6 +243,9 @@
             source: item.source_id,
             risk: item.risk_flags_json || "[]",
             output_path: item.output_path,
+            score: item.score || {},
+            caption_source: item.caption_source,
+            curation_metadata: item.curation_metadata || {},
           })) : sample);
           setStatus(`Loaded ${items.length || sample.length} clip${items.length === 1 ? "" : "s"}`, "ok");
         } catch (_error) {
@@ -264,7 +281,8 @@
 PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premium-test \\
   --youtube-url "${sourceUrl}" \\
   --renderer ffmpeg \\
-  --style profiles/nourbit_opus_style.json`;
+  --style profiles/nourbit_opus_style.json \\
+  --llm-provider none`;
         testCommand.textContent = command;
         try {
           const response = await fetch("/api/style");

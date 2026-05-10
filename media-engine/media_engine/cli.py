@@ -14,7 +14,7 @@ from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
 from .styles import load_style
-from .youtube_pipeline import choose_nourbit_premium_candidate, download_youtube_section, fetch_youtube_transcript
+from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
 
 
 def profile_dict(row: dict[str, Any]) -> dict[str, Any]:
@@ -110,8 +110,9 @@ def insert_candidate(conn, candidate: dict[str, Any]) -> None:
         """
         INSERT OR REPLACE INTO clip_candidates
           (id, profile_id, source_id, start_ms, end_ms, title_hook, viral_reason,
-           transcript_span, risk_flags_json, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           transcript_span, risk_flags_json, score_json, curation_metadata_json,
+           caption_source, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             candidate["id"],
@@ -123,29 +124,37 @@ def insert_candidate(conn, candidate: dict[str, Any]) -> None:
             candidate["viral_reason"],
             candidate["transcript_span"],
             json.dumps(candidate["risk_flags"], ensure_ascii=False),
+            json.dumps(candidate.get("score", {}), ensure_ascii=False),
+            json.dumps(candidate.get("curation_metadata", {}), ensure_ascii=False),
+            candidate.get("caption_source", "youtube"),
             candidate["status"],
         ),
     )
     conn.commit()
 
 
-def cmd_premium_test(args: argparse.Namespace) -> None:
-    conn = connect(args.db)
+def load_profile_and_source(conn, profile_id: str, source_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
     initialize(conn)
-    profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (args.profile,))
+    profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (profile_id,))
     if not profile:
         seed_profile(conn, load_json(ROOT / "profiles" / "nourbit.json"))
-        profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (args.profile,))
-    source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (args.source_id,))
+        profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (profile_id,))
+    source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (source_id,))
     if not source:
         seed_source(conn, load_json(ROOT / "sources" / "nourbit_nouraniyyahofficial.json"))
-        source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (args.source_id,))
+        source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (source_id,))
     if not profile or not source:
         raise SystemExit("profile/source seed failed")
+    return profile, source
+
+
+def cmd_premium_test(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
 
     entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
     style = load_style(args.style)
-    candidate = choose_nourbit_premium_candidate(args.profile, args.source_id, entries, style)
+    candidate = choose_nourbit_premium_candidates(args.profile, args.source_id, entries, style, count=1, llm_provider=args.llm_provider)[0]
     insert_candidate(conn, candidate)
     source_clip = download_youtube_section(args.youtube_url, args.profile, candidate)
     attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
@@ -201,6 +210,91 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
             ensure_ascii=False,
         )
     )
+
+
+def render_premium_candidate(
+    conn,
+    candidate: dict[str, Any],
+    profile: dict[str, Any],
+    youtube_url: str,
+    source_attribution: str,
+    renderer: str,
+    style: dict[str, Any],
+) -> dict[str, Any]:
+    insert_candidate(conn, candidate)
+    source_clip = download_youtube_section(youtube_url, profile["id"], candidate)
+    if renderer == "remotion":
+        output_path, contract = render_premium_remotion(candidate, profile, source_clip, youtube_url, source_attribution, style)
+    else:
+        output_path, contract = render_premium_ffmpeg(candidate, profile, source_clip, youtube_url, source_attribution, style)
+    job_id = Path(output_path).stem
+    conn.execute(
+        """
+        INSERT INTO render_jobs
+          (id, candidate_id, preset, crop_strategy, caption_style, status, output_path, metadata_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            job_id,
+            candidate["id"],
+            PREMIUM_PRESET,
+            contract["cropStrategy"],
+            contract["captionStyle"],
+            "rendered",
+            output_path,
+            json.dumps(contract, ensure_ascii=False),
+        ),
+    )
+    conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (candidate["id"],))
+    conn.commit()
+    return {
+        "candidate_id": candidate["id"],
+        "start": contract["startTimecode"],
+        "end": contract["endTimecode"],
+        "title_hook": candidate["title_hook"],
+        "overall_score": candidate.get("score", {}).get("overall_score"),
+        "source_clip": source_clip,
+        "output_path": output_path,
+    }
+
+
+def cmd_premium_curate(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    load_profile_and_source(conn, args.profile, args.source_id)
+    entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
+    style = load_style(args.style)
+    candidates = choose_nourbit_premium_candidates(
+        args.profile,
+        args.source_id,
+        entries,
+        style,
+        count=args.count,
+        llm_provider=args.llm_provider,
+    )
+    for candidate in candidates:
+        insert_candidate(conn, candidate)
+    print(json.dumps({"count": len(candidates), "candidates": candidates}, indent=2, ensure_ascii=False))
+
+
+def cmd_premium_batch(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
+    entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
+    style = load_style(args.style)
+    candidates = choose_nourbit_premium_candidates(
+        args.profile,
+        args.source_id,
+        entries,
+        style,
+        count=args.count,
+        llm_provider=args.llm_provider,
+    )
+    attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
+    renders = [
+        render_premium_candidate(conn, candidate, profile, args.youtube_url, attribution, args.renderer, style)
+        for candidate in candidates
+    ]
+    print(json.dumps({"count": len(renders), "renders": renders}, indent=2, ensure_ascii=False))
 
 
 def cmd_review(args: argparse.Namespace) -> None:
@@ -321,7 +415,28 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--source-attribution", default="")
     premium_test.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="ffmpeg")
     premium_test.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
+    premium_test.add_argument("--llm-provider", choices=["none", "openai", "deepseek"], default="none")
     premium_test.set_defaults(func=cmd_premium_test)
+
+    premium_curate = sub.add_parser("premium-curate")
+    premium_curate.add_argument("--profile", default="nourbit")
+    premium_curate.add_argument("--source-id", default="nourbit_nouraniyyahofficial")
+    premium_curate.add_argument("--youtube-url", required=True)
+    premium_curate.add_argument("--count", type=int, default=5)
+    premium_curate.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
+    premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek"], default="none")
+    premium_curate.set_defaults(func=cmd_premium_curate)
+
+    premium_batch = sub.add_parser("premium-batch")
+    premium_batch.add_argument("--profile", default="nourbit")
+    premium_batch.add_argument("--source-id", default="nourbit_nouraniyyahofficial")
+    premium_batch.add_argument("--youtube-url", required=True)
+    premium_batch.add_argument("--source-attribution", default="")
+    premium_batch.add_argument("--count", type=int, default=5)
+    premium_batch.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="ffmpeg")
+    premium_batch.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
+    premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek"], default="none")
+    premium_batch.set_defaults(func=cmd_premium_batch)
 
     review = sub.add_parser("review")
     review.add_argument("--profile", default="nourbit")

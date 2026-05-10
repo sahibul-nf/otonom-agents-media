@@ -45,12 +45,12 @@ class PremiumRenderingTests(unittest.TestCase):
         self.assertEqual(contract["captionDiagnostics"]["maxConcurrentEvents"], 1)
 
     def test_premium_duration_bounds(self):
-        validate_premium_duration(90_000)
-        validate_premium_duration(150_000)
+        validate_premium_duration(45_000)
+        validate_premium_duration(120_000)
         with self.assertRaises(ValueError):
-            validate_premium_duration(89_999)
+            validate_premium_duration(44_999)
         with self.assertRaises(ValueError):
-            validate_premium_duration(150_001)
+            validate_premium_duration(120_001)
 
     def test_caption_segments_fit_duration(self):
         captions = build_caption_segments("satu dua tiga empat lima enam tujuh delapan sembilan", 10_000)

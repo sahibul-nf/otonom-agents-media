@@ -9,7 +9,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all
+from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all, initialize
 from .models import PUBLISH_MODES
 from .styles import load_style
 
@@ -22,6 +22,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/review":
             conn = connect(DEFAULT_DB)
+            initialize(conn)
             rows = fetch_all(
                 conn,
                 """
@@ -31,6 +32,10 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 ORDER BY c.created_at DESC
                 """,
             )
+            for row in rows:
+                row["score"] = json.loads(row.get("score_json") or "{}")
+                row["curation_metadata"] = json.loads(row.get("curation_metadata_json") or "{}")
+            rows.sort(key=lambda row: row.get("score", {}).get("overall_score", 0), reverse=True)
             payload = json.dumps(rows, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")

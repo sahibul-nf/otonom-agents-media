@@ -11,7 +11,10 @@ from typing import Any
 
 from .captions import build_word_timeline, group_word_captions
 from .db import ARTIFACTS_DIR
+from .llm import LLMError, call_llm_json
 from .rendering import ms_to_timecode
+from .scoring import score_candidate_text
+from .transcript_quality import correct_transcript_entries
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,10 @@ KEYWORDS = (
     "syukur",
     "nikmat",
 )
+
+MIN_PREMIUM_DURATION_MS = 45_000
+TARGET_PREMIUM_DURATION_MS = 95_000
+MAX_PREMIUM_DURATION_MS = 120_000
 
 
 def extract_video_id(url: str) -> str:
@@ -66,45 +73,51 @@ def fetch_youtube_transcript(url: str, languages: list[str] | None = None) -> li
     return entries
 
 
-def choose_nourbit_premium_candidate(
+def title_for_span(span: str) -> str:
+    lowered = span.lower()
+    if "kesepian" in lowered:
+        return "Kenapa Hati Masih Kesepian?"
+    if "hati" in lowered and "tenang" in lowered:
+        return "Rahasia Hati yang Tenang"
+    if "ibadah" in lowered or "amal" in lowered:
+        return "Untuk Siapa Ibadah Kita?"
+    return "Allah Tidak Pernah Jauh"
+
+
+def heuristic_window_score(text: str, title: str, duration_ms: int) -> int:
+    lowered = text.lower()
+    keyword_score = sum(lowered.count(keyword) for keyword in KEYWORDS)
+    length_score = min(len(text) // 120, 12)
+    question_score = 3 if "?" in text or "pernahkah" in lowered or "kenapa" in lowered else 0
+    quality = score_candidate_text(text, title, duration_ms)
+    return keyword_score * 3 + length_score + question_score + quality["overall_score"]
+
+
+def is_non_overlapping(start_ms: int, end_ms: int, selected: list[dict[str, Any]], padding_ms: int = 12_000) -> bool:
+    for candidate in selected:
+        if start_ms < int(candidate["end_ms"]) + padding_ms and end_ms > int(candidate["start_ms"]) - padding_ms:
+            return False
+    return True
+
+
+def build_candidate(
     profile_id: str,
     source_id: str,
     entries: list[TranscriptEntry],
-    style: dict[str, Any] | None = None,
+    start_ms: int,
+    end_ms: int,
+    score_rank: int,
+    style: dict[str, Any],
+    llm_provider: str = "none",
+    llm_suggestion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if len(entries) < 10:
-        raise ValueError("transcript is too short for premium candidate selection")
-
-    target_duration_ms = 95_000
-    best: tuple[int, int, int, list[TranscriptEntry]] | None = None
-    for index, entry in enumerate(entries):
-        start_ms = entry.start_ms
-        end_ms = start_ms + target_duration_ms
-        window = [item for item in entries[index:] if item.start_ms < end_ms]
-        if not window:
-            continue
-        text = " ".join(item.text for item in window)
-        lowered = text.lower()
-        keyword_score = sum(lowered.count(keyword) for keyword in KEYWORDS)
-        length_score = min(len(text) // 120, 12)
-        question_score = 3 if "?" in text or "pernahkah" in lowered or "kenapa" in lowered else 0
-        score = keyword_score * 3 + length_score + question_score
-        if best is None or score > best[0]:
-            best = (score, start_ms, window[-1].end_ms, window)
-
-    if best is None:
-        raise ValueError("no candidate windows found")
-
-    _score, start_ms, end_ms, window = best
-    duration_ms = end_ms - start_ms
-    if duration_ms < 90_000:
-        end_ms = start_ms + 90_000
-    if duration_ms > 150_000:
-        end_ms = start_ms + 150_000
-        window = [item for item in window if item.start_ms < end_ms]
-
+    window = [item for item in entries if item.start_ms < end_ms and item.end_ms > start_ms]
     span = " ".join(item.text for item in window)
-    style = style or {}
+    title = str((llm_suggestion or {}).get("title_hook") or title_for_span(span))
+    viral_reason = str(
+        (llm_suggestion or {}).get("viral_reason")
+        or "Momen ini kuat karena menyentuh keresahan batin dengan jawaban yang sederhana dan mudah direnungkan."
+    )
     caption_style = style.get("caption", {})
     ai_style = style.get("ai", {})
     word_timeline = build_word_timeline(
@@ -117,12 +130,14 @@ def choose_nourbit_premium_candidate(
         word_timeline,
         max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),
     )
-    title = "Allah Tidak Pernah Jauh"
-    if "kesepian" in span.lower():
-        title = "Kenapa Hati Masih Kesepian?"
-    elif "hati" in span.lower() and "tenang" in span.lower():
-        title = "Rahasia Hati yang Tenang"
-
+    score = score_candidate_text(span, title, end_ms - start_ms, rights_risk=True)
+    metadata = {
+        "rank": score_rank,
+        "selector": "heuristic_v2",
+        "llm_provider": llm_provider,
+        "llm_used": bool(llm_suggestion),
+        "window_entry_count": len(window),
+    }
     return {
         "id": f"clip_{uuid.uuid4().hex[:12]}",
         "profile_id": profile_id,
@@ -130,12 +145,113 @@ def choose_nourbit_premium_candidate(
         "start_ms": start_ms,
         "end_ms": end_ms,
         "title_hook": title,
-        "viral_reason": "Momen ini kuat karena menyentuh keresahan batin dengan jawaban yang sederhana dan mudah direnungkan.",
+        "viral_reason": viral_reason,
         "transcript_span": span[:2200],
         "timed_captions": timed_captions,
         "risk_flags": ["public_third_party_review_required"],
+        "score": score,
+        "curation_metadata": metadata,
+        "caption_source": "youtube_glossary",
         "status": "draft",
     }
+
+
+def llm_rank_suggestions(entries: list[TranscriptEntry], count: int, provider: str) -> list[dict[str, Any]]:
+    if provider == "none":
+        return []
+    transcript = "\n".join(f"{ms_to_timecode(entry.start_ms)} {entry.text}" for entry in entries[:600])
+    system_prompt = (
+        "Anda adalah kurator video pendek Nourbit. Balas hanya JSON murni dengan key clips. "
+        "Setiap clip berisi start_time, end_time, title_hook, viral_reason."
+    )
+    user_prompt = (
+        f"Pilih {count} momen terbaik berdurasi 45-120 detik untuk short/reels dari transcript ini. "
+        f"Utamakan konteks utuh, hook spiritual/reflektif, dan bahasa Indonesia natural.\n\n{transcript}"
+    )
+    try:
+        payload = call_llm_json(provider, system_prompt, user_prompt)
+    except LLMError:
+        return []
+    clips = payload.get("clips", []) if isinstance(payload, dict) else payload
+    return [clip for clip in clips if isinstance(clip, dict)]
+
+
+def timecode_to_ms(value: str) -> int:
+    parts = value.strip().split(":")
+    if len(parts) != 3:
+        raise ValueError(f"invalid timecode: {value}")
+    hours, minutes, seconds = parts
+    return (int(hours) * 3600 + int(minutes) * 60 + int(float(seconds))) * 1000
+
+
+def choose_nourbit_premium_candidates(
+    profile_id: str,
+    source_id: str,
+    entries: list[TranscriptEntry],
+    style: dict[str, Any] | None = None,
+    count: int = 5,
+    llm_provider: str = "none",
+) -> list[dict[str, Any]]:
+    if len(entries) < 10:
+        raise ValueError("transcript is too short for premium candidate selection")
+    style = style or {}
+    corrected_entries = correct_transcript_entries(entries)
+    llm_suggestions = llm_rank_suggestions(corrected_entries, count, llm_provider)
+    selected: list[dict[str, Any]] = []
+
+    for suggestion in llm_suggestions:
+        try:
+            start_ms = timecode_to_ms(str(suggestion.get("start_time", "")))
+            end_ms = timecode_to_ms(str(suggestion.get("end_time", "")))
+        except ValueError:
+            continue
+        duration = end_ms - start_ms
+        if duration < MIN_PREMIUM_DURATION_MS or duration > MAX_PREMIUM_DURATION_MS:
+            continue
+        if not is_non_overlapping(start_ms, end_ms, selected):
+            continue
+        selected.append(build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, suggestion))
+        if len(selected) >= count:
+            return selected
+
+    windows: list[tuple[int, int, int, str]] = []
+    step = max(1, len(corrected_entries) // 80)
+    for index in range(0, len(corrected_entries), step):
+        entry = corrected_entries[index]
+        start_ms = entry.start_ms
+        end_ms = start_ms + TARGET_PREMIUM_DURATION_MS
+        window = [item for item in corrected_entries[index:] if item.start_ms < end_ms]
+        if not window:
+            continue
+        end_ms = min(window[-1].end_ms, start_ms + MAX_PREMIUM_DURATION_MS)
+        if end_ms - start_ms < MIN_PREMIUM_DURATION_MS:
+            continue
+        text = " ".join(item.text for item in window)
+        title = title_for_span(text)
+        windows.append((heuristic_window_score(text, title, end_ms - start_ms), start_ms, end_ms, text))
+
+    for _score, start_ms, end_ms, _text in sorted(windows, reverse=True):
+        if not is_non_overlapping(start_ms, end_ms, selected):
+            continue
+        selected.append(build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider))
+        if len(selected) >= count:
+            break
+
+    if not selected:
+        raise ValueError("no candidate windows found")
+    selected.sort(key=lambda candidate: candidate["score"]["overall_score"], reverse=True)
+    for rank, candidate in enumerate(selected, start=1):
+        candidate["curation_metadata"]["rank"] = rank
+    return selected
+
+
+def choose_nourbit_premium_candidate(
+    profile_id: str,
+    source_id: str,
+    entries: list[TranscriptEntry],
+    style: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return choose_nourbit_premium_candidates(profile_id, source_id, entries, style, count=1)[0]
 
 
 def find_ytdlp() -> str:
