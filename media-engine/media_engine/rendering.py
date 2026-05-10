@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .captions import build_fallback_caption_segments
+from .captions import build_fallback_caption_segments, normalize_caption_groups
 from .db import ARTIFACTS_DIR, ROOT
 from .styles import load_style
 
@@ -39,6 +39,89 @@ def validate_premium_duration(duration_ms: int) -> None:
         min_s = PREMIUM_MIN_DURATION_MS // 1000
         max_s = PREMIUM_MAX_DURATION_MS // 1000
         raise ValueError(f"premium Nourbit clips must be {min_s}-{max_s}s")
+
+
+def build_caption_events(captions: list[dict[str, Any]], duration_ms: int) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for caption_index, caption in enumerate(captions):
+        caption_start = max(0, int(caption.get("startMs", 0)))
+        caption_end = min(duration_ms, int(caption.get("endMs", caption_start)))
+        if caption_end <= caption_start:
+            continue
+        words = caption.get("words") or [{"text": word, "startMs": caption_start} for word in caption["text"].split()]
+        if not words:
+            continue
+        for word_index, word in enumerate(words):
+            start_ms = max(caption_start, int(word.get("startMs", caption_start)))
+            next_start_ms = (
+                max(caption_start, int(words[word_index + 1].get("startMs", caption_end)))
+                if word_index + 1 < len(words)
+                else caption_end
+            )
+            end_ms = min(caption_end, next_start_ms)
+            if end_ms <= start_ms:
+                end_ms = min(caption_end, start_ms + 80)
+            if end_ms <= start_ms:
+                continue
+            events.append(
+                {
+                    "captionIndex": caption_index,
+                    "activeWordIndex": word_index,
+                    "startMs": start_ms,
+                    "endMs": end_ms,
+                    "text": caption["text"],
+                    "words": words,
+                }
+            )
+
+    normalized: list[dict[str, Any]] = []
+    for event in sorted(events, key=lambda item: (item["startMs"], item["endMs"], item["captionIndex"], item["activeWordIndex"])):
+        event = dict(event)
+        if normalized and event["startMs"] < normalized[-1]["endMs"]:
+            event["startMs"] = normalized[-1]["endMs"]
+        if event["endMs"] <= event["startMs"]:
+            continue
+        normalized.append(event)
+    return normalized
+
+
+def diagnose_caption_events(events: list[dict[str, Any]]) -> dict[str, int]:
+    points: list[tuple[int, int]] = []
+    for event in events:
+        points.append((int(event["startMs"]), 1))
+        points.append((int(event["endMs"]), -1))
+    active = 0
+    max_active = 0
+    overlap_count = 0
+    for _time_ms, delta in sorted(points, key=lambda point: (point[0], point[1])):
+        active += delta
+        max_active = max(max_active, active)
+        if active > 1:
+            overlap_count += 1
+    return {
+        "eventCount": len(events),
+        "maxConcurrentEvents": max_active,
+        "overlapCount": overlap_count,
+    }
+
+
+def build_premium_filter_script(contract: dict[str, Any], caption_input_count: int) -> str:
+    filter_parts = [
+        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=contrast=1.06:saturation=0.96:brightness=-0.025[base]",
+        "[base][1:v]overlay=0:0:enable='gte(t,0)*lt(t,4.8)'[v1]",
+    ]
+    current = "v1"
+    overlay_index = 2
+    for event in contract.get("captionEvents", []):
+        next_label = f"v{overlay_index}"
+        start = event["startMs"] / 1000
+        end = event["endMs"] / 1000
+        filter_parts.append(f"[{current}][{overlay_index}:v]overlay=0:0:enable='gte(t,{start:.3f})*lt(t,{end:.3f})'[{next_label}]")
+        overlay_index += 1
+        current = next_label
+    cta_input_index = caption_input_count + 2
+    filter_parts.append(f"[{current}][{cta_input_index}:v]overlay=0:0:enable='gte(t,{max(0, contract['durationMs'] / 1000 - 6.5):.3f})'[v]")
+    return ";\n".join(filter_parts)
 
 
 def build_render_contract(candidate: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
@@ -72,11 +155,20 @@ def build_premium_render_contract(
     validate_premium_duration(duration_ms)
     style = style or load_style()
     caption_style = style["caption"]
-    captions = candidate.get("timed_captions") or build_caption_segments(
+    raw_captions = candidate.get("timed_captions") or build_caption_segments(
         candidate["transcript_span"],
         duration_ms,
         max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),
     )
+    captions = normalize_caption_groups(
+        raw_captions,
+        max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),
+        duration_ms=duration_ms,
+    )
+    caption_events = build_caption_events(captions, duration_ms)
+    caption_diagnostics = diagnose_caption_events(caption_events)
+    if caption_diagnostics["maxConcurrentEvents"] > 1:
+        raise ValueError("caption events must not overlap")
     return {
         "composition": "NourbitPremiumShort",
         "width": 1080,
@@ -95,6 +187,8 @@ def build_premium_render_contract(
         "subtitle": candidate["viral_reason"],
         "captionText": candidate["transcript_span"],
         "captions": captions,
+        "captionEvents": caption_events,
+        "captionDiagnostics": caption_diagnostics,
         "visualBeats": [
             {"type": "hook", "startMs": 0, "endMs": min(4500, duration_ms)},
             {"type": "caption_emphasis", "startMs": 5500, "endMs": max(6500, duration_ms - 9000)},
@@ -243,6 +337,17 @@ def _hex_to_rgba(value: str, alpha: int = 255) -> tuple[int, int, int, int]:
     return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16), alpha)
 
 
+def _style_background_rgba(value: str) -> tuple[int, int, int, int]:
+    value = value.strip()
+    if value.startswith("rgba(") and value.endswith(")"):
+        parts = [part.strip() for part in value[5:-1].split(",")]
+        if len(parts) == 4:
+            red, green, blue = (max(0, min(255, int(float(part)))) for part in parts[:3])
+            alpha = max(0, min(255, int(float(parts[3]) * 255)))
+            return (red, green, blue, alpha)
+    return (0, 0, 0, 148)
+
+
 def _wrap_text(draw, text: str, font, max_width: int) -> list[str]:
     words = text.split()
     lines: list[str] = []
@@ -315,29 +420,38 @@ def _write_caption_overlay(
     line = " ".join(word["text"] for word in words)
     font, font_size, bbox = _fit_font(draw, line, requested_font_size, 960, stroke_width)
     text_width = bbox[2] - bbox[0]
-    x = max(36, (1080 - text_width) // 2)
-    y = 1180 if caption_style.get("position") == "bottom" else 900
+    text_x = max(36, (1080 - text_width) // 2 - bbox[0])
+    box_left = text_x + bbox[0]
+    box_right = text_x + bbox[2]
+    box_height = bbox[3] - bbox[1]
+    box_top = 1180 if caption_style.get("position") == "bottom" else 900
+    text_y = box_top - bbox[1]
     pad_x = 22
     pad_y = 12
     draw.rounded_rectangle(
-        (x - pad_x, y - pad_y, x + text_width + pad_x, y + (bbox[3] - bbox[1]) + pad_y),
+        (box_left - pad_x, box_top - pad_y, box_right + pad_x, box_top + box_height + pad_y),
         radius=int(caption_style.get("background_radius", 12)),
-        fill=(0, 0, 0, 148),
+        fill=_style_background_rgba(caption_style.get("background_color", "rgba(0,0,0,0.58)")),
     )
-    cursor = x
-    for index, word in enumerate(words):
-        token = word["text"]
-        color = caption_style["highlight_word_color"] if index == active_word_index else caption_style["text_color"]
+    draw.text(
+        (text_x, text_y),
+        line,
+        font=font,
+        fill=_hex_to_rgba(caption_style["text_color"]),
+        stroke_width=stroke_width,
+        stroke_fill=_hex_to_rgba(caption_style.get("stroke_color", "#000000"), 255),
+    )
+    if 0 <= active_word_index < len(words):
+        prefix = " ".join(word["text"] for word in words[:active_word_index])
+        prefix_width = draw.textlength(f"{prefix} ", font=font) if prefix else 0
         draw.text(
-            (cursor, y),
-            token,
+            (text_x + prefix_width, text_y),
+            words[active_word_index]["text"],
             font=font,
-            fill=_hex_to_rgba(color),
+            fill=_hex_to_rgba(caption_style["highlight_word_color"]),
             stroke_width=stroke_width,
             stroke_fill=_hex_to_rgba(caption_style.get("stroke_color", "#000000"), 255),
         )
-        token_bbox = draw.textbbox((0, 0), token + " ", font=font, stroke_width=stroke_width)
-        cursor += token_bbox[2] - token_bbox[0]
     image.save(path)
 
 
@@ -385,39 +499,13 @@ def render_premium_ffmpeg(
     )
 
     caption_inputs: list[Path] = []
-    for index, caption in enumerate(contract["captions"], start=1):
-        words = caption.get("words") or []
-        if not words:
-            path = overlay_dir / f"caption_{index:02d}_word_01.png"
-            _write_caption_overlay(path, caption, 0, style)
-            caption_inputs.append(path)
-            continue
-        for word_index, _word in enumerate(words):
-            path = overlay_dir / f"caption_{index:02d}_word_{word_index + 1:02d}.png"
-            _write_caption_overlay(path, caption, word_index, style)
-            caption_inputs.append(path)
+    for index, event in enumerate(contract["captionEvents"], start=1):
+        path = overlay_dir / f"caption_event_{index:03d}.png"
+        _write_caption_overlay(path, event, int(event["activeWordIndex"]), style)
+        caption_inputs.append(path)
 
-    filter_parts = [
-        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,eq=contrast=1.06:saturation=0.96:brightness=-0.025[base]",
-        "[base][1:v]overlay=0:0:enable='between(t,0,4.8)'[v1]",
-    ]
-    current = "v1"
-    overlay_index = 2
-    for caption in contract["captions"]:
-        words = caption.get("words") or []
-        word_windows = words or [{"startMs": caption["startMs"], "endMs": caption["endMs"]}]
-        for word_position, word_window in enumerate(word_windows):
-            next_label = f"v{overlay_index}"
-            start = max(5.0, word_window["startMs"] / 1000)
-            next_start_ms = word_windows[word_position + 1]["startMs"] if word_position + 1 < len(word_windows) else caption["endMs"]
-            end = max(start + 0.08, next_start_ms / 1000)
-            filter_parts.append(f"[{current}][{overlay_index}:v]overlay=0:0:enable='between(t,{start:.3f},{end:.3f})'[{next_label}]")
-            overlay_index += 1
-            current = next_label
-    cta_input_index = len(caption_inputs) + 2
-    filter_parts.append(f"[{current}][{cta_input_index}:v]overlay=0:0:enable='gte(t,{max(0, contract['durationMs'] / 1000 - 6.5):.3f})'[v]")
     filter_path = out_dir / f"{job_id}_filter.txt"
-    filter_path.write_text(";\n".join(filter_parts), encoding="utf-8")
+    filter_path.write_text(build_premium_filter_script(contract, len(caption_inputs)), encoding="utf-8")
 
     cmd = [ffmpeg, "-y", "-i", source_video_path, "-i", str(title_png)]
     for caption_input in caption_inputs:

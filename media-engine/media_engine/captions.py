@@ -13,6 +13,7 @@ class TranscriptLike(Protocol):
 
 
 FILLER_WORDS = {"eee", "ee", "em", "emm", "anu"}
+MIN_WORD_DURATION_MS = 80
 
 
 def split_words(text: str) -> list[str]:
@@ -55,7 +56,92 @@ def build_word_timeline(
                     "endMs": max(0, max(start + 80, min(entry_end, end)) - clip_start_ms),
                 }
             )
-    return words
+    return normalize_word_timeline(words)
+
+
+def normalize_word_timeline(
+    words: list[dict[str, Any]],
+    duration_ms: int | None = None,
+    min_duration_ms: int = MIN_WORD_DURATION_MS,
+) -> list[dict[str, Any]]:
+    clean_words = []
+    for index, word in enumerate(words):
+        text = str(word.get("text", "")).strip()
+        if not text:
+            continue
+        try:
+            start_ms = int(word.get("startMs", 0))
+            end_ms = int(word.get("endMs", start_ms + min_duration_ms))
+        except (TypeError, ValueError):
+            continue
+        clean_words.append(
+            {
+                **word,
+                "text": text,
+                "startMs": max(0, start_ms),
+                "endMs": max(0, end_ms),
+                "_sourceIndex": index,
+            }
+        )
+    if not clean_words:
+        return []
+
+    clean_words.sort(key=lambda word: (word["startMs"], word["endMs"], word["_sourceIndex"]))
+    normalized: list[dict[str, Any]] = []
+    previous_start: int | None = None
+    for word in clean_words:
+        start_ms = word["startMs"]
+        if previous_start is not None and start_ms <= previous_start:
+            start_ms = previous_start + min_duration_ms
+        if duration_ms is not None and start_ms >= duration_ms:
+            continue
+        end_ms = max(start_ms + min_duration_ms, word["endMs"])
+        if duration_ms is not None:
+            end_ms = min(duration_ms, end_ms)
+        if end_ms <= start_ms:
+            continue
+        word = {key: value for key, value in word.items() if key != "_sourceIndex"}
+        word["startMs"] = start_ms
+        word["endMs"] = end_ms
+        normalized.append(word)
+        previous_start = start_ms
+
+    for index, word in enumerate(normalized[:-1]):
+        next_start = normalized[index + 1]["startMs"]
+        if word["endMs"] > next_start:
+            word["endMs"] = next_start
+    return [word for word in normalized if word["endMs"] > word["startMs"]]
+
+
+def normalize_caption_groups(
+    captions: list[dict[str, Any]],
+    max_words_per_caption: int = 3,
+    duration_ms: int | None = None,
+) -> list[dict[str, Any]]:
+    words: list[dict[str, Any]] = []
+    for caption in captions:
+        caption_words = caption.get("words") or []
+        if caption_words:
+            words.extend(caption_words)
+            continue
+        tokens = split_words(str(caption.get("text", "")))
+        if not tokens:
+            continue
+        start_ms = int(caption.get("startMs", 0))
+        end_ms = int(caption.get("endMs", start_ms + len(tokens) * 260))
+        slot = max(MIN_WORD_DURATION_MS, (end_ms - start_ms) // max(1, len(tokens)))
+        for index, token in enumerate(tokens):
+            words.append(
+                {
+                    "text": token,
+                    "startMs": start_ms + index * slot,
+                    "endMs": min(end_ms, start_ms + (index + 1) * slot),
+                }
+            )
+    return group_word_captions(
+        normalize_word_timeline(words, duration_ms=duration_ms),
+        max_words_per_caption=max_words_per_caption,
+    )
 
 
 def group_word_captions(
@@ -66,15 +152,13 @@ def group_word_captions(
     if not words:
         return []
     groups: list[dict[str, Any]] = []
-    clean_words = [word for word in words if word["endMs"] > word["startMs"]]
+    clean_words = normalize_word_timeline(words)
     if not clean_words:
         return []
     for index in range(0, len(clean_words), max(1, max_words_per_caption)):
         group_words = clean_words[index : index + max(1, max_words_per_caption)]
         start_ms = group_words[0]["startMs"]
         end_ms = max(group_words[-1]["endMs"], start_ms + min_duration_ms)
-        if groups and start_ms > groups[-1]["endMs"]:
-            groups[-1]["endMs"] = start_ms
         groups.append(
             {
                 "text": " ".join(word["text"] for word in group_words),
@@ -85,6 +169,10 @@ def group_word_captions(
                 "words": group_words,
             }
         )
+    for index, group in enumerate(groups[:-1]):
+        next_start = groups[index + 1]["startMs"]
+        if next_start > group["startMs"]:
+            group["endMs"] = next_start
     return groups
 
 

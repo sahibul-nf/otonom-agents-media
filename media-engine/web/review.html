@@ -122,6 +122,14 @@
         font-size: 12px;
       }
       .danger { color: var(--danger); }
+      .status {
+        min-height: 18px;
+        color: var(--muted);
+        font-size: 13px;
+        text-align: right;
+      }
+      .status.ok { color: var(--accent); }
+      .status.error { color: var(--danger); }
       @media (max-width: 760px) {
         main { grid-template-columns: 1fr; }
         aside { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -134,7 +142,10 @@
         <h1>Nourbit Review Queue</h1>
         <div class="muted">Approve clips, switch publishing mode, and keep third-party sources gated.</div>
       </div>
-      <button class="primary" id="refresh">Refresh</button>
+      <div>
+        <button class="primary" id="refresh">Refresh</button>
+        <div class="status" id="status">Ready</div>
+      </div>
     </header>
     <main>
       <aside>
@@ -168,6 +179,7 @@
       const clips = document.getElementById("clips");
       const stylePanel = document.getElementById("style-panel");
       const testCommand = document.getElementById("test-command");
+      const statusLine = document.getElementById("status");
       const sourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
       const modes = ["review_required", "auto_publish", "export_only", "off"];
       const sample = [
@@ -190,6 +202,10 @@
           </article>
         `).join("");
       }
+      function setStatus(message, type = "") {
+        statusLine.textContent = message;
+        statusLine.className = `status ${type}`.trim();
+      }
       async function postJson(url, payload) {
         const response = await fetch(url, {
           method: "POST",
@@ -201,6 +217,7 @@
         return json;
       }
       async function refresh() {
+        setStatus("Refreshing...");
         try {
           const response = await fetch("/api/review");
           if (!response.ok) throw new Error("API not available");
@@ -213,8 +230,10 @@
             risk: item.risk_flags_json || "[]",
             output_path: item.output_path,
           })) : sample);
+          setStatus(`Loaded ${items.length || sample.length} clip${items.length === 1 ? "" : "s"}`, "ok");
         } catch (_error) {
           render(sample);
+          setStatus("Review API unavailable, showing sample state", "error");
         }
       }
       async function refreshTargets() {
@@ -227,10 +246,12 @@
           select.value = target?.mode || "off";
           select.onchange = async () => {
             select.disabled = true;
+            setStatus(`Saving ${platform} mode...`);
             try {
               await postJson("/api/set-target-mode", {profile: "nourbit", platform, mode: select.value});
+              setStatus(`${platform} mode saved: ${select.value}`, "ok");
             } catch (error) {
-              alert(error.message);
+              setStatus(error.message, "error");
               await refreshTargets();
             } finally {
               select.disabled = false;
@@ -277,9 +298,10 @@ PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premiu
           button.disabled = true;
           try {
             await postJson("/api/approve", {candidate_id: button.dataset.candidateId});
+            setStatus(`Approved ${button.dataset.candidateId}`, "ok");
             await refresh();
           } catch (error) {
-            alert(error.message);
+            setStatus(error.message, "error");
           } finally {
             button.disabled = false;
           }
@@ -287,6 +309,7 @@ PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premiu
         if (button.dataset.action === "export") {
           const path = encodeURIComponent(button.dataset.path);
           window.open(`/api/artifact?path=${path}`, "_blank");
+          setStatus("Opened export artifact", "ok");
         }
       });
       refreshTargets();
