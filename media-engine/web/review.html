@@ -54,6 +54,42 @@
         padding: 14px;
         margin-bottom: 14px;
       }
+      .cmd {
+        display: block;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #0b0d12;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        color: #d8dee9;
+        font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+      .tabs, .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 7px 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .chip.active {
+        background: #f2f3f5;
+        color: #111;
+        border-color: #f2f3f5;
+      }
+      .swatch {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.32);
+        vertical-align: middle;
+      }
       .row {
         display: flex;
         align-items: center;
@@ -113,14 +149,26 @@
           <strong>Rights guard</strong>
           <p class="muted">Auto-publish is blocked for public third-party sources until permission evidence is recorded.</p>
         </div>
+        <h2>Production Test</h2>
+        <div class="panel">
+          <p class="muted">Run this manually when you want to produce a new review artifact.</p>
+          <code class="cmd" id="test-command">Loading command...</code>
+        </div>
       </aside>
       <section>
+        <h2>Nourbit Style Baseline</h2>
+        <div class="panel" id="style-panel">
+          <div class="muted">Loading style settings...</div>
+        </div>
         <h2>Rendered Clips</h2>
         <div class="grid" id="clips"></div>
       </section>
     </main>
     <script>
       const clips = document.getElementById("clips");
+      const stylePanel = document.getElementById("style-panel");
+      const testCommand = document.getElementById("test-command");
+      const sourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
       const sample = [
         {
           title_hook: "Untuk Siapa Ibadah Kita?",
@@ -156,7 +204,39 @@
           render(sample);
         }
       }
+      async function refreshStyle() {
+        const command = `cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
+PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premium-test \\
+  --youtube-url "${sourceUrl}" \\
+  --renderer ffmpeg \\
+  --style profiles/nourbit_opus_style.json`;
+        testCommand.textContent = command;
+        try {
+          const response = await fetch("/api/style");
+          if (!response.ok) throw new Error("style API not available");
+          const style = await response.json();
+          stylePanel.innerHTML = `
+            <div class="row"><span>Layout</span><span class="badge">${style.layout.aspect_ratio} ${style.layout.layout_mode}</span></div>
+            <div class="row"><span>Fit crop</span><span class="badge">${style.layout.fit_crop_aspect_ratio}</span></div>
+            <div class="row"><span>Caption preset</span><span class="badge">${style.caption.preset}</span></div>
+            <div class="row"><span>Font</span><span>${style.caption.font_family} ${style.caption.font_size}px</span></div>
+            <div class="row"><span>Lines</span><span class="badge">${style.caption.lines === 1 ? "one-line" : style.caption.lines + " lines"}</span></div>
+            <div class="row"><span>Stroke</span><span>${style.caption.stroke_width}px ${style.caption.stroke_color}</span></div>
+            <div class="row"><span>Highlight</span><span><i class="swatch" style="background:${style.caption.highlight_word_color}"></i> ${style.caption.highlight_word_color}</span></div>
+            <div class="chips">
+              <span class="chip ${style.ai.remove_pauses ? "active" : ""}">Remove pauses</span>
+              <span class="chip ${style.ai.ai_keywords_highlighter ? "active" : ""}">AI keywords</span>
+              <span class="chip ${style.ai.ai_emojis ? "active" : ""}">AI emojis</span>
+              <span class="chip ${style.ai.auto_transitions ? "active" : ""}">Auto transitions</span>
+              <span class="chip ${style.ai.auto_generate_stock_broll ? "active" : ""}">Stock B-roll</span>
+            </div>
+          `;
+        } catch (_error) {
+          stylePanel.innerHTML = `<div class="muted">Style API not available.</div>`;
+        }
+      }
       document.getElementById("refresh").addEventListener("click", refresh);
+      refreshStyle();
       refresh();
     </script>
   </body>

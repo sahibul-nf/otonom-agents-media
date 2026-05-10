@@ -10,12 +10,19 @@ import {
 } from 'remotion';
 import {z} from 'zod';
 
+const wordSchema = z.object({
+  text: z.string(),
+  startMs: z.number(),
+  endMs: z.number(),
+});
+
 const captionSchema = z.object({
   text: z.string(),
   startMs: z.number(),
   endMs: z.number(),
   timestampMs: z.number().nullable(),
   confidence: z.number().nullable(),
+  words: z.array(wordSchema).optional(),
 });
 
 const visualBeatSchema = z.object({
@@ -29,6 +36,7 @@ export const nourbitShortSchema = z.object({
   captionText: z.string(),
   watermarkText: z.string(),
   ctaText: z.string(),
+  style: z.any().optional(),
 });
 
 export const nourbitPremiumSchema = z.object({
@@ -105,15 +113,16 @@ const getActiveCaption = (captions: PremiumProps['captions'], currentMs: number)
   return captions.find((caption) => currentMs >= caption.startMs && currentMs < caption.endMs) ?? captions[0];
 };
 
-const emphasizeCaption = (text: string) => {
-  const words = text.split(' ');
-  if (words.length < 3) {
-    return text;
-  }
-  const last = words.slice(-2).join(' ');
+const emphasizeCaption = (caption: PremiumProps['captions'][number], currentMs: number, highlightColor: string) => {
+  const words = caption.words ?? caption.text.split(' ').map((text) => ({text, startMs: caption.startMs, endMs: caption.endMs}));
+  const activeIndex = Math.max(0, words.findIndex((word) => currentMs >= word.startMs && currentMs < word.endMs));
   return (
     <>
-      {words.slice(0, -2).join(' ')} <span style={{color: gold}}>{last}</span>
+      {words.map((word, index) => (
+        <span key={`${word.text}-${index}`} style={{color: index === activeIndex ? highlightColor : 'white'}}>
+          {word.text}{index === words.length - 1 ? '' : ' '}
+        </span>
+      ))}
     </>
   );
 };
@@ -128,6 +137,7 @@ export const NourbitPremiumShort: React.FC<PremiumProps> = ({
   visualBeats,
   watermarkText,
   ctaText,
+  style,
 }) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
@@ -152,6 +162,9 @@ export const NourbitPremiumShort: React.FC<PremiumProps> = ({
   const slowZoom = interpolate(frame, [0, Math.max(1, msToFrame(durationMs, fps))], [1.03, 1.12], {
     extrapolateRight: 'clamp',
   });
+  const captionStyle = style?.caption ?? {};
+  const highlightColor = captionStyle.highlight_word_color ?? '#00ff36';
+  const captionFontSize = captionStyle.font_size ?? 54;
 
   return (
     <AbsoluteFill style={{backgroundColor: '#050607', color: 'white', fontFamily: font, overflow: 'hidden'}}>
@@ -238,8 +251,8 @@ export const NourbitPremiumShort: React.FC<PremiumProps> = ({
             textAlign: 'center',
           }}
         >
-          <div style={{fontSize: 52, lineHeight: 1.08, fontWeight: 900, textShadow: '0 3px 12px rgba(0,0,0,0.9)'}}>
-            {emphasizeCaption(activeCaption.text)}
+          <div style={{fontSize: captionFontSize, lineHeight: 1.08, fontWeight: 900, textShadow: '0 3px 12px rgba(0,0,0,0.9)'}}>
+            {emphasizeCaption(activeCaption, currentMs, highlightColor)}
           </div>
         </div>
       ) : null}

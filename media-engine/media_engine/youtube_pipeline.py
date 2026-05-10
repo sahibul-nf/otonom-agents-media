@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .captions import build_word_timeline, group_word_captions
 from .db import ARTIFACTS_DIR
 from .rendering import ms_to_timecode
 
@@ -65,7 +66,12 @@ def fetch_youtube_transcript(url: str, languages: list[str] | None = None) -> li
     return entries
 
 
-def choose_nourbit_premium_candidate(profile_id: str, source_id: str, entries: list[TranscriptEntry]) -> dict[str, Any]:
+def choose_nourbit_premium_candidate(
+    profile_id: str,
+    source_id: str,
+    entries: list[TranscriptEntry],
+    style: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if len(entries) < 10:
         raise ValueError("transcript is too short for premium candidate selection")
 
@@ -98,6 +104,19 @@ def choose_nourbit_premium_candidate(profile_id: str, source_id: str, entries: l
         window = [item for item in window if item.start_ms < end_ms]
 
     span = " ".join(item.text for item in window)
+    style = style or {}
+    caption_style = style.get("caption", {})
+    ai_style = style.get("ai", {})
+    word_timeline = build_word_timeline(
+        entries,
+        start_ms,
+        end_ms,
+        remove_filler_words=bool(ai_style.get("remove_filler_words", False)),
+    )
+    timed_captions = group_word_captions(
+        word_timeline,
+        max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),
+    )
     title = "Allah Tidak Pernah Jauh"
     if "kesepian" in span.lower():
         title = "Kenapa Hati Masih Kesepian?"
@@ -113,6 +132,7 @@ def choose_nourbit_premium_candidate(profile_id: str, source_id: str, entries: l
         "title_hook": title,
         "viral_reason": "Momen ini kuat karena menyentuh keresahan batin dengan jawaban yang sederhana dan mudah direnungkan.",
         "transcript_span": span[:2200],
+        "timed_captions": timed_captions,
         "risk_flags": ["public_third_party_review_required"],
         "status": "draft",
     }

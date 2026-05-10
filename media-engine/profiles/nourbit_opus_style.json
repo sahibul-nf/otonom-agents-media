@@ -1,0 +1,51 @@
+{
+  "id": "nourbit_opus_style",
+  "label": "Nourbit Opus-style baseline",
+  "layout": {
+    "aspect_ratio": "9:16",
+    "layout_mode": "fill",
+    "fit_crop_aspect_ratio": "4:3",
+    "safe_zone_top": 140,
+    "safe_zone_bottom": 220
+  },
+  "caption": {
+    "preset": "mozi",
+    "font_family": "Sora",
+    "fallback_font_family": "Arial",
+    "font_size": 54,
+    "font_weight": "black",
+    "uppercase": false,
+    "position": "bottom",
+    "lines": 1,
+    "max_words_per_caption": 3,
+    "text_color": "#ffffff",
+    "stroke_color": "#000000",
+    "stroke_width": 10,
+    "shadow": {
+      "enabled": false,
+      "x": 2,
+      "y": 2,
+      "blur": 2,
+      "color": "#000000"
+    },
+    "highlight_word_color": "#00ff36",
+    "animation": "bounce",
+    "background_color": "rgba(0,0,0,0.58)",
+    "background_radius": 12
+  },
+  "brand": {
+    "watermark_text": "Nourbit Clips",
+    "source_attribution_prefix": "Source:",
+    "cta_enabled": true,
+    "intro_enabled": true,
+    "outro_enabled": true
+  },
+  "ai": {
+    "remove_filler_words": false,
+    "remove_pauses": true,
+    "ai_keywords_highlighter": true,
+    "ai_emojis": true,
+    "auto_generate_stock_broll": false,
+    "auto_transitions": true
+  }
+}

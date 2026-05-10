@@ -13,6 +13,7 @@ from .db import DEFAULT_DB, ROOT, connect, fetch_all, fetch_one, initialize, loa
 from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
+from .styles import load_style
 from .youtube_pipeline import choose_nourbit_premium_candidate, download_youtube_section, fetch_youtube_transcript
 
 
@@ -143,7 +144,8 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
         raise SystemExit("profile/source seed failed")
 
     entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
-    candidate = choose_nourbit_premium_candidate(args.profile, args.source_id, entries)
+    style = load_style(args.style)
+    candidate = choose_nourbit_premium_candidate(args.profile, args.source_id, entries, style)
     insert_candidate(conn, candidate)
     source_clip = download_youtube_section(args.youtube_url, args.profile, candidate)
     attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
@@ -154,6 +156,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
             source_clip,
             args.youtube_url,
             attribution,
+            style,
         )
     else:
         output_path, contract = render_premium_ffmpeg(
@@ -162,6 +165,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
             source_clip,
             args.youtube_url,
             attribution,
+            style,
         )
     job_id = Path(output_path).stem
     conn.execute(
@@ -316,6 +320,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--youtube-url", required=True)
     premium_test.add_argument("--source-attribution", default="")
     premium_test.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="ffmpeg")
+    premium_test.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_test.set_defaults(func=cmd_premium_test)
 
     review = sub.add_parser("review")

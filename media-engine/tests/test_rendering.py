@@ -6,6 +6,7 @@ from media_engine.rendering import (
     build_premium_render_contract,
     validate_premium_duration,
 )
+from media_engine.youtube_pipeline import TranscriptEntry, choose_nourbit_premium_candidate
 
 
 class PremiumRenderingTests(unittest.TestCase):
@@ -52,6 +53,26 @@ class PremiumRenderingTests(unittest.TestCase):
         captions = build_caption_segments("satu dua tiga empat lima enam tujuh delapan sembilan", 10_000)
         self.assertEqual(captions[0]["startMs"], 0)
         self.assertLessEqual(captions[-1]["endMs"], 10_000)
+
+    def test_candidate_uses_word_timed_captions_from_transcript_entries(self):
+        entries = [
+            TranscriptEntry(index * 1000, (index + 1) * 1000, "Allah selalu bersama")
+            for index in range(100)
+        ]
+        candidate = choose_nourbit_premium_candidate(
+            "nourbit",
+            "source",
+            entries,
+            {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}},
+        )
+
+        self.assertIn("timed_captions", candidate)
+        self.assertIn("words", candidate["timed_captions"][0])
+        self.assertEqual(candidate["timed_captions"][0]["words"][0]["startMs"], 0)
+        self.assertLess(
+            candidate["timed_captions"][0]["words"][0]["endMs"],
+            candidate["timed_captions"][0]["endMs"],
+        )
 
 
 if __name__ == "__main__":

@@ -9,7 +9,8 @@ Local-first V1 for autonomous short-form media production. This first slice focu
 - Rights guardrails that block auto-publish for public third-party sources.
 - Dry-run curation from a timestamped transcript.
 - Minimal FFmpeg 1080x1920 renderer for fast local verification.
-- Premium Nourbit render path for source-video shorts with animated hook, kinetic captions, CTA, watermark, attribution, and review-safe metadata.
+- Premium Nourbit render path for source-video shorts with animated hook, word-timed kinetic captions, CTA, watermark, attribution, and review-safe metadata.
+- Opus-style Nourbit brand template in `profiles/nourbit_opus_style.json`.
 - Remotion premium template scaffold for the next browser-render iteration.
 - Review UI shell with platform mode switches.
 - Dry-run publisher payload builders.
@@ -23,6 +24,7 @@ python3 -m media_engine.cli curate --profile nourbit --source-id nourbit_nourani
 python3 -m media_engine.cli review --profile nourbit
 python3 -m media_engine.cli render --candidate-id <clip_id>
 python3 -m media_engine.cli premium-test --youtube-url "https://www.youtube.com/live/WSg7MGv4_Fs" --renderer ffmpeg
+python3 -m media_engine.cli premium-test --youtube-url "https://www.youtube.com/live/WSg7MGv4_Fs" --renderer ffmpeg --style profiles/nourbit_opus_style.json
 python3 -m media_engine.cli premium-test --youtube-url "https://www.youtube.com/live/WSg7MGv4_Fs" --renderer remotion
 python3 -m media_engine.cli approve --candidate-id <clip_id>
 python3 -m media_engine.cli publish --candidate-id <clip_id>
@@ -31,7 +33,7 @@ python3 -m media_engine.cli authorize-source --source-id nourbit_nouraniyyahoffi
 python3 -m media_engine.review_server
 ```
 
-Open the review UI at `http://127.0.0.1:8765/review.html`.
+Open the review UI at `http://127.0.0.1:8765/review.html`. The UI includes the current Nourbit style baseline and a ready-to-run local production test command.
 
 ## Rights default
 
