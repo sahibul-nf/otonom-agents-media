@@ -224,6 +224,18 @@ def _load_font(size: int):
     return ImageFont.load_default()
 
 
+def _fit_font(draw, text: str, requested_size: int, max_width: int, stroke_width: int = 0):
+    size = requested_size
+    while size >= 28:
+        font = _load_font(size)
+        bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+        if bbox[2] - bbox[0] <= max_width:
+            return font, size, bbox
+        size -= 2
+    font = _load_font(size)
+    return font, size, draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+
+
 def _hex_to_rgba(value: str, alpha: int = 255) -> tuple[int, int, int, int]:
     value = value.strip().lstrip("#")
     if len(value) != 6:
@@ -295,15 +307,15 @@ def _write_caption_overlay(
     from PIL import Image, ImageDraw
 
     caption_style = style["caption"]
-    font_size = int(caption_style.get("font_size", 54))
-    font = _load_font(font_size)
+    requested_font_size = int(caption_style.get("font_size", 54))
+    stroke_width = int(caption_style.get("stroke_width", 10))
     image = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
     words = caption.get("words") or [{"text": word} for word in caption["text"].split()]
     line = " ".join(word["text"] for word in words)
-    bbox = draw.textbbox((0, 0), line, font=font, stroke_width=int(caption_style.get("stroke_width", 10)))
+    font, font_size, bbox = _fit_font(draw, line, requested_font_size, 960, stroke_width)
     text_width = bbox[2] - bbox[0]
-    x = max(48, (1080 - text_width) // 2)
+    x = max(36, (1080 - text_width) // 2)
     y = 1180 if caption_style.get("position") == "bottom" else 900
     pad_x = 22
     pad_y = 12
@@ -321,10 +333,10 @@ def _write_caption_overlay(
             token,
             font=font,
             fill=_hex_to_rgba(color),
-            stroke_width=int(caption_style.get("stroke_width", 10)),
+            stroke_width=stroke_width,
             stroke_fill=_hex_to_rgba(caption_style.get("stroke_color", "#000000"), 255),
         )
-        token_bbox = draw.textbbox((0, 0), token + " ", font=font, stroke_width=int(caption_style.get("stroke_width", 10)))
+        token_bbox = draw.textbbox((0, 0), token + " ", font=font, stroke_width=stroke_width)
         cursor += token_bbox[2] - token_bbox[0]
     image.save(path)
 
@@ -355,7 +367,7 @@ def render_premium_ffmpeg(
     cta_png = overlay_dir / "cta.png"
     _write_overlay(
         title_png,
-        ["NOURBIT CLIPS", contract["titleHook"]],
+        [contract["titleHook"]],
         170,
         58,
         stroke_width=int(caption_style.get("stroke_width", 10)),
@@ -373,7 +385,7 @@ def render_premium_ffmpeg(
     )
 
     caption_inputs: list[Path] = []
-    for index, caption in enumerate(contract["captions"][:18], start=1):
+    for index, caption in enumerate(contract["captions"], start=1):
         words = caption.get("words") or []
         if not words:
             path = overlay_dir / f"caption_{index:02d}_word_01.png"
@@ -391,13 +403,14 @@ def render_premium_ffmpeg(
     ]
     current = "v1"
     overlay_index = 2
-    for caption in contract["captions"][:18]:
+    for caption in contract["captions"]:
         words = caption.get("words") or []
         word_windows = words or [{"startMs": caption["startMs"], "endMs": caption["endMs"]}]
-        for word_window in word_windows:
+        for word_position, word_window in enumerate(word_windows):
             next_label = f"v{overlay_index}"
             start = max(5.0, word_window["startMs"] / 1000)
-            end = max(start + 0.08, word_window["endMs"] / 1000)
+            next_start_ms = word_windows[word_position + 1]["startMs"] if word_position + 1 < len(word_windows) else caption["endMs"]
+            end = max(start + 0.08, next_start_ms / 1000)
             filter_parts.append(f"[{current}][{overlay_index}:v]overlay=0:0:enable='between(t,{start:.3f},{end:.3f})'[{next_label}]")
             overlay_index += 1
             current = next_label

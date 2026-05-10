@@ -41,15 +41,18 @@ def build_word_timeline(
             continue
         entry_start = max(entry.start_ms, clip_start_ms)
         entry_end = min(entry.end_ms, clip_end_ms)
-        slot = max(140, (entry_end - entry_start) // len(raw_words))
+        entry_duration = max(1, entry_end - entry_start)
+        slot = max(1, entry_duration // len(raw_words))
         for index, word in enumerate(raw_words):
             start = entry_start + index * slot
-            end = entry_start + (index + 1) * slot
+            end = entry_start + (index + 1) * slot if index < len(raw_words) - 1 else entry_end
+            if start >= entry_end:
+                continue
             words.append(
                 {
                     "text": word,
                     "startMs": max(0, start - clip_start_ms),
-                    "endMs": max(0, min(entry_end, end) - clip_start_ms),
+                    "endMs": max(0, max(start + 80, min(entry_end, end)) - clip_start_ms),
                 }
             )
     return words
@@ -63,10 +66,15 @@ def group_word_captions(
     if not words:
         return []
     groups: list[dict[str, Any]] = []
-    for index in range(0, len(words), max(1, max_words_per_caption)):
-        group_words = words[index : index + max(1, max_words_per_caption)]
+    clean_words = [word for word in words if word["endMs"] > word["startMs"]]
+    if not clean_words:
+        return []
+    for index in range(0, len(clean_words), max(1, max_words_per_caption)):
+        group_words = clean_words[index : index + max(1, max_words_per_caption)]
         start_ms = group_words[0]["startMs"]
         end_ms = max(group_words[-1]["endMs"], start_ms + min_duration_ms)
+        if groups and start_ms > groups[-1]["endMs"]:
+            groups[-1]["endMs"] = start_ms
         groups.append(
             {
                 "text": " ".join(word["text"] for word in group_words),

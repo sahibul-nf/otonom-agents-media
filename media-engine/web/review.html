@@ -140,10 +140,10 @@
       <aside>
         <h2>Platform Modes</h2>
         <div class="panel">
-          <div class="row"><span>Facebook Reels</span><select><option>review_required</option><option>auto_publish</option><option>export_only</option><option>off</option></select></div>
-          <div class="row"><span>YouTube Shorts</span><select><option>review_required</option><option>auto_publish</option><option>export_only</option><option>off</option></select></div>
-          <div class="row"><span>TikTok</span><select><option>review_required</option><option>auto_publish</option><option>export_only</option><option>off</option></select></div>
-          <div class="row"><span>Instagram Reels</span><select><option>off</option><option>review_required</option><option>auto_publish</option><option>export_only</option></select></div>
+          <div class="row"><span>Facebook Reels</span><select data-platform="facebook_reels"></select></div>
+          <div class="row"><span>YouTube Shorts</span><select data-platform="youtube_shorts"></select></div>
+          <div class="row"><span>TikTok</span><select data-platform="tiktok"></select></div>
+          <div class="row"><span>Instagram Reels</span><select data-platform="instagram_reels"></select></div>
         </div>
         <div class="panel">
           <strong>Rights guard</strong>
@@ -169,6 +169,7 @@
       const stylePanel = document.getElementById("style-panel");
       const testCommand = document.getElementById("test-command");
       const sourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
+      const modes = ["review_required", "auto_publish", "export_only", "off"];
       const sample = [
         {
           title_hook: "Untuk Siapa Ibadah Kita?",
@@ -184,10 +185,20 @@
             <div class="muted">Source: ${item.source}</div>
             <p><span class="badge">${item.status}</span></p>
             <p class="muted">${item.risk}</p>
-            <button class="primary">Approve</button>
-            <button class="warn">Export</button>
+            ${item.id ? `<button class="primary" data-action="approve" data-candidate-id="${item.id}">Approve</button>` : `<button class="primary" disabled>Approve</button>`}
+            ${item.output_path ? `<button class="warn" data-action="export" data-path="${item.output_path}">Export</button>` : `<button class="warn" disabled>Export</button>`}
           </article>
         `).join("");
+      }
+      async function postJson(url, payload) {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || "Request failed");
+        return json;
       }
       async function refresh() {
         try {
@@ -195,14 +206,37 @@
           if (!response.ok) throw new Error("API not available");
           const items = await response.json();
           render(items.length ? items.map((item) => ({
+            id: item.id,
             title_hook: item.title_hook,
             status: item.status,
             source: item.source_id,
             risk: item.risk_flags_json || "[]",
+            output_path: item.output_path,
           })) : sample);
         } catch (_error) {
           render(sample);
         }
+      }
+      async function refreshTargets() {
+        const response = await fetch("/api/targets");
+        const targets = response.ok ? await response.json() : [];
+        document.querySelectorAll("select[data-platform]").forEach((select) => {
+          const platform = select.dataset.platform;
+          const target = targets.find((item) => item.platform === platform);
+          select.innerHTML = modes.map((mode) => `<option value="${mode}">${mode}</option>`).join("");
+          select.value = target?.mode || "off";
+          select.onchange = async () => {
+            select.disabled = true;
+            try {
+              await postJson("/api/set-target-mode", {profile: "nourbit", platform, mode: select.value});
+            } catch (error) {
+              alert(error.message);
+              await refreshTargets();
+            } finally {
+              select.disabled = false;
+            }
+          };
+        });
       }
       async function refreshStyle() {
         const command = `cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
@@ -236,6 +270,26 @@ PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premiu
         }
       }
       document.getElementById("refresh").addEventListener("click", refresh);
+      clips.addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        if (button.dataset.action === "approve") {
+          button.disabled = true;
+          try {
+            await postJson("/api/approve", {candidate_id: button.dataset.candidateId});
+            await refresh();
+          } catch (error) {
+            alert(error.message);
+          } finally {
+            button.disabled = false;
+          }
+        }
+        if (button.dataset.action === "export") {
+          const path = encodeURIComponent(button.dataset.path);
+          window.open(`/api/artifact?path=${path}`, "_blank");
+        }
+      });
+      refreshTargets();
       refreshStyle();
       refresh();
     </script>

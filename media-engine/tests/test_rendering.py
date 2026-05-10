@@ -6,6 +6,7 @@ from media_engine.rendering import (
     build_premium_render_contract,
     validate_premium_duration,
 )
+from media_engine.captions import group_word_captions
 from media_engine.youtube_pipeline import TranscriptEntry, choose_nourbit_premium_candidate
 
 
@@ -73,6 +74,19 @@ class PremiumRenderingTests(unittest.TestCase):
             candidate["timed_captions"][0]["words"][0]["endMs"],
             candidate["timed_captions"][0]["endMs"],
         )
+
+    def test_caption_groups_bridge_gaps_until_next_caption(self):
+        groups = group_word_captions(
+            [
+                {"text": "Allah", "startMs": 0, "endMs": 120},
+                {"text": "selalu", "startMs": 300, "endMs": 420},
+                {"text": "bersama", "startMs": 900, "endMs": 1040},
+                {"text": "kita", "startMs": 1500, "endMs": 1640},
+            ],
+            max_words_per_caption=2,
+        )
+
+        self.assertEqual(groups[0]["endMs"], groups[1]["startMs"])
 
 
 if __name__ == "__main__":
