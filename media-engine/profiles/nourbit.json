@@ -32,9 +32,9 @@
       "daily_cap": 3
     },
     {
-      "platform": "instagram_reels",
-      "account_label": "Nourbit Instagram Reels",
-      "mode": "off",
+      "platform": "telegram_channel",
+      "account_label": "Nourbit Telegram Channel",
+      "mode": "review_required",
       "require_approval": true,
       "ai_disclosure_required": false,
       "daily_cap": 3

@@ -6,16 +6,18 @@ import json
 import uuid
 from typing import Any
 
+from .post_copy import build_post_caption
 from .rights import can_publish_candidate
 
 
 def build_payload(platform: str, candidate: dict[str, Any], render_job: dict[str, Any] | None) -> dict[str, Any]:
     output_path = render_job["output_path"] if render_job else ""
+    caption = build_post_caption(candidate, render_job, platform)
     base = {
         "platform": platform,
         "candidate_id": candidate["id"],
         "video_path": output_path,
-        "caption": candidate["title_hook"],
+        "caption": caption,
         "dry_run": True,
     }
 
@@ -25,6 +27,8 @@ def build_payload(platform: str, candidate: dict[str, Any], render_job: dict[str
         return {**base, "endpoint": "youtube-data-api/videos.insert", "privacy_status": "private"}
     if platform == "tiktok":
         return {**base, "endpoint": "tiktok-content-posting/direct-post", "visibility": "private"}
+    if platform == "telegram_channel":
+        return {**base, "endpoint": "telegram-bot-api/sendVideo", "parse_mode": "HTML", "supports_streaming": True}
     if platform == "instagram_reels":
         return {**base, "endpoint": "instagram-graph-api/content-publishing", "media_type": "REELS"}
     raise ValueError(f"unsupported platform: {platform}")
