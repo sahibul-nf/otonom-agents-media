@@ -9,7 +9,7 @@ import urllib.request
 from typing import Any
 
 
-LLM_PROVIDERS = {"none", "openai", "deepseek"}
+LLM_PROVIDERS = {"none", "openai", "deepseek", "groq"}
 
 
 class LLMError(RuntimeError):
@@ -59,6 +59,12 @@ def provider_config(provider: str) -> dict[str, str]:
             "api_key_env": "DEEPSEEK_API_KEY",
             "base_url": "https://api.deepseek.com/chat/completions",
             "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+        }
+    if provider == "groq":
+        return {
+            "api_key_env": "GROQ_API_KEY",
+            "base_url": "https://api.groq.com/openai/v1/chat/completions",
+            "model": os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
         }
     raise ValueError(f"unsupported LLM provider: {provider}")
 

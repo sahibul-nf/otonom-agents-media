@@ -207,9 +207,12 @@
               <span class="badge">Viral <strong>${item.score?.viral_score ?? "-"}</strong></span>
               <span class="badge">Hook <strong>${item.score?.hook_score ?? "-"}</strong></span>
               <span class="badge">Caption <strong>${item.score?.caption_confidence ?? "-"}</strong></span>
+              <span class="badge">ASR <strong>${item.score?.asr_confidence ?? "-"}</strong></span>
+              <span class="badge">QA <strong>${item.render_quality?.quality_score ?? "-"}</strong></span>
             </div>
             <p><span class="badge">${item.status}</span></p>
             <p class="muted">Caption: ${item.caption_source || "youtube"} · LLM: ${item.curation_metadata?.llm_provider || "none"}</p>
+            <p class="muted">Cost: $${Number(item.cost?.estimated_total ?? 0).toFixed(4)} · Render: ${item.cost?.renderer || "-"}</p>
             <p class="muted">${item.risk}</p>
             ${item.id ? `<button class="primary" data-action="approve" data-candidate-id="${item.id}">Approve</button>` : `<button class="primary" disabled>Approve</button>`}
             ${item.output_path ? `<button class="warn" data-action="export" data-path="${item.output_path}">Export</button>` : `<button class="warn" disabled>Export</button>`}
@@ -246,6 +249,9 @@
             score: item.score || {},
             caption_source: item.caption_source,
             curation_metadata: item.curation_metadata || {},
+            asr_metadata: item.asr_metadata || {},
+            render_quality: item.render_quality || {},
+            cost: item.cost || {},
           })) : sample);
           setStatus(`Loaded ${items.length || sample.length} clip${items.length === 1 ? "" : "s"}`, "ok");
         } catch (_error) {
@@ -281,6 +287,9 @@
 PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premium-test \\
   --youtube-url "${sourceUrl}" \\
   --renderer ffmpeg \\
+  --quality production \\
+  --caption-source whisper \\
+  --asr-model medium \\
   --style profiles/nourbit_opus_style.json \\
   --llm-provider none`;
         testCommand.textContent = command;

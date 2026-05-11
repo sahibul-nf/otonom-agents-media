@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS clip_candidates (
   score_json TEXT NOT NULL DEFAULT '{}',
   curation_metadata_json TEXT NOT NULL DEFAULT '{}',
   caption_source TEXT NOT NULL DEFAULT 'youtube',
+  asr_metadata_json TEXT NOT NULL DEFAULT '{}',
+  render_quality_json TEXT NOT NULL DEFAULT '{}',
+  cost_json TEXT NOT NULL DEFAULT '{}',
   status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -109,6 +112,9 @@ SCHEMA_UPGRADES = {
         "score_json": "TEXT NOT NULL DEFAULT '{}'",
         "curation_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
         "caption_source": "TEXT NOT NULL DEFAULT 'youtube'",
+        "asr_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+        "render_quality_json": "TEXT NOT NULL DEFAULT '{}'",
+        "cost_json": "TEXT NOT NULL DEFAULT '{}'",
     }
 }
 

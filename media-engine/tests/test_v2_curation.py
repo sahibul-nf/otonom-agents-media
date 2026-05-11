@@ -4,7 +4,8 @@ import unittest
 
 from media_engine.db import ensure_schema_upgrades
 from media_engine.cli import build_parser, insert_candidate
-from media_engine.llm import build_chat_payload, parse_strict_json
+from media_engine.env_loader import load_env_file
+from media_engine.llm import build_chat_payload, parse_strict_json, provider_config
 from media_engine.scoring import score_candidate_text
 from media_engine.transcript_quality import correct_text_with_glossary
 from media_engine.youtube_pipeline import TranscriptEntry, choose_nourbit_premium_candidates
@@ -37,6 +38,9 @@ class V2CurationTests(unittest.TestCase):
         self.assertIn("score_json", columns)
         self.assertIn("curation_metadata_json", columns)
         self.assertIn("caption_source", columns)
+        self.assertIn("asr_metadata_json", columns)
+        self.assertIn("render_quality_json", columns)
+        self.assertIn("cost_json", columns)
         conn.close()
 
     def test_llm_json_cleaner_rejects_prose_and_accepts_markdown_json(self):
@@ -50,6 +54,26 @@ class V2CurationTests(unittest.TestCase):
         self.assertEqual(payload["model"], "model-test")
         self.assertEqual(payload["messages"][0]["role"], "system")
         self.assertEqual(payload["response_format"], {"type": "json_object"})
+
+    def test_groq_provider_config_uses_whitelisted_env_name(self):
+        config = provider_config("groq")
+
+        self.assertEqual(config["api_key_env"], "GROQ_API_KEY")
+        self.assertIn("groq.com", config["base_url"])
+
+    def test_env_loader_only_loads_whitelisted_keys(self):
+        import os
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("w", delete=False) as handle:
+            handle.write("GROQ" + "_API_KEY" + "=" + "test-key\nUNSAFE_VALUE=bad\nGROQ_MODEL=test-model\n")
+            path = handle.name
+
+        loaded = load_env_file(path)
+
+        self.assertEqual(loaded["GROQ_API_KEY"], "***REDACTED***")
+        self.assertEqual(os.environ["GROQ_MODEL"], "test-model")
+        self.assertNotIn("UNSAFE_VALUE", loaded)
 
     def test_nourbit_glossary_fixes_arabic_indonesian_typos(self):
         text = correct_text_with_glossary("Alloh mengingatkan qolbu untuk jikir dan istigfar kepada rosulullah.")
@@ -150,6 +174,9 @@ class V2CurationTests(unittest.TestCase):
                 "score": {"overall_score": 88},
                 "curation_metadata": {"llm_provider": "none"},
                 "caption_source": "youtube_glossary",
+                "asr_metadata": {"engine": "mock"},
+                "render_quality": {"quality_score": 91},
+                "cost": {"estimated_total": 0.01},
                 "status": "draft",
             },
         )
@@ -158,6 +185,9 @@ class V2CurationTests(unittest.TestCase):
         self.assertEqual(json.loads(row["score_json"])["overall_score"], 88)
         self.assertEqual(json.loads(row["curation_metadata_json"])["llm_provider"], "none")
         self.assertEqual(row["caption_source"], "youtube_glossary")
+        self.assertEqual(json.loads(row["asr_metadata_json"])["engine"], "mock")
+        self.assertEqual(json.loads(row["render_quality_json"])["quality_score"], 91)
+        self.assertEqual(json.loads(row["cost_json"])["estimated_total"], 0.01)
         conn.close()
 
 

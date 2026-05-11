@@ -20,7 +20,8 @@ These files are intentionally ignored and should remain local only:
 ## Recommended Secret Layout
 
 - Root `.env.local`: shared provider credentials for local testing.
-- Optional LLM curation keys: `OPENAI_API_KEY` and `DEEPSEEK_API_KEY`.
+- Optional LLM curation keys: `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, and `GROQ_API_KEY`.
+- Local media-engine secrets live in ignored `.env.local`. It is okay to copy provider keys from another local project into this file, but never commit it or print key values in logs.
 - Platform account tokens: store in ignored env files or an external secret manager.
 - SaaS future: use OAuth connect-account flow, encrypted-at-rest token storage, token rotation, and audit logs.
 

@@ -35,6 +35,9 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             for row in rows:
                 row["score"] = json.loads(row.get("score_json") or "{}")
                 row["curation_metadata"] = json.loads(row.get("curation_metadata_json") or "{}")
+                row["asr_metadata"] = json.loads(row.get("asr_metadata_json") or "{}")
+                row["render_quality"] = json.loads(row.get("render_quality_json") or "{}")
+                row["cost"] = json.loads(row.get("cost_json") or "{}")
             rows.sort(key=lambda row: row.get("score", {}).get("overall_score", 0), reverse=True)
             payload = json.dumps(rows, ensure_ascii=False).encode("utf-8")
             self.send_response(200)

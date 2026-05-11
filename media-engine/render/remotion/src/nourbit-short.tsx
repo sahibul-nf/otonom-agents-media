@@ -14,6 +14,7 @@ const wordSchema = z.object({
   text: z.string(),
   startMs: z.number(),
   endMs: z.number(),
+  highlight: z.boolean().optional(),
 });
 
 const captionSchema = z.object({
@@ -119,7 +120,15 @@ const emphasizeCaption = (caption: PremiumProps['captions'][number], currentMs: 
   return (
     <>
       {words.map((word, index) => (
-        <span key={`${word.text}-${index}`} style={{color: index === activeIndex ? highlightColor : 'white'}}>
+        <span
+          key={`${word.text}-${index}`}
+          style={{
+            color: index === activeIndex || word.highlight ? highlightColor : 'white',
+            display: 'inline-block',
+            transform: index === activeIndex ? 'translateY(-2px) scale(1.08)' : 'translateY(0) scale(1)',
+            transition: 'transform 90ms ease, color 90ms ease',
+          }}
+        >
           {word.text}{index === words.length - 1 ? '' : ' '}
         </span>
       ))}
@@ -197,23 +206,6 @@ export const NourbitPremiumShort: React.FC<PremiumProps> = ({
       >
         <div
           style={{
-            display: 'inline-block',
-            padding: '10px 18px',
-            border: '1px solid rgba(244, 211, 94, 0.48)',
-            borderRadius: 999,
-            color: gold,
-            backgroundColor: 'rgba(0, 0, 0, 0.42)',
-            fontSize: 25,
-            fontWeight: 800,
-            letterSpacing: 0,
-            textTransform: 'uppercase',
-          }}
-        >
-          Nourbit Clips
-        </div>
-        <div
-          style={{
-            marginTop: 26,
             fontSize: 74,
             lineHeight: 0.98,
             fontWeight: 900,

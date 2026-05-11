@@ -8,10 +8,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .asr import load_or_create_asr_words
+from .caption_composer import compose_caption_groups
+from .costs import estimate_clip_cost
 from .curation import SAMPLE_NOURBIT_TRANSCRIPT, curate_dry_run
 from .db import DEFAULT_DB, ROOT, connect, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
+from .env_loader import load_env_file
 from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
+from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
 from .styles import load_style
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
@@ -111,8 +116,8 @@ def insert_candidate(conn, candidate: dict[str, Any]) -> None:
         INSERT OR REPLACE INTO clip_candidates
           (id, profile_id, source_id, start_ms, end_ms, title_hook, viral_reason,
            transcript_span, risk_flags_json, score_json, curation_metadata_json,
-           caption_source, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           caption_source, asr_metadata_json, render_quality_json, cost_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             candidate["id"],
@@ -127,7 +132,32 @@ def insert_candidate(conn, candidate: dict[str, Any]) -> None:
             json.dumps(candidate.get("score", {}), ensure_ascii=False),
             json.dumps(candidate.get("curation_metadata", {}), ensure_ascii=False),
             candidate.get("caption_source", "youtube"),
+            json.dumps(candidate.get("asr_metadata", {}), ensure_ascii=False),
+            json.dumps(candidate.get("render_quality", {}), ensure_ascii=False),
+            json.dumps(candidate.get("cost", {}), ensure_ascii=False),
             candidate["status"],
+        ),
+    )
+    conn.commit()
+
+
+def update_candidate_metadata(conn, candidate: dict[str, Any]) -> None:
+    conn.execute(
+        """
+        UPDATE clip_candidates
+        SET score_json = ?, curation_metadata_json = ?, caption_source = ?,
+            asr_metadata_json = ?, render_quality_json = ?, cost_json = ?, status = ?
+        WHERE id = ?
+        """,
+        (
+            json.dumps(candidate.get("score", {}), ensure_ascii=False),
+            json.dumps(candidate.get("curation_metadata", {}), ensure_ascii=False),
+            candidate.get("caption_source", "youtube"),
+            json.dumps(candidate.get("asr_metadata", {}), ensure_ascii=False),
+            json.dumps(candidate.get("render_quality", {}), ensure_ascii=False),
+            json.dumps(candidate.get("cost", {}), ensure_ascii=False),
+            candidate["status"],
+            candidate["id"],
         ),
     )
     conn.commit()
@@ -149,6 +179,7 @@ def load_profile_and_source(conn, profile_id: str, source_id: str) -> tuple[dict
 
 
 def cmd_premium_test(args: argparse.Namespace) -> None:
+    load_env_file(args.env_file)
     conn = connect(args.db)
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
 
@@ -157,8 +188,10 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     candidate = choose_nourbit_premium_candidates(args.profile, args.source_id, entries, style, count=1, llm_provider=args.llm_provider)[0]
     insert_candidate(conn, candidate)
     source_clip = download_youtube_section(args.youtube_url, args.profile, candidate)
+    prepare_production_captions(candidate, source_clip, args, style)
     attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
-    if args.renderer == "remotion":
+    renderer = resolve_renderer(args.renderer, args.quality)
+    if renderer == "remotion":
         output_path, contract = render_premium_remotion(
             candidate,
             profile,
@@ -177,6 +210,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
             style,
         )
     job_id = Path(output_path).stem
+    finalize_candidate_metadata(candidate, contract, output_path, args, renderer)
     conn.execute(
         """
         INSERT INTO render_jobs
@@ -195,6 +229,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
         ),
     )
     conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (candidate["id"],))
+    update_candidate_metadata(conn, candidate)
     conn.commit()
     print(
         json.dumps(
@@ -220,14 +255,18 @@ def render_premium_candidate(
     source_attribution: str,
     renderer: str,
     style: dict[str, Any],
+    args: argparse.Namespace,
 ) -> dict[str, Any]:
     insert_candidate(conn, candidate)
     source_clip = download_youtube_section(youtube_url, profile["id"], candidate)
+    prepare_production_captions(candidate, source_clip, args, style)
+    renderer = resolve_renderer(renderer, args.quality)
     if renderer == "remotion":
         output_path, contract = render_premium_remotion(candidate, profile, source_clip, youtube_url, source_attribution, style)
     else:
         output_path, contract = render_premium_ffmpeg(candidate, profile, source_clip, youtube_url, source_attribution, style)
     job_id = Path(output_path).stem
+    finalize_candidate_metadata(candidate, contract, output_path, args, renderer)
     conn.execute(
         """
         INSERT INTO render_jobs
@@ -246,6 +285,7 @@ def render_premium_candidate(
         ),
     )
     conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (candidate["id"],))
+    update_candidate_metadata(conn, candidate)
     conn.commit()
     return {
         "candidate_id": candidate["id"],
@@ -253,12 +293,60 @@ def render_premium_candidate(
         "end": contract["endTimecode"],
         "title_hook": candidate["title_hook"],
         "overall_score": candidate.get("score", {}).get("overall_score"),
+        "cost": candidate.get("cost", {}),
+        "render_quality": candidate.get("render_quality", {}),
         "source_clip": source_clip,
         "output_path": output_path,
     }
 
 
+def resolve_renderer(renderer: str, quality: str) -> str:
+    if quality == "production" and renderer == "ffmpeg":
+        return "remotion"
+    return renderer
+
+
+def prepare_production_captions(candidate: dict[str, Any], source_clip: str, args: argparse.Namespace, style: dict[str, Any]) -> None:
+    caption_source = getattr(args, "caption_source", "youtube")
+    if caption_source not in {"whisper", "hybrid"}:
+        candidate["caption_source"] = caption_source
+        return
+    asr_path = Path(source_clip).resolve().parents[1] / f"{Path(source_clip).stem}_{args.asr_model}_asr.json"
+    prompt = "Allah, Rasulullah, dzikir, zikir, qalbu, sholawat, istighfar, ma'rifat, taubat, syukur"
+    words, asr_metadata = load_or_create_asr_words(source_clip, str(asr_path), model_name=args.asr_model, initial_prompt=prompt)
+    captions, composer_metadata = compose_caption_groups(
+        words,
+        max_words_per_caption=int(style.get("caption", {}).get("max_words_per_caption", 3)),
+    )
+    if captions:
+        candidate["timed_captions"] = captions
+        candidate["caption_source"] = "whisper"
+        candidate["asr_metadata"] = {**asr_metadata, "caption_composer": composer_metadata}
+        candidate["score"] = {
+            **candidate.get("score", {}),
+            "asr_confidence": int(round((composer_metadata.get("avg_word_confidence") or 0.82) * 100)),
+            "caption_sync_score": 95 if composer_metadata.get("caption_count", 0) else 0,
+        }
+
+
+def finalize_candidate_metadata(candidate: dict[str, Any], contract: dict[str, Any], output_path: str, args: argparse.Namespace, renderer: str) -> None:
+    render_quality = build_render_quality_report(contract, output_path)
+    cost = estimate_clip_cost(
+        int(candidate["end_ms"]) - int(candidate["start_ms"]),
+        llm_provider=getattr(args, "llm_provider", "none"),
+        caption_source=candidate.get("caption_source", getattr(args, "caption_source", "youtube")),
+        renderer=renderer,
+    )
+    candidate["render_quality"] = render_quality
+    candidate["cost"] = cost
+    candidate["score"] = {
+        **candidate.get("score", {}),
+        "render_quality_score": render_quality["quality_score"],
+    }
+
+
 def cmd_premium_curate(args: argparse.Namespace) -> None:
+    load_env_file(args.env_file)
     conn = connect(args.db)
     load_profile_and_source(conn, args.profile, args.source_id)
     entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
@@ -277,6 +365,7 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
 
 
 def cmd_premium_batch(args: argparse.Namespace) -> None:
+    load_env_file(args.env_file)
     conn = connect(args.db)
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
     entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
@@ -291,7 +380,7 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
     )
     attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
     renders = [
-        render_premium_candidate(conn, candidate, profile, args.youtube_url, attribution, args.renderer, style)
+        render_premium_candidate(conn, candidate, profile, args.youtube_url, attribution, args.renderer, style, args)
         for candidate in candidates
     ]
     print(json.dumps({"count": len(renders), "renders": renders}, indent=2, ensure_ascii=False))
@@ -414,8 +503,12 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--youtube-url", required=True)
     premium_test.add_argument("--source-attribution", default="")
     premium_test.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="ffmpeg")
+    premium_test.add_argument("--quality", choices=["draft", "production"], default="draft")
+    premium_test.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
+    premium_test.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
     premium_test.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
-    premium_test.add_argument("--llm-provider", choices=["none", "openai", "deepseek"], default="none")
+    premium_test.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    premium_test.add_argument("--env-file")
     premium_test.set_defaults(func=cmd_premium_test)
 
     premium_curate = sub.add_parser("premium-curate")
@@ -424,7 +517,8 @@ def build_parser() -> argparse.ArgumentParser:
     premium_curate.add_argument("--youtube-url", required=True)
     premium_curate.add_argument("--count", type=int, default=5)
     premium_curate.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
-    premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek"], default="none")
+    premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    premium_curate.add_argument("--env-file")
     premium_curate.set_defaults(func=cmd_premium_curate)
 
     premium_batch = sub.add_parser("premium-batch")
@@ -434,8 +528,12 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--source-attribution", default="")
     premium_batch.add_argument("--count", type=int, default=5)
     premium_batch.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="ffmpeg")
+    premium_batch.add_argument("--quality", choices=["draft", "production"], default="draft")
+    premium_batch.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
+    premium_batch.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
     premium_batch.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
-    premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek"], default="none")
+    premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    premium_batch.add_argument("--env-file")
     premium_batch.set_defaults(func=cmd_premium_batch)
 
     review = sub.add_parser("review")

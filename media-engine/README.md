@@ -45,9 +45,29 @@ Open the review UI at `http://127.0.0.1:8765/review.html`. The UI includes the c
 ```bash
 export OPENAI_API_KEY="..."
 export DEEPSEEK_API_KEY="..."
+export GROQ_API_KEY="..."
 ```
 
-Supported provider values are `none`, `openai`, and `deepseek`. LLM output is parsed as strict JSON and falls back to deterministic heuristics if a provider call fails.
+Supported provider values are `none`, `openai`, `deepseek`, and `groq`. LLM output is parsed as strict JSON and falls back to deterministic heuristics if a provider call fails. You can also load ignored local secrets with `--env-file ../.env.local`.
+
+## Production caption mode
+
+Use local Whisper captions for production-quality word alignment:
+
+```bash
+python3 -m media_engine.cli premium-batch \
+  --youtube-url "https://www.youtube.com/live/WSg7MGv4_Fs" \
+  --count 5 \
+  --renderer remotion \
+  --quality production \
+  --caption-source whisper \
+  --asr-model medium \
+  --style profiles/nourbit_opus_style.json \
+  --llm-provider deepseek \
+  --env-file ../.env.local
+```
+
+Install `faster-whisper` in the local Python environment before using `--caption-source whisper`. The `youtube` caption source remains available for cheap draft renders.
 
 ## Rights default
 
