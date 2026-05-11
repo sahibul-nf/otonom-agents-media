@@ -118,7 +118,17 @@ const emphasizeCaption = (caption: PremiumProps['captions'][number], currentMs: 
   const words = caption.words ?? caption.text.split(' ').map((text) => ({text, startMs: caption.startMs, endMs: caption.endMs}));
   const activeIndex = Math.max(0, words.findIndex((word) => currentMs >= word.startMs && currentMs < word.endMs));
   return (
-    <>
+    <span
+      style={{
+        display: 'inline-flex',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        alignItems: 'baseline',
+        columnGap: 14,
+        rowGap: 2,
+        maxWidth: '100%',
+      }}
+    >
       {words.map((word, index) => (
         <span
           key={`${word.text}-${index}`}
@@ -129,10 +139,10 @@ const emphasizeCaption = (caption: PremiumProps['captions'][number], currentMs: 
             transition: 'transform 90ms ease, color 90ms ease',
           }}
         >
-          {word.text}{index === words.length - 1 ? '' : ' '}
+          {word.text}
         </span>
       ))}
-    </>
+    </span>
   );
 };
 
@@ -231,20 +241,40 @@ export const NourbitPremiumShort: React.FC<PremiumProps> = ({
         <div
           style={{
             position: 'absolute',
-            left: 62,
-            right: 62,
+            left: 0,
+            right: 0,
             bottom: 365,
-            padding: '22px 28px 24px',
-            borderRadius: 16,
-            border: '1px solid rgba(255,255,255,0.16)',
-            backgroundColor: 'rgba(4, 7, 8, 0.72)',
-            boxShadow: '0 18px 48px rgba(0,0,0,0.42)',
             transform: `translateY(${interpolate(captionLift, [0, 1], [26, 0])}px)`,
-            textAlign: 'center',
+            display: 'flex',
+            justifyContent: 'center',
+            padding: '0 62px',
+            pointerEvents: 'none',
           }}
         >
-          <div style={{fontSize: captionFontSize, lineHeight: 1.08, fontWeight: 900, textShadow: '0 3px 12px rgba(0,0,0,0.9)'}}>
-            {emphasizeCaption(activeCaption, currentMs, highlightColor)}
+          <div
+            style={{
+              display: 'inline-flex',
+              width: 'fit-content',
+              maxWidth: 956,
+              padding: '20px 30px 23px',
+              borderRadius: 16,
+              border: '1px solid rgba(255,255,255,0.16)',
+              backgroundColor: 'rgba(4, 7, 8, 0.72)',
+              boxShadow: '0 18px 48px rgba(0,0,0,0.42)',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                fontSize: captionFontSize,
+                lineHeight: 1.08,
+                fontWeight: 900,
+                textShadow: '0 3px 12px rgba(0,0,0,0.9)',
+                maxWidth: '100%',
+              }}
+            >
+              {emphasizeCaption(activeCaption, currentMs, highlightColor)}
+            </div>
           </div>
         </div>
       ) : null}

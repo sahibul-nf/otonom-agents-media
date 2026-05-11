@@ -8,7 +8,12 @@ from media_engine.env_loader import load_env_file
 from media_engine.llm import build_chat_payload, parse_strict_json, provider_config
 from media_engine.scoring import score_candidate_text
 from media_engine.transcript_quality import correct_text_with_glossary
-from media_engine.youtube_pipeline import TranscriptEntry, choose_nourbit_premium_candidates
+from media_engine.youtube_pipeline import (
+    TranscriptEntry,
+    choose_nourbit_premium_candidates,
+    hook_subtitle_for_span,
+    refine_end_boundary,
+)
 
 
 class V2CurationTests(unittest.TestCase):
@@ -121,6 +126,32 @@ class V2CurationTests(unittest.TestCase):
             self.assertFalse(
                 previous["start_ms"] < current["end_ms"] and previous["end_ms"] > current["start_ms"]
             )
+
+    def test_end_boundary_trims_late_new_sentence_opener(self):
+        entries = [
+            TranscriptEntry(0, 18_000, "Allah membuat hati tenang saat manusia tidak bisa memberi apa apa"),
+            TranscriptEntry(18_000, 47_000, "maka jangan cari bahagia dari makhluk karena hati akan lelah"),
+            TranscriptEntry(47_500, 50_000, "Jadi pembahasan berikutnya"),
+        ]
+
+        self.assertEqual(refine_end_boundary(entries, 0, 50_000), 47_500)
+
+    def test_end_boundary_keeps_minimum_duration_safe(self):
+        entries = [
+            TranscriptEntry(0, 38_000, "Allah membuat hati tenang saat manusia tidak bisa memberi apa apa"),
+            TranscriptEntry(43_500, 46_000, "Jadi pembahasan berikutnya"),
+        ]
+
+        self.assertEqual(refine_end_boundary(entries, 0, 46_000), 46_000)
+
+    def test_hook_subtitle_is_warmer_than_generic_reason(self):
+        subtitle = hook_subtitle_for_span(
+            "Bahagia sejati itu dari Allah bukan dari makhluk",
+            "Bahagia Hanya dengan Allah",
+        )
+
+        self.assertIn("validasi", subtitle)
+        self.assertLessEqual(len(subtitle.split()), 14)
 
     def test_cli_parser_supports_v2_commands(self):
         args = build_parser().parse_args(

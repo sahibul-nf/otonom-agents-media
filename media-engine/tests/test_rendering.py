@@ -212,6 +212,26 @@ class PremiumRenderingTests(unittest.TestCase):
         self.assertEqual(contract["titleHook"], "Kenapa Hati Masih Kesepian?")
         self.assertNotIn("Nourbit Clips", contract["titleHook"])
 
+    def test_hook_subtitle_uses_candidate_specific_copy(self):
+        candidate = {
+            "id": "clip_hook_subtitle",
+            "start_ms": 0,
+            "end_ms": 95_000,
+            "title_hook": "Bahagia Hanya dengan Allah",
+            "hook_subtitle": "Bahagia yang tidak sibuk mencari validasi dari makhluk.",
+            "viral_reason": "Momen reflektif yang kuat.",
+            "transcript_span": "Allah selalu bersama kita.",
+        }
+        profile = {
+            "id": "nourbit",
+            "watermark_text": "Nourbit Clips",
+            "cta_text": "Follow Nourbit untuk nasihat singkat lainnya",
+        }
+
+        contract = build_premium_render_contract(candidate, profile, "source.mp4", "https://youtu.be/test", "Source")
+
+        self.assertEqual(contract["subtitle"], "Bahagia yang tidak sibuk mencari validasi dari makhluk.")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,6 +84,23 @@ def title_for_span(span: str) -> str:
     return "Allah Tidak Pernah Jauh"
 
 
+def hook_subtitle_for_span(span: str, title: str) -> str:
+    lowered = f"{title} {span}".lower()
+    if "kesepian" in lowered:
+        return "Saat hati terasa jauh, jawabannya sering lebih dekat dari yang kita kira."
+    if "takut" in lowered and ("netizen" in lowered or "allah" in lowered):
+        return "Tentang arah takut kita: manusia yang menilai, atau Allah yang melihat."
+    if "zikir" in lowered or "dzikir" in lowered:
+        return "Satu kalimat zikir yang mengubah cara kita menutup hari."
+    if "bahagia" in lowered:
+        return "Bahagia yang tidak sibuk mencari validasi dari makhluk."
+    if "mesra" in lowered or "galak" in lowered:
+        return "Cara memandang Allah yang membuat hati lebih pulang."
+    if "ibadah" in lowered or "amal" in lowered:
+        return "Pengingat lembut tentang niat yang sering diam-diam bergeser."
+    return "Potongan singkat untuk menenangkan hati dan meluruskan arah."
+
+
 def heuristic_window_score(text: str, title: str, duration_ms: int) -> int:
     lowered = text.lower()
     keyword_score = sum(lowered.count(keyword) for keyword in KEYWORDS)
@@ -100,6 +117,36 @@ def is_non_overlapping(start_ms: int, end_ms: int, selected: list[dict[str, Any]
     return True
 
 
+def refine_end_boundary(entries: list[TranscriptEntry], start_ms: int, end_ms: int) -> int:
+    window = [item for item in entries if item.start_ms < end_ms and item.end_ms > start_ms]
+    if len(window) < 2:
+        return end_ms
+
+    last = window[-1]
+    last_text = last.text.strip().lower()
+    starts_new_thought = last_text.startswith(
+        (
+            "jadi ",
+            "maka ",
+            "kalau ",
+            "kalo ",
+            "nah ",
+            "dan ",
+            "terus ",
+            "kemudian ",
+            "sementara ",
+            "berikutnya ",
+        )
+    )
+    last_is_late_opener = last.start_ms >= end_ms - 3_500 and starts_new_thought
+    last_is_tiny_tail = last.start_ms >= end_ms - 2_000 and len(last_text.split()) <= 5
+
+    refined_end_ms = last.start_ms if last_is_late_opener or last_is_tiny_tail else end_ms
+    if refined_end_ms - start_ms < MIN_PREMIUM_DURATION_MS:
+        return end_ms
+    return refined_end_ms
+
+
 def build_candidate(
     profile_id: str,
     source_id: str,
@@ -111,12 +158,15 @@ def build_candidate(
     llm_provider: str = "none",
     llm_suggestion: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    original_end_ms = end_ms
+    end_ms = refine_end_boundary(entries, start_ms, end_ms)
     window = [item for item in entries if item.start_ms < end_ms and item.end_ms > start_ms]
     span = " ".join(item.text for item in window)
     title = str((llm_suggestion or {}).get("title_hook") or title_for_span(span))
+    hook_subtitle = str((llm_suggestion or {}).get("hook_subtitle") or hook_subtitle_for_span(span, title))
     viral_reason = str(
         (llm_suggestion or {}).get("viral_reason")
-        or "Momen ini kuat karena menyentuh keresahan batin dengan jawaban yang sederhana dan mudah direnungkan."
+        or hook_subtitle
     )
     caption_style = style.get("caption", {})
     ai_style = style.get("ai", {})
@@ -137,6 +187,8 @@ def build_candidate(
         "llm_provider": llm_provider,
         "llm_used": bool(llm_suggestion),
         "window_entry_count": len(window),
+        "original_end_ms": original_end_ms,
+        "end_refined_ms": end_ms,
     }
     return {
         "id": f"clip_{uuid.uuid4().hex[:12]}",
@@ -145,6 +197,7 @@ def build_candidate(
         "start_ms": start_ms,
         "end_ms": end_ms,
         "title_hook": title,
+        "hook_subtitle": hook_subtitle,
         "viral_reason": viral_reason,
         "transcript_span": span[:2200],
         "timed_captions": timed_captions,
@@ -162,11 +215,13 @@ def llm_rank_suggestions(entries: list[TranscriptEntry], count: int, provider: s
     transcript = "\n".join(f"{ms_to_timecode(entry.start_ms)} {entry.text}" for entry in entries[:600])
     system_prompt = (
         "Anda adalah kurator video pendek Nourbit. Balas hanya JSON murni dengan key clips. "
-        "Setiap clip berisi start_time, end_time, title_hook, viral_reason."
+        "Setiap clip berisi start_time, end_time, title_hook, hook_subtitle, viral_reason."
     )
     user_prompt = (
         f"Pilih {count} momen terbaik berdurasi 45-120 detik untuk short/reels dari transcript ini. "
-        f"Utamakan konteks utuh, hook spiritual/reflektif, dan bahasa Indonesia natural.\n\n{transcript}"
+        "Utamakan konteks utuh, hook spiritual/reflektif, dan bahasa Indonesia natural. "
+        "hook_subtitle harus terasa hangat, singkat, tidak kaku, maksimal 18 kata.\n\n"
+        f"{transcript}"
     )
     try:
         payload = call_llm_json(provider, system_prompt, user_prompt)

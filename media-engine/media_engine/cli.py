@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,10 @@ from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
 from .styles import load_style
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
+
+
+def progress(message: str) -> None:
+    print(f"[media-engine] {message}", file=sys.stderr, flush=True)
 
 
 def profile_dict(row: dict[str, Any]) -> dict[str, Any]:
@@ -179,18 +184,24 @@ def load_profile_and_source(conn, profile_id: str, source_id: str) -> tuple[dict
 
 
 def cmd_premium_test(args: argparse.Namespace) -> None:
+    progress("loading environment and profile")
     load_env_file(args.env_file)
     conn = connect(args.db)
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
 
+    progress("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
     style = load_style(args.style)
+    progress("selecting best short candidate")
     candidate = choose_nourbit_premium_candidates(args.profile, args.source_id, entries, style, count=1, llm_provider=args.llm_provider)[0]
     insert_candidate(conn, candidate)
+    progress(f"downloading source clip for {candidate['id']}")
     source_clip = download_youtube_section(args.youtube_url, args.profile, candidate)
+    progress(f"preparing captions with {args.caption_source}")
     prepare_production_captions(candidate, source_clip, args, style)
     attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
     renderer = resolve_renderer(args.renderer, args.quality)
+    progress(f"rendering with {renderer}")
     if renderer == "remotion":
         output_path, contract = render_premium_remotion(
             candidate,
@@ -231,6 +242,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (candidate["id"],))
     update_candidate_metadata(conn, candidate)
     conn.commit()
+    progress("premium test render complete")
     print(
         json.dumps(
             {
@@ -256,11 +268,16 @@ def render_premium_candidate(
     renderer: str,
     style: dict[str, Any],
     args: argparse.Namespace,
+    progress_label: str = "",
 ) -> dict[str, Any]:
+    prefix = f"{progress_label} " if progress_label else ""
     insert_candidate(conn, candidate)
+    progress(f"{prefix}downloading source clip for {candidate['id']}")
     source_clip = download_youtube_section(youtube_url, profile["id"], candidate)
+    progress(f"{prefix}preparing captions with {getattr(args, 'caption_source', 'youtube')}")
     prepare_production_captions(candidate, source_clip, args, style)
     renderer = resolve_renderer(renderer, args.quality)
+    progress(f"{prefix}rendering {candidate['id']} with {renderer}")
     if renderer == "remotion":
         output_path, contract = render_premium_remotion(candidate, profile, source_clip, youtube_url, source_attribution, style)
     else:
@@ -287,6 +304,7 @@ def render_premium_candidate(
     conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (candidate["id"],))
     update_candidate_metadata(conn, candidate)
     conn.commit()
+    progress(f"{prefix}completed {candidate['id']}")
     return {
         "candidate_id": candidate["id"],
         "start": contract["startTimecode"],
@@ -346,11 +364,14 @@ def finalize_candidate_metadata(candidate: dict[str, Any], contract: dict[str, A
 
 
 def cmd_premium_curate(args: argparse.Namespace) -> None:
+    progress("loading environment and profile")
     load_env_file(args.env_file)
     conn = connect(args.db)
     load_profile_and_source(conn, args.profile, args.source_id)
+    progress("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
     style = load_style(args.style)
+    progress(f"curating {args.count} candidates with llm_provider={args.llm_provider}")
     candidates = choose_nourbit_premium_candidates(
         args.profile,
         args.source_id,
@@ -361,15 +382,19 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
     )
     for candidate in candidates:
         insert_candidate(conn, candidate)
+    progress(f"curation complete: {len(candidates)} candidates")
     print(json.dumps({"count": len(candidates), "candidates": candidates}, indent=2, ensure_ascii=False))
 
 
 def cmd_premium_batch(args: argparse.Namespace) -> None:
+    progress("loading environment and profile")
     load_env_file(args.env_file)
     conn = connect(args.db)
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
+    progress("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
     style = load_style(args.style)
+    progress(f"selecting top {args.count} candidates with llm_provider={args.llm_provider}")
     candidates = choose_nourbit_premium_candidates(
         args.profile,
         args.source_id,
@@ -379,10 +404,23 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         llm_provider=args.llm_provider,
     )
     attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
-    renders = [
-        render_premium_candidate(conn, candidate, profile, args.youtube_url, attribution, args.renderer, style, args)
-        for candidate in candidates
-    ]
+    renders = []
+    for index, candidate in enumerate(candidates, start=1):
+        progress(f"[{index}/{len(candidates)}] queued {candidate['id']} - {candidate['title_hook']}")
+        renders.append(
+            render_premium_candidate(
+                conn,
+                candidate,
+                profile,
+                args.youtube_url,
+                attribution,
+                args.renderer,
+                style,
+                args,
+                progress_label=f"[{index}/{len(candidates)}]",
+            )
+        )
+    progress(f"batch complete: {len(renders)} renders")
     print(json.dumps({"count": len(renders), "renders": renders}, indent=2, ensure_ascii=False))
 
 
