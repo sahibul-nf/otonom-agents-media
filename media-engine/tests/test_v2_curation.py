@@ -1,9 +1,11 @@
 import json
 import sqlite3
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 
 from media_engine.db import ensure_schema_upgrades
-from media_engine.cli import build_parser, insert_candidate
+from media_engine.cli import ProgressBar, build_parser, insert_candidate
 from media_engine.env_loader import load_env_file
 from media_engine.llm import build_chat_payload, parse_strict_json, provider_config
 from media_engine.scoring import score_candidate_text
@@ -144,6 +146,20 @@ class V2CurationTests(unittest.TestCase):
 
         self.assertEqual(refine_end_boundary(entries, 0, 46_000), 46_000)
 
+    def test_end_boundary_extends_crossing_incomplete_tail(self):
+        entries = [
+            TranscriptEntry(245_560, 253_920, "adalah Allah sumber dari cinta kita maka"),
+            TranscriptEntry(249_920, 257_440, "ikhwah fillah jika cinta-cinta ini"),
+            TranscriptEntry(253_920, 260_159, "menghalangi kita kepada Allah leburkan"),
+            TranscriptEntry(257_440, 264_639, "cinta itu kepada cinta Allah subhanahu"),
+            TranscriptEntry(260_160, 268_320, "wa taala Berarti cinta kita nafsiah"),
+            TranscriptEntry(264_639, 270_160, "ego kita leburkan cinta ini dalam cinta"),
+            TranscriptEntry(268_320, 273_960, "Allah Subhanahu"),
+            TranscriptEntry(270_160, 276_880, "baik suami istri kawan dengan kawan ya"),
+        ]
+
+        self.assertEqual(refine_end_boundary(entries, 210_000, 270_000), 273_960)
+
     def test_hook_subtitle_is_warmer_than_generic_reason(self):
         subtitle = hook_subtitle_for_span(
             "Bahagia sejati itu dari Allah bukan dari makhluk",
@@ -168,6 +184,18 @@ class V2CurationTests(unittest.TestCase):
 
         self.assertEqual(args.count, 5)
         self.assertEqual(args.llm_provider, "deepseek")
+
+    def test_progress_bar_outputs_cli_indicator_to_stderr(self):
+        stderr = StringIO()
+
+        with redirect_stderr(stderr):
+            bar = ProgressBar(total=2, width=4)
+            bar.step("first")
+            bar.step("done")
+
+        output = stderr.getvalue()
+        self.assertIn("[##--] 1/2 first", output)
+        self.assertIn("[####] 2/2 done", output)
 
     def test_insert_candidate_persists_score_metadata(self):
         conn = sqlite3.connect(":memory:")
