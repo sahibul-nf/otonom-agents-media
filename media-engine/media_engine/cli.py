@@ -12,11 +12,14 @@ from typing import Any
 from .asr import load_or_create_asr_words
 from .caption_composer import compose_caption_groups
 from .costs import estimate_clip_cost
+from .credentials import credential_status
 from .curation import SAMPLE_NOURBIT_TRANSCRIPT, curate_dry_run
 from .db import DEFAULT_DB, ROOT, connect, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
 from .env_loader import load_env_file
+from .live_publishers import LivePublishError, publish_telegram_video
 from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
+from .publishers import build_payload
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
 from .styles import load_style
@@ -485,6 +488,60 @@ def cmd_publish(args: argparse.Namespace) -> None:
     print(json.dumps(attempts, indent=2, ensure_ascii=False))
 
 
+def cmd_credentials_check(args: argparse.Namespace) -> None:
+    load_env_file(args.env_file)
+    print(json.dumps(credential_status(), indent=2, ensure_ascii=False))
+
+
+def cmd_publish_live(args: argparse.Namespace) -> None:
+    load_env_file(args.env_file)
+    conn = connect(args.db)
+    initialize(conn)
+    candidate = fetch_one(conn, "SELECT * FROM clip_candidates WHERE id = ?", (args.candidate_id,))
+    if not candidate:
+        raise SystemExit(f"candidate not found: {args.candidate_id}")
+    source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (candidate["source_id"],))
+    target = fetch_one(
+        conn,
+        "SELECT * FROM publish_targets WHERE profile_id = ? AND platform = ?",
+        (candidate["profile_id"], args.platform),
+    )
+    render_job = fetch_one(
+        conn,
+        "SELECT * FROM render_jobs WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1",
+        (candidate["id"],),
+    )
+    if not source or not target:
+        raise SystemExit("source or publish target not found")
+    attempt = create_dry_run_attempt(conn, source, target, candidate, render_job)
+    if attempt["status"] != "ready":
+        print(json.dumps(attempt, indent=2, ensure_ascii=False))
+        raise SystemExit(f"publish blocked: {attempt['error']}")
+
+    payload = build_payload(args.platform, candidate, render_job)
+    if args.dry_run:
+        print(json.dumps({"status": "dry_run", "payload": payload}, indent=2, ensure_ascii=False))
+        return
+    if args.platform != "telegram_channel":
+        raise SystemExit("live publishing is currently enabled for telegram_channel only")
+    try:
+        result = publish_telegram_video(payload)
+    except LivePublishError as exc:
+        conn.execute(
+            "UPDATE publish_attempts SET status = ?, error = ? WHERE id = ?",
+            ("failed", str(exc), attempt["id"]),
+        )
+        conn.commit()
+        raise SystemExit(str(exc)) from exc
+    conn.execute(
+        "UPDATE publish_attempts SET status = ?, payload_json = ? WHERE id = ?",
+        ("published", json.dumps({**payload, "live_result": result}, ensure_ascii=False), attempt["id"]),
+    )
+    conn.execute("UPDATE clip_candidates SET status = 'published' WHERE id = ?", (candidate["id"],))
+    conn.commit()
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 def cmd_set_target_mode(args: argparse.Namespace) -> None:
     require_choice(args.mode, PUBLISH_MODES, "mode")
     conn = connect(args.db)
@@ -604,6 +661,17 @@ def build_parser() -> argparse.ArgumentParser:
     publish.add_argument("--candidate-id", required=True)
     publish.add_argument("--platform")
     publish.set_defaults(func=cmd_publish)
+
+    credentials_check = sub.add_parser("credentials-check")
+    credentials_check.add_argument("--env-file", default="../.env.local")
+    credentials_check.set_defaults(func=cmd_credentials_check)
+
+    publish_live = sub.add_parser("publish-live")
+    publish_live.add_argument("--candidate-id", required=True)
+    publish_live.add_argument("--platform", required=True)
+    publish_live.add_argument("--env-file", default="../.env.local")
+    publish_live.add_argument("--dry-run", action="store_true")
+    publish_live.set_defaults(func=cmd_publish_live)
 
     target_mode = sub.add_parser("set-target-mode")
     target_mode.add_argument("--profile", default="nourbit")

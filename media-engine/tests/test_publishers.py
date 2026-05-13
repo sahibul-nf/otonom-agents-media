@@ -1,7 +1,10 @@
 import sqlite3
 import unittest
+from unittest.mock import patch
 
 from media_engine.db import initialize
+from media_engine.credentials import credential_status
+from media_engine.live_publishers import LivePublishError, publish_telegram_video
 from media_engine.publishers import build_payload, create_dry_run_attempt
 
 
@@ -24,6 +27,33 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(payload["endpoint"], "telegram-bot-api/sendVideo")
         self.assertTrue(payload["supports_streaming"])
         self.assertLessEqual(len(payload["caption"]), 1024)
+
+    def test_credential_status_marks_ready_without_exposing_values(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "TELEGRAM_BOT_TOKEN": "token",
+                "TELEGRAM_CHANNEL_ID": "@channel",
+            },
+            clear=True,
+        ):
+            status = credential_status()
+
+        self.assertTrue(status["platforms"]["telegram_channel"]["ready"])
+        self.assertFalse(status["platforms"]["youtube_shorts"]["ready"])
+        self.assertNotIn("token", str(status))
+
+    def test_telegram_live_publish_requires_rendered_file(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "TELEGRAM_BOT_TOKEN": "token",
+                "TELEGRAM_CHANNEL_ID": "@channel",
+            },
+            clear=True,
+        ):
+            with self.assertRaises(LivePublishError):
+                publish_telegram_video({"video_path": "/tmp/does-not-exist.mp4", "caption": "Caption"})
 
     def test_blocked_attempt_is_recorded(self):
         conn = sqlite3.connect(":memory:")

@@ -7,12 +7,48 @@ from pathlib import Path
 
 
 ALLOWED_ENV_KEYS = {
+    "COMMENT_AUTOMATION_ENABLED",
+    "COMMENT_AUTOMATION_MODE",
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
     "DEEPSEEK_API_KEY",
     "DEEPSEEK_MODEL",
     "GROQ_API_KEY",
     "GROQ_MODEL",
+    "META_API_VERSION",
+    "META_APP_ID",
+    "META_APP_SECRET",
+    "META_PAGE_ACCESS_TOKEN",
+    "META_PAGE_ID",
+    "NOURBIT_DAILY_CONTENT_CAP",
+    "NOURBIT_DEFAULT_PUBLISH_MODE",
+    "NOURBIT_YOUTUBE_CHANNEL_ID",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHANNEL_ID",
+    "TIKTOK_ACCESS_TOKEN",
+    "TIKTOK_CLIENT_KEY",
+    "TIKTOK_CLIENT_SECRET",
+    "TIKTOK_DEFAULT_VISIBILITY",
+    "TIKTOK_OPEN_ID",
+    "TIKTOK_REFRESH_TOKEN",
+    "YOUTUBE_CLIENT_ID",
+    "YOUTUBE_CLIENT_SECRET",
+    "YOUTUBE_PRIVACY_STATUS",
+    "YOUTUBE_REFRESH_TOKEN",
+}
+
+SECRET_ENV_KEYS = {
+    "DEEPSEEK_API_KEY",
+    "GROQ_API_KEY",
+    "META_APP_SECRET",
+    "META_PAGE_ACCESS_TOKEN",
+    "OPENAI_API_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "TIKTOK_ACCESS_TOKEN",
+    "TIKTOK_CLIENT_SECRET",
+    "TIKTOK_REFRESH_TOKEN",
+    "YOUTUBE_CLIENT_SECRET",
+    "YOUTUBE_REFRESH_TOKEN",
 }
 
 
@@ -33,5 +69,5 @@ def load_env_file(path: str | Path | None) -> dict[str, str]:
             continue
         value = value.strip().strip('"').strip("'")
         os.environ[key] = value
-        loaded[key] = "***REDACTED***" if key.endswith("API_KEY") else value
+        loaded[key] = "***REDACTED***" if key in SECRET_ENV_KEYS else value
     return loaded
