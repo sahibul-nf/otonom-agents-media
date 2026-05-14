@@ -51,9 +51,9 @@ const nav = [
 ] as const;
 
 function statusTone(status: string) {
-  if (["approved", "published", "ready", "rendered"].includes(status)) return "text-teal border-teal/30 bg-teal/10";
-  if (["failed", "rejected"].includes(status)) return "text-danger border-danger/30 bg-danger/10";
-  return "text-warning border-warning/30 bg-warning/10";
+  if (["approved", "published", "ready", "rendered"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
+  if (["failed", "rejected"].includes(status)) return "text-danger border-danger/[0.30] bg-danger/[0.10]";
+  return "text-warning border-warning/[0.30] bg-warning/[0.10]";
 }
 
 function scoreTone(score?: number) {
@@ -196,7 +196,7 @@ export function MediaStudioApp() {
 
   return (
     <div className="min-h-screen overflow-x-hidden text-zinc-100">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] border-r border-white/6 bg-canvas-deep/88 px-5 py-5 backdrop-blur-xl lg:block">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] border-r border-white/[0.06] bg-canvas-deep/[0.88] px-5 py-5 backdrop-blur-xl lg:block">
         <div className="flex items-center gap-3">
           <div className="grid h-12 w-12 place-items-center rounded-2xl border border-cyan text-xl font-semibold text-white shadow-glow">N</div>
           <div>
@@ -214,7 +214,7 @@ export function MediaStudioApp() {
                 key={item.id}
                 onClick={() => setSection(item.id)}
                 className={`flex h-12 items-center gap-3 rounded-2xl px-4 text-left text-sm font-medium transition ${
-                  active ? "bg-teal/15 text-cyan ring-1 ring-cyan/30" : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                  active ? "bg-teal/[0.15] text-cyan ring-1 ring-cyan/[0.30]" : "text-zinc-400 hover:bg-white/[0.05] hover:text-white"
                 }`}
               >
                 <Icon className="h-4 w-4" />
@@ -225,17 +225,17 @@ export function MediaStudioApp() {
         </nav>
 
         <div className="absolute bottom-5 left-5 right-5 grid gap-3">
-          <div className="rounded-[24px] border border-white/8 bg-surface p-4">
+          <div className="rounded-[24px] border border-white/[0.08] bg-surface p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold">Nourbit Plan</span>
-              <span className="rounded-full bg-teal/10 px-2.5 py-1 text-xs font-medium text-teal">review</span>
+              <span className="rounded-full bg-teal/[0.10] px-2.5 py-1 text-xs font-medium text-teal">review</span>
             </div>
             <div className="grid gap-2 text-xs text-zinc-400">
               <div className="flex justify-between"><span>Daily cap</span><strong className="text-cyan">{credentials?.settings.nourbit_daily_content_cap || 2}</strong></div>
               <div className="flex justify-between"><span>Platforms</span><strong className="text-cyan">{readyPlatforms}/4</strong></div>
             </div>
           </div>
-          <div className="rounded-[24px] border border-white/8 bg-surface p-4 text-xs text-zinc-400">
+          <div className="rounded-[24px] border border-white/[0.08] bg-surface p-4 text-xs text-zinc-400">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white"><RadioTower className="h-4 w-4 text-teal" /> Engine Status</div>
             <div className="grid gap-2">
               <div className="flex justify-between"><span>Python API</span><span className="text-teal">Online</span></div>
@@ -247,10 +247,10 @@ export function MediaStudioApp() {
       </aside>
 
       <main className="min-w-0 pb-20 lg:pl-[280px] lg:pb-0">
-        <header className="sticky top-0 z-20 overflow-hidden border-b border-white/6 bg-canvas-deep/82 px-5 py-4 backdrop-blur-xl lg:px-8">
+        <header className="sticky top-0 z-20 overflow-hidden border-b border-white/[0.06] bg-canvas-deep/[0.82] px-5 py-4 backdrop-blur-xl lg:px-8">
           <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="w-fit rounded-[20px] border border-white/10 bg-surface px-5 py-3">
+              <div className="w-fit rounded-[20px] border border-white/[0.10] bg-surface px-5 py-3">
                 <p className="text-xs text-zinc-400">Workspace</p>
                 <p className="text-sm font-semibold text-white">Nourbit Media</p>
               </div>
@@ -260,7 +260,7 @@ export function MediaStudioApp() {
               </div>
             </div>
             <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:flex sm:flex-wrap">
-              <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/10 bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
+              <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh
               </button>
               <button onClick={() => copyText(productionCommand(count), "Production command copied")} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 overflow-hidden rounded-full bg-cyan px-4 text-sm font-semibold text-ink hover:bg-cyan/90 sm:px-5">
@@ -316,7 +316,7 @@ export function MediaStudioApp() {
           {section === "brand" && <BrandSection style={style} command={productionCommand(count)} onCopy={() => copyText(productionCommand(count), "Production command copied")} />}
         </div>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-white/8 bg-surface/95 backdrop-blur-xl lg:hidden">
+        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-white/[0.08] bg-surface/[0.95] backdrop-blur-xl lg:hidden">
           {nav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
@@ -335,8 +335,8 @@ export function MediaStudioApp() {
 
 function MetricCard({label, value, detail, icon: Icon}: {label: string; value: string | number; detail: string; icon: typeof Gauge}) {
   return (
-    <div className="relative overflow-hidden rounded-[24px] border border-white/8 bg-surface p-5 shadow-glow">
-      <div className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-teal/14 text-cyan"><Icon className="h-5 w-5" /></div>
+    <div className="relative overflow-hidden rounded-[24px] border border-white/[0.08] bg-surface p-5 shadow-glow">
+      <div className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-teal/[0.14] text-cyan"><Icon className="h-5 w-5" /></div>
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</p>
       <p className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-white">{value}</p>
       <p className="mt-2 text-sm text-zinc-500">{detail}</p>
@@ -362,7 +362,7 @@ function DashboardSection({
   const top = clips.slice(0, 4);
   return (
     <section className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]">
-      <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-xl font-semibold text-white">Today’s production flow</h3>
@@ -377,14 +377,14 @@ function DashboardSection({
             ["Review", "Preview, caption, approve", Clapperboard],
             ["Publish", "Telegram live, others dry-run", Rocket],
           ].map(([title, copy, Icon]) => (
-            <div key={title as string} className="rounded-[22px] border border-white/8 bg-canvas-deep p-4">
+            <div key={title as string} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
               <div className="mb-4 grid h-10 w-10 place-items-center rounded-2xl bg-cyan text-ink"><Icon className="h-5 w-5" /></div>
               <p className="font-semibold text-white">{title as string}</p>
               <p className="mt-2 text-xs leading-5 text-zinc-400">{copy as string}</p>
             </div>
           ))}
         </div>
-        <div className="mt-5 rounded-[24px] border border-white/8 bg-canvas-deep p-4">
+        <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
           <div className="mb-3 flex items-center justify-between">
             <h4 className="font-semibold text-white">Highest-ranked clips</h4>
             <button onClick={() => onSection("review")} className="text-sm font-medium text-cyan">Open Review Studio</button>
@@ -397,16 +397,16 @@ function DashboardSection({
 
       <div className="grid gap-5">
         <PreviewPanel clip={selected} />
-        <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+        <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-white">Platform readiness</h3>
-            <button onClick={onPublish} className="rounded-full border border-cyan/25 bg-teal/10 px-4 py-2 text-sm font-semibold text-cyan">Telegram dry-run</button>
+            <button onClick={onPublish} className="rounded-full border border-cyan/[0.25] bg-teal/[0.10] px-4 py-2 text-sm font-semibold text-cyan">Telegram dry-run</button>
           </div>
           <div className="grid gap-3">
             {credentials ? Object.entries(credentials.platforms).map(([platform, item]) => (
               <div key={platform} className="flex items-center justify-between rounded-2xl bg-canvas-deep px-4 py-3">
                 <span className="text-sm text-zinc-300">{platformLabel(platform)}</span>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.ready ? "bg-teal/10 text-teal" : "bg-warning/10 text-warning"}`}>{item.ready ? "Ready" : `${item.missing_keys.length} missing`}</span>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.ready ? "bg-teal/[0.10] text-teal" : "bg-warning/[0.10] text-warning"}`}>{item.ready ? "Ready" : `${item.missing_keys.length} missing`}</span>
               </div>
             )) : <EmptyState text="Credential status unavailable." />}
           </div>
@@ -419,17 +419,17 @@ function DashboardSection({
 function GenerateSection({count, setCount, command, onCopy}: {count: number; setCount: (value: number) => void; command: string; onCopy: () => void}) {
   return (
     <section className="grid gap-5 xl:grid-cols-[.85fr_1.15fr]">
-      <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-xl font-semibold text-white">Generate production batch</h3>
         <p className="mt-2 text-sm leading-6 text-zinc-400">The dashboard is SaaS-ready, while execution stays local-first. Copy this command to render a new Nourbit batch with Whisper, DeepSeek, and Remotion.</p>
         <div className="mt-6 grid gap-4">
           <label className="grid gap-2 text-sm font-medium text-zinc-300">
             YouTube source
-            <input value={sourceUrl} readOnly className="h-12 rounded-2xl border border-white/8 bg-canvas-deep px-4 text-sm text-zinc-300 outline-none" />
+            <input value={sourceUrl} readOnly className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 text-sm text-zinc-300 outline-none" />
           </label>
           <label className="grid gap-2 text-sm font-medium text-zinc-300">
             Clip count
-            <select value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-12 rounded-2xl border border-white/8 bg-canvas-deep px-4 outline-none">
+            <select value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
               {[1, 2, 3, 5, 8].map((value) => <option key={value} value={value}>{value} clips</option>)}
             </select>
           </label>
@@ -441,12 +441,12 @@ function GenerateSection({count, setCount, command, onCopy}: {count: number; set
           </div>
         </div>
       </div>
-      <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-xl font-semibold text-white">Local run command</h3>
           <button onClick={onCopy} className="inline-flex rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink"><Copy className="mr-2 h-4 w-4" /> Copy</button>
         </div>
-        <pre className="max-h-[520px] overflow-auto rounded-[24px] border border-white/8 bg-canvas-deep p-5 text-xs leading-6 text-zinc-300">{command}</pre>
+        <pre className="max-h-[520px] overflow-auto rounded-[24px] border border-white/[0.08] bg-canvas-deep p-5 text-xs leading-6 text-zinc-300">{command}</pre>
       </div>
     </section>
   );
@@ -473,7 +473,7 @@ function ReviewSection({
 }) {
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
-      <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-xl font-semibold text-white">Review Studio</h3>
@@ -481,15 +481,15 @@ function ReviewSection({
           </div>
           <div className="flex flex-wrap gap-2">
             {["all", "draft", "rendered", "approved", "published"].map((item) => (
-              <button key={item} onClick={() => setFilter(item)} className={`rounded-full px-4 py-2 text-sm font-medium ${filter === item ? "bg-cyan text-ink" : "border border-white/10 text-zinc-300"}`}>{item}</button>
+              <button key={item} onClick={() => setFilter(item)} className={`rounded-full px-4 py-2 text-sm font-medium ${filter === item ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}>{item}</button>
             ))}
-            <button onClick={onClear} className="inline-flex items-center gap-2 rounded-full border border-danger/30 bg-danger/10 px-4 py-2 text-sm font-semibold text-danger"><Trash2 className="h-4 w-4" /> Clear</button>
+            <button onClick={onClear} className="inline-flex items-center gap-2 rounded-full border border-danger/[0.30] bg-danger/[0.10] px-4 py-2 text-sm font-semibold text-danger"><Trash2 className="h-4 w-4" /> Clear</button>
           </div>
         </div>
 
         <div className="grid gap-2">
           {clips.length ? clips.map((clip) => (
-            <button key={clip.id} onClick={() => setSelectedId(clip.id)} className={`grid gap-3 rounded-[22px] border p-4 text-left transition md:grid-cols-[88px_minmax(0,1fr)_64px_64px_118px] md:items-center ${selected?.id === clip.id ? "border-cyan bg-teal/10" : "border-white/8 bg-canvas-deep hover:border-white/16"}`}>
+            <button key={clip.id} onClick={() => setSelectedId(clip.id)} className={`grid gap-3 rounded-[22px] border p-4 text-left transition md:grid-cols-[88px_minmax(0,1fr)_64px_64px_118px] md:items-center ${selected?.id === clip.id ? "border-cyan bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}>
               <div className="grid h-14 place-items-center rounded-2xl bg-surface-raised text-sm font-semibold text-cyan">{formatDuration(clip.render_quality?.duration_ms)}</div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -501,9 +501,9 @@ function ReviewSection({
               <ScoreBubble label="Score" value={clip.score?.overall_score} />
               <ScoreBubble label="QA" value={clip.render_quality?.quality_score} />
               <div className="flex justify-end gap-2">
-                <span className="rounded-full border border-white/10 px-3 py-2 text-xs text-zinc-300">${Number(clip.cost?.estimated_total || 0).toFixed(4)}</span>
-                <button type="button" onClick={(event) => { event.stopPropagation(); onApprove(clip.id); }} className="rounded-full border border-teal/30 bg-teal/10 px-3 py-2 text-xs font-semibold text-teal">Approve</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(clip.id); }} className="rounded-full border border-danger/30 bg-danger/10 px-3 py-2 text-danger"><Trash2 className="h-4 w-4" /></button>
+                <span className="rounded-full border border-white/[0.10] px-3 py-2 text-xs text-zinc-300">${Number(clip.cost?.estimated_total || 0).toFixed(4)}</span>
+                <button type="button" onClick={(event) => { event.stopPropagation(); onApprove(clip.id); }} className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal">Approve</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(clip.id); }} className="rounded-full border border-danger/[0.30] bg-danger/[0.10] px-3 py-2 text-danger"><Trash2 className="h-4 w-4" /></button>
               </div>
             </button>
           )) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
@@ -520,17 +520,17 @@ function ReviewSection({
 function PublishSection({targets, credentials, selected, onDryRun, onLive}: {targets: PublishTarget[]; credentials: CredentialStatus | null; selected?: ClipCandidate; onDryRun: () => void; onLive: () => void}) {
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-xl font-semibold text-white">Publish Center</h3>
         <p className="mt-1 text-sm text-zinc-400">Prepared for SaaS-style channel connection, but currently powered by local env credentials.</p>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           {targets.map((target) => {
             const ready = credentials?.platforms[target.platform]?.ready;
             return (
-              <div key={target.platform} className="rounded-[24px] border border-white/8 bg-canvas-deep p-4">
+              <div key={target.platform} className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
                 <div className="flex items-center justify-between">
                   <div className="grid h-11 w-11 place-items-center rounded-2xl bg-cyan text-ink"><Send className="h-5 w-5" /></div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${ready ? "bg-teal/10 text-teal" : "bg-warning/10 text-warning"}`}>{ready ? "Connected" : "Needs token"}</span>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${ready ? "bg-teal/[0.10] text-teal" : "bg-warning/[0.10] text-warning"}`}>{ready ? "Connected" : "Needs token"}</span>
                 </div>
                 <h4 className="mt-4 font-semibold text-white">{platformLabel(target.platform)}</h4>
                 <p className="mt-1 text-sm text-zinc-400">{target.account_label}</p>
@@ -543,13 +543,13 @@ function PublishSection({targets, credentials, selected, onDryRun, onLive}: {tar
           })}
         </div>
       </div>
-      <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-xl font-semibold text-white">Selected publish item</h3>
         <p className="mt-2 text-sm leading-6 text-zinc-400">{selected ? selected.title_hook : "Select or generate a clip before publishing."}</p>
         <div className="mt-5 grid gap-3">
-          <button disabled={!selected} onClick={onDryRun} className="h-12 rounded-full border border-cyan/30 bg-teal/10 font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40">Dry-run Telegram</button>
+          <button disabled={!selected} onClick={onDryRun} className="h-12 rounded-full border border-cyan/[0.30] bg-teal/[0.10] font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40">Dry-run Telegram</button>
           <button disabled={!selected} onClick={onLive} className="h-12 rounded-full bg-cyan font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">Publish Telegram Live</button>
-          <div className="rounded-[22px] border border-warning/20 bg-warning/10 p-4 text-sm leading-6 text-warning">
+          <div className="rounded-[22px] border border-warning/20 bg-warning/[0.10] p-4 text-sm leading-6 text-warning">
             Live publish is enabled for Telegram first. Facebook, YouTube, and TikTok remain connector/dry-run surfaces until OAuth flows are productized.
           </div>
         </div>
@@ -563,7 +563,7 @@ function BrandSection({style, command, onCopy}: {style: StyleProfile | null; com
   const layout = style?.layout || {};
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-xl font-semibold text-white">Nourbit brand system</h3>
         <p className="mt-1 text-sm text-zinc-400">Current Opus-inspired template settings loaded from the Python engine.</p>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
@@ -575,12 +575,12 @@ function BrandSection({style, command, onCopy}: {style: StyleProfile | null; com
           <SettingTile label="Animation" value={String(caption.animation || "bounce")} />
         </div>
       </div>
-      <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-xl font-semibold text-white">Run command</h3>
           <button onClick={onCopy} className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink">Copy</button>
         </div>
-        <pre className="max-h-[420px] overflow-auto rounded-[24px] border border-white/8 bg-canvas-deep p-5 text-xs leading-6 text-zinc-300">{command}</pre>
+        <pre className="max-h-[420px] overflow-auto rounded-[24px] border border-white/[0.08] bg-canvas-deep p-5 text-xs leading-6 text-zinc-300">{command}</pre>
       </div>
     </section>
   );
@@ -589,12 +589,12 @@ function BrandSection({style, command, onCopy}: {style: StyleProfile | null; com
 function PreviewPanel({clip}: {clip?: ClipCandidate}) {
   const output = clip?.output_path || clip?.render_quality?.output_path;
   return (
-    <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+    <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">9:16 Preview</h3>
         <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip?.status || "empty")}`}>{clip?.status || "No clip"}</span>
       </div>
-      <div className="mx-auto grid aspect-[9/16] max-h-[620px] w-full max-w-[350px] place-items-center overflow-hidden rounded-[26px] border border-white/10 bg-black">
+      <div className="mx-auto grid aspect-[9/16] max-h-[620px] w-full max-w-[350px] place-items-center overflow-hidden rounded-[26px] border border-white/[0.10] bg-black">
         {output ? (
           <video controls playsInline preload="metadata" className="h-full w-full object-contain" src={apiPath(`artifact?path=${encodeURIComponent(output)}`)} />
         ) : (
@@ -610,7 +610,7 @@ function PreviewPanel({clip}: {clip?: ClipCandidate}) {
 
 function InsightPanel({clip}: {clip?: ClipCandidate}) {
   return (
-    <div className="rounded-[28px] border border-white/8 bg-surface p-5">
+    <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
       <h3 className="text-lg font-semibold text-white">Clip intelligence</h3>
       {clip ? (
         <div className="mt-4 grid gap-4">
@@ -628,7 +628,7 @@ function InsightPanel({clip}: {clip?: ClipCandidate}) {
             <SettingTile label="Caption" value={clip.caption_source || "-"} />
             <SettingTile label="Coverage" value={`${Math.round((clip.render_quality?.caption_coverage || 0) * 100)}%`} />
           </div>
-          <div className="rounded-[22px] border border-white/8 bg-canvas-deep p-4">
+          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><MessageSquareText className="h-4 w-4 text-cyan" /> Post copy</div>
             <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-400">{clip.post_caption || "Post caption will appear after render metadata is available."}</p>
           </div>
@@ -640,13 +640,13 @@ function InsightPanel({clip}: {clip?: ClipCandidate}) {
 
 function CompactClip({clip, onApprove}: {clip: ClipCandidate; onApprove: (id: string) => void}) {
   return (
-    <div className="grid gap-3 rounded-[18px] border border-white/8 bg-surface-raised px-4 py-3 md:grid-cols-[minmax(0,1fr)_58px_auto] md:items-center">
+    <div className="grid gap-3 rounded-[18px] border border-white/[0.08] bg-surface-raised px-4 py-3 md:grid-cols-[minmax(0,1fr)_58px_auto] md:items-center">
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-white">{clip.title_hook}</p>
         <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
       </div>
       <ScoreBubble value={clip.score?.overall_score} />
-      <button onClick={() => onApprove(clip.id)} className="rounded-full border border-teal/30 bg-teal/10 px-3 py-2 text-xs font-semibold text-teal">Approve</button>
+      <button onClick={() => onApprove(clip.id)} className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal">Approve</button>
     </div>
   );
 }
@@ -662,7 +662,7 @@ function ScoreBubble({value, label}: {value?: number; label?: string}) {
 
 function SettingTile({label, value}: {label: string; value: string | number}) {
   return (
-    <div className="rounded-[18px] border border-white/8 bg-canvas-deep p-4">
+    <div className="rounded-[18px] border border-white/[0.08] bg-canvas-deep p-4">
       <p className="text-xs text-zinc-500">{label}</p>
       <p className="mt-1 truncate text-sm font-semibold text-white">{value}</p>
     </div>
@@ -671,7 +671,7 @@ function SettingTile({label, value}: {label: string; value: string | number}) {
 
 function EmptyState({text}: {text: string}) {
   return (
-    <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/10 bg-canvas-deep p-6 text-center text-sm text-zinc-500">
+    <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center text-sm text-zinc-500">
       <div>
         <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-zinc-600" />
         {text}
