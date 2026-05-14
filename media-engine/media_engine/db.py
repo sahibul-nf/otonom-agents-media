@@ -95,6 +95,42 @@ CREATE TABLE IF NOT EXISTS publish_attempts (
   error TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS generation_jobs (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES media_profiles(id),
+  source_id TEXT NOT NULL,
+  source_url TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  clip_length_preset TEXT NOT NULL DEFAULT '45-120s',
+  brand_template TEXT NOT NULL,
+  renderer TEXT NOT NULL,
+  quality TEXT NOT NULL,
+  caption_source TEXT NOT NULL,
+  asr_model TEXT NOT NULL,
+  llm_provider TEXT NOT NULL,
+  status TEXT NOT NULL,
+  progress INTEGER NOT NULL DEFAULT 0,
+  command TEXT NOT NULL DEFAULT '',
+  log_text TEXT NOT NULL DEFAULT '',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS scheduled_posts (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL UNIQUE REFERENCES clip_candidates(id),
+  profile_id TEXT NOT NULL REFERENCES media_profiles(id),
+  scheduled_at TEXT NOT NULL,
+  status TEXT NOT NULL,
+  publish_mode TEXT NOT NULL DEFAULT 'queue_only',
+  platforms_json TEXT NOT NULL DEFAULT '[]',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -115,12 +151,32 @@ SCHEMA_UPGRADES = {
         "asr_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
         "render_quality_json": "TEXT NOT NULL DEFAULT '{}'",
         "cost_json": "TEXT NOT NULL DEFAULT '{}'",
+    },
+    "generation_jobs": {
+        "clip_length_preset": "TEXT NOT NULL DEFAULT '45-120s'",
+        "command": "TEXT NOT NULL DEFAULT ''",
+        "log_text": "TEXT NOT NULL DEFAULT ''",
+        "result_json": "TEXT NOT NULL DEFAULT '{}'",
+        "error": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    },
+    "scheduled_posts": {
+        "publish_mode": "TEXT NOT NULL DEFAULT 'queue_only'",
+        "platforms_json": "TEXT NOT NULL DEFAULT '[]'",
+        "note": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
     }
 }
 
 
 def ensure_schema_upgrades(conn: sqlite3.Connection) -> None:
     for table, columns in SCHEMA_UPGRADES.items():
+        table_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if not table_exists:
+            continue
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         for column, definition in columns.items():
             if column not in existing:

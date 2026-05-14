@@ -13,10 +13,12 @@ from urllib.parse import parse_qs, urlparse
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all, initialize
 from .credentials import credential_status
 from .env_loader import load_env_file
+from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .live_publishers import LivePublishError, publish_telegram_video
 from .models import PUBLISH_MODES
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
+from .scheduler import list_scheduled_posts, schedule_candidate_next, unschedule_candidate, update_schedule
 from .styles import load_style
 
 
@@ -100,6 +102,17 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/style":
             self._send_json(load_style())
             return
+        if parsed.path == "/api/brand-templates":
+            self._send_json(list_brand_templates())
+            return
+        if parsed.path == "/api/generation-jobs":
+            self._send_json(list_generation_jobs())
+            return
+        if parsed.path == "/api/schedule":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            self._send_json(list_scheduled_posts(conn))
+            return
         if parsed.path == "/api/credentials":
             load_env_file(ROOT.parent / ".env.local")
             self._send_json(credential_status())
@@ -141,6 +154,61 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "candidate not found"}, status=404)
                 return
             self._send_json({"candidate_id": candidate_id, "status": "approved"})
+            return
+
+        if parsed.path == "/api/generation-jobs":
+            try:
+                job = create_generation_job(payload, start=True)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(job, status=202)
+            return
+
+        if parsed.path == "/api/schedule-next":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                result = schedule_candidate_next(conn, candidate_id)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/schedule-update":
+            schedule_id = str(payload.get("schedule_id", "")).strip()
+            scheduled_at = str(payload.get("scheduled_at", "")).strip()
+            if not schedule_id or not scheduled_at:
+                self._send_json({"error": "schedule_id and scheduled_at are required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                result = update_schedule(conn, schedule_id, scheduled_at)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/unschedule":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                result = unschedule_candidate(conn, candidate_id)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+                return
+            self._send_json(result)
             return
 
         if parsed.path == "/api/archive":

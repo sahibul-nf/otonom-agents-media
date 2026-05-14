@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   BadgeCheck,
+  CalendarDays,
   Clapperboard,
   Copy,
   Database,
@@ -28,30 +29,36 @@ import {
   apiGet,
   apiPath,
   apiPost,
+  BrandTemplate,
   ClipCandidate,
   CredentialStatus,
   formatDuration,
   formatTimestamp,
+  GenerationJob,
   platformLabel,
   PublishTarget,
+  ScheduledPost,
   scoreValue,
   StyleProfile,
 } from "@/lib/media-api";
 
-type Section = "dashboard" | "generate" | "review" | "publish" | "brand";
+type Section = "dashboard" | "generate" | "review" | "calendar" | "publish" | "brand";
 
-const sourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
+const defaultSourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
+const defaultTemplate = "profiles/nourbit_opus_style.json";
 
 const nav = [
   {id: "dashboard", label: "Dashboard", icon: LayoutDashboard},
   {id: "generate", label: "Generate", icon: Wand2},
   {id: "review", label: "Review Studio", icon: Clapperboard},
+  {id: "calendar", label: "Calendar", icon: CalendarDays},
   {id: "publish", label: "Publish Center", icon: Send},
   {id: "brand", label: "Brand Settings", icon: Settings},
 ] as const;
 
 function statusTone(status: string) {
-  if (["approved", "published", "ready", "rendered"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
+  if (["approved", "published", "ready", "rendered", "scheduled", "ready_to_publish", "completed"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
+  if (["running", "queued"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
   if (["failed", "rejected"].includes(status)) return "text-danger border-danger/[0.30] bg-danger/[0.10]";
   return "text-warning border-warning/[0.30] bg-warning/[0.10]";
 }
@@ -63,23 +70,48 @@ function scoreTone(score?: number) {
   return "border-danger text-danger";
 }
 
+function formatSchedule(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("id-ID", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(date);
+}
+
 function metricAverage(clips: ClipCandidate[]) {
   const scores = clips.map((clip) => clip.score?.overall_score).filter((score): score is number => typeof score === "number");
   if (!scores.length) return "-";
   return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
 }
 
-function productionCommand(count = 5) {
+type GenerateConfig = {
+  sourceUrl: string;
+  count: number;
+  clipLength: string;
+  brandTemplate: string;
+  renderer: string;
+  quality: string;
+  captionSource: string;
+  asrModel: string;
+  llmProvider: string;
+};
+
+function productionCommand(config: GenerateConfig) {
   return `cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
 PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premium-batch \\
-  --youtube-url "${sourceUrl}" \\
-  --count ${count} \\
-  --renderer remotion \\
-  --quality production \\
-  --caption-source whisper \\
-  --asr-model medium \\
-  --style profiles/nourbit_opus_style.json \\
-  --llm-provider deepseek \\
+  --youtube-url "${config.sourceUrl}" \\
+  --count ${config.count} \\
+  --renderer ${config.renderer} \\
+  --quality ${config.quality} \\
+  --caption-source ${config.captionSource} \\
+  --asr-model ${config.asrModel} \\
+  --style ${config.brandTemplate} \\
+  --llm-provider ${config.llmProvider} \\
   --env-file ../.env.local`;
 }
 
@@ -89,31 +121,52 @@ export function MediaStudioApp() {
   const [targets, setTargets] = useState<PublishTarget[]>([]);
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null);
   const [style, setStyle] = useState<StyleProfile | null>(null);
+  const [templates, setTemplates] = useState<BrandTemplate[]>([]);
+  const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
-  const [count, setCount] = useState(5);
+  const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
+    sourceUrl: defaultSourceUrl,
+    count: 5,
+    clipLength: "45-120s",
+    brandTemplate: defaultTemplate,
+    renderer: "remotion",
+    quality: "production",
+    captionSource: "whisper",
+    asrModel: "medium",
+    llmProvider: "deepseek",
+  });
 
   const selected = useMemo(() => clips.find((clip) => clip.id === selectedId) || clips[0], [clips, selectedId]);
   const filtered = useMemo(() => clips.filter((clip) => filter === "all" || clip.status === filter), [clips, filter]);
   const approved = clips.filter((clip) => clip.status === "approved").length;
+  const scheduledCount = clips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
+  const command = productionCommand(generateConfig);
 
   async function refreshAll() {
     setBusy(true);
     setStatus("Syncing media engine...");
     try {
-      const [reviewRows, targetRows, credentialRows, styleRows] = await Promise.all([
+      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, jobRows, scheduleRows] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>("targets"),
         apiGet<CredentialStatus>("credentials"),
         apiGet<StyleProfile>("style"),
+        apiGet<BrandTemplate[]>("brand-templates"),
+        apiGet<GenerationJob[]>("generation-jobs"),
+        apiGet<ScheduledPost[]>("schedule"),
       ]);
       setClips(reviewRows);
       setTargets(targetRows);
       setCredentials(credentialRows);
       setStyle(styleRows);
+      setTemplates(templateRows);
+      setJobs(jobRows);
+      setSchedule(scheduleRows);
       setSelectedId((current) => current || reviewRows[0]?.id || "");
       setStatus("Dashboard synced");
     } catch (error) {
@@ -136,6 +189,58 @@ export function MediaStudioApp() {
       setStatus("Clip approved");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Approve failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startGeneration() {
+    setBusy(true);
+    setStatus("Generation job queued...");
+    try {
+      const job = await apiPost<GenerationJob>("generation-jobs", {
+        source_url: generateConfig.sourceUrl,
+        count: generateConfig.count,
+        clip_length_preset: generateConfig.clipLength,
+        brand_template: generateConfig.brandTemplate,
+        renderer: generateConfig.renderer,
+        quality: generateConfig.quality,
+        caption_source: generateConfig.captionSource,
+        asr_model: generateConfig.asrModel,
+        llm_provider: generateConfig.llmProvider,
+        env_file: "../.env.local",
+      });
+      setJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
+      setStatus("Generation running in background");
+      window.setTimeout(() => void refreshAll(), 1600);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Generation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function scheduleNext(id: string) {
+    setBusy(true);
+    try {
+      await apiPost("schedule-next", {candidate_id: id});
+      setStatus("Clip scheduled in next open slot");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Schedule failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unscheduleClip(id: string) {
+    setBusy(true);
+    try {
+      await apiPost("unschedule", {candidate_id: id});
+      setStatus("Clip returned to approved queue");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unschedule failed");
     } finally {
       setBusy(false);
     }
@@ -193,6 +298,14 @@ export function MediaStudioApp() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!jobs.some((job) => job.status === "queued" || job.status === "running")) return;
+    const timer = window.setInterval(() => {
+      void refreshAll();
+    }, 3500);
+    return () => window.clearInterval(timer);
+  }, [jobs]);
 
   return (
     <div className="min-h-screen overflow-x-hidden text-zinc-100">
@@ -263,7 +376,7 @@ export function MediaStudioApp() {
               <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh
               </button>
-              <button onClick={() => copyText(productionCommand(count), "Production command copied")} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 overflow-hidden rounded-full bg-cyan px-4 text-sm font-semibold text-ink hover:bg-cyan/90 sm:px-5">
+              <button onClick={() => copyText(command, "Production command copied")} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 overflow-hidden rounded-full bg-cyan px-4 text-sm font-semibold text-ink hover:bg-cyan/90 sm:px-5">
                 <Copy className="h-4 w-4 shrink-0" />
                 <span className="hidden sm:inline">Copy command</span>
                 <span className="sm:hidden">Copy</span>
@@ -276,9 +389,9 @@ export function MediaStudioApp() {
         <div className="grid min-w-0 gap-5 px-5 py-5 lg:px-8">
           <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard label="Total Clips" value={clips.length} detail="Candidates in review queue" icon={FileVideo} />
-            <MetricCard label="Approved" value={approved} detail="Ready for guarded publish" icon={BadgeCheck} />
+            <MetricCard label="Approved" value={approved} detail="Ready for schedule" icon={BadgeCheck} />
             <MetricCard label="Avg Score" value={metricAverage(clips)} detail="Overall content quality" icon={Gauge} />
-            <MetricCard label="Credentials" value={`${readyPlatforms}/4`} detail="Connected publish channels" icon={Database} />
+            <MetricCard label="Scheduled" value={scheduledCount} detail="Queue-only publish slots" icon={CalendarDays} />
           </section>
 
           {section === "dashboard" && (
@@ -286,6 +399,7 @@ export function MediaStudioApp() {
               clips={clips}
               selected={selected}
               credentials={credentials}
+              schedule={schedule}
               onSection={setSection}
               onApprove={approveClip}
               onPublish={() => publishTelegram(true)}
@@ -293,7 +407,16 @@ export function MediaStudioApp() {
           )}
 
           {section === "generate" && (
-            <GenerateSection count={count} setCount={setCount} command={productionCommand(count)} onCopy={() => copyText(productionCommand(count), "Production command copied")} />
+            <GenerateSection
+              config={generateConfig}
+              templates={templates}
+              jobs={jobs}
+              busy={busy}
+              setConfig={setGenerateConfig}
+              command={command}
+              onGenerate={startGeneration}
+              onCopy={() => copyText(command, "Production command copied")}
+            />
           )}
 
           {section === "review" && (
@@ -304,19 +427,24 @@ export function MediaStudioApp() {
               setFilter={setFilter}
               setSelectedId={setSelectedId}
               onApprove={approveClip}
+              onSchedule={scheduleNext}
               onDelete={deleteClip}
               onClear={clearQueue}
             />
+          )}
+
+          {section === "calendar" && (
+            <CalendarSection schedule={schedule} approved={clips.filter((clip) => clip.status === "approved")} onSchedule={scheduleNext} onUnschedule={unscheduleClip} />
           )}
 
           {section === "publish" && (
             <PublishSection targets={targets} credentials={credentials} selected={selected} onDryRun={() => publishTelegram(true)} onLive={() => publishTelegram(false)} />
           )}
 
-          {section === "brand" && <BrandSection style={style} command={productionCommand(count)} onCopy={() => copyText(productionCommand(count), "Production command copied")} />}
+          {section === "brand" && <BrandSection style={style} templates={templates} command={command} onCopy={() => copyText(command, "Production command copied")} />}
         </div>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-white/[0.08] bg-surface/[0.95] backdrop-blur-xl lg:hidden">
+        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-6 border-t border-white/[0.08] bg-surface/[0.95] backdrop-blur-xl lg:hidden">
           {nav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
@@ -348,6 +476,7 @@ function DashboardSection({
   clips,
   selected,
   credentials,
+  schedule,
   onSection,
   onApprove,
   onPublish,
@@ -355,6 +484,7 @@ function DashboardSection({
   clips: ClipCandidate[];
   selected?: ClipCandidate;
   credentials: CredentialStatus | null;
+  schedule: ScheduledPost[];
   onSection: (section: Section) => void;
   onApprove: (id: string) => void;
   onPublish: () => void;
@@ -375,7 +505,7 @@ function DashboardSection({
             ["Generate", "Long video → 5 candidates", Sparkles],
             ["Curate", "Score, rank, context trim", Eye],
             ["Review", "Preview, caption, approve", Clapperboard],
-            ["Publish", "Telegram live, others dry-run", Rocket],
+            ["Schedule", "2 guarded slots per day", CalendarDays],
           ].map(([title, copy, Icon]) => (
             <div key={title as string} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
               <div className="mb-4 grid h-10 w-10 place-items-center rounded-2xl bg-cyan text-ink"><Icon className="h-5 w-5" /></div>
@@ -399,16 +529,19 @@ function DashboardSection({
         <PreviewPanel clip={selected} />
         <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">Platform readiness</h3>
-            <button onClick={onPublish} className="rounded-full border border-cyan/[0.25] bg-teal/[0.10] px-4 py-2 text-sm font-semibold text-cyan">Telegram dry-run</button>
+            <h3 className="text-lg font-semibold text-white">Next publish queue</h3>
+            <button onClick={() => onSection("calendar")} className="rounded-full border border-cyan/[0.25] bg-teal/[0.10] px-4 py-2 text-sm font-semibold text-cyan">Open Calendar</button>
           </div>
           <div className="grid gap-3">
-            {credentials ? Object.entries(credentials.platforms).map(([platform, item]) => (
-              <div key={platform} className="flex items-center justify-between rounded-2xl bg-canvas-deep px-4 py-3">
-                <span className="text-sm text-zinc-300">{platformLabel(platform)}</span>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.ready ? "bg-teal/[0.10] text-teal" : "bg-warning/[0.10] text-warning"}`}>{item.ready ? "Ready" : `${item.missing_keys.length} missing`}</span>
+            {schedule.slice(0, 4).length ? schedule.slice(0, 4).map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl bg-canvas-deep px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-zinc-200">{item.title_hook}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{formatSchedule(item.scheduled_at)}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
               </div>
-            )) : <EmptyState text="Credential status unavailable." />}
+            )) : <EmptyState text="No scheduled clips yet. Approve a clip, then schedule the next slot." />}
           </div>
         </div>
       </div>
@@ -416,29 +549,69 @@ function DashboardSection({
   );
 }
 
-function GenerateSection({count, setCount, command, onCopy}: {count: number; setCount: (value: number) => void; command: string; onCopy: () => void}) {
+function GenerateSection({
+  config,
+  templates,
+  jobs,
+  busy,
+  setConfig,
+  command,
+  onGenerate,
+  onCopy,
+}: {
+  config: GenerateConfig;
+  templates: BrandTemplate[];
+  jobs: GenerationJob[];
+  busy: boolean;
+  setConfig: (value: GenerateConfig) => void;
+  command: string;
+  onGenerate: () => void;
+  onCopy: () => void;
+}) {
+  const latest = jobs[0];
+  const update = (patch: Partial<GenerateConfig>) => setConfig({...config, ...patch});
   return (
     <section className="grid gap-5 xl:grid-cols-[.85fr_1.15fr]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-xl font-semibold text-white">Generate production batch</h3>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">The dashboard is SaaS-ready, while execution stays local-first. Copy this command to render a new Nourbit batch with Whisper, DeepSeek, and Remotion.</p>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">Run a local-first production job from the dashboard, or copy the exact command for terminal fallback.</p>
         <div className="mt-6 grid gap-4">
           <label className="grid gap-2 text-sm font-medium text-zinc-300">
             YouTube source
-            <input value={sourceUrl} readOnly className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 text-sm text-zinc-300 outline-none" />
+            <input value={config.sourceUrl} onChange={(event) => update({sourceUrl: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 text-sm text-zinc-300 outline-none focus:border-cyan/[0.30]" />
           </label>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-medium text-zinc-300">
+              Clip count
+              <select value={config.count} onChange={(event) => update({count: Number(event.target.value)})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
+                {[1, 2, 3, 5, 8, 10].map((value) => <option key={value} value={value}>{value} clips</option>)}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-medium text-zinc-300">
+              Clip length
+              <select value={config.clipLength} onChange={(event) => update({clipLength: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
+                {["30-60s", "45-120s", "60-90s"].map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+          </div>
           <label className="grid gap-2 text-sm font-medium text-zinc-300">
-            Clip count
-            <select value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
-              {[1, 2, 3, 5, 8].map((value) => <option key={value} value={value}>{value} clips</option>)}
+            Brand template
+            <select value={config.brandTemplate} onChange={(event) => update({brandTemplate: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
+              {(templates.length ? templates : [{id: defaultTemplate, label: "Nourbit Opus Style", path: defaultTemplate}]).map((template) => (
+                <option key={template.id} value={template.path}>{template.label}</option>
+              ))}
             </select>
           </label>
           <div className="grid grid-cols-2 gap-3">
-            <SettingTile label="Renderer" value="Remotion" />
-            <SettingTile label="Caption" value="Whisper medium" />
-            <SettingTile label="LLM" value="DeepSeek" />
-            <SettingTile label="Quality" value="Production" />
+            <SelectTile label="Renderer" value={config.renderer} options={["remotion", "ffmpeg"]} onChange={(value) => update({renderer: value})} />
+            <SelectTile label="Caption" value={config.captionSource} options={["whisper", "hybrid", "youtube"]} onChange={(value) => update({captionSource: value})} />
+            <SelectTile label="LLM" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
+            <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
           </div>
+          <button disabled={busy || !config.sourceUrl.trim()} onClick={onGenerate} className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            Generate batch
+          </button>
         </div>
       </div>
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
@@ -447,8 +620,36 @@ function GenerateSection({count, setCount, command, onCopy}: {count: number; set
           <button onClick={onCopy} className="inline-flex rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink"><Copy className="mr-2 h-4 w-4" /> Copy</button>
         </div>
         <pre className="max-h-[520px] overflow-auto rounded-[24px] border border-white/[0.08] bg-canvas-deep p-5 text-xs leading-6 text-zinc-300">{command}</pre>
+        <div className="mt-4 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h4 className="font-semibold text-white">Latest job</h4>
+            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(latest?.status || "empty")}`}>{latest?.status || "No job"}</span>
+          </div>
+          {latest ? (
+            <div className="grid gap-3">
+              <div className="h-2 overflow-hidden rounded-full bg-surface-strong">
+                <div className="h-full rounded-full bg-cyan transition-all" style={{width: `${Math.max(4, Math.min(100, latest.progress || 0))}%`}} />
+              </div>
+              <p className="text-xs text-zinc-400">{latest.progress || 0}% · {latest.count} clips · {latest.llm_provider}/{latest.caption_source}</p>
+              <pre className="max-h-40 overflow-auto rounded-2xl bg-black/40 p-3 text-[11px] leading-5 text-zinc-400">{latest.error || latest.log_text || "Waiting for logs..."}</pre>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500">Start a batch to see live progress here.</p>
+          )}
+        </div>
       </div>
     </section>
+  );
+}
+
+function SelectTile({label, value, options, onChange}: {label: string; value: string; options: string[]; onChange: (value: string) => void}) {
+  return (
+    <label className="grid gap-2 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      {label}
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="min-w-0 bg-transparent text-sm font-semibold normal-case tracking-normal text-white outline-none">
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -459,6 +660,7 @@ function ReviewSection({
   setFilter,
   setSelectedId,
   onApprove,
+  onSchedule,
   onDelete,
   onClear,
 }: {
@@ -468,6 +670,7 @@ function ReviewSection({
   setFilter: (value: string) => void;
   setSelectedId: (id: string) => void;
   onApprove: (id: string) => void;
+  onSchedule: (id: string) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
 }) {
@@ -480,7 +683,7 @@ function ReviewSection({
             <p className="mt-1 text-sm text-zinc-400">Ranked clip candidates with scoring, QA, cost, and destructive controls.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {["all", "draft", "rendered", "approved", "published"].map((item) => (
+            {["all", "draft", "rendered", "approved", "scheduled", "ready_to_publish", "published"].map((item) => (
               <button key={item} onClick={() => setFilter(item)} className={`rounded-full px-4 py-2 text-sm font-medium ${filter === item ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}>{item}</button>
             ))}
             <button onClick={onClear} className="inline-flex items-center gap-2 rounded-full border border-danger/[0.30] bg-danger/[0.10] px-4 py-2 text-sm font-semibold text-danger"><Trash2 className="h-4 w-4" /> Clear</button>
@@ -502,7 +705,11 @@ function ReviewSection({
               <ScoreBubble label="QA" value={clip.render_quality?.quality_score} />
               <div className="flex justify-end gap-2">
                 <span className="rounded-full border border-white/[0.10] px-3 py-2 text-xs text-zinc-300">${Number(clip.cost?.estimated_total || 0).toFixed(4)}</span>
-                <button type="button" onClick={(event) => { event.stopPropagation(); onApprove(clip.id); }} className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal">Approve</button>
+                {clip.status === "approved" ? (
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onSchedule(clip.id); }} className="rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan">Schedule</button>
+                ) : (
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onApprove(clip.id); }} className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal">Approve</button>
+                )}
                 <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(clip.id); }} className="rounded-full border border-danger/[0.30] bg-danger/[0.10] px-3 py-2 text-danger"><Trash2 className="h-4 w-4" /></button>
               </div>
             </button>
@@ -512,6 +719,63 @@ function ReviewSection({
       <div className="grid gap-5">
         <PreviewPanel clip={selected} />
         <InsightPanel clip={selected} />
+      </div>
+    </section>
+  );
+}
+
+function CalendarSection({
+  schedule,
+  approved,
+  onSchedule,
+  onUnschedule,
+}: {
+  schedule: ScheduledPost[];
+  approved: ClipCandidate[];
+  onSchedule: (id: string) => void;
+  onUnschedule: (id: string) => void;
+}) {
+  return (
+    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-xl font-semibold text-white">Calendar queue</h3>
+            <p className="mt-1 text-sm text-zinc-400">Queue-only schedule for Nourbit. Default cadence is 2 posts per day at 09:00 and 19:30 WIB.</p>
+          </div>
+          <span className="rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-4 py-2 text-sm font-semibold text-cyan">Queue only</span>
+        </div>
+        <div className="grid gap-3">
+          {schedule.length ? schedule.map((item) => (
+            <div key={item.id} className="grid gap-3 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4 md:grid-cols-[160px_minmax(0,1fr)_140px] md:items-center">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-zinc-500">Scheduled</p>
+                <p className="mt-1 font-semibold text-cyan">{formatSchedule(item.scheduled_at)}</p>
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className="truncate text-base font-semibold text-white">{item.title_hook}</h4>
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{item.viral_reason}</p>
+              </div>
+              <button onClick={() => onUnschedule(item.candidate_id)} className="rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300">Unschedule</button>
+            </div>
+          )) : <EmptyState text="No scheduled posts yet. Approve clips first, then assign the next open slot." />}
+        </div>
+      </div>
+      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
+        <h3 className="text-lg font-semibold text-white">Approved clips</h3>
+        <p className="mt-1 text-sm text-zinc-400">Add approved clips to the next available Nourbit slot.</p>
+        <div className="mt-5 grid gap-3">
+          {approved.length ? approved.map((clip) => (
+            <div key={clip.id} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+              <p className="font-semibold text-white">{clip.title_hook}</p>
+              <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
+              <button onClick={() => onSchedule(clip.id)} className="mt-4 h-10 w-full rounded-full bg-cyan text-sm font-semibold text-ink">Schedule next slot</button>
+            </div>
+          )) : <EmptyState text="No approved clips waiting for schedule." />}
+        </div>
       </div>
     </section>
   );
@@ -558,7 +822,7 @@ function PublishSection({targets, credentials, selected, onDryRun, onLive}: {tar
   );
 }
 
-function BrandSection({style, command, onCopy}: {style: StyleProfile | null; command: string; onCopy: () => void}) {
+function BrandSection({style, templates, command, onCopy}: {style: StyleProfile | null; templates: BrandTemplate[]; command: string; onCopy: () => void}) {
   const caption = style?.caption || {};
   const layout = style?.layout || {};
   return (
@@ -573,6 +837,17 @@ function BrandSection({style, command, onCopy}: {style: StyleProfile | null; com
           <SettingTile label="Font" value={`${caption.font_family || "Sora"} ${caption.font_size || 32}px`} />
           <SettingTile label="Highlight" value={String(caption.highlight_word_color || "#00ff45")} />
           <SettingTile label="Animation" value={String(caption.animation || "bounce")} />
+        </div>
+        <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+          <h4 className="font-semibold text-white">Available templates</h4>
+          <div className="mt-3 grid gap-2">
+            {templates.length ? templates.map((template) => (
+              <div key={template.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-3">
+                <span className="text-sm text-zinc-200">{template.label}</span>
+                <span className="text-xs text-zinc-500">{template.path}</span>
+              </div>
+            )) : <EmptyState text="No style templates found." />}
+          </div>
         </div>
       </div>
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">

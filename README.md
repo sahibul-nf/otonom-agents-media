@@ -27,6 +27,14 @@ npm run dev
 
 Open `http://127.0.0.1:3000`. The dashboard proxies local engine calls through `MEDIA_ENGINE_API_BASE`, defaulting to `http://127.0.0.1:8765`.
 
+The dashboard now supports the daily Nourbit production loop:
+
+- Generate a production batch from a YouTube URL, clip count, length preset, renderer, caption source, LLM provider, and brand template.
+- Track background generation progress without blocking the browser.
+- Review and approve rendered clips.
+- Schedule approved clips into the next queue-only Nourbit slot. The V1 cadence is 2 posts per day at 09:00 and 19:30 WIB.
+- Publish remains explicit/manual by default; scheduled clips become ready queue items, not automatic live posts.
+
 ## Security First
 
 Live credentials are local-only. Start from:

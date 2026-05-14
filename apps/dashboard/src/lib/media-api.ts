@@ -1,4 +1,4 @@
-export type ClipStatus = "draft" | "rendered" | "approved" | "published" | "failed" | "archived" | string;
+export type ClipStatus = "draft" | "rendered" | "approved" | "scheduled" | "ready_to_publish" | "published" | "failed" | "archived" | string;
 
 export type ClipCandidate = {
   id: string;
@@ -59,6 +59,48 @@ export type StyleProfile = {
   layout?: Record<string, string>;
   caption?: Record<string, string | number | boolean>;
   overlay?: Record<string, string | number | boolean>;
+};
+
+export type BrandTemplate = {
+  id: string;
+  label: string;
+  path: string;
+};
+
+export type GenerationJob = {
+  id: string;
+  profile_id: string;
+  source_url: string;
+  count: number;
+  clip_length_preset: string;
+  brand_template: string;
+  renderer: string;
+  quality: string;
+  caption_source: string;
+  asr_model: string;
+  llm_provider: string;
+  status: string;
+  progress: number;
+  command: string;
+  log_text: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
+  result?: {count?: number; renders?: unknown[]};
+};
+
+export type ScheduledPost = {
+  id: string;
+  candidate_id: string;
+  profile_id: string;
+  scheduled_at: string;
+  status: string;
+  publish_mode: string;
+  platforms: string[];
+  title_hook: string;
+  viral_reason: string;
+  candidate_status: string;
+  output_path?: string;
 };
 
 export function apiPath(path: string) {
