@@ -101,6 +101,20 @@ type GenerateConfig = {
   llmProvider: string;
 };
 
+const reviewFilters = [
+  {id: "all", label: "All", statuses: []},
+  {id: "needs_review", label: "Needs Review", statuses: ["draft", "rendered"]},
+  {id: "approved", label: "Approved", statuses: ["approved"]},
+  {id: "scheduled", label: "Scheduled", statuses: ["scheduled", "ready_to_publish"]},
+  {id: "published", label: "Published", statuses: ["published"]},
+] as const;
+
+function matchesReviewFilter(clip: ClipCandidate, filter: string) {
+  const group = reviewFilters.find((item) => item.id === filter);
+  if (!group || group.id === "all") return true;
+  return (group.statuses as readonly string[]).includes(clip.status);
+}
+
 function productionCommand(config: GenerateConfig) {
   return `cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
 PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premium-batch \\
@@ -141,7 +155,7 @@ export function MediaStudioApp() {
   });
 
   const selected = useMemo(() => clips.find((clip) => clip.id === selectedId) || clips[0], [clips, selectedId]);
-  const filtered = useMemo(() => clips.filter((clip) => filter === "all" || clip.status === filter), [clips, filter]);
+  const filtered = useMemo(() => clips.filter((clip) => matchesReviewFilter(clip, filter)), [clips, filter]);
   const approved = clips.filter((clip) => clip.status === "approved").length;
   const scheduledCount = clips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
@@ -683,8 +697,8 @@ function ReviewSection({
             <p className="mt-1 text-sm text-zinc-400">Ranked clip candidates with scoring, QA, cost, and destructive controls.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {["all", "draft", "rendered", "approved", "scheduled", "ready_to_publish", "published"].map((item) => (
-              <button key={item} onClick={() => setFilter(item)} className={`rounded-full px-4 py-2 text-sm font-medium ${filter === item ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}>{item}</button>
+            {reviewFilters.map((item) => (
+              <button key={item.id} onClick={() => setFilter(item.id)} className={`rounded-full px-4 py-2 text-sm font-medium ${filter === item.id ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}>{item.label}</button>
             ))}
             <button onClick={onClear} className="inline-flex items-center gap-2 rounded-full border border-danger/[0.30] bg-danger/[0.10] px-4 py-2 text-sm font-semibold text-danger"><Trash2 className="h-4 w-4" /> Clear</button>
           </div>
