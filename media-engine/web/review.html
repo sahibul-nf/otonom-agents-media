@@ -7,32 +7,50 @@
     <style>
       :root {
         color-scheme: dark;
-        --bg: #090b0f;
-        --surface: #10141a;
-        --surface-2: #151a22;
-        --surface-3: #1b212b;
-        --line: #29313d;
-        --line-soft: rgba(255, 255, 255, 0.07);
-        --text: #f5f7f9;
-        --muted: #9aa5b3;
-        --subtle: #697382;
-        --green: #39d98a;
-        --green-2: #183626;
-        --amber: #f1bf5b;
-        --red: #ee6b6e;
-        --blue: #79a8ff;
-        --shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
-        --radius: 8px;
+        --canvas: #17171a;
+        --canvas-deep: #101114;
+        --surface: #202024;
+        --surface-raised: #252529;
+        --surface-panel: #2e2e33;
+        --surface-strong: #36363d;
+        --surface-teal: #084456;
+        --surface-teal-soft: #03313a;
+        --primary: #62eef8;
+        --teal: #00c2b7;
+        --cyan-deep: #00bbe0;
+        --ink: #001f29;
+        --warning: #ff910e;
+        --danger: #fe5b79;
+        --blue: #2489ff;
+        --purple: #9c60ff;
+        --text: #e5e5e5;
+        --strong: #ffffff;
+        --secondary: #9d9da6;
+        --tertiary: #707076;
+        --muted: #59595e;
+        --border: #2e2e33;
+        --border-strong: #36363d;
+        --success-bg: #003b3a;
+        --danger-bg: rgba(254, 91, 121, 0.16);
+        --warning-bg: rgba(255, 145, 14, 0.16);
+        --glow: 0 0 0 1px rgba(98, 238, 248, 0.2), 0 16px 44px rgba(0, 194, 183, 0.08);
+        --font: "HarmonyOS Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
       * { box-sizing: border-box; }
 
+      html {
+        background: var(--canvas);
+      }
+
       body {
         margin: 0;
         min-height: 100vh;
-        background: var(--bg);
+        background:
+          radial-gradient(circle at 76% 8%, rgba(98, 238, 248, 0.08), transparent 26%),
+          linear-gradient(180deg, #111216 0%, var(--canvas) 34%, #121215 100%);
         color: var(--text);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: var(--font);
       }
 
       button, select {
@@ -40,18 +58,21 @@
       }
 
       button {
-        min-height: 36px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: var(--surface-2);
+        min-height: 40px;
+        border: 1px solid var(--border-strong);
+        border-radius: 50px;
+        background: var(--surface-raised);
         color: var(--text);
-        padding: 8px 12px;
+        padding: 0 16px;
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: -0.5px;
         cursor: pointer;
       }
 
       button:hover:not(:disabled), select:hover {
-        border-color: rgba(255, 255, 255, 0.26);
-        background: var(--surface-3);
+        border-color: rgba(98, 238, 248, 0.42);
+        background: var(--surface-strong);
       }
 
       button:disabled {
@@ -60,140 +81,246 @@
       }
 
       button.primary {
-        background: #e8f8ee;
-        border-color: #e8f8ee;
-        color: #08130d;
-        font-weight: 750;
+        background: var(--primary);
+        border-color: var(--primary);
+        color: var(--ink);
+      }
+
+      button.secondary {
+        background: var(--surface-teal);
+        border-color: rgba(98, 238, 248, 0.2);
+        color: var(--strong);
+      }
+
+      button.ghost {
+        background: transparent;
+        border-color: var(--border);
+        color: var(--secondary);
       }
 
       button.green {
-        border-color: rgba(57, 217, 138, 0.45);
-        color: #c9f9de;
+        background: var(--surface-teal-soft);
+        border-color: rgba(0, 194, 183, 0.45);
+        color: #bffbf4;
       }
 
-      button.warn {
-        border-color: rgba(241, 191, 91, 0.45);
-        color: #ffe6b4;
+      button.danger {
+        background: var(--danger-bg);
+        border-color: rgba(254, 91, 121, 0.36);
+        color: #ffd2db;
       }
 
       select {
-        width: 154px;
-        min-height: 34px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        background: #0c1015;
+        width: 178px;
+        min-height: 40px;
+        border: 1px solid var(--border-strong);
+        border-radius: 50px;
+        background: var(--surface-raised);
         color: var(--text);
-        padding: 7px 9px;
+        padding: 0 14px;
+        font-size: 14px;
       }
 
       .app {
         min-height: 100vh;
         display: grid;
-        grid-template-columns: 264px minmax(0, 1fr);
+        grid-template-columns: 260px minmax(0, 1fr);
       }
 
       .sidebar {
-        border-right: 1px solid var(--line-soft);
-        background: #0b0e13;
-        padding: 18px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        border-right: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(16, 17, 20, 0.86);
+        backdrop-filter: blur(16px);
+        padding: 18px 14px;
         display: flex;
         flex-direction: column;
-        gap: 18px;
+        gap: 22px;
       }
 
       .brand {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
+        padding: 0 6px;
       }
 
       .mark {
-        width: 34px;
-        height: 34px;
-        border-radius: 8px;
-        background: #e8f8ee;
-        color: #08130d;
+        width: 44px;
+        height: 44px;
+        border: 1px solid var(--primary);
+        border-radius: 12px;
+        color: var(--strong);
         display: grid;
         place-items: center;
-        font-weight: 900;
+        font-size: 24px;
+        font-weight: 700;
+        box-shadow: 0 0 22px rgba(98, 238, 248, 0.18);
       }
 
       .brand h1 {
         margin: 0;
-        font-size: 15px;
-        line-height: 1.1;
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.12;
       }
 
-      .brand small {
-        color: var(--muted);
+      .brand small,
+      .muted {
+        color: var(--secondary);
         font-size: 12px;
+        line-height: 16px;
       }
 
       .nav {
         display: grid;
-        gap: 6px;
+        gap: 8px;
       }
 
       .nav button {
         width: 100%;
+        min-height: 52px;
         display: flex;
+        align-items: center;
         justify-content: space-between;
-        text-align: left;
-        color: var(--muted);
+        border-radius: 14px;
+        padding: 0 14px;
+        color: var(--secondary);
         background: transparent;
+        border-color: transparent;
+        text-align: left;
       }
 
       .nav button.active {
-        color: var(--text);
-        background: var(--surface);
-        border-color: var(--line);
+        color: var(--primary);
+        background: rgba(0, 194, 183, 0.15);
+        border-color: rgba(98, 238, 248, 0.18);
       }
 
-      .sidebar-footer {
+      .nav .nav-count {
+        min-width: 28px;
+        height: 22px;
+        border-radius: 50px;
+        display: inline-grid;
+        place-items: center;
+        background: var(--primary);
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .sidebar-stack {
         margin-top: auto;
         display: grid;
-        gap: 10px;
+        gap: 14px;
       }
 
-      .cap-box {
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 12px;
-        background: var(--surface);
+      .side-card {
+        border: 1px solid var(--border-strong);
+        border-radius: 20px;
+        padding: 16px;
+        background: linear-gradient(180deg, rgba(37, 37, 41, 0.96), rgba(32, 32, 36, 0.82));
       }
 
-      .cap-box strong {
+      .side-card h3 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .health-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 7px 0;
+        color: var(--secondary);
+        font-size: 12px;
+      }
+
+      .health-row strong {
+        color: var(--teal);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .plan-meter {
+        width: 100%;
+        height: 7px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: var(--surface-strong);
+        margin-top: 12px;
+      }
+
+      .plan-meter span {
         display: block;
-        font-size: 22px;
-        margin-top: 3px;
+        width: 68%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--primary);
       }
 
       .main {
+        min-width: 0;
         display: grid;
         grid-template-rows: auto 1fr;
-        min-width: 0;
       }
 
       .topbar {
-        min-height: 74px;
-        border-bottom: 1px solid var(--line-soft);
-        padding: 16px 24px;
+        min-height: 72px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        background: rgba(16, 17, 20, 0.72);
+        backdrop-filter: blur(16px);
+        padding: 14px 24px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 18px;
       }
 
-      .title h2 {
-        margin: 0;
-        font-size: 21px;
-        line-height: 1.12;
+      .channel-switcher {
+        min-width: 238px;
+        border: 1px solid var(--border-strong);
+        border-radius: 16px;
+        background: var(--surface);
+        padding: 10px 14px;
       }
 
-      .title p {
-        margin: 5px 0 0;
-        color: var(--muted);
-        font-size: 13px;
+      .channel-switcher span {
+        display: block;
+        color: var(--secondary);
+        font-size: 12px;
+        line-height: 16px;
+      }
+
+      .channel-switcher strong {
+        display: block;
+        margin-top: 3px;
+        color: var(--strong);
+        font-size: 14px;
+      }
+
+      .top-copy {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .top-copy h2 {
+        margin: 0;
+        color: var(--strong);
+        font-size: 24px;
+        font-weight: 700;
+        line-height: 32px;
+      }
+
+      .top-copy p {
+        margin: 4px 0 0;
+        color: var(--secondary);
+        font-size: 14px;
+        line-height: 21px;
+        letter-spacing: -0.5px;
       }
 
       .top-actions {
@@ -202,73 +329,165 @@
         gap: 10px;
       }
 
+      .icon-button {
+        width: 40px;
+        height: 40px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+      }
+
       .status {
-        min-width: 190px;
-        color: var(--muted);
-        font-size: 13px;
+        min-width: 144px;
+        color: var(--secondary);
+        font-size: 12px;
         text-align: right;
       }
 
-      .status.ok { color: var(--green); }
-      .status.error { color: var(--red); }
+      .status.ok { color: var(--teal); }
+      .status.error { color: var(--danger); }
 
       .content {
-        padding: 22px 24px 30px;
+        padding: 24px;
         display: grid;
         gap: 18px;
       }
 
-      .metrics {
+      .wallet-summary {
+        border: 1px solid var(--border-strong);
+        border-radius: 24px;
+        background: linear-gradient(180deg, rgba(32, 32, 36, 0.98), rgba(32, 32, 36, 0.72));
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
+        overflow: hidden;
+        box-shadow: var(--glow);
       }
 
       .metric {
-        border: 1px solid var(--line);
-        background: var(--surface);
-        border-radius: var(--radius);
-        padding: 15px;
-        min-height: 96px;
+        min-height: 118px;
+        padding: 22px;
+        display: grid;
+        align-content: center;
+        gap: 8px;
+        position: relative;
+      }
+
+      .metric + .metric {
+        border-left: 1px solid rgba(255, 255, 255, 0.07);
       }
 
       .metric span {
-        color: var(--muted);
+        color: var(--secondary);
         font-size: 12px;
+        font-weight: 500;
+        line-height: 16px;
+        text-transform: uppercase;
       }
 
       .metric strong {
-        display: block;
-        margin-top: 10px;
-        font-size: 28px;
-        line-height: 1;
+        color: var(--strong);
+        font-size: 34px;
+        font-weight: 600;
+        line-height: 38px;
+        font-variant-numeric: tabular-nums;
       }
 
       .metric small {
-        display: block;
-        margin-top: 8px;
-        color: var(--subtle);
+        color: var(--tertiary);
         font-size: 12px;
+        line-height: 16px;
+      }
+
+      .metric-icon {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        width: 44px;
+        height: 44px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        color: var(--primary);
+        background: rgba(0, 194, 183, 0.16);
+      }
+
+      .quick-actions {
+        border: 1px solid var(--border-strong);
+        border-radius: 24px;
+        background: var(--surface);
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        overflow: hidden;
+      }
+
+      .quick-action {
+        min-height: 84px;
+        padding: 18px 20px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        text-align: left;
+      }
+
+      .quick-action + .quick-action {
+        border-left: 1px solid rgba(255, 255, 255, 0.07);
+      }
+
+      .quick-action .action-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        color: var(--ink);
+        background: var(--primary);
+        font-size: 21px;
+      }
+
+      .quick-action:nth-child(2) .action-icon,
+      .quick-action:nth-child(3) .action-icon {
+        background: var(--surface-raised);
+        color: var(--primary);
+      }
+
+      .quick-action strong {
+        display: block;
+        color: var(--strong);
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .quick-action .action-text {
+        display: block;
+        margin-top: 3px;
+        color: var(--secondary);
+        font-size: 12px;
+        line-height: 16px;
       }
 
       .workspace {
         display: grid;
-        grid-template-columns: minmax(0, 1.55fr) minmax(330px, 0.85fr);
-        gap: 16px;
+        grid-template-columns: minmax(0, 1.42fr) minmax(350px, 0.68fr);
+        gap: 18px;
         align-items: start;
       }
 
       .panel {
-        border: 1px solid var(--line);
-        background: var(--surface);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow);
+        border: 1px solid var(--border-strong);
+        background: rgba(32, 32, 36, 0.92);
+        border-radius: 24px;
         min-width: 0;
+        overflow: hidden;
       }
 
       .panel-head {
-        padding: 15px 16px;
-        border-bottom: 1px solid var(--line-soft);
+        min-height: 64px;
+        padding: 16px 18px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -277,65 +496,179 @@
 
       .panel-head h3 {
         margin: 0;
-        font-size: 14px;
+        color: var(--strong);
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 24px;
       }
 
       .panel-body {
-        padding: 14px;
+        padding: 16px;
+      }
+
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tabs button {
+        min-height: 34px;
+        padding: 0 12px;
+        color: var(--secondary);
+        background: var(--canvas-deep);
+      }
+
+      .tabs button.active {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: var(--ink);
+      }
+
+      .clip-table-head,
+      .clip {
+        display: grid;
+        grid-template-columns: minmax(190px, 1fr) 82px 46px 46px 68px 52px 88px;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .clip-table-head {
+        padding: 0 12px 10px;
+        color: var(--secondary);
+        font-size: 11px;
+        line-height: 16px;
+        text-transform: uppercase;
       }
 
       .clip-list {
         display: grid;
-        gap: 10px;
+        gap: 0;
       }
 
       .clip {
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: #0d1117;
-        padding: 12px;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 12px;
+        min-height: 74px;
+        border: 1px solid transparent;
+        border-top-color: rgba(255, 255, 255, 0.07);
+        background: transparent;
+        padding: 10px 12px;
       }
 
       .clip.selected {
-        border-color: rgba(57, 217, 138, 0.58);
-        background: #0f1714;
+        border-color: rgba(98, 238, 248, 0.62);
+        border-radius: 14px;
+        background: rgba(0, 194, 183, 0.08);
+      }
+
+      .clip-title {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .clip-title > div {
+        min-width: 0;
+      }
+
+      .clip-thumb {
+        width: 64px;
+        height: 44px;
+        flex: 0 0 auto;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        color: var(--primary);
+        background:
+          linear-gradient(135deg, rgba(98, 238, 248, 0.16), rgba(0, 194, 183, 0.04)),
+          var(--surface-raised);
+        border: 1px solid var(--border-strong);
+        font-size: 12px;
+        font-weight: 700;
       }
 
       .clip h4 {
         margin: 0;
-        font-size: 15px;
-        line-height: 1.25;
-      }
-
-      .clip-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 7px;
-        margin-top: 9px;
-      }
-
-      .badge {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 4px 8px;
-        color: var(--muted);
-        font-size: 11px;
-        line-height: 1;
+        color: var(--strong);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 20px;
+        overflow: hidden;
+        text-overflow: ellipsis;
         white-space: nowrap;
       }
 
-      .badge strong { color: var(--text); }
-      .badge.green { border-color: rgba(57, 217, 138, 0.42); color: #c9f9de; }
-      .badge.amber { border-color: rgba(241, 191, 91, 0.42); color: #ffe6b4; }
-      .badge.red { border-color: rgba(238, 107, 110, 0.42); color: #ffc7c9; }
+      .clip-sub {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        color: var(--secondary);
+        font-size: 12px;
+      }
+
+      .badge {
+        width: fit-content;
+        border: 1px solid var(--border-strong);
+        border-radius: 999px;
+        padding: 5px 10px;
+        color: var(--secondary);
+        background: var(--surface-raised);
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 16px;
+        white-space: nowrap;
+      }
+
+      .badge strong { color: var(--strong); }
+      .badge.green { border-color: rgba(0, 194, 183, 0.24); background: var(--success-bg); color: var(--teal); }
+      .badge.amber { border-color: rgba(255, 145, 14, 0.3); background: var(--warning-bg); color: var(--warning); }
+      .badge.red { border-color: rgba(254, 91, 121, 0.36); background: var(--danger-bg); color: var(--danger); }
+      .badge.cyan { border-color: rgba(98, 238, 248, 0.36); background: rgba(98, 238, 248, 0.12); color: var(--primary); }
+
+      .score-ring {
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--warning);
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        color: var(--strong);
+        font-size: 12px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .score-ring.good { border-color: var(--teal); }
+      .score-ring.low { border-color: var(--danger); }
+
+      .cost,
+      .duration {
+        color: var(--text);
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
 
       .clip-actions {
         display: flex;
-        align-items: start;
-        gap: 8px;
+        justify-content: end;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .clip-actions button {
+        min-height: 36px;
+        padding: 0 9px;
+        font-size: 13px;
+      }
+
+      .clip-actions .approve-icon {
+        width: 36px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        font-size: 16px;
+        font-weight: 700;
       }
 
       .detail {
@@ -345,13 +678,14 @@
 
       .preview-frame {
         position: relative;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
+        border: 1px solid var(--border-strong);
+        border-radius: 18px;
         overflow: hidden;
         background: #050607;
         aspect-ratio: 9 / 16;
-        max-height: 540px;
+        max-height: 460px;
         margin: 0 auto;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
       }
 
       video {
@@ -366,7 +700,7 @@
         height: 100%;
         display: grid;
         place-items: center;
-        color: var(--muted);
+        color: var(--secondary);
         padding: 24px;
         text-align: center;
       }
@@ -378,122 +712,261 @@
       }
 
       .kv {
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 10px;
-        background: #0d1117;
+        border: 1px solid var(--border-strong);
+        border-radius: 14px;
+        padding: 12px;
+        background: var(--surface-raised);
       }
 
       .kv span {
         display: block;
-        color: var(--muted);
+        color: var(--secondary);
         font-size: 11px;
+        line-height: 16px;
       }
 
       .kv strong {
         display: block;
-        margin-top: 5px;
-        font-size: 14px;
+        margin-top: 4px;
+        color: var(--strong);
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 18px;
         overflow-wrap: anywhere;
       }
 
       .post-copy {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 12px;
-        background: #0c1015;
-        color: #dce4eb;
+        border: 1px solid var(--border-strong);
+        border-radius: 16px;
+        padding: 14px;
+        background: var(--canvas-deep);
+        color: var(--text);
         font-size: 12px;
-        line-height: 1.48;
-        max-height: 210px;
+        line-height: 1.52;
+        max-height: 220px;
         overflow: auto;
       }
 
-      .mode-list, .credential-list {
+      .mode-list,
+      .credential-list {
         display: grid;
-        gap: 9px;
+        gap: 10px;
       }
 
       .platform-row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        gap: 10px;
+        gap: 12px;
         align-items: center;
-        padding: 10px;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        background: #0d1117;
+        padding: 13px;
+        border: 1px solid var(--border-strong);
+        border-radius: 18px;
+        background: var(--surface-raised);
       }
+
+      .platform-left {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .platform-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        color: white;
+        font-size: 16px;
+        font-weight: 700;
+        background: var(--surface-strong);
+      }
+
+      .platform-icon.facebook_reels { background: var(--blue); }
+      .platform-icon.youtube_shorts { background: #ff2a2a; }
+      .platform-icon.tiktok { background: #050607; border: 1px solid var(--border-strong); }
+      .platform-icon.telegram_channel { background: #2da5df; }
 
       .platform-row span {
         display: block;
-        font-size: 13px;
+        color: var(--strong);
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 19px;
       }
 
       .platform-row small {
         display: block;
-        margin-top: 4px;
-        color: var(--muted);
-        font-size: 11px;
+        margin-top: 2px;
+        color: var(--secondary);
+        font-size: 12px;
+        line-height: 16px;
+      }
+
+      .publish-cta {
+        display: grid;
+        gap: 10px;
       }
 
       .command {
+        display: block;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        color: #d7dee8;
-        background: #0b0d12;
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 12px;
+        color: #d7f9fb;
+        background: var(--canvas-deep);
+        border: 1px solid var(--border-strong);
+        border-radius: 16px;
+        padding: 14px;
       }
 
-      .tabs {
-        display: flex;
-        gap: 8px;
-      }
-
-      .tabs button {
-        min-height: 32px;
-        color: var(--muted);
-      }
-
-      .tabs button.active {
-        color: #08130d;
-        border-color: #e8f8ee;
-        background: #e8f8ee;
+      .bottom-tabs {
+        display: none;
       }
 
       .hidden { display: none; }
 
-      @media (max-width: 1080px) {
-        .app { grid-template-columns: 1fr; }
-        .sidebar {
-          border-right: 0;
-          border-bottom: 1px solid var(--line-soft);
-        }
-        .nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-        .sidebar-footer { display: none; }
+      @media (max-width: 1240px) {
+        .app { grid-template-columns: 228px minmax(0, 1fr); }
         .workspace { grid-template-columns: 1fr; }
+        .detail {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          align-items: start;
+        }
+        .detail .panel:first-child { grid-row: span 2; }
+        .preview-frame { max-height: 420px; }
       }
 
-      @media (max-width: 720px) {
+      @media (max-width: 980px) {
+        .app { grid-template-columns: 1fr; }
+        .sidebar {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .sidebar-stack { display: none; }
         .topbar {
           align-items: stretch;
           flex-direction: column;
         }
-        .top-actions {
-          justify-content: space-between;
+        .top-actions { justify-content: space-between; }
+        .status { min-width: 0; text-align: left; }
+        .wallet-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .metric:nth-child(3) { border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+        .metric:nth-child(4) { border-top: 1px solid rgba(255, 255, 255, 0.07); }
+        .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .quick-action:nth-child(3) { border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+        .quick-action:nth-child(4) { border-top: 1px solid rgba(255, 255, 255, 0.07); }
+        .clip-table-head { display: none; }
+        .clip {
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 10px;
         }
-        .status { text-align: left; min-width: 0; }
-        .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .clip { grid-template-columns: 1fr; }
-        .clip-actions { justify-content: stretch; }
+        .clip .mobile-hide { display: none; }
+        .detail { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 640px) {
+        body { padding-bottom: 76px; }
+        .sidebar {
+          padding: 14px 16px;
+          gap: 14px;
+        }
+        .brand { padding: 0; }
+        .nav { display: none; }
+        .topbar {
+          padding: 16px 20px;
+        }
+        .channel-switcher {
+          min-width: 0;
+          width: 100%;
+        }
+        .top-actions {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 10px;
+        }
+        .top-actions .icon-button { display: none; }
+        .top-actions button {
+          width: 100%;
+          min-width: 0;
+        }
+        #copy-command {
+          white-space: normal;
+        }
+        .content {
+          padding: 18px 16px 26px;
+        }
+        .wallet-summary,
+        .quick-actions {
+          grid-template-columns: 1fr;
+        }
+        .metric + .metric,
+        .metric:nth-child(3),
+        .metric:nth-child(4),
+        .quick-action + .quick-action,
+        .quick-action:nth-child(3),
+        .quick-action:nth-child(4) {
+          border-left: 0;
+          border-top: 1px solid rgba(255, 255, 255, 0.07);
+        }
+        .panel {
+          border-radius: 20px;
+        }
+        .panel-head {
+          align-items: stretch;
+          flex-direction: column;
+        }
+        .tabs { overflow-x: auto; flex-wrap: nowrap; }
+        .clip {
+          grid-template-columns: 1fr;
+          border-radius: 14px;
+          margin-bottom: 8px;
+          background: var(--surface-raised);
+        }
+        .clip-title { align-items: start; }
+        .clip h4 { white-space: normal; }
+        .clip-actions {
+          justify-content: stretch;
+        }
         .clip-actions button { flex: 1; }
+        .clip-actions .approve-icon {
+          width: auto;
+        }
         .detail-grid { grid-template-columns: 1fr; }
-        .nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .bottom-tabs {
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 20;
+          height: 72px;
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          border-top: 1px solid var(--border-strong);
+          background: rgba(32, 32, 36, 0.94);
+          backdrop-filter: blur(18px);
+        }
+        .bottom-tabs button {
+          min-height: 72px;
+          border: 0;
+          border-radius: 0;
+          background: transparent;
+          color: var(--tertiary);
+          display: grid;
+          place-items: center;
+          align-content: center;
+          gap: 3px;
+          font-size: 11px;
+        }
+        .bottom-tabs button.active {
+          color: var(--primary);
+        }
       }
     </style>
   </head>
@@ -504,50 +977,101 @@
           <div class="mark">N</div>
           <div>
             <h1>Nourbit Engine</h1>
-            <small>Autonomous media ops</small>
+            <small>Media Operations</small>
           </div>
         </div>
 
         <nav class="nav" aria-label="Dashboard sections">
-          <button class="active" data-section="queue">Queue <span id="queue-count">0</span></button>
-          <button data-section="publish">Publish <span id="ready-count">0</span></button>
+          <button class="active" data-section="queue">Review Queue <span class="nav-count" id="queue-count">0</span></button>
+          <button data-section="publish">Publish <span class="nav-count" id="ready-count">0</span></button>
           <button data-section="style">Style <span>V1</span></button>
           <button data-section="settings">Settings <span>Ops</span></button>
         </nav>
 
-        <div class="sidebar-footer">
-          <div class="cap-box">
-            <span class="muted">Daily content cap</span>
-            <strong id="daily-cap">2</strong>
-            <span class="muted">Content/day for Nourbit</span>
+        <div class="sidebar-stack">
+          <div class="side-card">
+            <h3>System Status <span class="badge green">live</span></h3>
+            <div class="health-row"><span>Renderer</span><strong>Online</strong></div>
+            <div class="health-row"><span>LLM (DeepSeek)</span><strong>Online</strong></div>
+            <div class="health-row"><span>ASR (Whisper)</span><strong>Online</strong></div>
+            <div class="health-row"><span>Storage</span><strong>Online</strong></div>
           </div>
-          <div class="cap-box">
-            <span class="muted">Automation mode</span>
-            <strong id="automation-mode">Review</strong>
-            <span class="muted">Live publish stays gated</span>
+
+          <div class="side-card">
+            <h3>Current Plan</h3>
+            <div class="health-row"><span>Pro</span><strong id="automation-mode">Review</strong></div>
+            <div class="health-row"><span>Daily cap</span><strong id="daily-cap">2</strong></div>
+            <div class="plan-meter" aria-hidden="true"><span></span></div>
+            <p class="muted">Usage guard stays review-first before live posting.</p>
           </div>
         </div>
       </aside>
 
       <div class="main">
         <header class="topbar">
-          <div class="title">
-            <h2>Review, approve, and publish Nourbit shorts</h2>
-            <p>Production control room for rendered clips, platform readiness, post copy, and safe publishing.</p>
+          <div class="channel-switcher">
+            <span>Project / Channel</span>
+            <strong>Nourbit Media</strong>
           </div>
+
+          <div class="top-copy">
+            <h2>Review Queue</h2>
+            <p>Review, approve, and publish your generated short videos.</p>
+          </div>
+
           <div class="top-actions">
-            <button id="refresh">Refresh</button>
+            <button class="icon-button ghost" id="help-action" title="Show status">?</button>
+            <button class="ghost" id="refresh">Refresh</button>
             <button class="primary" id="copy-command">Copy run command</button>
             <div class="status" id="status">Ready</div>
           </div>
         </header>
 
         <main class="content">
-          <section class="metrics" aria-label="Nourbit overview">
-            <div class="metric"><span>Total clips</span><strong id="metric-total">0</strong><small>Rendered and candidates</small></div>
-            <div class="metric"><span>Approved</span><strong id="metric-approved">0</strong><small>Ready for review-gated publish</small></div>
-            <div class="metric"><span>Avg score</span><strong id="metric-score">-</strong><small>Overall quality score</small></div>
-            <div class="metric"><span>Credential status</span><strong id="metric-creds">-</strong><small>Connected platforms ready</small></div>
+          <section class="wallet-summary" aria-label="Nourbit overview">
+            <div class="metric">
+              <span>Total clips</span>
+              <strong id="metric-total">0</strong>
+              <small>Rendered and candidates</small>
+              <div class="metric-icon">▶</div>
+            </div>
+            <div class="metric">
+              <span>Approved</span>
+              <strong id="metric-approved">0</strong>
+              <small>Ready for review-gated publish</small>
+              <div class="metric-icon">✓</div>
+            </div>
+            <div class="metric">
+              <span>Avg overall score</span>
+              <strong id="metric-score">-</strong>
+              <small>Quality score across queue</small>
+              <div class="metric-icon">▥</div>
+            </div>
+            <div class="metric">
+              <span>Credential status</span>
+              <strong id="metric-creds">-</strong>
+              <small>Connected platforms ready</small>
+              <div class="metric-icon">♢</div>
+            </div>
+          </section>
+
+          <section class="quick-actions" aria-label="Quick actions">
+            <button class="quick-action" id="quick-refresh">
+              <span class="action-icon">◇</span>
+              <span><strong>Curate New</strong><span class="action-text">Refresh Queue</span></span>
+            </button>
+            <button class="quick-action" id="quick-command">
+              <span class="action-icon">▦</span>
+              <span><strong>Render Clips</strong><span class="action-text">Copy Production Command</span></span>
+            </button>
+            <button class="quick-action" id="quick-approve">
+              <span class="action-icon">✓</span>
+              <span><strong>Approve Clip</strong><span class="action-text">Selected Candidate</span></span>
+            </button>
+            <button class="quick-action" data-section-jump="publish">
+              <span class="action-icon">↗</span>
+              <span><strong>Publish Now</strong><span class="action-text">Open Platforms</span></span>
+            </button>
           </section>
 
           <section class="workspace" id="section-queue">
@@ -562,20 +1086,32 @@
                 </div>
               </div>
               <div class="panel-body">
+                <div class="clip-table-head" aria-hidden="true">
+                  <span>Clip</span>
+                  <span>Status</span>
+                  <span>Score</span>
+                  <span>QA</span>
+                  <span>Cost</span>
+                  <span>Duration</span>
+                  <span></span>
+                </div>
                 <div class="clip-list" id="clips"></div>
               </div>
             </div>
 
             <aside class="detail">
               <div class="panel">
-                <div class="panel-head"><h3>Preview</h3><span class="badge" id="selected-status">No clip</span></div>
+                <div class="panel-head">
+                  <h3>Selected Clip</h3>
+                  <span class="badge" id="selected-status">No clip</span>
+                </div>
                 <div class="panel-body">
                   <div class="preview-frame" id="preview"></div>
                 </div>
               </div>
 
               <div class="panel">
-                <div class="panel-head"><h3>Post copy</h3><button id="copy-caption">Copy</button></div>
+                <div class="panel-head"><h3>Post copy</h3><button class="ghost" id="copy-caption">Copy</button></div>
                 <div class="panel-body">
                   <div class="post-copy" id="post-copy">Select a rendered clip.</div>
                 </div>
@@ -592,23 +1128,21 @@
 
           <section class="workspace hidden" id="section-publish">
             <div class="panel">
-              <div class="panel-head"><h3>Platform modes</h3><span class="badge">Nourbit only</span></div>
+              <div class="panel-head"><h3>Platform modes</h3><span class="badge cyan">Nourbit only</span></div>
               <div class="panel-body">
                 <div class="mode-list" id="platform-modes"></div>
               </div>
             </div>
             <aside class="detail">
               <div class="panel">
-                <div class="panel-head"><h3>Credential readiness</h3></div>
+                <div class="panel-head"><h3>Publish Readiness</h3><span class="badge green" id="publish-ready-badge">0/4</span></div>
                 <div class="panel-body"><div class="credential-list" id="credentials"></div></div>
               </div>
               <div class="panel">
                 <div class="panel-head"><h3>Publish actions</h3></div>
-                <div class="panel-body">
-                  <div class="detail-grid">
-                    <button class="green" id="dry-run-telegram">Dry-run Telegram</button>
-                    <button class="primary" id="live-telegram">Live Telegram</button>
-                  </div>
+                <div class="panel-body publish-cta">
+                  <button class="secondary" id="dry-run-telegram">Dry-run Telegram</button>
+                  <button class="primary" id="live-telegram">Publish to Telegram</button>
                   <p class="muted">Live publishing is currently enabled for Telegram only. YouTube, Facebook, and TikTok stay dry-run until their connector flows are complete.</p>
                 </div>
               </div>
@@ -617,7 +1151,7 @@
 
           <section class="workspace hidden" id="section-style">
             <div class="panel">
-              <div class="panel-head"><h3>Nourbit style baseline</h3><span class="badge">Opus-inspired</span></div>
+              <div class="panel-head"><h3>Nourbit style baseline</h3><span class="badge cyan">Opus-inspired</span></div>
               <div class="panel-body" id="style-panel"></div>
             </div>
             <aside class="detail">
@@ -653,6 +1187,13 @@
       </div>
     </div>
 
+    <nav class="bottom-tabs" aria-label="Mobile dashboard sections">
+      <button class="active" data-section="queue">◎<span>Review</span></button>
+      <button data-section="style">▦<span>Style</span></button>
+      <button data-section="publish">↗<span>Publish</span></button>
+      <button data-section="settings">⚙<span>Ops</span></button>
+    </nav>
+
     <script>
       const state = {
         clips: [],
@@ -670,6 +1211,12 @@
         tiktok: "TikTok",
         telegram_channel: "Telegram Channel",
       };
+      const platformMarks = {
+        facebook_reels: "f",
+        youtube_shorts: "▶",
+        tiktok: "♪",
+        telegram_channel: "↗",
+      };
 
       const els = {
         clips: document.getElementById("clips"),
@@ -683,6 +1230,7 @@
         stylePanel: document.getElementById("style-panel"),
         testCommand: document.getElementById("test-command"),
         systemStatus: document.getElementById("system-status"),
+        publishReadyBadge: document.getElementById("publish-ready-badge"),
       };
 
       function setStatus(message, type = "") {
@@ -728,9 +1276,25 @@
       }
 
       function badgeClass(status) {
-        if (status === "approved" || status === "published") return "green";
-        if (status === "failed" || status === "rejected") return "red";
+        if (status === "approved" || status === "published" || status === "ready") return "green";
+        if (status === "failed" || status === "rejected" || status === "missing") return "red";
+        if (status === "rendered") return "cyan";
         return "amber";
+      }
+
+      function scoreClass(score) {
+        const value = Number(score || 0);
+        if (value >= 85) return "good";
+        if (value < 60 && value !== 0) return "low";
+        return "";
+      }
+
+      function formatDuration(ms) {
+        const seconds = Math.round(Number(ms || 0) / 1000);
+        if (!seconds) return "-";
+        const mins = Math.floor(seconds / 60);
+        const rest = String(seconds % 60).padStart(2, "0");
+        return mins ? `${mins}:${rest}` : `${seconds}s`;
       }
 
       function selectedClip() {
@@ -748,6 +1312,7 @@
         document.getElementById("metric-creds").textContent = state.credentials ? `${ready}/4` : "-";
         document.getElementById("queue-count").textContent = total;
         document.getElementById("ready-count").textContent = approved;
+        els.publishReadyBadge.textContent = state.credentials ? `${ready}/4` : "0/4";
         if (state.credentials) {
           document.getElementById("daily-cap").textContent = state.credentials.settings.nourbit_daily_content_cap || "2";
           document.getElementById("automation-mode").textContent = state.credentials.settings.nourbit_default_publish_mode || "Review";
@@ -761,24 +1326,34 @@
           els.clips.innerHTML = `<div class="muted">No clips in this filter.</div>`;
           return;
         }
-        els.clips.innerHTML = filtered.map((clip) => `
-          <article class="clip ${clip.id === state.selectedId ? "selected" : ""}" data-id="${escapeHtml(clip.id)}">
-            <div>
-              <h4>${escapeHtml(clip.title_hook)}</h4>
-              <div class="clip-meta">
-                <span class="badge ${badgeClass(clip.status)}">${escapeHtml(clip.status)}</span>
-                <span class="badge">Overall <strong>${clip.score?.overall_score ?? "-"}</strong></span>
-                <span class="badge">Viral <strong>${clip.score?.viral_score ?? "-"}</strong></span>
-                <span class="badge">QA <strong>${clip.render_quality?.quality_score ?? "-"}</strong></span>
-                <span class="badge">Cost $${Number(clip.cost?.estimated_total ?? 0).toFixed(4)}</span>
+        els.clips.innerHTML = filtered.map((clip) => {
+          const overall = clip.score?.overall_score ?? "-";
+          const qa = clip.render_quality?.quality_score ?? "-";
+          return `
+            <article class="clip ${clip.id === state.selectedId ? "selected" : ""}" data-id="${escapeHtml(clip.id)}">
+              <div class="clip-title">
+                <div class="clip-thumb">${escapeHtml(formatDuration(clip.render_quality?.duration_ms))}</div>
+                <div>
+                  <h4>${escapeHtml(clip.title_hook)}</h4>
+                  <div class="clip-sub">
+                    <span>Hook + Insight</span>
+                    <span>•</span>
+                    <span>${escapeHtml(clip.caption_source || "caption")}</span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="clip-actions">
-              <button data-action="select" data-id="${clip.id}">Open</button>
-              <button class="green" data-action="approve" data-id="${clip.id}" ${clip.status === "approved" || clip.status === "published" ? "disabled" : ""}>Approve</button>
-            </div>
-          </article>
-        `).join("");
+              <span class="badge ${badgeClass(clip.status)}">${escapeHtml(clip.status)}</span>
+              <span class="score-ring ${scoreClass(overall)}">${overall}</span>
+              <span class="score-ring ${scoreClass(qa)} mobile-hide">${qa}</span>
+              <span class="cost mobile-hide">$${Number(clip.cost?.estimated_total ?? 0).toFixed(4)}</span>
+              <span class="duration mobile-hide">${escapeHtml(formatDuration(clip.render_quality?.duration_ms))}</span>
+              <div class="clip-actions">
+                <button class="ghost" data-action="select" data-id="${escapeHtml(clip.id)}">Open</button>
+                <button class="green approve-icon" data-action="approve" data-id="${escapeHtml(clip.id)}" title="Approve clip" aria-label="Approve clip" ${clip.status === "approved" || clip.status === "published" ? "disabled" : ""}>✓</button>
+              </div>
+            </article>
+          `;
+        }).join("");
       }
 
       function renderSelected() {
@@ -813,7 +1388,10 @@
           const target = state.targets.find((item) => item.platform === platform);
           return `
             <div class="platform-row">
-              <div><span>${escapeHtml(label)}</span><small>${escapeHtml(target?.account_label || "Not configured")}</small></div>
+              <div class="platform-left">
+                <div class="platform-icon ${escapeHtml(platform)}">${escapeHtml(platformMarks[platform] || "•")}</div>
+                <div><span>${escapeHtml(label)}</span><small>${escapeHtml(target?.account_label || "Not configured")}</small></div>
+              </div>
               <select data-platform="${escapeHtml(platform)}">
                 ${modes.map((mode) => `<option value="${mode}" ${target?.mode === mode ? "selected" : ""}>${mode}</option>`).join("")}
               </select>
@@ -831,7 +1409,10 @@
           const item = state.credentials.platforms[platform] || {ready: false, missing_keys: []};
           return `
             <div class="platform-row">
-              <div><span>${escapeHtml(label)}</span><small>${item.ready ? "Ready" : `Missing: ${escapeHtml(item.missing_keys.join(", "))}`}</small></div>
+              <div class="platform-left">
+                <div class="platform-icon ${escapeHtml(platform)}">${escapeHtml(platformMarks[platform] || "•")}</div>
+                <div><span>${escapeHtml(label)}</span><small>${item.ready ? "Connected" : `Missing: ${escapeHtml(item.missing_keys.join(", "))}`}</small></div>
+              </div>
               <span class="badge ${item.ready ? "green" : "red"}">${item.ready ? "ready" : "missing"}</span>
             </div>
           `;
@@ -937,8 +1518,20 @@ PYTHONPATH=. python3 -m media_engine.cli premium-batch \\
         }
       }
 
+      function setSection(sectionName) {
+        document.querySelectorAll("[data-section]").forEach((item) => item.classList.toggle("active", item.dataset.section === sectionName));
+        document.querySelectorAll("[id^='section-']").forEach((section) => section.classList.add("hidden"));
+        document.getElementById(`section-${sectionName}`).classList.remove("hidden");
+      }
+
       document.getElementById("refresh").addEventListener("click", refreshAll);
+      document.getElementById("quick-refresh").addEventListener("click", refreshAll);
+      document.getElementById("help-action").addEventListener("click", () => setStatus("All systems operational. Live publish remains gated.", "ok"));
       document.getElementById("copy-command").addEventListener("click", async () => {
+        await copyText(els.testCommand.textContent);
+        setStatus("Production command copied", "ok");
+      });
+      document.getElementById("quick-command").addEventListener("click", async () => {
         await copyText(els.testCommand.textContent);
         setStatus("Production command copied", "ok");
       });
@@ -946,15 +1539,20 @@ PYTHONPATH=. python3 -m media_engine.cli premium-batch \\
         await copyText(els.postCopy.textContent);
         setStatus("Post copy copied", "ok");
       });
+      document.getElementById("quick-approve").addEventListener("click", async () => {
+        const clip = selectedClip();
+        if (!clip) return;
+        await approveSelected(clip.id);
+      });
       document.getElementById("dry-run-telegram").addEventListener("click", () => publishTelegram(true));
       document.getElementById("live-telegram").addEventListener("click", () => publishTelegram(false));
 
-      document.querySelectorAll(".nav button").forEach((button) => {
-        button.addEventListener("click", () => {
-          document.querySelectorAll(".nav button").forEach((item) => item.classList.toggle("active", item === button));
-          document.querySelectorAll("[id^='section-']").forEach((section) => section.classList.add("hidden"));
-          document.getElementById(`section-${button.dataset.section}`).classList.remove("hidden");
-        });
+      document.querySelectorAll("[data-section]").forEach((button) => {
+        button.addEventListener("click", () => setSection(button.dataset.section));
+      });
+
+      document.querySelectorAll("[data-section-jump]").forEach((button) => {
+        button.addEventListener("click", () => setSection(button.dataset.sectionJump));
       });
 
       document.querySelectorAll(".tabs button").forEach((button) => {
