@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import shutil
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -17,6 +18,38 @@ from .models import PUBLISH_MODES
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
 from .styles import load_style
+
+
+def _artifact_path(value: str) -> Path | None:
+    if not value:
+        return None
+    requested = Path(value).resolve()
+    root = ARTIFACTS_DIR.resolve()
+    if requested == root or root not in requested.parents:
+        return None
+    return requested
+
+
+def _delete_candidate_artifacts(paths: list[str]) -> list[str]:
+    removed: set[str] = set()
+    for value in paths:
+        artifact = _artifact_path(value)
+        if not artifact:
+            continue
+        root = ARTIFACTS_DIR.resolve()
+        try:
+            relative = artifact.relative_to(root)
+        except ValueError:
+            continue
+        target = root / relative.parts[0] / relative.parts[1] if len(relative.parts) >= 3 else artifact
+        if not target.exists() or str(target) in removed:
+            continue
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+        removed.add(str(target))
+    return sorted(removed)
 
 
 class ReviewHandler(SimpleHTTPRequestHandler):
@@ -40,6 +73,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                   ORDER BY r2.created_at DESC, r2.id DESC
                   LIMIT 1
                 )
+                WHERE c.status != 'archived'
                 ORDER BY c.created_at DESC
                 """,
             )
@@ -107,6 +141,71 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "candidate not found"}, status=404)
                 return
             self._send_json({"candidate_id": candidate_id, "status": "approved"})
+            return
+
+        if parsed.path == "/api/archive":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            result = conn.execute("UPDATE clip_candidates SET status = 'archived' WHERE id = ?", (candidate_id,))
+            conn.commit()
+            if result.rowcount == 0:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            self._send_json({"candidate_id": candidate_id, "status": "archived"})
+            return
+
+        if parsed.path == "/api/delete-candidate":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            delete_artifacts = bool(payload.get("delete_artifacts", True))
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            candidate = conn.execute("SELECT id FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
+            if not candidate:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            paths = [
+                row["output_path"]
+                for row in conn.execute("SELECT output_path FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
+                if row["output_path"]
+            ]
+            conn.execute("DELETE FROM publish_attempts WHERE candidate_id = ?", (candidate_id,))
+            conn.execute("DELETE FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
+            conn.execute("DELETE FROM clip_candidates WHERE id = ?", (candidate_id,))
+            conn.commit()
+            removed = _delete_candidate_artifacts(paths) if delete_artifacts else []
+            self._send_json({"candidate_id": candidate_id, "deleted": True, "artifacts_removed": removed})
+            return
+
+        if parsed.path == "/api/clear-review":
+            confirm = str(payload.get("confirm", "")).strip()
+            delete_artifacts = bool(payload.get("delete_artifacts", True))
+            if confirm != "DELETE":
+                self._send_json({"error": "confirm must be DELETE"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            paths = [
+                row["output_path"]
+                for row in conn.execute("SELECT output_path FROM render_jobs WHERE output_path != ''")
+                if row["output_path"]
+            ]
+            counts = {
+                "clip_candidates": conn.execute("SELECT count(*) FROM clip_candidates").fetchone()[0],
+                "render_jobs": conn.execute("SELECT count(*) FROM render_jobs").fetchone()[0],
+                "publish_attempts": conn.execute("SELECT count(*) FROM publish_attempts").fetchone()[0],
+            }
+            conn.execute("DELETE FROM publish_attempts")
+            conn.execute("DELETE FROM render_jobs")
+            conn.execute("DELETE FROM clip_candidates")
+            conn.commit()
+            removed = _delete_candidate_artifacts(paths) if delete_artifacts else []
+            self._send_json({"deleted": counts, "artifacts_removed": removed})
             return
 
         if parsed.path == "/api/set-target-mode":

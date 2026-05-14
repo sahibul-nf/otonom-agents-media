@@ -417,7 +417,7 @@
         border-radius: 24px;
         background: var(--surface);
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         overflow: hidden;
       }
 
@@ -452,6 +452,11 @@
       .quick-action:nth-child(3) .action-icon {
         background: var(--surface-raised);
         color: var(--primary);
+      }
+
+      .quick-action.danger .action-icon {
+        background: var(--danger-bg);
+        color: var(--danger);
       }
 
       .quick-action strong {
@@ -528,7 +533,7 @@
       .clip-table-head,
       .clip {
         display: grid;
-        grid-template-columns: minmax(190px, 1fr) 82px 46px 46px 68px 52px 88px;
+        grid-template-columns: minmax(170px, 1fr) 82px 46px 46px 64px 48px 128px;
         align-items: center;
         gap: 10px;
       }
@@ -667,6 +672,18 @@
         padding: 0;
         display: grid;
         place-items: center;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .clip-actions .danger-icon {
+        width: 36px;
+        padding: 0;
+        display: grid;
+        place-items: center;
+        color: #ffd2db;
+        background: var(--danger-bg);
+        border-color: rgba(254, 91, 121, 0.36);
         font-size: 16px;
         font-weight: 700;
       }
@@ -862,6 +879,7 @@
         .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .quick-action:nth-child(3) { border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
         .quick-action:nth-child(4) { border-top: 1px solid rgba(255, 255, 255, 0.07); }
+        .quick-action:nth-child(5) { border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
         .clip-table-head { display: none; }
         .clip {
           grid-template-columns: minmax(0, 1fr) auto;
@@ -911,7 +929,8 @@
         .metric:nth-child(4),
         .quick-action + .quick-action,
         .quick-action:nth-child(3),
-        .quick-action:nth-child(4) {
+        .quick-action:nth-child(4),
+        .quick-action:nth-child(5) {
           border-left: 0;
           border-top: 1px solid rgba(255, 255, 255, 0.07);
         }
@@ -936,6 +955,9 @@
         }
         .clip-actions button { flex: 1; }
         .clip-actions .approve-icon {
+          width: auto;
+        }
+        .clip-actions .danger-icon {
           width: auto;
         }
         .detail-grid { grid-template-columns: 1fr; }
@@ -1071,6 +1093,10 @@
             <button class="quick-action" data-section-jump="publish">
               <span class="action-icon">↗</span>
               <span><strong>Publish Now</strong><span class="action-text">Open Platforms</span></span>
+            </button>
+            <button class="quick-action danger" id="quick-clear">
+              <span class="action-icon">×</span>
+              <span><strong>Clear Queue</strong><span class="action-text">Delete current clips</span></span>
             </button>
           </section>
 
@@ -1350,6 +1376,7 @@
               <div class="clip-actions">
                 <button class="ghost" data-action="select" data-id="${escapeHtml(clip.id)}">Open</button>
                 <button class="green approve-icon" data-action="approve" data-id="${escapeHtml(clip.id)}" title="Approve clip" aria-label="Approve clip" ${clip.status === "approved" || clip.status === "published" ? "disabled" : ""}>✓</button>
+                <button class="danger-icon" data-action="delete" data-id="${escapeHtml(clip.id)}" title="Delete clip and artifacts" aria-label="Delete clip and artifacts">×</button>
               </div>
             </article>
           `;
@@ -1501,6 +1528,33 @@ PYTHONPATH=. python3 -m media_engine.cli premium-batch \\
         setStatus(`Approved ${id}`, "ok");
       }
 
+      async function deleteCandidate(id) {
+        await postJson("/api/delete-candidate", {candidate_id: id, delete_artifacts: true});
+        state.clips = state.clips.filter((item) => item.id !== id);
+        if (state.selectedId === id) state.selectedId = state.clips[0]?.id || "";
+        renderMetrics();
+        renderClipList();
+        renderSelected();
+        setStatus(`Deleted ${id}`, "ok");
+      }
+
+      async function clearQueue() {
+        if (!state.clips.length) {
+          setStatus("Queue already empty", "ok");
+          return;
+        }
+        const ok = window.confirm("Delete all rendered clips and local artifacts from the review queue?");
+        if (!ok) return;
+        setStatus("Clearing queue...");
+        const result = await postJson("/api/clear-review", {confirm: "DELETE", delete_artifacts: true});
+        state.clips = [];
+        state.selectedId = "";
+        renderMetrics();
+        renderClipList();
+        renderSelected();
+        setStatus(`Cleared ${result.deleted?.clip_candidates || 0} clips`, "ok");
+      }
+
       async function publishTelegram(dryRun) {
         const clip = selectedClip();
         if (!clip) return;
@@ -1544,6 +1598,13 @@ PYTHONPATH=. python3 -m media_engine.cli premium-batch \\
         if (!clip) return;
         await approveSelected(clip.id);
       });
+      document.getElementById("quick-clear").addEventListener("click", async () => {
+        try {
+          await clearQueue();
+        } catch (error) {
+          setStatus(error.message, "error");
+        }
+      });
       document.getElementById("dry-run-telegram").addEventListener("click", () => publishTelegram(true));
       document.getElementById("live-telegram").addEventListener("click", () => publishTelegram(false));
 
@@ -1579,6 +1640,18 @@ PYTHONPATH=. python3 -m media_engine.cli premium-batch \\
           button.disabled = true;
           try {
             await approveSelected(button.dataset.id);
+          } catch (error) {
+            setStatus(error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+        }
+        if (button.dataset.action === "delete") {
+          const ok = window.confirm("Delete this clip and its local artifacts?");
+          if (!ok) return;
+          button.disabled = true;
+          try {
+            await deleteCandidate(button.dataset.id);
           } catch (error) {
             setStatus(error.message, "error");
           } finally {
