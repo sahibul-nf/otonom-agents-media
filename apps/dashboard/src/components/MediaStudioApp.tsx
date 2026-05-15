@@ -120,12 +120,12 @@ type GenerateConfig = {
 };
 
 const reviewFilters = [
-  {id: "all", label: "All", statuses: []},
-  {id: "review", label: "Review", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
-  {id: "repair", label: "Repair", statuses: ["needs_caption_fix"]},
-  {id: "scheduled", label: "Scheduled", statuses: ["scheduled", "ready_to_publish"]},
-  {id: "published", label: "Published", statuses: ["published"]},
-  {id: "rejected", label: "Rejected", statuses: ["rejected"]},
+  {id: "all", label: "All", hint: "Every clip that is still visible in this workspace.", statuses: []},
+  {id: "review", label: "Review", hint: "Clips that need approval, can still be held, or are waiting for assisted auto-queue.", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
+  {id: "repair", label: "Repair", hint: "Clips blocked by caption confidence or quality gates before they can be scheduled.", statuses: ["needs_caption_fix"]},
+  {id: "scheduled", label: "Scheduled", hint: "Approved clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
+  {id: "published", label: "Published", hint: "Clips already sent to a live channel.", statuses: ["published"]},
+  {id: "rejected", label: "Rejected", hint: "Clips intentionally removed from production consideration.", statuses: ["rejected"]},
 ] as const;
 
 function matchesReviewFilter(clip: ClipCandidate, filter: string) {
@@ -854,6 +854,7 @@ function ReviewSection({
   onSaveCaptions: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
 }) {
+  const activeFilter = reviewFilters.find((item) => item.id === filter) || reviewFilters[0];
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
@@ -861,10 +862,18 @@ function ReviewSection({
           <div>
             <h3 className="text-xl font-semibold text-white">Review Studio</h3>
             <p className="mt-1 text-sm text-zinc-400">Ranked clip candidates with scoring, QA, cost, and destructive controls.</p>
+            <p className="mt-2 max-w-xl text-xs leading-5 text-zinc-500">{activeFilter.hint}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {reviewFilters.map((item) => (
-              <button key={item.id} onClick={() => setFilter(item.id)} className={`rounded-full px-4 py-2 text-sm font-medium ${filter === item.id ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}>{item.label}</button>
+              <button
+                key={item.id}
+                title={item.hint}
+                onClick={() => setFilter(item.id)}
+                className={`rounded-full px-4 py-2 text-sm font-medium ${filter === item.id ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
+              >
+                {item.label}
+              </button>
             ))}
             <button onClick={onClear} className="inline-flex items-center gap-2 rounded-full border border-danger/[0.30] bg-danger/[0.10] px-4 py-2 text-sm font-semibold text-danger"><Trash2 className="h-4 w-4" /> Clear</button>
           </div>
