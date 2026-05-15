@@ -106,7 +106,7 @@ def schedule_candidate_next(
     candidate = conn.execute("SELECT id, profile_id, status FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
     if not candidate:
         raise ValueError("candidate not found")
-    if candidate["status"] not in {"approved", "scheduled", "ready_to_publish"}:
+    if candidate["status"] not in {"approved", "scheduled", "ready_to_publish", "pending_auto_schedule"}:
         raise ValueError("only approved clips can be scheduled")
     profile_id = candidate["profile_id"] or profile_id
     scheduled_at = next_available_slot(conn, profile_id=profile_id, now=now)
@@ -131,6 +131,40 @@ def schedule_candidate_next(
     conn.execute("UPDATE clip_candidates SET status = 'scheduled' WHERE id = ?", (candidate_id,))
     conn.commit()
     return {"id": schedule_id, "candidate_id": candidate_id, "scheduled_at": _iso(scheduled_at), "status": "scheduled"}
+
+
+def process_due_auto_schedule(conn: sqlite3.Connection, profile_id: str = "nourbit", now: datetime | None = None) -> list[dict]:
+    now = now or datetime.now(DEFAULT_TZ)
+    now = now.astimezone(DEFAULT_TZ)
+    settings = conn.execute("SELECT * FROM autonomy_settings WHERE profile_id = ?", (profile_id,)).fetchone()
+    if not settings or settings["autonomy_mode"] == "off" or not int(settings["auto_schedule_enabled"]):
+        return []
+    rows = conn.execute(
+        """
+        SELECT id, review_deadline_at, quality_gate_json
+        FROM clip_candidates
+        WHERE profile_id = ? AND status = 'pending_auto_schedule' AND review_deadline_at != ''
+        ORDER BY review_deadline_at ASC, created_at ASC
+        """,
+        (profile_id,),
+    ).fetchall()
+    scheduled = []
+    for row in rows:
+        if _parse_iso(row["review_deadline_at"]) > now:
+            continue
+        try:
+            gate = json.loads(row["quality_gate_json"] or "{}")
+        except json.JSONDecodeError:
+            gate = {}
+        if not gate.get("passed"):
+            conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (row["id"],))
+            continue
+        try:
+            scheduled.append(schedule_candidate_next(conn, row["id"], profile_id=profile_id, now=now))
+        except ValueError:
+            continue
+    conn.commit()
+    return scheduled
 
 
 def update_schedule(conn: sqlite3.Connection, schedule_id: str, scheduled_at: str) -> dict:

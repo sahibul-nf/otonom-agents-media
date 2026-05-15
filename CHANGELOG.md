@@ -12,3 +12,5 @@
 - Replaced the clip length dropdown with a niche-neutral strategy selector that keeps range and pacing guidance visible.
 - Hardened dashboard generation jobs to require a Python runtime with transcript and Whisper dependencies instead of falling back to an empty system interpreter.
 - Fixed Review Studio clip list trailing layout so score, QA, cost, and actions no longer collide.
+- Added assisted autonomous review gates with review deadlines, pending auto-schedule status, hold/reject controls, and autonomy mode settings.
+- Added post-Whisper glossary/fuzzy caption correction metadata for Arabic-Indonesian Nourbit terms.

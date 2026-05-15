@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS clip_candidates (
   asr_metadata_json TEXT NOT NULL DEFAULT '{}',
   render_quality_json TEXT NOT NULL DEFAULT '{}',
   cost_json TEXT NOT NULL DEFAULT '{}',
+  quality_gate_json TEXT NOT NULL DEFAULT '{}',
+  caption_corrections_json TEXT NOT NULL DEFAULT '{}',
+  dedupe_key TEXT NOT NULL DEFAULT '',
+  review_deadline_at TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -132,6 +136,19 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS autonomy_settings (
+  profile_id TEXT PRIMARY KEY REFERENCES media_profiles(id),
+  autonomy_mode TEXT NOT NULL DEFAULT 'assisted',
+  review_grace_hours INTEGER NOT NULL DEFAULT 12,
+  auto_schedule_enabled INTEGER NOT NULL DEFAULT 1,
+  overall_threshold INTEGER NOT NULL DEFAULT 82,
+  hook_threshold INTEGER NOT NULL DEFAULT 80,
+  caption_threshold INTEGER NOT NULL DEFAULT 90,
+  boundary_threshold INTEGER NOT NULL DEFAULT 80,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -152,6 +169,10 @@ SCHEMA_UPGRADES = {
         "asr_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
         "render_quality_json": "TEXT NOT NULL DEFAULT '{}'",
         "cost_json": "TEXT NOT NULL DEFAULT '{}'",
+        "quality_gate_json": "TEXT NOT NULL DEFAULT '{}'",
+        "caption_corrections_json": "TEXT NOT NULL DEFAULT '{}'",
+        "dedupe_key": "TEXT NOT NULL DEFAULT ''",
+        "review_deadline_at": "TEXT NOT NULL DEFAULT ''",
     },
     "generation_jobs": {
         "clip_length_preset": "TEXT NOT NULL DEFAULT 'deep_context'",

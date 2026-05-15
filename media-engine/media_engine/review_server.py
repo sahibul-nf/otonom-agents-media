@@ -10,6 +10,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from .autonomy import get_autonomy_settings, update_autonomy_settings
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all, initialize
 from .credentials import credential_status
 from .duration_presets import duration_preset_options
@@ -19,7 +20,7 @@ from .live_publishers import LivePublishError, publish_telegram_video
 from .models import PUBLISH_MODES
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
-from .scheduler import list_scheduled_posts, schedule_candidate_next, unschedule_candidate, update_schedule
+from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule
 from .styles import load_style
 
 
@@ -64,6 +65,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/review":
             conn = connect(DEFAULT_DB)
             initialize(conn)
+            process_due_auto_schedule(conn)
             rows = fetch_all(
                 conn,
                 """
@@ -86,6 +88,8 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 row["asr_metadata"] = json.loads(row.get("asr_metadata_json") or "{}")
                 row["render_quality"] = json.loads(row.get("render_quality_json") or "{}")
                 row["cost"] = json.loads(row.get("cost_json") or "{}")
+                row["quality_gate"] = json.loads(row.get("quality_gate_json") or "{}")
+                row["caption_corrections"] = json.loads(row.get("caption_corrections_json") or "{}")
                 row["post_caption"] = build_post_caption(row, {"metadata_json": row.get("render_metadata_json") or "{}"})
             rows.sort(key=lambda row: row.get("score", {}).get("overall_score", 0), reverse=True)
             payload = json.dumps(rows, ensure_ascii=False).encode("utf-8")
@@ -112,9 +116,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/generation-jobs":
             self._send_json(list_generation_jobs())
             return
+        if parsed.path == "/api/autonomy-settings":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            self._send_json(get_autonomy_settings(conn))
+            return
         if parsed.path == "/api/schedule":
             conn = connect(DEFAULT_DB)
             initialize(conn)
+            process_due_auto_schedule(conn)
             self._send_json(list_scheduled_posts(conn))
             return
         if parsed.path == "/api/credentials":
@@ -152,12 +162,51 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "candidate_id is required"}, status=400)
                 return
             conn = connect(DEFAULT_DB)
-            result = conn.execute("UPDATE clip_candidates SET status = 'approved' WHERE id = ?", (candidate_id,))
+            result = conn.execute("UPDATE clip_candidates SET status = 'approved', review_deadline_at = '' WHERE id = ?", (candidate_id,))
             conn.commit()
             if result.rowcount == 0:
                 self._send_json({"error": "candidate not found"}, status=404)
                 return
             self._send_json({"candidate_id": candidate_id, "status": "approved"})
+            return
+
+        if parsed.path == "/api/hold":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            result = conn.execute("UPDATE clip_candidates SET status = 'held', review_deadline_at = '' WHERE id = ?", (candidate_id,))
+            conn.commit()
+            if result.rowcount == 0:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            self._send_json({"candidate_id": candidate_id, "status": "held"})
+            return
+
+        if parsed.path == "/api/reject":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            result = conn.execute("UPDATE clip_candidates SET status = 'rejected', review_deadline_at = '' WHERE id = ?", (candidate_id,))
+            conn.commit()
+            if result.rowcount == 0:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            self._send_json({"candidate_id": candidate_id, "status": "rejected"})
+            return
+
+        if parsed.path == "/api/autonomy-settings":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                settings = update_autonomy_settings(conn, str(payload.get("profile_id") or "nourbit"), payload)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(settings)
             return
 
         if parsed.path == "/api/generation-jobs":

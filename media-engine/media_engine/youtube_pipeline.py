@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .autonomy import is_duplicate_candidate
 from .captions import build_word_timeline, group_word_captions
 from .db import ARTIFACTS_DIR
 from .duration_presets import DurationPreset, duration_prompt_phrase, resolve_duration_preset
@@ -380,7 +381,10 @@ def choose_nourbit_premium_candidates(
             continue
         if not is_non_overlapping(start_ms, end_ms, selected):
             continue
-        selected.append(build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, suggestion, preset))
+        candidate = build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, suggestion, preset)
+        if is_duplicate_candidate(candidate, selected):
+            continue
+        selected.append(candidate)
         if len(selected) >= count:
             return selected
 
@@ -403,7 +407,10 @@ def choose_nourbit_premium_candidates(
     for _score, start_ms, end_ms, _text in sorted(windows, reverse=True):
         if not is_non_overlapping(start_ms, end_ms, selected):
             continue
-        selected.append(build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, duration_preset=preset))
+        candidate = build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, duration_preset=preset)
+        if is_duplicate_candidate(candidate, selected):
+            candidate["curation_metadata"]["duplicate_warning"] = True
+        selected.append(candidate)
         if len(selected) >= count:
             break
 

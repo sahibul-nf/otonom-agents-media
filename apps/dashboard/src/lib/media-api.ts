@@ -17,6 +17,19 @@ export type ClipCandidate = {
     context_score?: number;
     caption_confidence?: number;
     retention_score?: number;
+    asr_confidence?: number;
+  };
+  quality_gate?: {
+    passed?: boolean;
+    review_deadline_at?: string;
+    checks?: Record<string, boolean>;
+    scores?: Record<string, number>;
+    settings?: Record<string, unknown>;
+  };
+  review_deadline_at?: string;
+  caption_corrections?: {
+    correction_count?: number;
+    low_confidence_word_count?: number;
   };
   render_quality?: {
     quality_score?: number;
@@ -113,6 +126,17 @@ export type ScheduledPost = {
   viral_reason: string;
   candidate_status: string;
   output_path?: string;
+};
+
+export type AutonomySettings = {
+  profile_id: string;
+  autonomy_mode: "off" | "assisted" | "full" | string;
+  review_grace_hours: number;
+  auto_schedule_enabled: number;
+  overall_threshold: number;
+  hook_threshold: number;
+  caption_threshold: number;
+  boundary_threshold: number;
 };
 
 export function apiPath(path: string) {

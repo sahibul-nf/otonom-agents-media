@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .asr import load_or_create_asr_words
+from .autonomy import evaluate_quality_gate, get_autonomy_settings
 from .caption_composer import compose_caption_groups
 from .costs import estimate_clip_cost
 from .credentials import credential_status
@@ -23,6 +24,7 @@ from .publishers import build_payload
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
 from .styles import load_style
+from .transcript_quality import correct_asr_words
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
 
 
@@ -137,8 +139,9 @@ def insert_candidate(conn, candidate: dict[str, Any]) -> None:
         INSERT OR REPLACE INTO clip_candidates
           (id, profile_id, source_id, start_ms, end_ms, title_hook, viral_reason,
            transcript_span, risk_flags_json, score_json, curation_metadata_json,
-           caption_source, asr_metadata_json, render_quality_json, cost_json, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           caption_source, asr_metadata_json, render_quality_json, cost_json,
+           quality_gate_json, caption_corrections_json, dedupe_key, review_deadline_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             candidate["id"],
@@ -156,6 +159,10 @@ def insert_candidate(conn, candidate: dict[str, Any]) -> None:
             json.dumps(candidate.get("asr_metadata", {}), ensure_ascii=False),
             json.dumps(candidate.get("render_quality", {}), ensure_ascii=False),
             json.dumps(candidate.get("cost", {}), ensure_ascii=False),
+            json.dumps(candidate.get("quality_gate", {}), ensure_ascii=False),
+            json.dumps(candidate.get("caption_corrections", {}), ensure_ascii=False),
+            candidate.get("dedupe_key", ""),
+            candidate.get("review_deadline_at", ""),
             candidate["status"],
         ),
     )
@@ -167,7 +174,9 @@ def update_candidate_metadata(conn, candidate: dict[str, Any]) -> None:
         """
         UPDATE clip_candidates
         SET score_json = ?, curation_metadata_json = ?, caption_source = ?,
-            asr_metadata_json = ?, render_quality_json = ?, cost_json = ?, status = ?
+            asr_metadata_json = ?, render_quality_json = ?, cost_json = ?,
+            quality_gate_json = ?, caption_corrections_json = ?, dedupe_key = ?,
+            review_deadline_at = ?, status = ?
         WHERE id = ?
         """,
         (
@@ -177,6 +186,10 @@ def update_candidate_metadata(conn, candidate: dict[str, Any]) -> None:
             json.dumps(candidate.get("asr_metadata", {}), ensure_ascii=False),
             json.dumps(candidate.get("render_quality", {}), ensure_ascii=False),
             json.dumps(candidate.get("cost", {}), ensure_ascii=False),
+            json.dumps(candidate.get("quality_gate", {}), ensure_ascii=False),
+            json.dumps(candidate.get("caption_corrections", {}), ensure_ascii=False),
+            candidate.get("dedupe_key", ""),
+            candidate.get("review_deadline_at", ""),
             candidate["status"],
             candidate["id"],
         ),
@@ -310,6 +323,10 @@ def render_premium_candidate(
         output_path, contract = render_premium_ffmpeg(candidate, profile, source_clip, youtube_url, source_attribution, style)
     job_id = Path(output_path).stem
     finalize_candidate_metadata(candidate, contract, output_path, args, renderer)
+    quality_gate = evaluate_quality_gate(candidate, get_autonomy_settings(conn, profile["id"]))
+    candidate["quality_gate"] = quality_gate
+    candidate["review_deadline_at"] = quality_gate.get("review_deadline_at", "")
+    candidate["status"] = quality_gate.get("status", "rendered")
     conn.execute(
         """
         INSERT INTO render_jobs
@@ -327,7 +344,6 @@ def render_premium_candidate(
             json.dumps(contract, ensure_ascii=False),
         ),
     )
-    conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (candidate["id"],))
     update_candidate_metadata(conn, candidate)
     conn.commit()
     (bar.step if bar else progress)(f"{prefix}completed {candidate['id']}")
@@ -358,6 +374,7 @@ def prepare_production_captions(candidate: dict[str, Any], source_clip: str, arg
     asr_path = Path(source_clip).resolve().parents[1] / f"{Path(source_clip).stem}_{args.asr_model}_asr.json"
     prompt = "Allah, Rasulullah, dzikir, zikir, qalbu, sholawat, istighfar, ma'rifat, taubat, syukur"
     words, asr_metadata = load_or_create_asr_words(source_clip, str(asr_path), model_name=args.asr_model, initial_prompt=prompt)
+    words, correction_metadata = correct_asr_words(words)
     captions, composer_metadata = compose_caption_groups(
         words,
         max_words_per_caption=int(style.get("caption", {}).get("max_words_per_caption", 3)),
@@ -365,7 +382,8 @@ def prepare_production_captions(candidate: dict[str, Any], source_clip: str, arg
     if captions:
         candidate["timed_captions"] = captions
         candidate["caption_source"] = "whisper"
-        candidate["asr_metadata"] = {**asr_metadata, "caption_composer": composer_metadata}
+        candidate["asr_metadata"] = {**asr_metadata, **correction_metadata, "caption_composer": {**composer_metadata, "low_confidence_word_count": correction_metadata["low_confidence_word_count"]}}
+        candidate["caption_corrections"] = correction_metadata
         candidate["score"] = {
             **candidate.get("score", {}),
             "asr_confidence": int(round((composer_metadata.get("avg_word_confidence") or 0.82) * 100)),

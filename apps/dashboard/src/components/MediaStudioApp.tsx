@@ -29,6 +29,7 @@ import {
   apiGet,
   apiPath,
   apiPost,
+  AutonomySettings,
   BrandTemplate,
   ClipCandidate,
   CredentialStatus,
@@ -58,9 +59,10 @@ const nav = [
 ] as const;
 
 function statusTone(status: string) {
-  if (["approved", "published", "ready", "rendered", "scheduled", "ready_to_publish", "completed"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
+  if (["approved", "published", "ready", "rendered", "scheduled", "ready_to_publish", "completed", "pending_auto_schedule"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
   if (["running", "queued"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
   if (["failed", "rejected"].includes(status)) return "text-danger border-danger/[0.30] bg-danger/[0.10]";
+  if (["held", "needs_caption_fix"].includes(status)) return "text-warning border-warning/[0.30] bg-warning/[0.10]";
   return "text-warning border-warning/[0.30] bg-warning/[0.10]";
 }
 
@@ -90,6 +92,18 @@ function metricAverage(clips: ClipCandidate[]) {
   return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
 }
 
+function formatDeadline(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) return "Auto-schedule due";
+  const hours = Math.floor(diffMs / 3_600_000);
+  const minutes = Math.round((diffMs % 3_600_000) / 60_000);
+  if (hours <= 0) return `${minutes}m to auto-schedule`;
+  return `${hours}h ${minutes}m to auto-schedule`;
+}
+
 type GenerateConfig = {
   sourceUrl: string;
   count: number;
@@ -104,9 +118,12 @@ type GenerateConfig = {
 
 const reviewFilters = [
   {id: "all", label: "All", statuses: []},
-  {id: "needs_review", label: "Needs Review", statuses: ["draft", "rendered"]},
+  {id: "auto", label: "Auto Queue", statuses: ["pending_auto_schedule"]},
+  {id: "needs_review", label: "Needs Review", statuses: ["draft", "rendered", "held"]},
+  {id: "repair", label: "Repair", statuses: ["needs_caption_fix"]},
   {id: "approved", label: "Approved", statuses: ["approved"]},
   {id: "scheduled", label: "Scheduled", statuses: ["scheduled", "ready_to_publish"]},
+  {id: "rejected", label: "Rejected", statuses: ["rejected"]},
   {id: "published", label: "Published", statuses: ["published"]},
 ] as const;
 
@@ -139,6 +156,7 @@ export function MediaStudioApp() {
   const [style, setStyle] = useState<StyleProfile | null>(null);
   const [templates, setTemplates] = useState<BrandTemplate[]>([]);
   const [durationPresets, setDurationPresets] = useState<DurationPreset[]>([]);
+  const [autonomy, setAutonomy] = useState<AutonomySettings | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -168,7 +186,7 @@ export function MediaStudioApp() {
     setBusy(true);
     setStatus("Syncing media engine...");
     try {
-      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, durationRows, jobRows, scheduleRows] = await Promise.all([
+      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, durationRows, jobRows, scheduleRows, autonomyRows] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>("targets"),
         apiGet<CredentialStatus>("credentials"),
@@ -177,6 +195,7 @@ export function MediaStudioApp() {
         apiGet<DurationPreset[]>("duration-presets"),
         apiGet<GenerationJob[]>("generation-jobs"),
         apiGet<ScheduledPost[]>("schedule"),
+        apiGet<AutonomySettings>("autonomy-settings"),
       ]);
       setClips(reviewRows);
       setTargets(targetRows);
@@ -186,6 +205,7 @@ export function MediaStudioApp() {
       setDurationPresets(durationRows);
       setJobs(jobRows);
       setSchedule(scheduleRows);
+      setAutonomy(autonomyRows);
       setSelectedId((current) => current || reviewRows[0]?.id || "");
       setStatus("Dashboard synced");
     } catch (error) {
@@ -208,6 +228,46 @@ export function MediaStudioApp() {
       setStatus("Clip approved");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Approve failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function holdClip(id: string) {
+    setBusy(true);
+    try {
+      await apiPost("hold", {candidate_id: id});
+      setStatus("Clip held for manual review");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Hold failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rejectClip(id: string) {
+    setBusy(true);
+    try {
+      await apiPost("reject", {candidate_id: id});
+      setStatus("Clip rejected");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Reject failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateAutonomyMode(mode: string) {
+    if (!autonomy) return;
+    setBusy(true);
+    try {
+      const next = await apiPost<AutonomySettings>("autonomy-settings", {...autonomy, autonomy_mode: mode});
+      setAutonomy(next);
+      setStatus(`Autonomy mode set to ${mode}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Autonomy update failed");
     } finally {
       setBusy(false);
     }
@@ -448,6 +508,8 @@ export function MediaStudioApp() {
               setSelectedId={setSelectedId}
               onApprove={approveClip}
               onSchedule={scheduleNext}
+              onHold={holdClip}
+              onReject={rejectClip}
               onDelete={deleteClip}
               onClear={clearQueue}
             />
@@ -461,7 +523,7 @@ export function MediaStudioApp() {
             <PublishSection targets={targets} credentials={credentials} selected={selected} onDryRun={() => publishTelegram(true)} onLive={() => publishTelegram(false)} />
           )}
 
-          {section === "brand" && <BrandSection style={style} templates={templates} command={command} onCopy={() => copyText(command, "Production command copied")} />}
+          {section === "brand" && <BrandSection style={style} templates={templates} autonomy={autonomy} command={command} onCopy={() => copyText(command, "Production command copied")} onAutonomyMode={updateAutonomyMode} />}
         </div>
 
         <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-6 border-t border-white/[0.08] bg-surface/[0.95] backdrop-blur-xl lg:hidden">
@@ -703,6 +765,8 @@ function ReviewSection({
   setSelectedId,
   onApprove,
   onSchedule,
+  onHold,
+  onReject,
   onDelete,
   onClear,
 }: {
@@ -713,6 +777,8 @@ function ReviewSection({
   setSelectedId: (id: string) => void;
   onApprove: (id: string) => void;
   onSchedule: (id: string) => void;
+  onHold: (id: string) => void;
+  onReject: (id: string) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
 }) {
@@ -757,19 +823,34 @@ function ReviewSection({
               </div>
               <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center lg:min-w-[280px]">
                 <div className="grid grid-cols-3 gap-2">
+                  <MetricBubble label="Cost" value={`$${Number(clip.cost?.estimated_total || 0).toFixed(4)}`} />
                   <ScoreBubble label="Score" value={clip.score?.overall_score} />
                   <ScoreBubble label="QA" value={clip.render_quality?.quality_score} />
-                  <MetricBubble label="Cost" value={`$${Number(clip.cost?.estimated_total || 0).toFixed(4)}`} />
                 </div>
                 <div className="flex justify-end gap-2">
                 {clip.status === "approved" ? (
                   <button type="button" onClick={(event) => { event.stopPropagation(); onSchedule(clip.id); }} className="rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan">Schedule</button>
+                ) : clip.status === "pending_auto_schedule" ? (
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onApprove(clip.id); }} className="rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan">Approve</button>
+                ) : clip.status === "held" || clip.status === "rejected" ? (
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onApprove(clip.id); }} className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal">Restore</button>
                 ) : (
                   <button type="button" onClick={(event) => { event.stopPropagation(); onApprove(clip.id); }} className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal">Approve</button>
                 )}
+                {clip.status === "pending_auto_schedule" ? (
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onHold(clip.id); }} className="rounded-full border border-warning/[0.30] bg-warning/[0.10] px-3 py-2 text-xs font-semibold text-warning">Hold</button>
+                ) : null}
+                {clip.status !== "rejected" ? (
+                  <button type="button" onClick={(event) => { event.stopPropagation(); onReject(clip.id); }} className="rounded-full border border-danger/[0.30] bg-danger/[0.10] px-3 py-2 text-xs font-semibold text-danger">Reject</button>
+                ) : null}
                 <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(clip.id); }} className="rounded-full border border-danger/[0.30] bg-danger/[0.10] px-3 py-2 text-danger"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
+              {clip.status === "pending_auto_schedule" && clip.review_deadline_at ? (
+                <div className="lg:col-start-2 lg:col-span-2 rounded-2xl border border-teal/[0.20] bg-teal/[0.08] px-3 py-2 text-xs font-medium text-teal">
+                  {formatDeadline(clip.review_deadline_at)}
+                </div>
+              ) : null}
             </article>
           )) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
         </div>
@@ -880,7 +961,21 @@ function PublishSection({targets, credentials, selected, onDryRun, onLive}: {tar
   );
 }
 
-function BrandSection({style, templates, command, onCopy}: {style: StyleProfile | null; templates: BrandTemplate[]; command: string; onCopy: () => void}) {
+function BrandSection({
+  style,
+  templates,
+  autonomy,
+  command,
+  onCopy,
+  onAutonomyMode,
+}: {
+  style: StyleProfile | null;
+  templates: BrandTemplate[];
+  autonomy: AutonomySettings | null;
+  command: string;
+  onCopy: () => void;
+  onAutonomyMode: (mode: string) => void;
+}) {
   const caption = style?.caption || {};
   const layout = style?.layout || {};
   return (
@@ -905,6 +1000,28 @@ function BrandSection({style, templates, command, onCopy}: {style: StyleProfile 
                 <span className="text-xs text-zinc-500">{template.path}</span>
               </div>
             )) : <EmptyState text="No style templates found." />}
+          </div>
+        </div>
+        <div className="mt-5 rounded-[24px] border border-cyan/[0.18] bg-teal/[0.08] p-4">
+          <h4 className="font-semibold text-white">Autonomous mode</h4>
+          <p className="mt-1 text-sm leading-6 text-zinc-400">Assisted mode gives you {autonomy?.review_grace_hours || 12}h to approve before high-score clips enter the schedule queue.</p>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {["off", "assisted", "full"].map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => onAutonomyMode(mode)}
+                className={`rounded-full px-3 py-2 text-sm font-semibold capitalize ${autonomy?.autonomy_mode === mode ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <SettingTile label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
+            <SettingTile label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
+            <SettingTile label="Overall gate" value={autonomy?.overall_threshold || 82} />
+            <SettingTile label="Caption gate" value={autonomy?.caption_threshold || 90} />
           </div>
         </div>
       </div>
@@ -960,7 +1077,14 @@ function InsightPanel({clip}: {clip?: ClipCandidate}) {
             <SettingTile label="End" value={formatTimestamp(clip.end_ms)} />
             <SettingTile label="Caption" value={clip.caption_source || "-"} />
             <SettingTile label="Coverage" value={`${Math.round((clip.render_quality?.caption_coverage || 0) * 100)}%`} />
+            <SettingTile label="Gate" value={clip.quality_gate?.passed ? "Auto eligible" : "Review"} />
+            <SettingTile label="Corrections" value={clip.caption_corrections?.correction_count || 0} />
           </div>
+          {clip.review_deadline_at ? (
+            <div className="rounded-[22px] border border-teal/[0.20] bg-teal/[0.08] p-4 text-sm font-medium text-teal">
+              {formatDeadline(clip.review_deadline_at)}
+            </div>
+          ) : null}
           <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><MessageSquareText className="h-4 w-4 text-cyan" /> Post copy</div>
             <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-400">{clip.post_caption || "Post caption will appear after render metadata is available."}</p>
