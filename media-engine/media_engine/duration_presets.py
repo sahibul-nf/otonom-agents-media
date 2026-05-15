@@ -43,7 +43,7 @@ DURATION_PRESETS: dict[str, DurationPreset] = {
         target_ms=95_000,
         max_ms=120_000,
         intent="Meaning-first clips for kajian, podcast, reflection, and story-based content.",
-        best_for="Nourbit, podcast",
+        best_for="Podcasts, lectures",
     ),
     "platform_max": DurationPreset(
         id="platform_max",

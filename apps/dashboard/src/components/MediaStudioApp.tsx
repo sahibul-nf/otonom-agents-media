@@ -592,7 +592,7 @@ function GenerateSection({
 }) {
   const latest = jobs[0];
   const update = (patch: Partial<GenerateConfig>) => setConfig({...config, ...patch});
-  const presetOptions = durationPresets.length ? durationPresets : [{id: "deep_context", label: "Deep Context", detail: "Nourbit, podcast"}];
+  const presetOptions = durationPresets.length ? durationPresets : [{id: "deep_context", label: "Deep Context", detail: "Podcasts, lectures", range_label: "45-120s", best_for: "Podcasts, lectures"}];
   return (
     <section className="grid gap-5 xl:grid-cols-[.85fr_1.15fr]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
@@ -610,12 +610,31 @@ function GenerateSection({
                 {[1, 2, 3, 5, 8, 10].map((value) => <option key={value} value={value}>{value} clips</option>)}
               </select>
             </label>
-            <label className="grid gap-2 text-sm font-medium text-zinc-300">
-              Clip length
-              <select value={config.clipLength} onChange={(event) => update({clipLength: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
-                {presetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label} · {preset.detail}</option>)}
-              </select>
-            </label>
+          </div>
+          <div className="grid gap-2">
+            <div>
+              <p className="text-sm font-medium text-zinc-300">Clip length strategy</p>
+              <p className="mt-1 text-xs text-zinc-500">Choose by content pacing. The engine still trims exact start/end adaptively.</p>
+            </div>
+            <div className="grid gap-2">
+              {presetOptions.map((preset) => {
+                const active = config.clipLength === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => update({clipLength: preset.id})}
+                    className={`rounded-[18px] border px-4 py-3 text-left transition ${active ? "border-cyan bg-teal/[0.14] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-white">{preset.label}</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${active ? "bg-cyan text-ink" : "bg-surface text-zinc-400"}`}>{preset.range_label}</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-zinc-400">{preset.best_for || preset.detail}</p>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <label className="grid gap-2 text-sm font-medium text-zinc-300">
             Brand template
