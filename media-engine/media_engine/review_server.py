@@ -163,7 +163,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/generation-jobs":
             try:
                 job = create_generation_job(payload, start=True)
-            except ValueError as exc:
+            except (ValueError, RuntimeError) as exc:
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(job, status=202)

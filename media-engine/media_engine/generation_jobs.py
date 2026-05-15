@@ -22,6 +22,60 @@ VALID_ASR_MODELS = {"small", "medium", "large-v3-turbo"}
 VALID_LLM_PROVIDERS = {"none", "openai", "deepseek", "groq"}
 
 
+def _runtime_requirements(config: dict[str, Any]) -> list[str]:
+    modules = ["youtube_transcript_api"]
+    if config.get("caption_source") in {"whisper", "hybrid"}:
+        modules.append("faster_whisper")
+    return modules
+
+
+def _python_has_modules(python_bin: str, modules: list[str]) -> bool:
+    if not modules:
+        return True
+    code = "import importlib.util, sys; sys.exit(0 if all(importlib.util.find_spec(m) for m in sys.argv[1:]) else 1)"
+    result = subprocess.run([python_bin, "-c", code, *modules], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return result.returncode == 0
+
+
+def _candidate_python_bins() -> list[Path]:
+    candidates = []
+    if os.environ.get("MEDIA_ENGINE_PYTHON"):
+        candidates.append(Path(os.environ["MEDIA_ENGINE_PYTHON"]))
+    candidates.extend(
+        [
+            Path("/tmp/media-engine-tools-py313/bin/python"),
+            ROOT / ".venv" / "bin" / "python",
+            ROOT / "venv" / "bin" / "python",
+            Path(sys.executable),
+        ]
+    )
+    seen: set[str] = set()
+    unique = []
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(path)
+    return unique
+
+
+def resolve_generation_python(config: dict[str, Any]) -> str:
+    required = _runtime_requirements(config)
+    existing = [path for path in _candidate_python_bins() if path.exists()]
+    for path in existing:
+        if _python_has_modules(str(path), required):
+            return str(path)
+    checked = ", ".join(str(path) for path in existing) or "none"
+    missing = ", ".join(required)
+    raise RuntimeError(
+        f"Generation runtime is missing required Python modules: {missing}. "
+        "Create the local tools environment with `python3.13 -m venv /tmp/media-engine-tools-py313` "
+        "and install the media engine dependencies, or set MEDIA_ENGINE_PYTHON to a compatible interpreter. "
+        f"Checked: {checked}"
+    )
+
+
 def list_brand_templates() -> list[dict[str, str]]:
     profiles = ROOT / "profiles"
     templates = []
@@ -72,9 +126,8 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_generation_command(config: dict[str, Any]) -> list[str]:
-    bundled_python = Path("/tmp/media-engine-tools-py313/bin/python")
-    python_bin = os.environ.get("MEDIA_ENGINE_PYTHON") or (str(bundled_python) if bundled_python.exists() else sys.executable)
+def build_generation_command(config: dict[str, Any], validate_runtime: bool = False) -> list[str]:
+    python_bin = resolve_generation_python(config) if validate_runtime else str(_candidate_python_bins()[0])
     return [
         python_bin,
         "-m",
@@ -125,7 +178,7 @@ def _extract_json(text: str) -> dict[str, Any]:
 def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[str, Any]:
     config = normalize_generation_payload(payload)
     job_id = f"gen_{uuid.uuid4().hex[:12]}"
-    command = build_generation_command(config)
+    command = build_generation_command(config, validate_runtime=True)
     conn = connect(DEFAULT_DB)
     initialize(conn)
     conn.execute(

@@ -10,3 +10,4 @@
 - Refined Review Studio filters into human workflow groups.
 - Hardened dashboard media API error handling so offline/empty engine responses show actionable messages instead of raw JSON parse errors.
 - Replaced the clip length dropdown with a niche-neutral strategy selector that keeps range and pacing guidance visible.
+- Hardened dashboard generation jobs to require a Python runtime with transcript and Whisper dependencies instead of falling back to an empty system interpreter.
