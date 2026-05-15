@@ -734,7 +734,19 @@ function ReviewSection({
 
         <div className="grid gap-2">
           {clips.length ? clips.map((clip) => (
-            <button key={clip.id} onClick={() => setSelectedId(clip.id)} className={`grid gap-3 rounded-[22px] border p-4 text-left transition md:grid-cols-[88px_minmax(0,1fr)_64px_64px_118px] md:items-center ${selected?.id === clip.id ? "border-cyan bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}>
+            <article
+              key={clip.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedId(clip.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setSelectedId(clip.id);
+                }
+              }}
+              className={`grid cursor-pointer gap-3 rounded-[22px] border p-4 text-left transition lg:grid-cols-[88px_minmax(0,1fr)_minmax(280px,auto)] lg:items-center ${selected?.id === clip.id ? "border-cyan bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}
+            >
               <div className="grid h-14 place-items-center rounded-2xl bg-surface-raised text-sm font-semibold text-cyan">{formatDuration(clip.render_quality?.duration_ms)}</div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -743,18 +755,22 @@ function ReviewSection({
                 </div>
                 <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{clip.viral_reason || "No curation reason yet."}</p>
               </div>
-              <ScoreBubble label="Score" value={clip.score?.overall_score} />
-              <ScoreBubble label="QA" value={clip.render_quality?.quality_score} />
-              <div className="flex justify-end gap-2">
-                <span className="rounded-full border border-white/[0.10] px-3 py-2 text-xs text-zinc-300">${Number(clip.cost?.estimated_total || 0).toFixed(4)}</span>
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center lg:min-w-[280px]">
+                <div className="grid grid-cols-3 gap-2">
+                  <ScoreBubble label="Score" value={clip.score?.overall_score} />
+                  <ScoreBubble label="QA" value={clip.render_quality?.quality_score} />
+                  <MetricBubble label="Cost" value={`$${Number(clip.cost?.estimated_total || 0).toFixed(4)}`} />
+                </div>
+                <div className="flex justify-end gap-2">
                 {clip.status === "approved" ? (
                   <button type="button" onClick={(event) => { event.stopPropagation(); onSchedule(clip.id); }} className="rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan">Schedule</button>
                 ) : (
                   <button type="button" onClick={(event) => { event.stopPropagation(); onApprove(clip.id); }} className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal">Approve</button>
                 )}
                 <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(clip.id); }} className="rounded-full border border-danger/[0.30] bg-danger/[0.10] px-3 py-2 text-danger"><Trash2 className="h-4 w-4" /></button>
+                </div>
               </div>
-            </button>
+            </article>
           )) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
         </div>
       </div>
@@ -973,6 +989,15 @@ function ScoreBubble({value, label}: {value?: number; label?: string}) {
     <div className="grid justify-items-center gap-1">
       <span className={`grid h-11 w-11 place-items-center rounded-full border text-sm font-semibold ${scoreTone(value)}`}>{scoreValue(value)}</span>
       {label ? <span className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</span> : null}
+    </div>
+  );
+}
+
+function MetricBubble({value, label}: {value: string; label: string}) {
+  return (
+    <div className="grid justify-items-center gap-1">
+      <span className="grid h-11 min-w-14 place-items-center rounded-full border border-white/[0.10] px-3 text-xs font-semibold text-zinc-300">{value}</span>
+      <span className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</span>
     </div>
   );
 }
