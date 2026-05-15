@@ -1,5 +1,21 @@
 export type ClipStatus = "draft" | "rendered" | "approved" | "scheduled" | "ready_to_publish" | "published" | "failed" | "archived" | string;
 
+export type CaptionWord = {
+  text: string;
+  startMs?: number;
+  endMs?: number;
+  confidence?: number | null;
+};
+
+export type CaptionSegment = {
+  text: string;
+  startMs: number;
+  endMs: number;
+  timestampMs?: number;
+  confidence?: number | null;
+  words?: CaptionWord[];
+};
+
 export type ClipCandidate = {
   id: string;
   status: ClipStatus;
@@ -30,6 +46,15 @@ export type ClipCandidate = {
   caption_corrections?: {
     correction_count?: number;
     low_confidence_word_count?: number;
+    manual_edit?: boolean;
+    edited_caption_count?: number;
+    edited_captions?: CaptionSegment[];
+  };
+  captions?: CaptionSegment[];
+  render_metadata?: {
+    sourceUrl?: string;
+    sourceAttribution?: string;
+    captions?: CaptionSegment[];
   };
   render_quality?: {
     quality_score?: number;

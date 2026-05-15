@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .autonomy import get_autonomy_settings, update_autonomy_settings
+from .caption_edits import merge_caption_corrections
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all, initialize
 from .credentials import credential_status
 from .duration_presets import duration_preset_options
@@ -20,6 +21,7 @@ from .live_publishers import LivePublishError, publish_telegram_video
 from .models import PUBLISH_MODES
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
+from .rerender import rerender_candidate
 from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule
 from .styles import load_style
 
@@ -56,6 +58,13 @@ def _delete_candidate_artifacts(paths: list[str]) -> list[str]:
     return sorted(removed)
 
 
+def _loads(value: str | None, fallback):
+    try:
+        return json.loads(value or "")
+    except json.JSONDecodeError:
+        return fallback
+
+
 class ReviewHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT / "web"), **kwargs)
@@ -83,13 +92,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 """,
             )
             for row in rows:
-                row["score"] = json.loads(row.get("score_json") or "{}")
-                row["curation_metadata"] = json.loads(row.get("curation_metadata_json") or "{}")
-                row["asr_metadata"] = json.loads(row.get("asr_metadata_json") or "{}")
-                row["render_quality"] = json.loads(row.get("render_quality_json") or "{}")
-                row["cost"] = json.loads(row.get("cost_json") or "{}")
-                row["quality_gate"] = json.loads(row.get("quality_gate_json") or "{}")
-                row["caption_corrections"] = json.loads(row.get("caption_corrections_json") or "{}")
+                row["score"] = _loads(row.get("score_json"), {})
+                row["curation_metadata"] = _loads(row.get("curation_metadata_json"), {})
+                row["asr_metadata"] = _loads(row.get("asr_metadata_json"), {})
+                row["render_quality"] = _loads(row.get("render_quality_json"), {})
+                row["cost"] = _loads(row.get("cost_json"), {})
+                row["quality_gate"] = _loads(row.get("quality_gate_json"), {})
+                row["caption_corrections"] = _loads(row.get("caption_corrections_json"), {})
+                row["render_metadata"] = _loads(row.get("render_metadata_json"), {})
+                row["captions"] = row["caption_corrections"].get("edited_captions") or row["render_metadata"].get("captions") or []
                 row["post_caption"] = build_post_caption(row, {"metadata_json": row.get("render_metadata_json") or "{}"})
             rows.sort(key=lambda row: row.get("score", {}).get("overall_score", 0), reverse=True)
             payload = json.dumps(rows, ensure_ascii=False).encode("utf-8")
@@ -216,6 +227,63 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(job, status=202)
+            return
+
+        if parsed.path == "/api/caption-corrections":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            captions = payload.get("captions")
+            if not candidate_id or not isinstance(captions, list):
+                self._send_json({"error": "candidate_id and captions are required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            candidate = conn.execute(
+                "SELECT status, caption_corrections_json FROM clip_candidates WHERE id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if not candidate:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            try:
+                corrections = merge_caption_corrections(
+                    _loads(candidate["caption_corrections_json"], {}),
+                    captions,
+                )
+            except (TypeError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            next_status = candidate["status"]
+            if next_status not in {"approved", "scheduled", "ready_to_publish", "published"}:
+                next_status = "held"
+            conn.execute(
+                """
+                UPDATE clip_candidates
+                SET caption_corrections_json = ?, caption_source = 'manual_edit',
+                    status = ?, review_deadline_at = ''
+                WHERE id = ?
+                """,
+                (json.dumps(corrections, ensure_ascii=False), next_status, candidate_id),
+            )
+            conn.commit()
+            self._send_json({"candidate_id": candidate_id, "status": next_status, "caption_corrections": corrections})
+            return
+
+        if parsed.path == "/api/rerender":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            try:
+                result = rerender_candidate(
+                    candidate_id,
+                    renderer=str(payload.get("renderer") or "remotion"),
+                    quality=str(payload.get("quality") or "production"),
+                    style_path=str(payload.get("style") or "") or None,
+                )
+            except (RuntimeError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
             return
 
         if parsed.path == "/api/schedule-next":

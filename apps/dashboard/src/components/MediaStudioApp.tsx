@@ -31,6 +31,7 @@ import {
   apiPost,
   AutonomySettings,
   BrandTemplate,
+  CaptionSegment,
   ClipCandidate,
   CredentialStatus,
   DurationPreset,
@@ -163,6 +164,7 @@ export function MediaStudioApp() {
   const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
+  const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
     sourceUrl: defaultSourceUrl,
     count: 5,
@@ -181,6 +183,7 @@ export function MediaStudioApp() {
   const scheduledCount = clips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
   const command = productionCommand(generateConfig);
+  const selectedCaptionDraft = selected ? captionDrafts[selected.id] ?? (selected.captions || []).map((caption) => caption.text).filter(Boolean).join("\n") : "";
 
   async function refreshAll() {
     setBusy(true);
@@ -371,6 +374,55 @@ export function MediaStudioApp() {
     }
   }
 
+  function buildEditedCaptionSegments(base: CaptionSegment[], draft: string) {
+    const lines = draft.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+    return base.slice(0, lines.length).map((segment, index) => ({
+      text: lines[index],
+      startMs: segment.startMs,
+      endMs: segment.endMs,
+      timestampMs: segment.startMs,
+    }));
+  }
+
+  async function saveCaptionCorrections(id: string, draft: string) {
+    const clip = clips.find((item) => item.id === id);
+    const base = clip?.captions || [];
+    const captions = buildEditedCaptionSegments(base, draft);
+    if (!captions.length) {
+      setStatus("No caption lines to save");
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiPost("caption-corrections", {candidate_id: id, captions});
+      setStatus("Caption edits saved");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Caption save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rerenderClip(id: string) {
+    setBusy(true);
+    setStatus("Re-rendering selected clip...");
+    try {
+      await apiPost("rerender", {candidate_id: id, renderer: "remotion", quality: "production", style: defaultTemplate});
+      setStatus("Clip re-rendered");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Re-render failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function setSelectedCaptionDraft(value: string) {
+    if (!selected) return;
+    setCaptionDrafts((items) => ({...items, [selected.id]: value}));
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshAll();
@@ -506,12 +558,16 @@ export function MediaStudioApp() {
               filter={filter}
               setFilter={setFilter}
               setSelectedId={setSelectedId}
+              captionDraft={selectedCaptionDraft}
+              setCaptionDraft={setSelectedCaptionDraft}
               onApprove={approveClip}
               onSchedule={scheduleNext}
               onHold={holdClip}
               onReject={rejectClip}
               onDelete={deleteClip}
               onClear={clearQueue}
+              onSaveCaptions={saveCaptionCorrections}
+              onRerender={rerenderClip}
             />
           )}
 
@@ -763,24 +819,32 @@ function ReviewSection({
   filter,
   setFilter,
   setSelectedId,
+  captionDraft,
+  setCaptionDraft,
   onApprove,
   onSchedule,
   onHold,
   onReject,
   onDelete,
   onClear,
+  onSaveCaptions,
+  onRerender,
 }: {
   clips: ClipCandidate[];
   selected?: ClipCandidate;
   filter: string;
   setFilter: (value: string) => void;
   setSelectedId: (id: string) => void;
+  captionDraft: string;
+  setCaptionDraft: (value: string) => void;
   onApprove: (id: string) => void;
   onSchedule: (id: string) => void;
   onHold: (id: string) => void;
   onReject: (id: string) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
+  onSaveCaptions: (id: string, draft: string) => void;
+  onRerender: (id: string) => void;
 }) {
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
@@ -857,7 +921,13 @@ function ReviewSection({
       </div>
       <div className="grid gap-5">
         <PreviewPanel clip={selected} />
-        <InsightPanel clip={selected} />
+        <InsightPanel
+          clip={selected}
+          captionDraft={captionDraft}
+          setCaptionDraft={setCaptionDraft}
+          onSaveCaptions={onSaveCaptions}
+          onRerender={onRerender}
+        />
       </div>
     </section>
   );
@@ -1058,7 +1128,20 @@ function PreviewPanel({clip}: {clip?: ClipCandidate}) {
   );
 }
 
-function InsightPanel({clip}: {clip?: ClipCandidate}) {
+function InsightPanel({
+  clip,
+  captionDraft,
+  setCaptionDraft,
+  onSaveCaptions,
+  onRerender,
+}: {
+  clip?: ClipCandidate;
+  captionDraft: string;
+  setCaptionDraft: (value: string) => void;
+  onSaveCaptions: (id: string, draft: string) => void;
+  onRerender: (id: string) => void;
+}) {
+  const captionCount = clip?.captions?.length || 0;
   return (
     <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
       <h3 className="text-lg font-semibold text-white">Clip intelligence</h3>
@@ -1078,13 +1161,47 @@ function InsightPanel({clip}: {clip?: ClipCandidate}) {
             <SettingTile label="Caption" value={clip.caption_source || "-"} />
             <SettingTile label="Coverage" value={`${Math.round((clip.render_quality?.caption_coverage || 0) * 100)}%`} />
             <SettingTile label="Gate" value={clip.quality_gate?.passed ? "Auto eligible" : "Review"} />
-            <SettingTile label="Corrections" value={clip.caption_corrections?.correction_count || 0} />
+            <SettingTile label="Corrections" value={clip.caption_corrections?.manual_edit ? "Manual edit" : clip.caption_corrections?.correction_count || 0} />
           </div>
           {clip.review_deadline_at ? (
             <div className="rounded-[22px] border border-teal/[0.20] bg-teal/[0.08] p-4 text-sm font-medium text-teal">
               {formatDeadline(clip.review_deadline_at)}
             </div>
           ) : null}
+          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-white">Caption editor</div>
+                <p className="mt-1 text-xs text-zinc-500">{captionCount} timed lines · text only</p>
+              </div>
+              <button
+                type="button"
+                disabled={!captionCount}
+                onClick={() => onRerender(clip.id)}
+                className="shrink-0 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Re-render
+              </button>
+            </div>
+            <textarea
+              value={captionDraft}
+              disabled={!captionCount}
+              onChange={(event) => setCaptionDraft(event.target.value)}
+              className="min-h-40 w-full resize-y rounded-2xl border border-white/[0.08] bg-black/30 px-3 py-3 text-sm leading-6 text-zinc-200 outline-none focus:border-cyan/[0.35] disabled:cursor-not-allowed disabled:opacity-50"
+              spellCheck={false}
+            />
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-xs text-zinc-500">One line maps to one timed caption group.</p>
+              <button
+                type="button"
+                disabled={!captionCount}
+                onClick={() => onSaveCaptions(clip.id, captionDraft)}
+                className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Save captions
+              </button>
+            </div>
+          </div>
           <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><MessageSquareText className="h-4 w-4 text-cyan" /> Post copy</div>
             <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-400">{clip.post_caption || "Post caption will appear after render metadata is available."}</p>

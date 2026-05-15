@@ -23,6 +23,7 @@ from .publishers import create_dry_run_attempt
 from .publishers import build_payload
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
+from .rerender import rerender_from_args
 from .styles import load_style
 from .transcript_quality import correct_asr_words
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
@@ -570,6 +571,13 @@ def cmd_publish_live(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
+def cmd_rerender(args: argparse.Namespace) -> None:
+    progress(f"rerendering {args.candidate_id} with {args.renderer}/{args.quality}")
+    result = rerender_from_args(args)
+    progress(f"rerender complete: {result['output_path']}")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
 def cmd_set_target_mode(args: argparse.Namespace) -> None:
     require_choice(args.mode, PUBLISH_MODES, "mode")
     conn = connect(args.db)
@@ -703,6 +711,13 @@ def build_parser() -> argparse.ArgumentParser:
     publish_live.add_argument("--env-file", default="../.env.local")
     publish_live.add_argument("--dry-run", action="store_true")
     publish_live.set_defaults(func=cmd_publish_live)
+
+    rerender = sub.add_parser("rerender")
+    rerender.add_argument("--candidate-id", required=True)
+    rerender.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="remotion")
+    rerender.add_argument("--quality", choices=["draft", "production"], default="production")
+    rerender.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
+    rerender.set_defaults(func=cmd_rerender)
 
     target_mode = sub.add_parser("set-target-mode")
     target_mode.add_argument("--profile", default="nourbit")
