@@ -221,7 +221,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
 
     bar.step("fetching YouTube transcript")
-    entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
+    entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
     style = load_style(args.style)
     bar.step("selecting best short candidate")
     candidate = choose_nourbit_premium_candidates(
@@ -374,7 +374,13 @@ def prepare_production_captions(candidate: dict[str, Any], source_clip: str, arg
         return
     asr_path = Path(source_clip).resolve().parents[1] / f"{Path(source_clip).stem}_{args.asr_model}_asr.json"
     prompt = "Allah, Rasulullah, dzikir, zikir, qalbu, sholawat, istighfar, ma'rifat, taubat, syukur"
-    words, asr_metadata = load_or_create_asr_words(source_clip, str(asr_path), model_name=args.asr_model, initial_prompt=prompt)
+    words, asr_metadata = load_or_create_asr_words(
+        source_clip,
+        str(asr_path),
+        model_name=args.asr_model,
+        language=getattr(args, "speech_language", "id"),
+        initial_prompt=prompt,
+    )
     words, correction_metadata = correct_asr_words(words)
     captions, composer_metadata = compose_caption_groups(
         words,
@@ -415,7 +421,7 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
     conn = connect(args.db)
     load_profile_and_source(conn, args.profile, args.source_id)
     bar.step("fetching YouTube transcript")
-    entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
+    entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
     style = load_style(args.style)
     bar.step(f"curating {args.count} candidates with llm_provider={args.llm_provider}")
     candidates = choose_nourbit_premium_candidates(
@@ -440,7 +446,7 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
     conn = connect(args.db)
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
     bar.step("fetching YouTube transcript")
-    entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
+    entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
     style = load_style(args.style)
     bar.step(f"selecting top {args.count} candidates with llm_provider={args.llm_provider}")
     candidates = choose_nourbit_premium_candidates(
@@ -571,6 +577,11 @@ def cmd_publish_live(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
+def parse_languages(value: str | None) -> list[str]:
+    languages = [item.strip() for item in str(value or "id,en").split(",") if item.strip()]
+    return languages or ["id", "en"]
+
+
 def cmd_rerender(args: argparse.Namespace) -> None:
     progress(f"rerendering {args.candidate_id} with {args.renderer}/{args.quality}")
     result = rerender_from_args(args)
@@ -655,6 +666,8 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--quality", choices=["draft", "production"], default="draft")
     premium_test.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
     premium_test.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
+    premium_test.add_argument("--speech-language", default="id", help="Spoken language hint for Whisper/faster-whisper, e.g. id, ar, en")
+    premium_test.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
     premium_test.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
     premium_test.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_test.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
@@ -669,6 +682,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_curate.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
     premium_curate.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    premium_curate.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
     premium_curate.add_argument("--env-file")
     premium_curate.set_defaults(func=cmd_premium_curate)
 
@@ -682,6 +696,8 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--quality", choices=["draft", "production"], default="draft")
     premium_batch.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
     premium_batch.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
+    premium_batch.add_argument("--speech-language", default="id", help="Spoken language hint for Whisper/faster-whisper, e.g. id, ar, en")
+    premium_batch.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
     premium_batch.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
     premium_batch.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")

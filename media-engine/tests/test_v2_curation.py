@@ -5,6 +5,7 @@ from contextlib import redirect_stderr
 from io import StringIO
 
 from media_engine.db import ensure_schema_upgrades
+from media_engine.autonomy import is_duplicate_candidate, token_jaccard
 from media_engine.cli import ProgressBar, build_parser, insert_candidate
 from media_engine.db import initialize
 from media_engine.env_loader import load_env_file
@@ -14,8 +15,12 @@ from media_engine.transcript_quality import correct_text_with_glossary
 from media_engine.youtube_pipeline import (
     TranscriptEntry,
     choose_nourbit_premium_candidates,
+    fetch_youtube_transcript,
     hook_subtitle_for_span,
+    opening_strength,
     refine_end_boundary,
+    refine_start_boundary,
+    _transcript_cache_path,
 )
 
 
@@ -110,6 +115,19 @@ class V2CurationTests(unittest.TestCase):
         too_short = score_candidate_text(text, "Rahasia Hati yang Tenang", 46_000, ideal_min_ms=45_000, ideal_target_ms=95_000, ideal_max_ms=120_000)
 
         self.assertGreater(near_target["retention_score"], too_short["retention_score"])
+
+    def test_token_jaccard_catches_near_duplicate_transcripts(self):
+        existing = {
+            "title_hook": "Allah Tidak Pernah Jauh",
+            "transcript_span": "Allah membuat hati manusia tenang dengan dzikir dan tidak perlu merasa sepi.",
+        }
+        candidate = {
+            "title_hook": "Hati Tidak Perlu Sepi",
+            "transcript_span": "Hati manusia tidak perlu merasa sepi karena dzikir membuat hati tenang.",
+        }
+
+        self.assertGreater(token_jaccard(candidate["transcript_span"], existing["transcript_span"]), 0.5)
+        self.assertTrue(is_duplicate_candidate(candidate, [existing], threshold=0.75))
 
     def test_multi_candidate_selector_returns_non_overlapping_scored_candidates(self):
         entries = [
@@ -217,6 +235,27 @@ class V2CurationTests(unittest.TestCase):
         ]
 
         self.assertEqual(refine_end_boundary(entries, 210_000, 270_000), 273_960)
+
+    def test_start_boundary_skips_weak_opener_when_hook_arrives_early(self):
+        entries = [
+            TranscriptEntry(0, 5_000, "Nah jadi baik kita lanjutkan dulu"),
+            TranscriptEntry(6_000, 18_000, "Kenapa hati manusia tetap kesepian padahal Allah sangat dekat"),
+            TranscriptEntry(18_000, 70_000, "Dzikir membuat hati kembali tenang dan tidak mencari validasi manusia"),
+        ]
+
+        self.assertLess(opening_strength(entries, 0), opening_strength(entries, 6_000))
+        self.assertEqual(refine_start_boundary(entries, 0, 70_000, 45_000), 6_000)
+
+    def test_transcript_cache_can_load_without_network(self):
+        cache_path = _transcript_cache_path("cached_video", ["id"])
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text('[{"start_ms": 0, "end_ms": 1000, "text": "Allah dekat"}]', encoding="utf-8")
+        try:
+            entries = fetch_youtube_transcript("https://youtu.be/cached_video", languages=["id"], use_cache=True)
+        finally:
+            cache_path.unlink(missing_ok=True)
+
+        self.assertEqual(entries[0].text, "Allah dekat")
 
     def test_hook_subtitle_is_warmer_than_generic_reason(self):
         subtitle = hook_subtitle_for_span(

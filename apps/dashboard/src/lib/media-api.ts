@@ -128,6 +128,8 @@ export type GenerationJob = {
   quality: string;
   caption_source: string;
   asr_model: string;
+  speech_language?: string;
+  transcript_languages?: string;
   llm_provider: string;
   status: string;
   progress: number;

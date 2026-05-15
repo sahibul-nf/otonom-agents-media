@@ -129,6 +129,15 @@ def candidate_dedupe_key(title_hook: str, transcript_span: str = "") -> str:
     return " ".join(key_words)
 
 
+def token_jaccard(left: str, right: str) -> float:
+    stop = {"yang", "dan", "atau", "dengan", "untuk", "dari", "ini", "itu", "kita", "allah", "adalah", "akan"}
+    left_tokens = {token for token in re.findall(r"[a-zA-Z0-9']+", left.lower()) if token not in stop}
+    right_tokens = {token for token in re.findall(r"[a-zA-Z0-9']+", right.lower()) if token not in stop}
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+
 def text_similarity(left: str, right: str) -> float:
     return SequenceMatcher(None, left.lower().strip(), right.lower().strip()).ratio()
 
@@ -140,7 +149,10 @@ def is_duplicate_candidate(candidate: dict[str, Any], selected: list[dict[str, A
         key_similarity = text_similarity(key, existing_key)
         title_similarity = text_similarity(str(candidate.get("title_hook", "")), str(existing.get("title_hook", "")))
         transcript_similarity = text_similarity(str(candidate.get("transcript_span", ""))[:600], str(existing.get("transcript_span", ""))[:600])
+        token_similarity = token_jaccard(str(candidate.get("transcript_span", ""))[:900], str(existing.get("transcript_span", ""))[:900])
         if key_similarity >= 0.94:
+            return True
+        if token_similarity >= 0.72:
             return True
         if title_similarity >= 0.9 and transcript_similarity >= threshold:
             return True

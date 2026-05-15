@@ -114,6 +114,8 @@ type GenerateConfig = {
   quality: string;
   captionSource: string;
   asrModel: string;
+  speechLanguage: string;
+  transcriptLanguages: string;
   llmProvider: string;
 };
 
@@ -144,6 +146,8 @@ PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premiu
   --quality ${config.quality} \\
   --caption-source ${config.captionSource} \\
   --asr-model ${config.asrModel} \\
+  --speech-language ${config.speechLanguage} \\
+  --transcript-languages ${config.transcriptLanguages} \\
   --style ${config.brandTemplate} \\
   --llm-provider ${config.llmProvider} \\
   --env-file ../.env.local`;
@@ -174,6 +178,8 @@ export function MediaStudioApp() {
     quality: "production",
     captionSource: "whisper",
     asrModel: "medium",
+    speechLanguage: "id",
+    transcriptLanguages: "id,en",
     llmProvider: "deepseek",
   });
 
@@ -289,6 +295,8 @@ export function MediaStudioApp() {
         quality: generateConfig.quality,
         caption_source: generateConfig.captionSource,
         asr_model: generateConfig.asrModel,
+        speech_language: generateConfig.speechLanguage,
+        transcript_languages: generateConfig.transcriptLanguages,
         llm_provider: generateConfig.llmProvider,
         env_file: "../.env.local",
       });
@@ -765,6 +773,8 @@ function GenerateSection({
           <div className="grid grid-cols-2 gap-3">
             <SelectTile label="Renderer" value={config.renderer} options={["remotion", "ffmpeg"]} onChange={(value) => update({renderer: value})} />
             <SelectTile label="Caption" value={config.captionSource} options={["whisper", "hybrid", "youtube"]} onChange={(value) => update({captionSource: value})} />
+            <SelectTile label="Speech language" value={config.speechLanguage} options={["id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
+            <SelectTile label="Transcript" value={config.transcriptLanguages} options={["id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
             <SelectTile label="LLM" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
             <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
           </div>

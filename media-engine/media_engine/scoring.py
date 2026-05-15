@@ -40,6 +40,7 @@ def score_candidate_text(
     ideal_target_ms: int | None = None,
     ideal_max_ms: int = 120_000,
     boundary_confidence: int = 75,
+    opening_strength: int = 70,
 ) -> dict[str, int]:
     lowered = text.lower()
     title_lowered = title_hook.lower()
@@ -61,7 +62,8 @@ def score_candidate_text(
         distance = abs(duration_ms - ideal_target_ms)
         duration_bonus = 28 - min(18, (distance / span) * 18)
     boundary_bonus = (clamp_score(boundary_confidence) - 50) * 0.18
-    retention_score = clamp_score(45 + duration_bonus + boundary_bonus + min(20, keyword_hits * 2))
+    opening_bonus = (clamp_score(opening_strength) - 50) * 0.2
+    retention_score = clamp_score(45 + duration_bonus + boundary_bonus + opening_bonus + min(20, keyword_hits * 2))
     caption_confidence = clamp_score(82 - min(24, lowered.count("[music]") * 8 + lowered.count("...") * 3))
     rights_risk_score = 35 if rights_risk else 90
     overall_score = clamp_score(

@@ -20,6 +20,7 @@ VALID_QUALITIES = {"draft", "production"}
 VALID_CAPTION_SOURCES = {"youtube", "whisper", "hybrid"}
 VALID_ASR_MODELS = {"small", "medium", "large-v3-turbo"}
 VALID_LLM_PROVIDERS = {"none", "openai", "deepseek", "groq"}
+VALID_LANGUAGES = {"id", "en", "ar", "ms", "auto"}
 
 
 def _runtime_requirements(config: dict[str, Any]) -> list[str]:
@@ -102,6 +103,17 @@ def _int_range(value: Any, default: int, minimum: int, maximum: int) -> int:
     return min(max(parsed, minimum), maximum)
 
 
+def _language(value: Any, default: str = "id") -> str:
+    text = str(value or default).strip().lower()
+    return text if text in VALID_LANGUAGES else default
+
+
+def _language_list(value: Any, default: str = "id,en") -> str:
+    parts = [part.strip().lower() for part in str(value or default).split(",") if part.strip()]
+    allowed = [part for part in parts if part in VALID_LANGUAGES and part != "auto"]
+    return ",".join(allowed or ["id", "en"])
+
+
 def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     source_url = str(payload.get("source_url") or "").strip()
     if not source_url:
@@ -121,6 +133,8 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "quality": _choice(payload.get("quality"), VALID_QUALITIES, "production"),
         "caption_source": _choice(payload.get("caption_source"), VALID_CAPTION_SOURCES, "whisper"),
         "asr_model": _choice(payload.get("asr_model"), VALID_ASR_MODELS, "medium"),
+        "speech_language": _language(payload.get("speech_language"), "id"),
+        "transcript_languages": _language_list(payload.get("transcript_languages"), "id,en"),
         "llm_provider": _choice(payload.get("llm_provider"), VALID_LLM_PROVIDERS, "deepseek"),
         "env_file": str(payload.get("env_file") or "../.env.local").strip(),
     }
@@ -151,6 +165,10 @@ def build_generation_command(config: dict[str, Any], validate_runtime: bool = Fa
         config["caption_source"],
         "--asr-model",
         config["asr_model"],
+        "--speech-language",
+        config["speech_language"],
+        "--transcript-languages",
+        config["transcript_languages"],
         "--style",
         config["brand_template"],
         "--llm-provider",
@@ -185,8 +203,9 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
         """
         INSERT INTO generation_jobs
           (id, profile_id, source_id, source_url, count, clip_length_preset, brand_template,
-           renderer, quality, caption_source, asr_model, llm_provider, status, progress, command)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           renderer, quality, caption_source, asr_model, speech_language, transcript_languages,
+           llm_provider, status, progress, command)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             job_id,
@@ -200,6 +219,8 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
             config["quality"],
             config["caption_source"],
             config["asr_model"],
+            config["speech_language"],
+            config["transcript_languages"],
             config["llm_provider"],
             "queued",
             0,

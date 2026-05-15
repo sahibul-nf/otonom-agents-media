@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import uuid
@@ -69,6 +70,30 @@ RISKY_TERMINAL_WORDS = {
     "wa",
     "yang",
 }
+WEAK_STARTERS = {
+    "baik",
+    "dan",
+    "jadi",
+    "kalau",
+    "kalo",
+    "kemudian",
+    "maka",
+    "nah",
+    "terus",
+}
+HOOK_START_WORDS = {
+    "allah",
+    "apa",
+    "bagaimana",
+    "bahagia",
+    "hati",
+    "jangan",
+    "kenapa",
+    "mengapa",
+    "pernahkah",
+    "rahasia",
+    "takut",
+}
 
 
 def extract_video_id(url: str) -> str:
@@ -83,19 +108,36 @@ def extract_video_id(url: str) -> str:
     raise ValueError(f"cannot extract YouTube video id from {url}")
 
 
-def fetch_youtube_transcript(url: str, languages: list[str] | None = None) -> list[TranscriptEntry]:
+def _transcript_cache_path(video_id: str, languages: list[str]) -> Path:
+    safe_languages = "-".join(language.replace("/", "_") for language in languages)
+    return ARTIFACTS_DIR / "_cache" / "youtube_transcripts" / f"{video_id}_{safe_languages}.json"
+
+
+def fetch_youtube_transcript(url: str, languages: list[str] | None = None, use_cache: bool = True) -> list[TranscriptEntry]:
+    video_id = extract_video_id(url)
+    requested_languages = languages or ["id", "en"]
+    cache_path = _transcript_cache_path(video_id, requested_languages)
+    if use_cache and cache_path.exists():
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        return [TranscriptEntry(int(item["start_ms"]), int(item["end_ms"]), str(item["text"])) for item in payload]
+
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError as exc:
         raise RuntimeError("youtube-transcript-api is required for live YouTube transcript ingestion") from exc
 
-    video_id = extract_video_id(url)
-    transcript = YouTubeTranscriptApi().fetch(video_id, languages=languages or ["id", "en"])
+    transcript = YouTubeTranscriptApi().fetch(video_id, languages=requested_languages)
     entries: list[TranscriptEntry] = []
     for item in transcript:
         start_ms = int(item.start * 1000)
         end_ms = int((item.start + item.duration) * 1000)
         entries.append(TranscriptEntry(start_ms=start_ms, end_ms=max(end_ms, start_ms + 500), text=item.text.strip()))
+    if use_cache:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps([entry.__dict__ for entry in entries], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     return entries
 
 
@@ -208,6 +250,49 @@ def refine_end_boundary(
     return refined_end_ms
 
 
+def opening_strength(entries: list[TranscriptEntry], start_ms: int, lookahead_ms: int = 9_000) -> int:
+    window = [item for item in entries if start_ms <= item.start_ms < start_ms + lookahead_ms]
+    text = " ".join(item.text for item in window[:4]).strip().lower()
+    if not text:
+        return 35
+    first = _last_word(text.split(maxsplit=1)[0])
+    score = 56
+    if first in WEAK_STARTERS:
+        score -= 18
+    if any(word in text for word in HOOK_START_WORDS):
+        score += 24
+    if "?" in text or "pernahkah" in text or "kenapa" in text or "mengapa" in text:
+        score += 12
+    if len(text.split()) >= 18:
+        score += 8
+    return max(0, min(100, score))
+
+
+def refine_start_boundary(
+    entries: list[TranscriptEntry],
+    start_ms: int,
+    end_ms: int,
+    min_duration_ms: int = MIN_PREMIUM_DURATION_MS,
+    search_ms: int = 14_000,
+) -> int:
+    current_score = opening_strength(entries, start_ms)
+    if current_score >= 86:
+        return start_ms
+    candidates = [
+        item.start_ms
+        for item in entries
+        if start_ms < item.start_ms <= min(end_ms - min_duration_ms, start_ms + search_ms)
+    ]
+    best_start = start_ms
+    best_score = current_score
+    for candidate_start in candidates:
+        score = opening_strength(entries, candidate_start)
+        if score >= best_score + 14:
+            best_start = candidate_start
+            best_score = score
+    return best_start
+
+
 def boundary_confidence(entries: list[TranscriptEntry], start_ms: int, end_ms: int, original_end_ms: int) -> int:
     window = [item for item in entries if item.start_ms < end_ms and item.end_ms > start_ms]
     if not window:
@@ -252,6 +337,8 @@ def build_candidate(
     duration_preset: DurationPreset | None = None,
 ) -> dict[str, Any]:
     duration_preset = duration_preset or resolve_duration_preset("deep_context")
+    original_start_ms = start_ms
+    start_ms = refine_start_boundary(entries, start_ms, end_ms, duration_preset.min_ms)
     original_end_ms = end_ms
     end_ms = refine_end_boundary(entries, start_ms, end_ms, duration_preset.max_ms, duration_preset.min_ms)
     window = [item for item in entries if item.start_ms < end_ms and item.end_ms > start_ms]
@@ -275,6 +362,7 @@ def build_candidate(
         max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),
     )
     boundary_score = boundary_confidence(entries, start_ms, end_ms, original_end_ms)
+    opening_score = opening_strength(entries, start_ms)
     score = score_candidate_text(
         span,
         title,
@@ -284,6 +372,7 @@ def build_candidate(
         ideal_target_ms=duration_preset.target_ms,
         ideal_max_ms=duration_preset.max_ms,
         boundary_confidence=boundary_score,
+        opening_strength=opening_score,
     )
     metadata = {
         "rank": score_rank,
@@ -291,6 +380,8 @@ def build_candidate(
         "llm_provider": llm_provider,
         "llm_used": bool(llm_suggestion),
         "window_entry_count": len(window),
+        "original_start_ms": original_start_ms,
+        "start_refined_ms": start_ms,
         "original_end_ms": original_end_ms,
         "end_refined_ms": end_ms,
         "duration_preset": duration_preset.id,
@@ -302,6 +393,7 @@ def build_candidate(
         "selected_duration_ms": end_ms - start_ms,
         "duration_reason": duration_reason(duration_preset, end_ms - start_ms, boundary_score),
         "boundary_confidence": boundary_score,
+        "opening_strength": opening_score,
     }
     return {
         "id": f"clip_{uuid.uuid4().hex[:12]}",

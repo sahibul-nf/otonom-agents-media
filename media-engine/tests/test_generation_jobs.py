@@ -21,6 +21,8 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["clip_length_preset"], "deep_context")
         self.assertEqual(payload["renderer"], "remotion")
         self.assertEqual(payload["caption_source"], "whisper")
+        self.assertEqual(payload["speech_language"], "id")
+        self.assertEqual(payload["transcript_languages"], "id,en")
         self.assertEqual(payload["llm_provider"], "deepseek")
 
     def test_normalize_generation_payload_canonicalizes_legacy_clip_length(self):
@@ -36,6 +38,8 @@ class GenerationJobTests(unittest.TestCase):
                 "renderer": "bad",
                 "quality": "bad",
                 "llm_provider": "bad",
+                "speech_language": "bad",
+                "transcript_languages": "bad,ar,id",
             }
         )
 
@@ -43,6 +47,8 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["renderer"], "remotion")
         self.assertEqual(payload["quality"], "production")
         self.assertEqual(payload["llm_provider"], "deepseek")
+        self.assertEqual(payload["speech_language"], "id")
+        self.assertEqual(payload["transcript_languages"], "ar,id")
 
     def test_build_generation_command_uses_premium_batch(self):
         payload = normalize_generation_payload({"source_url": "https://youtube.com/watch?v=test", "count": 2})
@@ -54,6 +60,8 @@ class GenerationJobTests(unittest.TestCase):
         self.assertIn("2", command)
         self.assertIn("--clip-length-preset", command)
         self.assertIn("deep_context", command)
+        self.assertIn("--speech-language", command)
+        self.assertIn("--transcript-languages", command)
 
     def test_brand_templates_include_nourbit_style(self):
         templates = list_brand_templates()

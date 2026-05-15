@@ -113,6 +113,8 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
   quality TEXT NOT NULL,
   caption_source TEXT NOT NULL,
   asr_model TEXT NOT NULL,
+  speech_language TEXT NOT NULL DEFAULT 'id',
+  transcript_languages TEXT NOT NULL DEFAULT 'id,en',
   llm_provider TEXT NOT NULL,
   status TEXT NOT NULL,
   progress INTEGER NOT NULL DEFAULT 0,
@@ -177,6 +179,8 @@ SCHEMA_UPGRADES = {
     "generation_jobs": {
         "clip_length_preset": "TEXT NOT NULL DEFAULT 'deep_context'",
         "command": "TEXT NOT NULL DEFAULT ''",
+        "speech_language": "TEXT NOT NULL DEFAULT 'id'",
+        "transcript_languages": "TEXT NOT NULL DEFAULT 'id,en'",
         "log_text": "TEXT NOT NULL DEFAULT ''",
         "result_json": "TEXT NOT NULL DEFAULT '{}'",
         "error": "TEXT NOT NULL DEFAULT ''",
