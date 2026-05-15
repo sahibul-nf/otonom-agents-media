@@ -14,8 +14,8 @@ from .db import ARTIFACTS_DIR, ROOT
 from .styles import load_style
 
 PREMIUM_PRESET = "nourbit_premium_v1"
-PREMIUM_MIN_DURATION_MS = 45_000
-PREMIUM_MAX_DURATION_MS = 120_000
+PREMIUM_MIN_DURATION_MS = 20_000
+PREMIUM_MAX_DURATION_MS = 180_000
 
 
 def ms_to_timecode(ms: int) -> str:

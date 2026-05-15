@@ -9,6 +9,7 @@ class GenerationJobTests(unittest.TestCase):
 
         self.assertEqual(payload["profile_id"], "nourbit")
         self.assertEqual(payload["count"], 5)
+        self.assertEqual(payload["clip_length_preset"], "deep_context")
         self.assertEqual(payload["renderer"], "remotion")
         self.assertEqual(payload["caption_source"], "whisper")
         self.assertEqual(payload["llm_provider"], "deepseek")
@@ -37,6 +38,8 @@ class GenerationJobTests(unittest.TestCase):
         self.assertIn("premium-batch", command)
         self.assertIn("--count", command)
         self.assertIn("2", command)
+        self.assertIn("--clip-length-preset", command)
+        self.assertIn("deep_context", command)
 
     def test_brand_templates_include_nourbit_style(self):
         templates = list_brand_templates()

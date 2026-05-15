@@ -31,7 +31,14 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\w+", text, re.UNICODE))
 
 
-def score_candidate_text(text: str, title_hook: str, duration_ms: int, rights_risk: bool = True) -> dict[str, int]:
+def score_candidate_text(
+    text: str,
+    title_hook: str,
+    duration_ms: int,
+    rights_risk: bool = True,
+    ideal_min_ms: int = 45_000,
+    ideal_max_ms: int = 120_000,
+) -> dict[str, int]:
     lowered = text.lower()
     title_lowered = title_hook.lower()
     words = max(1, word_count(text))
@@ -42,7 +49,10 @@ def score_candidate_text(text: str, title_hook: str, duration_ms: int, rights_ri
     viral_score = clamp_score(42 + min(30, keyword_hits * 4) + min(18, words / 18) + (10 if "?" in title_hook else 0))
     hook_score = clamp_score(45 + hook_hits * 12 + (10 if 4 <= word_count(title_hook) <= 8 else 0))
     context_score = clamp_score(50 + min(30, words / 14) + (10 if any(mark in text for mark in ".?!") else 0))
-    retention_score = clamp_score(45 + (25 if 45 <= duration_seconds <= 120 else 5) + min(20, keyword_hits * 2))
+    ideal_min_seconds = ideal_min_ms / 1000
+    ideal_max_seconds = ideal_max_ms / 1000
+    duration_bonus = 25 if ideal_min_seconds <= duration_seconds <= ideal_max_seconds else 5
+    retention_score = clamp_score(45 + duration_bonus + min(20, keyword_hits * 2))
     caption_confidence = clamp_score(82 - min(24, lowered.count("[music]") * 8 + lowered.count("...") * 3))
     rights_risk_score = 35 if rights_risk else 90
     overall_score = clamp_score(

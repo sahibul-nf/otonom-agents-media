@@ -129,6 +129,34 @@ class V2CurationTests(unittest.TestCase):
                 previous["start_ms"] < current["end_ms"] and previous["end_ms"] > current["start_ms"]
             )
 
+    def test_duration_preset_changes_candidate_window(self):
+        entries = [
+            TranscriptEntry(index * 1000, (index + 1) * 1000, "Allah hati dzikir tenang kesepian ibadah")
+            for index in range(240)
+        ]
+
+        quick = choose_nourbit_premium_candidates(
+            "nourbit",
+            "source",
+            entries,
+            {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}},
+            count=1,
+            duration_preset="quick_hit",
+        )[0]
+        deep = choose_nourbit_premium_candidates(
+            "nourbit",
+            "source",
+            entries,
+            {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}},
+            count=1,
+            duration_preset="deep_context",
+        )[0]
+
+        self.assertLessEqual(quick["end_ms"] - quick["start_ms"], 60_000)
+        self.assertGreaterEqual(deep["end_ms"] - deep["start_ms"], 45_000)
+        self.assertEqual(quick["curation_metadata"]["duration_preset"], "quick_hit")
+        self.assertEqual(deep["curation_metadata"]["duration_preset"], "deep_context")
+
     def test_end_boundary_trims_late_new_sentence_opener(self):
         entries = [
             TranscriptEntry(0, 18_000, "Allah membuat hati tenang saat manusia tidak bisa memberi apa apa"),

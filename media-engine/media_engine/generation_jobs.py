@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .db import DEFAULT_DB, ROOT, connect, initialize
+from .duration_presets import resolve_duration_preset
 
 
 VALID_RENDERERS = {"ffmpeg", "remotion"}
@@ -60,7 +61,7 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "source_id": str(payload.get("source_id") or "nourbit_nouraniyyahofficial").strip(),
         "source_url": source_url,
         "count": _int_range(payload.get("count"), 5, 1, 10),
-        "clip_length_preset": str(payload.get("clip_length_preset") or "45-120s").strip(),
+        "clip_length_preset": resolve_duration_preset(str(payload.get("clip_length_preset") or "deep_context")).id,
         "brand_template": brand_template,
         "renderer": _choice(payload.get("renderer"), VALID_RENDERERS, "remotion"),
         "quality": _choice(payload.get("quality"), VALID_QUALITIES, "production"),
@@ -87,6 +88,8 @@ def build_generation_command(config: dict[str, Any]) -> list[str]:
         config["source_url"],
         "--count",
         str(config["count"]),
+        "--clip-length-preset",
+        config["clip_length_preset"],
         "--renderer",
         config["renderer"],
         "--quality",

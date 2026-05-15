@@ -47,6 +47,13 @@ type Section = "dashboard" | "generate" | "review" | "calendar" | "publish" | "b
 const defaultSourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
 const defaultTemplate = "profiles/nourbit_opus_style.json";
 
+const clipLengthPresets = [
+  {id: "quick_hit", label: "Quick Hit", detail: "20-60s · news, sports, quotes"},
+  {id: "standard_short", label: "Standard Short", detail: "35-90s · tech, explainers"},
+  {id: "deep_context", label: "Deep Context", detail: "45-120s · Nourbit, podcast"},
+  {id: "platform_max", label: "Platform Max", detail: "90-180s · deeper shorts"},
+];
+
 const nav = [
   {id: "dashboard", label: "Dashboard", icon: LayoutDashboard},
   {id: "generate", label: "Generate", icon: Wand2},
@@ -120,6 +127,7 @@ function productionCommand(config: GenerateConfig) {
 PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premium-batch \\
   --youtube-url "${config.sourceUrl}" \\
   --count ${config.count} \\
+  --clip-length-preset ${config.clipLength} \\
   --renderer ${config.renderer} \\
   --quality ${config.quality} \\
   --caption-source ${config.captionSource} \\
@@ -145,7 +153,7 @@ export function MediaStudioApp() {
   const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
     sourceUrl: defaultSourceUrl,
     count: 5,
-    clipLength: "45-120s",
+    clipLength: "deep_context",
     brandTemplate: defaultTemplate,
     renderer: "remotion",
     quality: "production",
@@ -604,7 +612,7 @@ function GenerateSection({
             <label className="grid gap-2 text-sm font-medium text-zinc-300">
               Clip length
               <select value={config.clipLength} onChange={(event) => update({clipLength: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
-                {["30-60s", "45-120s", "60-90s"].map((value) => <option key={value} value={value}>{value}</option>)}
+                {clipLengthPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label} · {preset.detail}</option>)}
               </select>
             </label>
           </div>

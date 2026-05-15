@@ -210,7 +210,15 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     entries = fetch_youtube_transcript(args.youtube_url, languages=["id"])
     style = load_style(args.style)
     bar.step("selecting best short candidate")
-    candidate = choose_nourbit_premium_candidates(args.profile, args.source_id, entries, style, count=1, llm_provider=args.llm_provider)[0]
+    candidate = choose_nourbit_premium_candidates(
+        args.profile,
+        args.source_id,
+        entries,
+        style,
+        count=1,
+        llm_provider=args.llm_provider,
+        duration_preset=args.clip_length_preset,
+    )[0]
     insert_candidate(conn, candidate)
     bar.step(f"downloading source clip for {candidate['id']}")
     source_clip = download_youtube_section(args.youtube_url, args.profile, candidate)
@@ -398,6 +406,7 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
         style,
         count=args.count,
         llm_provider=args.llm_provider,
+        duration_preset=args.clip_length_preset,
     )
     for candidate in candidates:
         insert_candidate(conn, candidate)
@@ -422,6 +431,7 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         style,
         count=args.count,
         llm_provider=args.llm_provider,
+        duration_preset=args.clip_length_preset,
     )
     attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
     renders = []
@@ -619,6 +629,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--quality", choices=["draft", "production"], default="draft")
     premium_test.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
     premium_test.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
+    premium_test.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
     premium_test.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_test.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_test.add_argument("--env-file")
@@ -629,6 +640,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_curate.add_argument("--source-id", default="nourbit_nouraniyyahofficial")
     premium_curate.add_argument("--youtube-url", required=True)
     premium_curate.add_argument("--count", type=int, default=5)
+    premium_curate.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
     premium_curate.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_curate.add_argument("--env-file")
@@ -644,6 +656,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--quality", choices=["draft", "production"], default="draft")
     premium_batch.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
     premium_batch.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
+    premium_batch.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
     premium_batch.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_batch.add_argument("--env-file")
