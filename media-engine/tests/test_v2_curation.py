@@ -6,6 +6,7 @@ from io import StringIO
 
 from media_engine.db import ensure_schema_upgrades
 from media_engine.cli import ProgressBar, build_parser, insert_candidate
+from media_engine.db import initialize
 from media_engine.env_loader import load_env_file
 from media_engine.llm import build_chat_payload, parse_strict_json, provider_config
 from media_engine.scoring import score_candidate_text
@@ -103,6 +104,13 @@ class V2CurationTests(unittest.TestCase):
         self.assertTrue(all(0 <= value <= 100 for value in strong.values()))
         json.dumps(strong)
 
+    def test_scoring_prefers_duration_near_strategy_target(self):
+        text = "Allah membuat hati tenang dengan dzikir dan ibadah yang lurus."
+        near_target = score_candidate_text(text, "Rahasia Hati yang Tenang", 95_000, ideal_min_ms=45_000, ideal_target_ms=95_000, ideal_max_ms=120_000)
+        too_short = score_candidate_text(text, "Rahasia Hati yang Tenang", 46_000, ideal_min_ms=45_000, ideal_target_ms=95_000, ideal_max_ms=120_000)
+
+        self.assertGreater(near_target["retention_score"], too_short["retention_score"])
+
     def test_multi_candidate_selector_returns_non_overlapping_scored_candidates(self):
         entries = [
             TranscriptEntry(index * 1000, (index + 1) * 1000, "Alloh hati jikir tenang kesepian ibadah")
@@ -156,6 +164,28 @@ class V2CurationTests(unittest.TestCase):
         self.assertGreaterEqual(deep["end_ms"] - deep["start_ms"], 45_000)
         self.assertEqual(quick["curation_metadata"]["duration_preset"], "quick_hit")
         self.assertEqual(deep["curation_metadata"]["duration_preset"], "deep_context")
+        self.assertIn("duration_reason", quick["curation_metadata"])
+        self.assertIn("boundary_confidence", quick["curation_metadata"])
+
+    def test_initialize_canonicalizes_legacy_generation_job_duration(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        initialize(conn)
+        conn.execute("INSERT INTO media_profiles VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", ("nourbit", "Nourbit", "niche", "[]", "preset", "cta", "wm"))
+        conn.execute(
+            """
+            INSERT INTO generation_jobs
+              (id, profile_id, source_id, source_url, count, clip_length_preset, brand_template,
+               renderer, quality, caption_source, asr_model, llm_provider, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("gen_legacy", "nourbit", "source", "url", 1, "45-120s", "profiles/nourbit_opus_style.json", "remotion", "production", "whisper", "medium", "deepseek", "queued"),
+        )
+        initialize(conn)
+
+        row = conn.execute("SELECT clip_length_preset FROM generation_jobs WHERE id = 'gen_legacy'").fetchone()
+        self.assertEqual(row["clip_length_preset"], "deep_context")
+        conn.close()
 
     def test_end_boundary_trims_late_new_sentence_opener(self):
         entries = [

@@ -32,6 +32,7 @@ import {
   BrandTemplate,
   ClipCandidate,
   CredentialStatus,
+  DurationPreset,
   formatDuration,
   formatTimestamp,
   GenerationJob,
@@ -46,13 +47,6 @@ type Section = "dashboard" | "generate" | "review" | "calendar" | "publish" | "b
 
 const defaultSourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
 const defaultTemplate = "profiles/nourbit_opus_style.json";
-
-const clipLengthPresets = [
-  {id: "quick_hit", label: "Quick Hit", detail: "20-60s · news, sports, quotes"},
-  {id: "standard_short", label: "Standard Short", detail: "35-90s · tech, explainers"},
-  {id: "deep_context", label: "Deep Context", detail: "45-120s · Nourbit, podcast"},
-  {id: "platform_max", label: "Platform Max", detail: "90-180s · deeper shorts"},
-];
 
 const nav = [
   {id: "dashboard", label: "Dashboard", icon: LayoutDashboard},
@@ -144,6 +138,7 @@ export function MediaStudioApp() {
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null);
   const [style, setStyle] = useState<StyleProfile | null>(null);
   const [templates, setTemplates] = useState<BrandTemplate[]>([]);
+  const [durationPresets, setDurationPresets] = useState<DurationPreset[]>([]);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -173,12 +168,13 @@ export function MediaStudioApp() {
     setBusy(true);
     setStatus("Syncing media engine...");
     try {
-      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, jobRows, scheduleRows] = await Promise.all([
+      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, durationRows, jobRows, scheduleRows] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>("targets"),
         apiGet<CredentialStatus>("credentials"),
         apiGet<StyleProfile>("style"),
         apiGet<BrandTemplate[]>("brand-templates"),
+        apiGet<DurationPreset[]>("duration-presets"),
         apiGet<GenerationJob[]>("generation-jobs"),
         apiGet<ScheduledPost[]>("schedule"),
       ]);
@@ -187,6 +183,7 @@ export function MediaStudioApp() {
       setCredentials(credentialRows);
       setStyle(styleRows);
       setTemplates(templateRows);
+      setDurationPresets(durationRows);
       setJobs(jobRows);
       setSchedule(scheduleRows);
       setSelectedId((current) => current || reviewRows[0]?.id || "");
@@ -432,6 +429,7 @@ export function MediaStudioApp() {
             <GenerateSection
               config={generateConfig}
               templates={templates}
+              durationPresets={durationPresets}
               jobs={jobs}
               busy={busy}
               setConfig={setGenerateConfig}
@@ -574,6 +572,7 @@ function DashboardSection({
 function GenerateSection({
   config,
   templates,
+  durationPresets,
   jobs,
   busy,
   setConfig,
@@ -583,6 +582,7 @@ function GenerateSection({
 }: {
   config: GenerateConfig;
   templates: BrandTemplate[];
+  durationPresets: DurationPreset[];
   jobs: GenerationJob[];
   busy: boolean;
   setConfig: (value: GenerateConfig) => void;
@@ -592,11 +592,12 @@ function GenerateSection({
 }) {
   const latest = jobs[0];
   const update = (patch: Partial<GenerateConfig>) => setConfig({...config, ...patch});
+  const presetOptions = durationPresets.length ? durationPresets : [{id: "deep_context", label: "Deep Context", detail: "Nourbit, podcast"}];
   return (
     <section className="grid gap-5 xl:grid-cols-[.85fr_1.15fr]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-xl font-semibold text-white">Generate production batch</h3>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">Run a local-first production job from the dashboard, or copy the exact command for terminal fallback.</p>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">Run a local-first production job from the dashboard, or copy the exact terminal command.</p>
         <div className="mt-6 grid gap-4">
           <label className="grid gap-2 text-sm font-medium text-zinc-300">
             YouTube source
@@ -612,7 +613,7 @@ function GenerateSection({
             <label className="grid gap-2 text-sm font-medium text-zinc-300">
               Clip length
               <select value={config.clipLength} onChange={(event) => update({clipLength: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
-                {clipLengthPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label} · {preset.detail}</option>)}
+                {presetOptions.map((preset) => <option key={preset.id} value={preset.id}>{preset.label} · {preset.detail}</option>)}
               </select>
             </label>
           </div>

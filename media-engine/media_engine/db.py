@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .duration_presets import resolve_duration_preset
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "data" / "media_engine.sqlite"
@@ -102,7 +103,7 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
   source_id TEXT NOT NULL,
   source_url TEXT NOT NULL,
   count INTEGER NOT NULL,
-  clip_length_preset TEXT NOT NULL DEFAULT '45-120s',
+  clip_length_preset TEXT NOT NULL DEFAULT 'deep_context',
   brand_template TEXT NOT NULL,
   renderer TEXT NOT NULL,
   quality TEXT NOT NULL,
@@ -153,7 +154,7 @@ SCHEMA_UPGRADES = {
         "cost_json": "TEXT NOT NULL DEFAULT '{}'",
     },
     "generation_jobs": {
-        "clip_length_preset": "TEXT NOT NULL DEFAULT '45-120s'",
+        "clip_length_preset": "TEXT NOT NULL DEFAULT 'deep_context'",
         "command": "TEXT NOT NULL DEFAULT ''",
         "log_text": "TEXT NOT NULL DEFAULT ''",
         "result_json": "TEXT NOT NULL DEFAULT '{}'",
@@ -184,9 +185,26 @@ def ensure_schema_upgrades(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def normalize_schema_values(conn: sqlite3.Connection) -> None:
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'generation_jobs'"
+    ).fetchone()
+    if not table_exists:
+        return
+    for row in conn.execute("SELECT id, clip_length_preset FROM generation_jobs"):
+        canonical = resolve_duration_preset(row["clip_length_preset"]).id
+        if row["clip_length_preset"] != canonical:
+            conn.execute(
+                "UPDATE generation_jobs SET clip_length_preset = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (canonical, row["id"]),
+            )
+    conn.commit()
+
+
 def initialize(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
     ensure_schema_upgrades(conn)
+    normalize_schema_values(conn)
     conn.commit()
 
 

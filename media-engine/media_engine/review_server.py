@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all, initialize
 from .credentials import credential_status
+from .duration_presets import duration_preset_options
 from .env_loader import load_env_file
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .live_publishers import LivePublishError, publish_telegram_video
@@ -104,6 +105,9 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/brand-templates":
             self._send_json(list_brand_templates())
+            return
+        if parsed.path == "/api/duration-presets":
+            self._send_json(duration_preset_options())
             return
         if parsed.path == "/api/generation-jobs":
             self._send_json(list_generation_jobs())

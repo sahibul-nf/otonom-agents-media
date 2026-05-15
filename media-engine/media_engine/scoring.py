@@ -37,7 +37,9 @@ def score_candidate_text(
     duration_ms: int,
     rights_risk: bool = True,
     ideal_min_ms: int = 45_000,
+    ideal_target_ms: int | None = None,
     ideal_max_ms: int = 120_000,
+    boundary_confidence: int = 75,
 ) -> dict[str, int]:
     lowered = text.lower()
     title_lowered = title_hook.lower()
@@ -45,14 +47,21 @@ def score_candidate_text(
     keyword_hits = sum(lowered.count(word) for word in NOURBIT_INTENT_WORDS)
     hook_hits = sum(1 for word in HOOK_WORDS if word in title_lowered)
     duration_seconds = duration_ms / 1000
+    ideal_target_ms = ideal_target_ms or int((ideal_min_ms + ideal_max_ms) / 2)
 
     viral_score = clamp_score(42 + min(30, keyword_hits * 4) + min(18, words / 18) + (10 if "?" in title_hook else 0))
     hook_score = clamp_score(45 + hook_hits * 12 + (10 if 4 <= word_count(title_hook) <= 8 else 0))
     context_score = clamp_score(50 + min(30, words / 14) + (10 if any(mark in text for mark in ".?!") else 0))
-    ideal_min_seconds = ideal_min_ms / 1000
-    ideal_max_seconds = ideal_max_ms / 1000
-    duration_bonus = 25 if ideal_min_seconds <= duration_seconds <= ideal_max_seconds else 5
-    retention_score = clamp_score(45 + duration_bonus + min(20, keyword_hits * 2))
+    if duration_ms < ideal_min_ms:
+        duration_bonus = 4 - min(20, (ideal_min_ms - duration_ms) / 1000)
+    elif duration_ms > ideal_max_ms:
+        duration_bonus = 4 - min(20, (duration_ms - ideal_max_ms) / 1000)
+    else:
+        span = max(1, max(ideal_target_ms - ideal_min_ms, ideal_max_ms - ideal_target_ms))
+        distance = abs(duration_ms - ideal_target_ms)
+        duration_bonus = 28 - min(18, (distance / span) * 18)
+    boundary_bonus = (clamp_score(boundary_confidence) - 50) * 0.18
+    retention_score = clamp_score(45 + duration_bonus + boundary_bonus + min(20, keyword_hits * 2))
     caption_confidence = clamp_score(82 - min(24, lowered.count("[music]") * 8 + lowered.count("...") * 3))
     rights_risk_score = 35 if rights_risk else 90
     overall_score = clamp_score(

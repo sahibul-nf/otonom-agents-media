@@ -137,6 +137,7 @@ def heuristic_window_score(text: str, title: str, duration_ms: int, duration_pre
         title,
         duration_ms,
         ideal_min_ms=duration_preset.min_ms,
+        ideal_target_ms=duration_preset.target_ms,
         ideal_max_ms=duration_preset.max_ms,
     )
     return keyword_score * 3 + length_score + question_score + quality["overall_score"]
@@ -206,6 +207,37 @@ def refine_end_boundary(
     return refined_end_ms
 
 
+def boundary_confidence(entries: list[TranscriptEntry], start_ms: int, end_ms: int, original_end_ms: int) -> int:
+    window = [item for item in entries if item.start_ms < end_ms and item.end_ms > start_ms]
+    if not window:
+        return 35
+    text = " ".join(item.text for item in window)
+    last = _last_word(text)
+    score = 78
+    if last in RISKY_TERMINAL_WORDS:
+        score -= 28
+    if end_ms != original_end_ms:
+        score += 8
+    if any(text.rstrip().endswith(mark) for mark in (".", "?", "!", "؟")):
+        score += 8
+    tail = window[-1].text.strip().lower()
+    if tail.startswith(("jadi ", "maka ", "kalau ", "nah ", "berikutnya ")):
+        score -= 18
+    return max(0, min(100, score))
+
+
+def duration_reason(preset: DurationPreset, duration_ms: int, confidence: int) -> str:
+    seconds = round(duration_ms / 1000)
+    target = round(preset.target_ms / 1000)
+    if confidence >= 85:
+        boundary = "clean ending"
+    elif confidence >= 65:
+        boundary = "acceptable boundary"
+    else:
+        boundary = "needs review"
+    return f"{preset.label} selected {seconds}s near {target}s target with {boundary}."
+
+
 def build_candidate(
     profile_id: str,
     source_id: str,
@@ -241,13 +273,16 @@ def build_candidate(
         word_timeline,
         max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),
     )
+    boundary_score = boundary_confidence(entries, start_ms, end_ms, original_end_ms)
     score = score_candidate_text(
         span,
         title,
         end_ms - start_ms,
         rights_risk=True,
         ideal_min_ms=duration_preset.min_ms,
+        ideal_target_ms=duration_preset.target_ms,
         ideal_max_ms=duration_preset.max_ms,
+        boundary_confidence=boundary_score,
     )
     metadata = {
         "rank": score_rank,
@@ -262,6 +297,10 @@ def build_candidate(
         "duration_min_ms": duration_preset.min_ms,
         "duration_target_ms": duration_preset.target_ms,
         "duration_max_ms": duration_preset.max_ms,
+        "duration_strategy": "preset_guardrail_with_adaptive_boundary",
+        "selected_duration_ms": end_ms - start_ms,
+        "duration_reason": duration_reason(duration_preset, end_ms - start_ms, boundary_score),
+        "boundary_confidence": boundary_score,
     }
     return {
         "id": f"clip_{uuid.uuid4().hex[:12]}",

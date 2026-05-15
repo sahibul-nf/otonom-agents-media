@@ -35,6 +35,13 @@ The dashboard now supports the daily Nourbit production loop:
 - Schedule approved clips into the next queue-only Nourbit slot. The V1 cadence is 2 posts per day at 09:00 and 19:30 WIB.
 - Publish remains explicit/manual by default; scheduled clips become ready queue items, not automatic live posts.
 
+Clip length uses canonical strategy presets rather than raw second ranges:
+
+- `quick_hit` — fast 20-60s clips for news, sports, quotes, and visual moments.
+- `standard_short` — balanced 35-90s clips for tech updates and explainers.
+- `deep_context` — Nourbit default, 45-120s clips for kajian, podcasts, and reflective content.
+- `platform_max` — 90-180s clips for deeper shorts when the topic can sustain retention.
+
 ## Security First
 
 Live credentials are local-only. Start from:

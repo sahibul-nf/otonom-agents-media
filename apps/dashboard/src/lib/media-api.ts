@@ -67,6 +67,18 @@ export type BrandTemplate = {
   path: string;
 };
 
+export type DurationPreset = {
+  id: string;
+  label: string;
+  min_ms: number;
+  target_ms: number;
+  max_ms: number;
+  range_label: string;
+  detail: string;
+  intent: string;
+  best_for: string;
+};
+
 export type GenerationJob = {
   id: string;
   profile_id: string;

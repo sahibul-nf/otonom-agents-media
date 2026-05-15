@@ -1,9 +1,18 @@
 import unittest
 
+from media_engine.duration_presets import duration_preset_options, resolve_duration_preset
 from media_engine.generation_jobs import build_generation_command, list_brand_templates, normalize_generation_payload
 
 
 class GenerationJobTests(unittest.TestCase):
+    def test_duration_presets_expose_canonical_options(self):
+        options = duration_preset_options()
+
+        self.assertEqual([item["id"] for item in options], ["quick_hit", "standard_short", "deep_context", "platform_max"])
+        self.assertTrue(all(item["range_label"].endswith("s") for item in options))
+        self.assertEqual(resolve_duration_preset("45-120s").id, "deep_context")
+        self.assertEqual(resolve_duration_preset("unknown").id, "deep_context")
+
     def test_normalize_generation_payload_defaults_for_nourbit(self):
         payload = normalize_generation_payload({"source_url": "https://youtube.com/watch?v=test"})
 
@@ -13,6 +22,11 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["renderer"], "remotion")
         self.assertEqual(payload["caption_source"], "whisper")
         self.assertEqual(payload["llm_provider"], "deepseek")
+
+    def test_normalize_generation_payload_canonicalizes_legacy_clip_length(self):
+        payload = normalize_generation_payload({"source_url": "https://youtube.com/watch?v=test", "clip_length_preset": "30-60s"})
+
+        self.assertEqual(payload["clip_length_preset"], "quick_hit")
 
     def test_normalize_generation_payload_clamps_count_and_choices(self):
         payload = normalize_generation_payload(
