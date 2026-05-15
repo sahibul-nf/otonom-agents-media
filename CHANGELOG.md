@@ -8,3 +8,4 @@
 - Replaced legacy generation job default `45-120s` with canonical `deep_context` while keeping legacy aliases readable for older commands.
 - Added local API metadata for duration presets so the dashboard no longer owns static preset copy.
 - Refined Review Studio filters into human workflow groups.
+- Hardened dashboard media API error handling so offline/empty engine responses show actionable messages instead of raw JSON parse errors.

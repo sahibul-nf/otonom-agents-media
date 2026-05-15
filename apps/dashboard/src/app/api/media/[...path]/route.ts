@@ -11,17 +11,29 @@ async function forward(request: NextRequest, {params}: Params) {
   const url = new URL(request.url);
   const upstream = new URL(`/api/${path.join("/")}${url.search}`, API_BASE);
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
-  const response = await fetch(upstream, {
-    method: request.method,
-    headers: {
-      "Content-Type": request.headers.get("Content-Type") || "application/json",
-    },
-    body,
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(upstream, {
+      method: request.method,
+      headers: {
+        "Content-Type": request.headers.get("Content-Type") || "application/json",
+      },
+      body,
+      cache: "no-store",
+    });
+  } catch {
+    return NextResponse.json(
+      {error: `Media engine API is offline. Start it at ${API_BASE}.`},
+      {status: 503},
+    );
+  }
   const contentType = response.headers.get("Content-Type") || "";
   if (contentType.includes("application/json")) {
-    return NextResponse.json(await response.json(), {status: response.status});
+    const text = await response.text();
+    if (!text.trim()) {
+      return NextResponse.json({error: `Media engine returned an empty response for /api/${path.join("/")}.`}, {status: response.status || 502});
+    }
+    return NextResponse.json(JSON.parse(text), {status: response.status});
   }
   return new NextResponse(await response.arrayBuffer(), {
     status: response.status,

@@ -119,9 +119,21 @@ export function apiPath(path: string) {
   return `/api/media/${path.replace(/^\//, "")}`;
 }
 
+async function readJsonResponse(response: Response) {
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error(`Empty response from media API (${response.status})`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Invalid JSON from media API (${response.status})`);
+  }
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(apiPath(path), {cache: "no-store"});
-  const json = await response.json();
+  const json = await readJsonResponse(response);
   if (!response.ok) throw new Error(json.error || "Request failed");
   return json as T;
 }
@@ -132,7 +144,7 @@ export async function apiPost<T>(path: string, payload: Record<string, unknown>)
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(payload),
   });
-  const json = await response.json();
+  const json = await readJsonResponse(response);
   if (!response.ok) throw new Error(json.error || "Request failed");
   return json as T;
 }
