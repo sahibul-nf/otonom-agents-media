@@ -121,13 +121,11 @@ type GenerateConfig = {
 
 const reviewFilters = [
   {id: "all", label: "All", statuses: []},
-  {id: "auto", label: "Auto Queue", statuses: ["pending_auto_schedule"]},
-  {id: "needs_review", label: "Needs Review", statuses: ["draft", "rendered", "held"]},
+  {id: "review", label: "Review", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
   {id: "repair", label: "Repair", statuses: ["needs_caption_fix"]},
-  {id: "approved", label: "Approved", statuses: ["approved"]},
   {id: "scheduled", label: "Scheduled", statuses: ["scheduled", "ready_to_publish"]},
-  {id: "rejected", label: "Rejected", statuses: ["rejected"]},
   {id: "published", label: "Published", statuses: ["published"]},
+  {id: "rejected", label: "Rejected", statuses: ["rejected"]},
 ] as const;
 
 function matchesReviewFilter(clip: ClipCandidate, filter: string) {
