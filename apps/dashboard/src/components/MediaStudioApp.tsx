@@ -854,7 +854,6 @@ function ReviewSection({
   onSaveCaptions: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
 }) {
-  const activeFilter = reviewFilters.find((item) => item.id === filter) || reviewFilters[0];
   return (
     <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
@@ -862,19 +861,20 @@ function ReviewSection({
           <div>
             <h3 className="text-xl font-semibold text-white">Review Studio</h3>
             <p className="mt-1 text-sm text-zinc-400">Ranked clip candidates with scoring, QA, cost, and destructive controls.</p>
-            <p className="mt-2 max-w-xl text-xs leading-5 text-zinc-500">{activeFilter.hint}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {reviewFilters.map((item) => (
-              <button
-                key={item.id}
-                title={item.hint}
-                onClick={() => setFilter(item.id)}
-                className={`rounded-full px-4 py-2 text-sm font-medium ${filter === item.id ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
+          <div className="grid gap-2 sm:flex sm:items-center">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Queue
+              <select
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+                className="h-11 min-w-[220px] rounded-full border border-white/[0.10] bg-canvas-deep px-4 text-sm font-semibold normal-case tracking-normal text-zinc-100 outline-none focus:border-cyan/[0.35]"
               >
-                {item.label}
-              </button>
-            ))}
+                {reviewFilters.map((item) => (
+                  <option key={item.id} value={item.id} title={item.hint}>{item.label}</option>
+                ))}
+              </select>
+            </label>
             <button onClick={onClear} className="inline-flex items-center gap-2 rounded-full border border-danger/[0.30] bg-danger/[0.10] px-4 py-2 text-sm font-semibold text-danger"><Trash2 className="h-4 w-4" /> Clear</button>
           </div>
         </div>
