@@ -11,11 +11,7 @@ import {
   FileVideo,
   Gauge,
   LayoutDashboard,
-  ListFilter,
   Loader2,
-  MessageSquareText,
-  MoreHorizontal,
-  Play,
   Plus,
   RadioTower,
   RefreshCcw,
@@ -23,7 +19,6 @@ import {
   Send,
   Settings,
   Sparkles,
-  Trash2,
   Wand2,
 } from "lucide-react";
 import {useEffect, useMemo, useRef, useState} from "react";
@@ -40,12 +35,17 @@ import {
   formatDuration,
   formatTimestamp,
   GenerationJob,
+  GenreOption,
   platformLabel,
   PublishTarget,
+  RerenderJob,
   ScheduledPost,
   scoreValue,
   StyleProfile,
 } from "@/lib/media-api";
+import {PreviewPanel} from "@/components/review/PreviewPanel";
+import {ReviewStudioSection} from "@/components/review/ReviewStudioSection";
+import {BrandSection} from "@/components/brand/BrandSection";
 
 type Section = "dashboard" | "generate" | "review" | "calendar" | "publish" | "brand";
 
@@ -111,6 +111,9 @@ type GenerateConfig = {
   sourceUrl: string;
   count: number;
   clipLength: string;
+  clipMinSeconds: number;
+  clipMaxSeconds: number;
+  genres: string[];
   brandTemplate: string;
   renderer: string;
   quality: string;
@@ -148,6 +151,9 @@ PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premiu
   --youtube-url "${config.sourceUrl}" \\
   --count ${config.count} \\
   --clip-length-preset ${config.clipLength} \\
+  --clip-min-seconds ${config.clipMinSeconds} \\
+  --clip-max-seconds ${config.clipMaxSeconds} \\
+  --genres ${config.genres.join(",")} \\
   --renderer ${config.renderer} \\
   --quality ${config.quality} \\
   --caption-source ${config.captionSource} \\
@@ -167,18 +173,24 @@ export function MediaStudioApp() {
   const [style, setStyle] = useState<StyleProfile | null>(null);
   const [templates, setTemplates] = useState<BrandTemplate[]>([]);
   const [durationPresets, setDurationPresets] = useState<DurationPreset[]>([]);
+  const [genres, setGenres] = useState<GenreOption[]>([]);
   const [autonomy, setAutonomy] = useState<AutonomySettings | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  const [rerenderJobs, setRerenderJobs] = useState<RerenderJob[]>([]);
   const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
+  const [rerendering, setRerendering] = useState<Record<string, {status: "running" | "done" | "failed"; message: string}>>({});
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
     sourceUrl: defaultSourceUrl,
     count: 5,
-    clipLength: "deep_context",
+    clipLength: "auto",
+    clipMinSeconds: 20,
+    clipMaxSeconds: 180,
+    genres: ["kajian", "spiritual_reflection", "advice"],
     brandTemplate: defaultTemplate,
     renderer: "remotion",
     quality: "production",
@@ -196,19 +208,35 @@ export function MediaStudioApp() {
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
   const command = productionCommand(generateConfig);
   const selectedCaptionDraft = selected ? captionDrafts[selected.id] ?? (selected.captions || []).map((caption) => caption.text).filter(Boolean).join("\n") : "";
+  const rerenderState = useMemo(() => {
+    const persisted: Record<string, {status: "running" | "done" | "failed"; message: string}> = {};
+    for (const job of rerenderJobs) {
+      if (persisted[job.candidate_id]) continue;
+      if (job.status === "queued" || job.status === "running") {
+        persisted[job.candidate_id] = {status: "running", message: job.message || "Re-rendering video..."};
+      } else if (job.status === "failed") {
+        persisted[job.candidate_id] = {status: "failed", message: job.error || job.message || "Re-render failed"};
+      } else if (job.status === "completed") {
+        persisted[job.candidate_id] = {status: "done", message: job.message || "Render updated"};
+      }
+    }
+    return {...persisted, ...rerendering};
+  }, [rerenderJobs, rerendering]);
 
   async function refreshAll() {
     setBusy(true);
     setStatus("Syncing media engine...");
     try {
-      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, durationRows, jobRows, scheduleRows, autonomyRows] = await Promise.all([
+      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, durationRows, genreRows, jobRows, rerenderRows, scheduleRows, autonomyRows] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>("targets"),
         apiGet<CredentialStatus>("credentials"),
         apiGet<StyleProfile>("style"),
         apiGet<BrandTemplate[]>("brand-templates"),
         apiGet<DurationPreset[]>("duration-presets"),
+        apiGet<GenreOption[]>("genres"),
         apiGet<GenerationJob[]>("generation-jobs"),
+        apiGet<RerenderJob[]>("rerender-jobs"),
         apiGet<ScheduledPost[]>("schedule"),
         apiGet<AutonomySettings>("autonomy-settings"),
       ]);
@@ -218,9 +246,12 @@ export function MediaStudioApp() {
       setStyle(styleRows);
       setTemplates(templateRows);
       setDurationPresets(durationRows);
+      setGenres(genreRows);
       setJobs(jobRows);
+      setRerenderJobs(rerenderRows);
       setSchedule(scheduleRows);
       setAutonomy(autonomyRows);
+      setRerendering({});
       setSelectedId((current) => current || reviewRows[0]?.id || "");
       setStatus("Dashboard synced");
     } catch (error) {
@@ -296,6 +327,9 @@ export function MediaStudioApp() {
         source_url: generateConfig.sourceUrl,
         count: generateConfig.count,
         clip_length_preset: generateConfig.clipLength,
+        clip_min_seconds: generateConfig.clipMinSeconds,
+        clip_max_seconds: generateConfig.clipMaxSeconds,
+        genres: generateConfig.genres,
         brand_template: generateConfig.brandTemplate,
         renderer: generateConfig.renderer,
         quality: generateConfig.quality,
@@ -409,7 +443,7 @@ export function MediaStudioApp() {
     setBusy(true);
     try {
       await apiPost("caption-corrections", {candidate_id: id, captions});
-      setStatus("Caption edits saved");
+      setStatus("Caption edits saved. Re-render this clip to update the video.");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Caption save failed");
@@ -420,12 +454,20 @@ export function MediaStudioApp() {
 
   async function rerenderClip(id: string) {
     setBusy(true);
+    setRerendering((items) => ({...items, [id]: {status: "running", message: "Re-rendering video..."}}));
     setStatus("Re-rendering selected clip...");
     try {
-      await apiPost("rerender", {candidate_id: id, renderer: "remotion", quality: "production", style: defaultTemplate});
-      setStatus("Clip re-rendered");
-      await refreshAll();
+      const job = await apiPost<RerenderJob>("rerender", {
+        candidate_id: id,
+        renderer: "remotion",
+        quality: "production",
+        style: generateConfig.brandTemplate || defaultTemplate,
+      });
+      setRerenderJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
+      setStatus("Re-render job started");
+      window.setTimeout(() => void refreshAll(), 900);
     } catch (error) {
+      setRerendering((items) => ({...items, [id]: {status: "failed", message: error instanceof Error ? error.message : "Re-render failed"}}));
       setStatus(error instanceof Error ? error.message : "Re-render failed");
     } finally {
       setBusy(false);
@@ -445,12 +487,14 @@ export function MediaStudioApp() {
   }, []);
 
   useEffect(() => {
-    if (!jobs.some((job) => job.status === "queued" || job.status === "running")) return;
+    const hasRunningGeneration = jobs.some((job) => job.status === "queued" || job.status === "running");
+    const hasRunningRerender = rerenderJobs.some((job) => job.status === "queued" || job.status === "running");
+    if (!hasRunningGeneration && !hasRunningRerender) return;
     const timer = window.setInterval(() => {
       void refreshAll();
     }, 3500);
     return () => window.clearInterval(timer);
-  }, [jobs]);
+  }, [jobs, rerenderJobs]);
 
   return (
     <div className="min-h-screen overflow-x-hidden text-zinc-100">
@@ -485,7 +529,7 @@ export function MediaStudioApp() {
         <div className="absolute bottom-5 left-5 right-5 grid gap-3">
           <div className="rounded-[24px] border border-white/[0.08] bg-surface p-4">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-semibold">Nourbit Plan</span>
+              <span className="text-sm font-semibold">Workspace Plan</span>
               <span className="rounded-full bg-teal/[0.10] px-2.5 py-1 text-xs font-medium text-teal">review</span>
             </div>
             <div className="grid gap-2 text-xs text-zinc-400">
@@ -510,7 +554,7 @@ export function MediaStudioApp() {
             <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
               <div className="w-fit rounded-[20px] border border-white/[0.10] bg-surface px-5 py-3">
                 <p className="text-xs text-zinc-400">Workspace</p>
-                <p className="text-sm font-semibold text-white">Nourbit Media</p>
+                <p className="text-sm font-semibold text-white">Active Workspace</p>
               </div>
               <div className="min-w-0">
                 <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">Media Operations Studio</h2>
@@ -556,6 +600,7 @@ export function MediaStudioApp() {
               config={generateConfig}
               templates={templates}
               durationPresets={durationPresets}
+              genres={genres}
               jobs={jobs}
               busy={busy}
               setConfig={setGenerateConfig}
@@ -566,14 +611,19 @@ export function MediaStudioApp() {
           )}
 
           {section === "review" && (
-            <ReviewSection
+            <ReviewStudioSection
               clips={filtered}
               selected={selected}
+              rerendering={rerenderState}
               filter={filter}
+              reviewFilters={reviewFilters}
               setFilter={setFilter}
               setSelectedId={setSelectedId}
               captionDraft={selectedCaptionDraft}
               setCaptionDraft={setSelectedCaptionDraft}
+              statusTone={statusTone}
+              formatDeadline={formatDeadline}
+              primaryReviewAction={primaryReviewAction}
               onApprove={approveClip}
               onSchedule={scheduleNext}
               onHold={holdClip}
@@ -593,7 +643,18 @@ export function MediaStudioApp() {
             <PublishSection targets={targets} credentials={credentials} selected={selected} onDryRun={() => publishTelegram(true)} onLive={() => publishTelegram(false)} />
           )}
 
-          {section === "brand" && <BrandSection style={style} templates={templates} autonomy={autonomy} command={command} onCopy={() => copyText(command, "Production command copied")} onAutonomyMode={updateAutonomyMode} />}
+          {section === "brand" && (
+            <BrandSection
+              style={style}
+              templates={templates}
+              autonomy={autonomy}
+              command={command}
+              defaultTemplate={defaultTemplate}
+              onCopy={() => copyText(command, "Production command copied")}
+              onAutonomyMode={updateAutonomyMode}
+              onTemplateSaved={refreshAll}
+            />
+          )}
         </div>
 
         <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-6 border-t border-white/[0.08] bg-surface/[0.95] backdrop-blur-xl lg:hidden">
@@ -648,7 +709,7 @@ function DashboardSection({
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-xl font-semibold text-white">Today’s production flow</h3>
-            <p className="mt-1 text-sm text-zinc-400">A compact operating room for Nourbit’s next batch.</p>
+            <p className="mt-1 text-sm text-zinc-400">A compact operating room for your next batch.</p>
           </div>
           <button onClick={() => onSection("generate")} className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink">Generate</button>
         </div>
@@ -678,7 +739,7 @@ function DashboardSection({
       </div>
 
       <div className="grid gap-5">
-        <PreviewPanel clip={selected} />
+        <PreviewPanel clip={selected} statusTone={statusTone} />
         <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-white">Next publish queue</h3>
@@ -705,6 +766,7 @@ function GenerateSection({
   config,
   templates,
   durationPresets,
+  genres,
   jobs,
   busy,
   setConfig,
@@ -715,6 +777,7 @@ function GenerateSection({
   config: GenerateConfig;
   templates: BrandTemplate[];
   durationPresets: DurationPreset[];
+  genres: GenreOption[];
   jobs: GenerationJob[];
   busy: boolean;
   setConfig: (value: GenerateConfig) => void;
@@ -724,9 +787,18 @@ function GenerateSection({
 }) {
   const latest = jobs[0];
   const update = (patch: Partial<GenerateConfig>) => setConfig({...config, ...patch});
-  const presetOptions = durationPresets.length ? durationPresets : [{id: "deep_context", label: "Deep Context", detail: "Podcasts, lectures", range_label: "45-120s", best_for: "Podcasts, lectures"}];
+  const presetOptions = durationPresets.length ? durationPresets : [{id: "auto", label: "Auto (0-3 min)", detail: "20-180s", range_label: "0-3 min", best_for: "General use", min_ms: 20_000, target_ms: 90_000, max_ms: 180_000, intent: "Automatic duration"}];
+  const genreOptions = genres.length ? genres : [
+    {id: "kajian", label: "Kajian", description: "Religious teaching and reflection."},
+    {id: "spiritual_reflection", label: "Spiritual reflection", description: "Heart-softening clips."},
+    {id: "advice", label: "Advice", description: "Practical reminders."},
+  ];
+  const toggleGenre = (id: string) => {
+    const next = config.genres.includes(id) ? config.genres.filter((item) => item !== id) : [...config.genres, id];
+    update({genres: next.length ? next : [id]});
+  };
   return (
-    <section className="grid gap-5 xl:grid-cols-[.85fr_1.15fr]">
+    <section className="grid gap-5 2xl:grid-cols-[.85fr_1.15fr]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-xl font-semibold text-white">Generate production batch</h3>
         <p className="mt-2 text-sm leading-6 text-zinc-400">Run a local-first production job from the dashboard, or copy the exact terminal command.</p>
@@ -744,25 +816,43 @@ function GenerateSection({
             </label>
           </div>
           <div className="grid gap-2">
+            <label className="grid gap-2 text-sm font-medium text-zinc-300">
+              Clip duration
+              <select
+                value={config.clipLength}
+                onChange={(event) => {
+                  const preset = presetOptions.find((item) => item.id === event.target.value);
+                  update({
+                    clipLength: event.target.value,
+                    clipMinSeconds: preset ? Math.round(preset.min_ms / 1000) : config.clipMinSeconds,
+                    clipMaxSeconds: preset ? Math.round(preset.max_ms / 1000) : config.clipMaxSeconds,
+                  });
+                }}
+                className="h-12 rounded-2xl border border-cyan/[0.35] bg-canvas-deep px-4 text-sm font-semibold text-white outline-none shadow-glow"
+              >
+                {presetOptions.map((preset) => (
+                  <option key={preset.id} value={preset.id}>{preset.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="grid gap-2">
             <div>
-              <p className="text-sm font-medium text-zinc-300">Clip length strategy</p>
-              <p className="mt-1 text-xs text-zinc-500">Choose by content pacing. The engine still trims exact start/end adaptively.</p>
+              <p className="text-sm font-medium text-zinc-300">Genres</p>
+              <p className="mt-1 text-xs text-zinc-500">Used by curation and scoring for this batch only.</p>
             </div>
-            <div className="grid gap-2">
-              {presetOptions.map((preset) => {
-                const active = config.clipLength === preset.id;
+            <div className="grid gap-2 sm:grid-cols-2">
+              {genreOptions.map((genre) => {
+                const active = config.genres.includes(genre.id);
                 return (
                   <button
-                    key={preset.id}
+                    key={genre.id}
                     type="button"
-                    onClick={() => update({clipLength: preset.id})}
-                    className={`rounded-[18px] border px-4 py-3 text-left transition ${active ? "border-cyan bg-teal/[0.14] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}
+                    onClick={() => toggleGenre(genre.id)}
+                    className={`rounded-[18px] border px-4 py-3 text-left transition ${active ? "border-cyan bg-teal/[0.14] text-white" : "border-white/[0.08] bg-canvas-deep text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-white">{preset.label}</span>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${active ? "bg-cyan text-ink" : "bg-surface text-zinc-400"}`}>{preset.range_label}</span>
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-zinc-400">{preset.best_for || preset.detail}</p>
+                    <span className="text-sm font-semibold">{genre.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-zinc-500">{genre.description}</span>
                   </button>
                 );
               })}
@@ -829,207 +919,6 @@ function SelectTile({label, value, options, onChange}: {label: string; value: st
   );
 }
 
-function ReviewSection({
-  clips,
-  selected,
-  filter,
-  setFilter,
-  setSelectedId,
-  captionDraft,
-  setCaptionDraft,
-  onApprove,
-  onSchedule,
-  onHold,
-  onReject,
-  onDelete,
-  onClear,
-  onSaveCaptions,
-  onRerender,
-}: {
-  clips: ClipCandidate[];
-  selected?: ClipCandidate;
-  filter: string;
-  setFilter: (value: string) => void;
-  setSelectedId: (id: string) => void;
-  captionDraft: string;
-  setCaptionDraft: (value: string) => void;
-  onApprove: (id: string) => void;
-  onSchedule: (id: string) => void;
-  onHold: (id: string) => void;
-  onReject: (id: string) => void;
-  onDelete: (id: string) => void;
-  onClear: () => void;
-  onSaveCaptions: (id: string, draft: string) => void;
-  onRerender: (id: string) => void;
-}) {
-  const [queueMenuOpen, setQueueMenuOpen] = useState(false);
-  const [rowMenuId, setRowMenuId] = useState("");
-  const queueMenuRef = useRef<HTMLDivElement>(null);
-  const rowMenuRef = useRef<HTMLDivElement>(null);
-  const activeFilter = reviewFilters.find((item) => item.id === filter) || reviewFilters[0];
-
-  useEffect(() => {
-    function closeMenus(event: MouseEvent) {
-      const target = event.target as Node;
-      if (queueMenuRef.current && !queueMenuRef.current.contains(target)) {
-        setQueueMenuOpen(false);
-      }
-      if (rowMenuRef.current && !rowMenuRef.current.contains(target)) {
-        setRowMenuId("");
-      }
-    }
-    document.addEventListener("mousedown", closeMenus);
-    return () => document.removeEventListener("mousedown", closeMenus);
-  }, []);
-
-  return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h3 className="text-xl font-semibold text-white">Review Studio</h3>
-            <p className="mt-1 text-sm text-zinc-400">Ranked clip candidates with scoring, QA, cost, and destructive controls.</p>
-          </div>
-          <div ref={queueMenuRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setQueueMenuOpen((open) => !open)}
-              className="inline-flex h-12 min-w-[230px] items-center justify-between gap-3 rounded-full border border-cyan/[0.28] bg-canvas-deep px-4 text-left text-sm font-semibold text-white shadow-glow"
-              aria-expanded={queueMenuOpen}
-              aria-label={`Queue filter: ${activeFilter.label}`}
-            >
-              <span className="inline-flex min-w-0 items-center gap-2">
-                <ListFilter className="h-4 w-4 shrink-0 text-cyan" />
-                <span className="text-xs uppercase tracking-wide text-zinc-500">Queue</span>
-                <span className="truncate">{activeFilter.label}</span>
-              </span>
-              <MoreHorizontal className="h-4 w-4 shrink-0 text-zinc-500" />
-            </button>
-            {queueMenuOpen ? (
-              <div className="absolute right-0 top-14 z-30 w-[320px] overflow-hidden rounded-[24px] border border-white/[0.10] bg-canvas-deep p-2 shadow-glow">
-                {reviewFilters.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setFilter(item.id);
-                      setQueueMenuOpen(false);
-                    }}
-                    className={`grid w-full gap-1 rounded-[18px] px-4 py-3 text-left transition ${filter === item.id ? "bg-teal/[0.16] text-cyan" : "text-zinc-300 hover:bg-white/[0.05] hover:text-white"}`}
-                  >
-                    <span className="text-sm font-semibold">{item.label}</span>
-                    <span className="text-xs leading-5 text-zinc-500">{item.hint}</span>
-                  </button>
-                ))}
-                <div className="mt-2 border-t border-white/[0.08] pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQueueMenuOpen(false);
-                      onClear();
-                    }}
-                    className="inline-flex w-full items-center gap-2 rounded-[18px] px-4 py-3 text-sm font-semibold text-danger hover:bg-danger/[0.10]"
-                  >
-                    <Trash2 className="h-4 w-4" /> Clear queue
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="grid gap-2">
-          {clips.length ? clips.map((clip) => (
-            <article
-              key={clip.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelectedId(clip.id)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  setSelectedId(clip.id);
-                }
-              }}
-              className={`grid cursor-pointer gap-3 rounded-[22px] border p-4 text-left transition lg:grid-cols-[88px_minmax(0,1fr)_minmax(220px,auto)] lg:items-center ${selected?.id === clip.id ? "border-cyan bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}
-            >
-              <div className="grid h-14 place-items-center rounded-2xl bg-surface-raised text-sm font-semibold text-cyan">{formatDuration(clip.render_quality?.duration_ms)}</div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="truncate text-base font-semibold text-white">{clip.title_hook}</h4>
-                  {clip.status !== "draft" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(clip.status)}`}>{clip.status}</span> : null}
-                </div>
-                <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{clip.viral_reason || "No curation reason yet."}</p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center lg:min-w-[220px]">
-                <div className="grid grid-cols-2 gap-2">
-                  <ScoreBubble label="Score" value={clip.score?.overall_score} />
-                  <ScoreBubble label="QA" value={clip.render_quality?.quality_score} />
-                </div>
-                <div className="relative flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (clip.status === "approved") onSchedule(clip.id);
-                      else onApprove(clip.id);
-                    }}
-                    className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal"
-                  >
-                    {primaryReviewAction(clip)}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setRowMenuId(rowMenuId === clip.id ? "" : clip.id);
-                    }}
-                    className="rounded-full border border-white/[0.10] bg-surface px-3 py-2 text-zinc-300 hover:text-white"
-                    aria-label={`More actions for ${clip.title_hook}`}
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </button>
-                  {rowMenuId === clip.id ? (
-                    <div
-                      ref={rowMenuRef}
-                      onClick={(event) => event.stopPropagation()}
-                      className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-[18px] border border-white/[0.10] bg-canvas-deep p-1 shadow-glow"
-                    >
-                      {clip.status === "pending_auto_schedule" ? (
-                        <button type="button" onClick={() => { setRowMenuId(""); onHold(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-warning hover:bg-warning/[0.10]">Hold</button>
-                      ) : null}
-                      <button type="button" onClick={() => { setRowMenuId(""); onRerender(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white">Re-render</button>
-                      {clip.status !== "rejected" ? (
-                        <button type="button" onClick={() => { setRowMenuId(""); onReject(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-danger hover:bg-danger/[0.10]">Reject</button>
-                      ) : null}
-                      <button type="button" onClick={() => { setRowMenuId(""); onDelete(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-danger hover:bg-danger/[0.10]">Delete</button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              {clip.status === "pending_auto_schedule" && clip.review_deadline_at ? (
-                <div className="lg:col-start-2 lg:col-span-2 rounded-2xl border border-teal/[0.20] bg-teal/[0.08] px-3 py-2 text-xs font-medium text-teal">
-                  {formatDeadline(clip.review_deadline_at)}
-                </div>
-              ) : null}
-            </article>
-          )) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
-        </div>
-      </div>
-      <div className="grid gap-5">
-        <PreviewPanel clip={selected} />
-        <InsightPanel
-          clip={selected}
-          captionDraft={captionDraft}
-          setCaptionDraft={setCaptionDraft}
-          onSaveCaptions={onSaveCaptions}
-          onRerender={onRerender}
-        />
-      </div>
-    </section>
-  );
-}
-
 function CalendarSection({
   schedule,
   approved,
@@ -1047,7 +936,7 @@ function CalendarSection({
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-xl font-semibold text-white">Calendar queue</h3>
-            <p className="mt-1 text-sm text-zinc-400">Queue-only schedule for Nourbit. Default cadence is 2 posts per day at 09:00 and 19:30 WIB.</p>
+            <p className="mt-1 text-sm text-zinc-400">Queue-only schedule for approved clips. Default cadence is 2 posts per day at 09:00 and 19:30 WIB.</p>
           </div>
           <span className="rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-4 py-2 text-sm font-semibold text-cyan">Queue only</span>
         </div>
@@ -1072,7 +961,7 @@ function CalendarSection({
       </div>
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-lg font-semibold text-white">Approved clips</h3>
-        <p className="mt-1 text-sm text-zinc-400">Add approved clips to the next available Nourbit slot.</p>
+        <p className="mt-1 text-sm text-zinc-400">Add approved clips to the next available workspace slot.</p>
         <div className="mt-5 grid gap-3">
           {approved.length ? approved.map((clip) => (
             <div key={clip.id} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
@@ -1128,188 +1017,6 @@ function PublishSection({targets, credentials, selected, onDryRun, onLive}: {tar
   );
 }
 
-function BrandSection({
-  style,
-  templates,
-  autonomy,
-  command,
-  onCopy,
-  onAutonomyMode,
-}: {
-  style: StyleProfile | null;
-  templates: BrandTemplate[];
-  autonomy: AutonomySettings | null;
-  command: string;
-  onCopy: () => void;
-  onAutonomyMode: (mode: string) => void;
-}) {
-  const caption = style?.caption || {};
-  const layout = style?.layout || {};
-  return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-xl font-semibold text-white">Nourbit brand system</h3>
-        <p className="mt-1 text-sm text-zinc-400">Current Opus-inspired template settings loaded from the Python engine.</p>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <SettingTile label="Aspect ratio" value={String(layout.aspect_ratio || "9:16")} />
-          <SettingTile label="Layout mode" value={String(layout.layout_mode || "fill")} />
-          <SettingTile label="Caption preset" value={String(caption.preset || "premium")} />
-          <SettingTile label="Font" value={`${caption.font_family || "Sora"} ${caption.font_size || 32}px`} />
-          <SettingTile label="Highlight" value={String(caption.highlight_word_color || "#00ff45")} />
-          <SettingTile label="Animation" value={String(caption.animation || "bounce")} />
-        </div>
-        <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-          <h4 className="font-semibold text-white">Available templates</h4>
-          <div className="mt-3 grid gap-2">
-            {templates.length ? templates.map((template) => (
-              <div key={template.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-3">
-                <span className="text-sm text-zinc-200">{template.label}</span>
-                <span className="text-xs text-zinc-500">{template.path}</span>
-              </div>
-            )) : <EmptyState text="No style templates found." />}
-          </div>
-        </div>
-        <div className="mt-5 rounded-[24px] border border-cyan/[0.18] bg-teal/[0.08] p-4">
-          <h4 className="font-semibold text-white">Autonomous mode</h4>
-          <p className="mt-1 text-sm leading-6 text-zinc-400">Assisted mode gives you {autonomy?.review_grace_hours || 12}h to approve before high-score clips enter the schedule queue.</p>
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            {["off", "assisted", "full"].map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => onAutonomyMode(mode)}
-                className={`rounded-full px-3 py-2 text-sm font-semibold capitalize ${autonomy?.autonomy_mode === mode ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <SettingTile label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
-            <SettingTile label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
-            <SettingTile label="Overall gate" value={autonomy?.overall_threshold || 82} />
-            <SettingTile label="Caption gate" value={autonomy?.caption_threshold || 90} />
-          </div>
-        </div>
-      </div>
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-white">Run command</h3>
-          <button onClick={onCopy} className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink">Copy</button>
-        </div>
-        <pre className="max-h-[420px] overflow-auto rounded-[24px] border border-white/[0.08] bg-canvas-deep p-5 text-xs leading-6 text-zinc-300">{command}</pre>
-      </div>
-    </section>
-  );
-}
-
-function PreviewPanel({clip}: {clip?: ClipCandidate}) {
-  const output = clip?.output_path || clip?.render_quality?.output_path;
-  return (
-    <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">9:16 Preview</h3>
-        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip?.status || "empty")}`}>{clip?.status || "No clip"}</span>
-      </div>
-      <div className="mx-auto grid aspect-[9/16] max-h-[620px] w-full max-w-[350px] place-items-center overflow-hidden rounded-[26px] border border-white/[0.10] bg-black">
-        {output ? (
-          <video controls playsInline preload="metadata" className="h-full w-full object-contain" src={apiPath(`artifact?path=${encodeURIComponent(output)}`)} />
-        ) : (
-          <div className="grid place-items-center gap-3 px-8 text-center text-sm text-zinc-500">
-            <Play className="h-10 w-10 text-zinc-700" />
-            No rendered clip selected.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function InsightPanel({
-  clip,
-  captionDraft,
-  setCaptionDraft,
-  onSaveCaptions,
-  onRerender,
-}: {
-  clip?: ClipCandidate;
-  captionDraft: string;
-  setCaptionDraft: (value: string) => void;
-  onSaveCaptions: (id: string, draft: string) => void;
-  onRerender: (id: string) => void;
-}) {
-  const captionCount = clip?.captions?.length || 0;
-  return (
-    <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-      <h3 className="text-lg font-semibold text-white">Clip intelligence</h3>
-      {clip ? (
-        <div className="mt-4 grid gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-zinc-500">Hook</p>
-            <p className="mt-1 text-lg font-semibold text-white">{clip.title_hook}</p>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-zinc-500">Why it works</p>
-            <p className="mt-1 text-sm leading-6 text-zinc-300">{clip.viral_reason || "No reason recorded."}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <SettingTile label="Start" value={formatTimestamp(clip.start_ms)} />
-            <SettingTile label="End" value={formatTimestamp(clip.end_ms)} />
-            <SettingTile label="Cost" value={`$${Number(clip.cost?.estimated_total || 0).toFixed(4)}`} />
-            <SettingTile label="Caption" value={clip.caption_source || "-"} />
-            <SettingTile label="Coverage" value={`${Math.round((clip.render_quality?.caption_coverage || 0) * 100)}%`} />
-            <SettingTile label="Gate" value={clip.quality_gate?.passed ? "Auto eligible" : "Review"} />
-            <SettingTile label="Corrections" value={clip.caption_corrections?.manual_edit ? "Manual edit" : clip.caption_corrections?.correction_count || 0} />
-          </div>
-          {clip.review_deadline_at ? (
-            <div className="rounded-[22px] border border-teal/[0.20] bg-teal/[0.08] p-4 text-sm font-medium text-teal">
-              {formatDeadline(clip.review_deadline_at)}
-            </div>
-          ) : null}
-          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-white">Caption editor</div>
-                <p className="mt-1 text-xs text-zinc-500">{captionCount} timed lines · text only</p>
-              </div>
-              <button
-                type="button"
-                disabled={!captionCount}
-                onClick={() => onRerender(clip.id)}
-                className="shrink-0 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Re-render
-              </button>
-            </div>
-            <textarea
-              value={captionDraft}
-              disabled={!captionCount}
-              onChange={(event) => setCaptionDraft(event.target.value)}
-              className="min-h-40 w-full resize-y rounded-2xl border border-white/[0.08] bg-black/30 px-3 py-3 text-sm leading-6 text-zinc-200 outline-none focus:border-cyan/[0.35] disabled:cursor-not-allowed disabled:opacity-50"
-              spellCheck={false}
-            />
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <p className="text-xs text-zinc-500">One line maps to one timed caption group.</p>
-              <button
-                type="button"
-                disabled={!captionCount}
-                onClick={() => onSaveCaptions(clip.id, captionDraft)}
-                className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Save captions
-              </button>
-            </div>
-          </div>
-          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><MessageSquareText className="h-4 w-4 text-cyan" /> Post copy</div>
-            <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-400">{clip.post_caption || "Post caption will appear after render metadata is available."}</p>
-          </div>
-        </div>
-      ) : <EmptyState text="Select a clip to inspect curation, captions, and publish copy." />}
-    </div>
-  );
-}
-
 function CompactClip({clip, onApprove}: {clip: ClipCandidate; onApprove: (id: string) => void}) {
   return (
     <div className="grid gap-3 rounded-[18px] border border-white/[0.08] bg-surface-raised px-4 py-3 md:grid-cols-[minmax(0,1fr)_58px_auto] md:items-center">
@@ -1338,6 +1045,36 @@ function SettingTile({label, value}: {label: string; value: string | number}) {
       <p className="text-xs text-zinc-500">{label}</p>
       <p className="mt-1 truncate text-sm font-semibold text-white">{value}</p>
     </div>
+  );
+}
+
+function TextField({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
+  return (
+    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      {label}
+      <input value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
+    </label>
+  );
+}
+
+function NumberField({label, value, min, max, onChange}: {label: string; value: number; min: number; max: number; onChange: (value: number) => void}) {
+  return (
+    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      {label}
+      <input type="number" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
+    </label>
+  );
+}
+
+function ColorField({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
+  return (
+    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      {label}
+      <div className="flex h-11 items-center gap-2 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 focus-within:border-cyan/[0.35]">
+        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-7 w-8 rounded border-0 bg-transparent p-0" />
+        <input value={value} onChange={(event) => onChange(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold normal-case tracking-normal text-white outline-none" />
+      </div>
+    </label>
   );
 }
 

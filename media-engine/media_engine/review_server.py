@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
+import re
 import shutil
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,13 +19,14 @@ from .credentials import credential_status
 from .duration_presets import duration_preset_options
 from .env_loader import load_env_file
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
+from .genres import genre_options
 from .live_publishers import LivePublishError, publish_telegram_video
 from .models import PUBLISH_MODES
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
-from .rerender import rerender_candidate
+from .rerender import create_rerender_job, list_rerender_jobs
 from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule
-from .styles import load_style
+from .styles import load_style, save_style_template
 
 
 def _artifact_path(value: str) -> Path | None:
@@ -63,6 +66,30 @@ def _loads(value: str | None, fallback):
         return json.loads(value or "")
     except json.JSONDecodeError:
         return fallback
+
+
+def _parse_range_header(value: str, size: int) -> tuple[int, int] | None:
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", value.strip())
+    if not match or size <= 0:
+        return None
+    start_text, end_text = match.groups()
+    if not start_text and not end_text:
+        return None
+    if start_text:
+        start = int(start_text)
+        end = int(end_text) if end_text else size - 1
+    else:
+        suffix = int(end_text)
+        if suffix <= 0:
+            return None
+        start = max(size - suffix, 0)
+        end = size - 1
+    if start >= size:
+        return None
+    end = min(end, size - 1)
+    if start > end:
+        return None
+    return start, end
 
 
 class ReviewHandler(SimpleHTTPRequestHandler):
@@ -116,16 +143,36 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(rows)
             return
         if parsed.path == "/api/style":
-            self._send_json(load_style())
+            query = parse_qs(parsed.query)
+            try:
+                self._send_json(load_style(query.get("path", [""])[0] or None))
+            except (ValueError, OSError, json.JSONDecodeError) as exc:
+                self._send_json({"error": str(exc)}, status=404)
             return
         if parsed.path == "/api/brand-templates":
             self._send_json(list_brand_templates())
+            return
+        if parsed.path == "/api/genres":
+            self._send_json(genre_options())
             return
         if parsed.path == "/api/duration-presets":
             self._send_json(duration_preset_options())
             return
         if parsed.path == "/api/generation-jobs":
             self._send_json(list_generation_jobs())
+            return
+        if parsed.path == "/api/rerender-jobs":
+            query = parse_qs(parsed.query)
+            try:
+                limit = int(query.get("limit", ["40"])[0] or 40)
+            except ValueError:
+                limit = 40
+            self._send_json(
+                list_rerender_jobs(
+                    limit=max(1, min(100, limit)),
+                    candidate_id=(query.get("candidate_id", [""])[0] or "").strip() or None,
+                )
+            )
             return
         if parsed.path == "/api/autonomy-settings":
             conn = connect(DEFAULT_DB)
@@ -149,13 +196,31 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             if not requested.exists() or root not in requested.parents:
                 self._send_json({"error": "artifact not found"}, status=404)
                 return
-            content = requested.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", mimetypes.guess_type(str(requested))[0] or "application/octet-stream")
-            self.send_header("Content-Length", str(len(content)))
+            content_type = mimetypes.guess_type(str(requested))[0] or "application/octet-stream"
+            file_size = requested.stat().st_size
+            range_header = self.headers.get("Range", "").strip()
+            byte_range = _parse_range_header(range_header, file_size) if range_header else None
+            status = 206 if byte_range else 200
+            start = byte_range[0] if byte_range else 0
+            end = byte_range[1] if byte_range else file_size - 1
+            length = max(0, end - start + 1)
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(length))
             self.send_header("Content-Disposition", f'inline; filename="{requested.name}"')
+            if byte_range:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
             self.end_headers()
-            self.wfile.write(content)
+            with requested.open("rb") as handle:
+                handle.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = handle.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
             return
         return super().do_GET()
 
@@ -229,6 +294,20 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(job, status=202)
             return
 
+        if parsed.path == "/api/brand-template":
+            label = str(payload.get("label") or "").strip()
+            style = payload.get("style")
+            if not isinstance(style, dict):
+                self._send_json({"error": "style is required"}, status=400)
+                return
+            try:
+                template = save_style_template(label, style, str(payload.get("base_template") or "") or None)
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(template, status=201)
+            return
+
         if parsed.path == "/api/caption-corrections":
             candidate_id = str(payload.get("candidate_id", "")).strip()
             captions = payload.get("captions")
@@ -274,7 +353,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "candidate_id is required"}, status=400)
                 return
             try:
-                result = rerender_candidate(
+                result = create_rerender_job(
                     candidate_id,
                     renderer=str(payload.get("renderer") or "remotion"),
                     quality=str(payload.get("quality") or "production"),
@@ -283,7 +362,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             except (RuntimeError, ValueError) as exc:
                 self._send_json({"error": str(exc)}, status=400)
                 return
-            self._send_json(result)
+            self._send_json(result, status=202)
             return
 
         if parsed.path == "/api/schedule-next":
@@ -490,8 +569,9 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 
 
 def main() -> None:
-    server = ThreadingHTTPServer(("127.0.0.1", 8765), ReviewHandler)
-    print("review UI: http://127.0.0.1:8765/review.html")
+    port = int(os.environ.get("MEDIA_ENGINE_PORT", "8765"))
+    server = ThreadingHTTPServer(("127.0.0.1", port), ReviewHandler)
+    print(f"review UI: http://127.0.0.1:{port}/review.html")
     server.serve_forever()
 
 

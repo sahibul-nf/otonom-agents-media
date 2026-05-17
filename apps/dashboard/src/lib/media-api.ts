@@ -95,7 +95,9 @@ export type CredentialStatus = {
 
 export type StyleProfile = {
   layout?: Record<string, string>;
-  caption?: Record<string, string | number | boolean>;
+  caption?: Record<string, string | number | boolean | Record<string, string | number | boolean>>;
+  brand?: Record<string, string | number | boolean>;
+  ai?: Record<string, string | number | boolean>;
   overlay?: Record<string, string | number | boolean>;
 };
 
@@ -117,12 +119,21 @@ export type DurationPreset = {
   best_for: string;
 };
 
+export type GenreOption = {
+  id: string;
+  label: string;
+  description: string;
+};
+
 export type GenerationJob = {
   id: string;
   profile_id: string;
   source_url: string;
   count: number;
   clip_length_preset: string;
+  clip_min_seconds?: number;
+  clip_max_seconds?: number;
+  genres?: string[];
   brand_template: string;
   renderer: string;
   quality: string;
@@ -139,6 +150,21 @@ export type GenerationJob = {
   created_at: string;
   updated_at: string;
   result?: {count?: number; renders?: unknown[]};
+};
+
+export type RerenderJob = {
+  id: string;
+  candidate_id: string;
+  renderer: string;
+  quality: string;
+  style_path: string;
+  status: string;
+  progress: number;
+  message: string;
+  error: string;
+  result?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ScheduledPost = {

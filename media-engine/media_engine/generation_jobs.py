@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from .db import DEFAULT_DB, ROOT, connect, initialize
-from .duration_presets import resolve_duration_preset
+from .duration_presets import resolve_duration_strategy
+from .genres import normalize_genres
 
 
 VALID_RENDERERS = {"ffmpeg", "remotion"}
@@ -84,6 +85,10 @@ def list_brand_templates() -> list[dict[str, str]]:
         if path.name == "nourbit.json":
             continue
         label = path.stem.replace("_", " ").replace("-", " ").title()
+        try:
+            label = str(json.loads(path.read_text(encoding="utf-8")).get("label") or label)
+        except (OSError, json.JSONDecodeError):
+            pass
         templates.append({"id": str(path.relative_to(ROOT)), "label": label, "path": str(path.relative_to(ROOT))})
     if not templates:
         templates.append({"id": "profiles/nourbit_opus_style.json", "label": "Nourbit Opus Style", "path": "profiles/nourbit_opus_style.json"})
@@ -101,6 +106,16 @@ def _int_range(value: Any, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         parsed = default
     return min(max(parsed, minimum), maximum)
+
+
+def _duration_seconds(payload: dict[str, Any]) -> tuple[int, int, str]:
+    preset_id = str(payload.get("clip_length_preset") or "auto").strip()
+    min_seconds = _int_range(payload.get("clip_min_seconds"), 20, 0, 600)
+    max_seconds = _int_range(payload.get("clip_max_seconds"), 180, 0, 600)
+    preset = resolve_duration_strategy(preset_id, min_seconds if preset_id == "custom" else None, max_seconds if preset_id == "custom" else None)
+    if preset.id == "custom" and min_seconds > max_seconds:
+        raise ValueError("clip_min_seconds must be less than or equal to clip_max_seconds")
+    return preset.min_ms // 1000, preset.max_ms // 1000, preset.id
 
 
 def _language(value: Any, default: str = "id") -> str:
@@ -122,12 +137,17 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     template_path = (ROOT / brand_template).resolve()
     if ROOT.resolve() not in template_path.parents or not template_path.exists():
         raise ValueError("brand_template not found")
+    min_seconds, max_seconds, preset_id = _duration_seconds(payload)
+    genres = normalize_genres(payload.get("genres"))
     return {
         "profile_id": str(payload.get("profile_id") or "nourbit").strip(),
         "source_id": str(payload.get("source_id") or "nourbit_nouraniyyahofficial").strip(),
         "source_url": source_url,
         "count": _int_range(payload.get("count"), 5, 1, 10),
-        "clip_length_preset": resolve_duration_preset(str(payload.get("clip_length_preset") or "deep_context")).id,
+        "clip_length_preset": preset_id,
+        "clip_min_seconds": min_seconds,
+        "clip_max_seconds": max_seconds,
+        "genres": genres,
         "brand_template": brand_template,
         "renderer": _choice(payload.get("renderer"), VALID_RENDERERS, "remotion"),
         "quality": _choice(payload.get("quality"), VALID_QUALITIES, "production"),
@@ -157,6 +177,12 @@ def build_generation_command(config: dict[str, Any], validate_runtime: bool = Fa
         str(config["count"]),
         "--clip-length-preset",
         config["clip_length_preset"],
+        "--clip-min-seconds",
+        str(config["clip_min_seconds"]),
+        "--clip-max-seconds",
+        str(config["clip_max_seconds"]),
+        "--genres",
+        ",".join(config["genres"]),
         "--renderer",
         config["renderer"],
         "--quality",
@@ -202,10 +228,11 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
     conn.execute(
         """
         INSERT INTO generation_jobs
-          (id, profile_id, source_id, source_url, count, clip_length_preset, brand_template,
+          (id, profile_id, source_id, source_url, count, clip_length_preset, clip_min_seconds,
+           clip_max_seconds, genres_json, brand_template,
            renderer, quality, caption_source, asr_model, speech_language, transcript_languages,
            llm_provider, status, progress, command)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             job_id,
@@ -214,6 +241,9 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
             config["source_url"],
             config["count"],
             config["clip_length_preset"],
+            config["clip_min_seconds"],
+            config["clip_max_seconds"],
+            json.dumps(config["genres"], ensure_ascii=False),
             config["brand_template"],
             config["renderer"],
             config["quality"],
@@ -324,6 +354,7 @@ def get_generation_job(job_id: str) -> dict[str, Any]:
         raise ValueError("generation job not found")
     item = dict(row)
     item["result"] = json.loads(item.get("result_json") or "{}")
+    item["genres"] = json.loads(item.get("genres_json") or "[]")
     return item
 
 
@@ -339,5 +370,6 @@ def list_generation_jobs(limit: int = 12) -> list[dict[str, Any]]:
     for row in rows:
         item = dict(row)
         item["result"] = json.loads(item.get("result_json") or "{}")
+        item["genres"] = json.loads(item.get("genres_json") or "[]")
         jobs.append(item)
     return jobs

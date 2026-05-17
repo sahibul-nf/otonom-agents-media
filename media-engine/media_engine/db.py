@@ -90,6 +90,21 @@ CREATE TABLE IF NOT EXISTS render_jobs (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS rerender_jobs (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES clip_candidates(id),
+  renderer TEXT NOT NULL,
+  quality TEXT NOT NULL,
+  style_path TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  progress INTEGER NOT NULL DEFAULT 0,
+  message TEXT NOT NULL DEFAULT '',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS publish_attempts (
   id TEXT PRIMARY KEY,
   candidate_id TEXT NOT NULL REFERENCES clip_candidates(id),
@@ -107,7 +122,10 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
   source_id TEXT NOT NULL,
   source_url TEXT NOT NULL,
   count INTEGER NOT NULL,
-  clip_length_preset TEXT NOT NULL DEFAULT 'deep_context',
+  clip_length_preset TEXT NOT NULL DEFAULT 'auto',
+  clip_min_seconds INTEGER NOT NULL DEFAULT 20,
+  clip_max_seconds INTEGER NOT NULL DEFAULT 180,
+  genres_json TEXT NOT NULL DEFAULT '[]',
   brand_template TEXT NOT NULL,
   renderer TEXT NOT NULL,
   quality TEXT NOT NULL,
@@ -177,7 +195,10 @@ SCHEMA_UPGRADES = {
         "review_deadline_at": "TEXT NOT NULL DEFAULT ''",
     },
     "generation_jobs": {
-        "clip_length_preset": "TEXT NOT NULL DEFAULT 'deep_context'",
+        "clip_length_preset": "TEXT NOT NULL DEFAULT 'auto'",
+        "clip_min_seconds": "INTEGER NOT NULL DEFAULT 20",
+        "clip_max_seconds": "INTEGER NOT NULL DEFAULT 180",
+        "genres_json": "TEXT NOT NULL DEFAULT '[]'",
         "command": "TEXT NOT NULL DEFAULT ''",
         "speech_language": "TEXT NOT NULL DEFAULT 'id'",
         "transcript_languages": "TEXT NOT NULL DEFAULT 'id,en'",
@@ -190,6 +211,15 @@ SCHEMA_UPGRADES = {
         "publish_mode": "TEXT NOT NULL DEFAULT 'queue_only'",
         "platforms_json": "TEXT NOT NULL DEFAULT '[]'",
         "note": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+    },
+    "rerender_jobs": {
+        "style_path": "TEXT NOT NULL DEFAULT ''",
+        "status": "TEXT NOT NULL DEFAULT 'queued'",
+        "progress": "INTEGER NOT NULL DEFAULT 0",
+        "message": "TEXT NOT NULL DEFAULT ''",
+        "result_json": "TEXT NOT NULL DEFAULT '{}'",
+        "error": "TEXT NOT NULL DEFAULT ''",
         "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
     }
 }

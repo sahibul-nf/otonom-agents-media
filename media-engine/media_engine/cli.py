@@ -18,6 +18,7 @@ from .curation import SAMPLE_NOURBIT_TRANSCRIPT, curate_dry_run
 from .db import DEFAULT_DB, ROOT, connect, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
 from .env_loader import load_env_file
 from .live_publishers import LivePublishError, publish_telegram_video
+from .genres import normalize_genres
 from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
 from .publishers import build_payload
@@ -232,6 +233,9 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
         count=1,
         llm_provider=args.llm_provider,
         duration_preset=args.clip_length_preset,
+        clip_min_seconds=args.clip_min_seconds,
+        clip_max_seconds=args.clip_max_seconds,
+        genres=parse_genres(args.genres),
     )[0]
     insert_candidate(conn, candidate)
     bar.step(f"downloading source clip for {candidate['id']}")
@@ -432,6 +436,9 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
         count=args.count,
         llm_provider=args.llm_provider,
         duration_preset=args.clip_length_preset,
+        clip_min_seconds=args.clip_min_seconds,
+        clip_max_seconds=args.clip_max_seconds,
+        genres=parse_genres(args.genres),
     )
     for candidate in candidates:
         insert_candidate(conn, candidate)
@@ -457,6 +464,9 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         count=args.count,
         llm_provider=args.llm_provider,
         duration_preset=args.clip_length_preset,
+        clip_min_seconds=args.clip_min_seconds,
+        clip_max_seconds=args.clip_max_seconds,
+        genres=parse_genres(args.genres),
     )
     attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
     renders = []
@@ -582,6 +592,10 @@ def parse_languages(value: str | None) -> list[str]:
     return languages or ["id", "en"]
 
 
+def parse_genres(value: str | None) -> list[str]:
+    return normalize_genres(value)
+
+
 def cmd_rerender(args: argparse.Namespace) -> None:
     progress(f"rerendering {args.candidate_id} with {args.renderer}/{args.quality}")
     result = rerender_from_args(args)
@@ -668,7 +682,11 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
     premium_test.add_argument("--speech-language", default="id", help="Spoken language hint for Whisper/faster-whisper, e.g. id, ar, en")
     premium_test.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
-    premium_test.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
+    duration_choices = ["auto", "under_30s", "seconds_30_60", "minutes_1_3", "minutes_3_plus", "custom", "quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"]
+    premium_test.add_argument("--clip-length-preset", choices=duration_choices, default="auto")
+    premium_test.add_argument("--clip-min-seconds", type=int, default=20)
+    premium_test.add_argument("--clip-max-seconds", type=int, default=180)
+    premium_test.add_argument("--genres", default="kajian,spiritual_reflection,advice")
     premium_test.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_test.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_test.add_argument("--env-file")
@@ -679,7 +697,10 @@ def build_parser() -> argparse.ArgumentParser:
     premium_curate.add_argument("--source-id", default="nourbit_nouraniyyahofficial")
     premium_curate.add_argument("--youtube-url", required=True)
     premium_curate.add_argument("--count", type=int, default=5)
-    premium_curate.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
+    premium_curate.add_argument("--clip-length-preset", choices=duration_choices, default="auto")
+    premium_curate.add_argument("--clip-min-seconds", type=int, default=20)
+    premium_curate.add_argument("--clip-max-seconds", type=int, default=180)
+    premium_curate.add_argument("--genres", default="kajian,spiritual_reflection,advice")
     premium_curate.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_curate.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
@@ -698,7 +719,10 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
     premium_batch.add_argument("--speech-language", default="id", help="Spoken language hint for Whisper/faster-whisper, e.g. id, ar, en")
     premium_batch.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
-    premium_batch.add_argument("--clip-length-preset", choices=["quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"], default="deep_context")
+    premium_batch.add_argument("--clip-length-preset", choices=duration_choices, default="auto")
+    premium_batch.add_argument("--clip-min-seconds", type=int, default=20)
+    premium_batch.add_argument("--clip-max-seconds", type=int, default=180)
+    premium_batch.add_argument("--genres", default="kajian,spiritual_reflection,advice")
     premium_batch.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_batch.add_argument("--env-file")

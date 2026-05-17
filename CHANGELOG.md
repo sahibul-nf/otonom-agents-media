@@ -1,7 +1,34 @@
 # Changelog
 
+## 2026-05-17
+
+- Finished the dashboard component split by moving Review Studio and Brand Settings into dedicated modules and removing duplicated legacy blocks from `MediaStudioApp`.
+- Fixed a brand preview rendering bug caused by an unterminated template literal in `BrandSection`, restoring successful dashboard build output.
+- Kept seek interaction only in the native 9:16 player controls and preserved persisted per-clip rerender job status across refresh.
+- Fixed dashboard video preview seeking by forwarding HTTP `Range` requests through the Next media proxy and serving byte-range artifact responses from the review server.
+- Fixed Review Studio clip action menus being clipped by the list row container when opened near the lower edge.
+- Improved Review Studio row responsiveness so clip titles stay readable on normal desktop widths.
+- Moved Generate into a single-column layout until extra-wide screens so source, duration, genre, and command controls have enough working room.
+- Added root-level PM2 operations scripts, ecosystem config, and Telegram-backed health monitoring for reboot-safe local service recovery.
+
 ## 2026-05-15
 
+- Added brand template loading in the editor so a user can preview and customize from any saved template.
+- Added video seek controls to the 9:16 review preview for faster QA at specific timestamps.
+- Added per-clip re-render progress states in Review Studio so item-level re-rendering is visible without blocking the full queue.
+- Replaced free-form caption background input with a hex color picker and normalized saved colors to hex values.
+- Added custom clip length generation controls with a production default of 20-180 seconds while keeping legacy duration presets available.
+- Added per-batch genre selection and connected genres into generation jobs, CLI commands, curation metadata, and LLM prompt context.
+- Added local brand template saving plus an instant 9:16 browser preview for caption and watermark styling without a long video render.
+- Added dashboard controls for custom min/max clip length, multi-select genres, and clearer caption save versus per-item re-render flow.
+- Added persisted `rerender_jobs` tracking so clip-level re-render progress survives dashboard refresh and continues polling while jobs are running.
+- Added `/api/rerender-jobs` and changed `/api/rerender` to queue asynchronous jobs with status/progress metadata.
+- Refactored review preview into a dedicated component module to reduce `MediaStudioApp` surface area.
+- Simplified preview UX by keeping seek only inside the 9:16 video player's native control bar.
+- Updated generic dashboard copy in shared areas from brand-specific wording to workspace-level wording.
+- Added local API endpoints for genre options and saving reusable brand style templates.
+- Hardened dashboard API proxy JSON parsing so malformed upstream responses return actionable errors.
+- Simplified clip duration choices to user-facing buckets: `Auto (0-3 min)`, `Under 30s`, `30s - 60s`, `1 - 3 min`, and `3+ min`, while preserving legacy duration aliases.
 - Added canonical clip length strategies for short generation: `quick_hit`, `standard_short`, `deep_context`, and `platform_max`.
 - Connected duration strategies through dashboard, local API, generation jobs, CLI curation, LLM prompts, scoring, and candidate metadata.
 - Added adaptive duration metadata including selected duration, boundary confidence, and duration reason.

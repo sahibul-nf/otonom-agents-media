@@ -148,8 +148,9 @@ class V2CurationTests(unittest.TestCase):
             self.assertIn("overall_score", candidate["score"])
             self.assertEqual(candidate["caption_source"], "youtube_glossary")
             self.assertIn("Allah", candidate["transcript_span"])
-            self.assertGreaterEqual(candidate["end_ms"] - candidate["start_ms"], 45_000)
-            self.assertLessEqual(candidate["end_ms"] - candidate["start_ms"], 120_000)
+            self.assertGreaterEqual(candidate["end_ms"] - candidate["start_ms"], 20_000)
+            self.assertLessEqual(candidate["end_ms"] - candidate["start_ms"], 180_000)
+            self.assertEqual(candidate["curation_metadata"]["duration_preset"], "auto")
         for previous, current in zip(candidates, candidates[1:]):
             self.assertFalse(
                 previous["start_ms"] < current["end_ms"] and previous["end_ms"] > current["start_ms"]
@@ -167,7 +168,7 @@ class V2CurationTests(unittest.TestCase):
             entries,
             {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}},
             count=1,
-            duration_preset="quick_hit",
+            duration_preset="under_30s",
         )[0]
         deep = choose_nourbit_premium_candidates(
             "nourbit",
@@ -175,13 +176,13 @@ class V2CurationTests(unittest.TestCase):
             entries,
             {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}},
             count=1,
-            duration_preset="deep_context",
+            duration_preset="minutes_1_3",
         )[0]
 
-        self.assertLessEqual(quick["end_ms"] - quick["start_ms"], 60_000)
-        self.assertGreaterEqual(deep["end_ms"] - deep["start_ms"], 45_000)
-        self.assertEqual(quick["curation_metadata"]["duration_preset"], "quick_hit")
-        self.assertEqual(deep["curation_metadata"]["duration_preset"], "deep_context")
+        self.assertLessEqual(quick["end_ms"] - quick["start_ms"], 30_000)
+        self.assertGreaterEqual(deep["end_ms"] - deep["start_ms"], 60_000)
+        self.assertEqual(quick["curation_metadata"]["duration_preset"], "under_30s")
+        self.assertEqual(deep["curation_metadata"]["duration_preset"], "minutes_1_3")
         self.assertIn("duration_reason", quick["curation_metadata"])
         self.assertIn("boundary_confidence", quick["curation_metadata"])
 
@@ -202,7 +203,7 @@ class V2CurationTests(unittest.TestCase):
         initialize(conn)
 
         row = conn.execute("SELECT clip_length_preset FROM generation_jobs WHERE id = 'gen_legacy'").fetchone()
-        self.assertEqual(row["clip_length_preset"], "deep_context")
+        self.assertEqual(row["clip_length_preset"], "minutes_1_3")
         conn.close()
 
     def test_end_boundary_trims_late_new_sentence_opener(self):

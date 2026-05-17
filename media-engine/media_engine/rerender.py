@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import uuid
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
@@ -167,6 +169,141 @@ def rerender_candidate(
         "render_quality": render_quality,
         "cost": candidate.get("cost", {}),
     }
+
+
+def _set_job_state(
+    conn,
+    job_id: str,
+    status: str,
+    progress: int,
+    message: str,
+    result: dict[str, Any] | None = None,
+    error: str = "",
+) -> None:
+    conn.execute(
+        """
+        UPDATE rerender_jobs
+        SET status = ?, progress = ?, message = ?, result_json = ?, error = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (
+            status,
+            progress,
+            message,
+            json.dumps(result or {}, ensure_ascii=False),
+            error,
+            job_id,
+        ),
+    )
+    conn.commit()
+
+
+def _run_rerender_job(
+    job_id: str,
+    candidate_id: str,
+    renderer: str,
+    quality: str,
+    style_path: str | None,
+    db_path: str | Path,
+) -> None:
+    conn = connect(db_path)
+    initialize(conn)
+    try:
+        _set_job_state(conn, job_id, "running", 10, "Loading clip and captions")
+        result = rerender_candidate(
+            candidate_id=candidate_id,
+            renderer=renderer,
+            quality=quality,
+            style_path=style_path,
+            db_path=db_path,
+        )
+        _set_job_state(conn, job_id, "completed", 100, "Render updated", result=result)
+    except Exception as exc:  # pragma: no cover - background guard
+        _set_job_state(conn, job_id, "failed", 100, "Re-render failed", error=str(exc))
+    finally:
+        conn.close()
+
+
+def _job_payload(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    item["result"] = _loads(item.get("result_json"))
+    return item
+
+
+def get_rerender_job(job_id: str, db_path: str | Path = DEFAULT_DB) -> dict[str, Any]:
+    conn = connect(db_path)
+    initialize(conn)
+    row = fetch_one(conn, "SELECT * FROM rerender_jobs WHERE id = ?", (job_id,))
+    conn.close()
+    if not row:
+        raise ValueError("rerender job not found")
+    return _job_payload(dict(row))
+
+
+def list_rerender_jobs(
+    limit: int = 40,
+    candidate_id: str | None = None,
+    db_path: str | Path = DEFAULT_DB,
+) -> list[dict[str, Any]]:
+    conn = connect(db_path)
+    initialize(conn)
+    if candidate_id:
+        rows = conn.execute(
+            "SELECT * FROM rerender_jobs WHERE candidate_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+            (candidate_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM rerender_jobs ORDER BY created_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    conn.close()
+    return [_job_payload(dict(row)) for row in rows]
+
+
+def create_rerender_job(
+    candidate_id: str,
+    renderer: str = "remotion",
+    quality: str = "production",
+    style_path: str | None = None,
+    start: bool = True,
+    db_path: str | Path = DEFAULT_DB,
+) -> dict[str, Any]:
+    conn = connect(db_path)
+    initialize(conn)
+    exists = conn.execute("SELECT 1 FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
+    if not exists:
+        conn.close()
+        raise ValueError("candidate not found")
+
+    running = conn.execute(
+        "SELECT id FROM rerender_jobs WHERE candidate_id = ? AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1",
+        (candidate_id,),
+    ).fetchone()
+    if running:
+        existing = fetch_one(conn, "SELECT * FROM rerender_jobs WHERE id = ?", (running["id"],))
+        conn.close()
+        return _job_payload(dict(existing))
+
+    job_id = f"rerender_{uuid.uuid4().hex[:12]}"
+    conn.execute(
+        """
+        INSERT INTO rerender_jobs
+          (id, candidate_id, renderer, quality, style_path, status, progress, message, result_json, error)
+        VALUES (?, ?, ?, ?, ?, 'queued', 0, 'Queued', '{}', '')
+        """,
+        (job_id, candidate_id, renderer, quality, style_path or ""),
+    )
+    conn.commit()
+    conn.close()
+    if start:
+        thread = threading.Thread(
+            target=_run_rerender_job,
+            args=(job_id, candidate_id, renderer, quality, style_path, db_path),
+            daemon=True,
+        )
+        thread.start()
+    return get_rerender_job(job_id, db_path=db_path)
 
 
 def rerender_from_args(args: Namespace) -> dict[str, Any]:

@@ -10,6 +10,26 @@ Workspace for autonomous media systems across multiple niches.
 
 ## Dashboard
 
+Start both local services together from the workspace root:
+
+```bash
+npm run dev
+```
+
+Check system health/status:
+
+```bash
+npm run health
+```
+
+This prints a JSON summary for:
+
+- backend port + review API
+- frontend port + HTTP response
+- configured publish credentials detected by the local media engine
+
+If you still want to run them separately:
+
 Start the local media API first:
 
 ```bash
@@ -26,6 +46,50 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:3000`. The dashboard proxies local engine calls through `MEDIA_ENGINE_API_BASE`, defaulting to `http://127.0.0.1:8765`.
+
+## PM2 Auto-Restart
+
+For Mac Mini uptime, you can run the stack under PM2 so it comes back after reboot or power loss:
+
+```bash
+cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media"
+npm run pm2:start
+pm2 save
+pm2 startup
+```
+
+This ecosystem starts:
+
+- `otonom-media-api`
+- `otonom-media-dashboard`
+- `otonom-media-health`
+
+Useful commands:
+
+```bash
+npm run pm2:status
+npm run pm2:logs
+npm run health
+```
+
+The health monitor checks backend/frontend every 60 seconds and sends Telegram alerts on:
+
+- monitor online / boot
+- unhealthy / degraded state
+- recovery back to healthy
+
+Telegram notification target resolution:
+
+1. `TELEGRAM_STATUS_CHAT_ID`
+2. `TELEGRAM_CHAT_ID`
+3. `TELEGRAM_CHANNEL_ID`
+
+Optional thread fallback:
+
+1. `TELEGRAM_STATUS_THREAD_ID`
+2. `TELEGRAM_THREAD_ID`
+
+PM2 uses `.env.local` automatically through the wrapper scripts in `scripts/`.
 
 The dashboard now supports the daily Nourbit production loop:
 

@@ -13,7 +13,8 @@ from typing import Any
 from .autonomy import is_duplicate_candidate
 from .captions import build_word_timeline, group_word_captions
 from .db import ARTIFACTS_DIR
-from .duration_presets import DurationPreset, duration_prompt_phrase, resolve_duration_preset
+from .duration_presets import DurationPreset, duration_prompt_phrase, resolve_duration_strategy
+from .genres import genre_prompt_phrase, normalize_genres
 from .llm import LLMError, call_llm_json
 from .rendering import ms_to_timecode
 from .scoring import score_candidate_text
@@ -174,7 +175,7 @@ def heuristic_window_score(text: str, title: str, duration_ms: int, duration_pre
     keyword_score = sum(lowered.count(keyword) for keyword in KEYWORDS)
     length_score = min(len(text) // 120, 12)
     question_score = 3 if "?" in text or "pernahkah" in lowered or "kenapa" in lowered else 0
-    duration_preset = duration_preset or resolve_duration_preset("deep_context")
+    duration_preset = duration_preset or resolve_duration_strategy("auto")
     quality = score_candidate_text(
         text,
         title,
@@ -335,8 +336,10 @@ def build_candidate(
     llm_provider: str = "none",
     llm_suggestion: dict[str, Any] | None = None,
     duration_preset: DurationPreset | None = None,
+    genres: list[str] | str | None = None,
 ) -> dict[str, Any]:
-    duration_preset = duration_preset or resolve_duration_preset("deep_context")
+    duration_preset = duration_preset or resolve_duration_strategy("auto")
+    genres = normalize_genres(genres)
     original_start_ms = start_ms
     start_ms = refine_start_boundary(entries, start_ms, end_ms, duration_preset.min_ms)
     original_end_ms = end_ms
@@ -392,6 +395,7 @@ def build_candidate(
         "duration_strategy": "preset_guardrail_with_adaptive_boundary",
         "selected_duration_ms": end_ms - start_ms,
         "duration_reason": duration_reason(duration_preset, end_ms - start_ms, boundary_score),
+        "genres": genres,
         "boundary_confidence": boundary_score,
         "opening_strength": opening_score,
     }
@@ -414,10 +418,11 @@ def build_candidate(
     }
 
 
-def llm_rank_suggestions(entries: list[TranscriptEntry], count: int, provider: str, duration_preset: DurationPreset | None = None) -> list[dict[str, Any]]:
+def llm_rank_suggestions(entries: list[TranscriptEntry], count: int, provider: str, duration_preset: DurationPreset | None = None, genres: list[str] | str | None = None) -> list[dict[str, Any]]:
     if provider == "none":
         return []
-    duration_preset = duration_preset or resolve_duration_preset("deep_context")
+    duration_preset = duration_preset or resolve_duration_strategy("auto")
+    genres = normalize_genres(genres)
     transcript = "\n".join(f"{ms_to_timecode(entry.start_ms)} {entry.text}" for entry in entries[:600])
     system_prompt = (
         "Anda adalah kurator video pendek Nourbit. Balas hanya JSON murni dengan key clips. "
@@ -425,6 +430,7 @@ def llm_rank_suggestions(entries: list[TranscriptEntry], count: int, provider: s
     )
     user_prompt = (
         f"Pilih {count} momen terbaik berdurasi {duration_prompt_phrase(duration_preset)} untuk short/reels dari transcript ini. "
+        f"Prioritaskan genre batch: {genre_prompt_phrase(genres)}. "
         "Utamakan konteks utuh, hook spiritual/reflektif, dan bahasa Indonesia natural. "
         "hook_subtitle harus terasa hangat, singkat, tidak kaku, maksimal 18 kata.\n\n"
         f"{transcript}"
@@ -452,14 +458,18 @@ def choose_nourbit_premium_candidates(
     style: dict[str, Any] | None = None,
     count: int = 5,
     llm_provider: str = "none",
-    duration_preset: str = "deep_context",
+    duration_preset: str = "auto",
+    clip_min_seconds: int | None = None,
+    clip_max_seconds: int | None = None,
+    genres: list[str] | str | None = None,
 ) -> list[dict[str, Any]]:
     if len(entries) < 10:
         raise ValueError("transcript is too short for premium candidate selection")
     style = style or {}
-    preset = resolve_duration_preset(duration_preset)
+    preset = resolve_duration_strategy(duration_preset, clip_min_seconds, clip_max_seconds)
+    genres = normalize_genres(genres)
     corrected_entries = correct_transcript_entries(entries)
-    llm_suggestions = llm_rank_suggestions(corrected_entries, count, llm_provider, preset)
+    llm_suggestions = llm_rank_suggestions(corrected_entries, count, llm_provider, preset, genres)
     selected: list[dict[str, Any]] = []
 
     for suggestion in llm_suggestions:
@@ -473,7 +483,7 @@ def choose_nourbit_premium_candidates(
             continue
         if not is_non_overlapping(start_ms, end_ms, selected):
             continue
-        candidate = build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, suggestion, preset)
+        candidate = build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, suggestion, preset, genres)
         if is_duplicate_candidate(candidate, selected):
             continue
         selected.append(candidate)
@@ -499,7 +509,7 @@ def choose_nourbit_premium_candidates(
     for _score, start_ms, end_ms, _text in sorted(windows, reverse=True):
         if not is_non_overlapping(start_ms, end_ms, selected):
             continue
-        candidate = build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, duration_preset=preset)
+        candidate = build_candidate(profile_id, source_id, corrected_entries, start_ms, end_ms, len(selected) + 1, style, llm_provider, duration_preset=preset, genres=genres)
         if is_duplicate_candidate(candidate, selected):
             candidate["curation_metadata"]["duplicate_warning"] = True
         selected.append(candidate)
