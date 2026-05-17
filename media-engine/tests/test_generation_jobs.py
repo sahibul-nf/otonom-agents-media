@@ -1,7 +1,9 @@
+import tempfile
 import unittest
 
 from media_engine.duration_presets import duration_preset_options, resolve_duration_preset
-from media_engine.generation_jobs import build_generation_command, list_brand_templates, normalize_generation_payload
+from media_engine.db import connect, initialize
+from media_engine.generation_jobs import build_generation_command, list_brand_templates, normalize_generation_payload, reconcile_generation_jobs
 
 
 class GenerationJobTests(unittest.TestCase):
@@ -89,6 +91,56 @@ class GenerationJobTests(unittest.TestCase):
     def test_brand_templates_include_nourbit_style(self):
         templates = list_brand_templates()
         self.assertTrue(any(item["path"] == "profiles/nourbit_opus_style.json" for item in templates))
+
+    def test_reconcile_generation_jobs_marks_stale_running_jobs_failed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn = connect(f"{tmpdir}/media_engine.sqlite")
+            initialize(conn)
+            conn.execute(
+                "INSERT INTO media_profiles (id, name, niche, languages_json, default_render_preset, cta_text, watermark_text) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("nourbit", "Nourbit", "kajian", "[]", "premium", "cta", "watermark"),
+            )
+            conn.execute(
+                """
+                INSERT INTO generation_jobs
+                (id, profile_id, source_id, source_url, count, brand_template, renderer, quality, caption_source, asr_model, llm_provider, status, progress, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '-30 minutes'))
+                """,
+                ("gen_stale", "nourbit", "source_a", "https://youtube.com/watch?v=test", 5, "profiles/nourbit_opus_style.json", "remotion", "production", "whisper", "medium", "deepseek", "running", 95),
+            )
+            changed = reconcile_generation_jobs(conn, stale_minutes=15)
+            row = conn.execute("SELECT status, progress, error, log_text FROM generation_jobs WHERE id = ?", ("gen_stale",)).fetchone()
+            conn.close()
+
+        self.assertEqual(changed, 1)
+        self.assertEqual(row["status"], "failed")
+        self.assertEqual(row["progress"], 100)
+        self.assertIn("lost heartbeat", row["error"])
+        self.assertIn("stale heartbeat timeout", row["log_text"])
+
+    def test_reconcile_generation_jobs_keeps_fresh_running_jobs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            conn = connect(f"{tmpdir}/media_engine.sqlite")
+            initialize(conn)
+            conn.execute(
+                "INSERT INTO media_profiles (id, name, niche, languages_json, default_render_preset, cta_text, watermark_text) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("nourbit", "Nourbit", "kajian", "[]", "premium", "cta", "watermark"),
+            )
+            conn.execute(
+                """
+                INSERT INTO generation_jobs
+                (id, profile_id, source_id, source_url, count, brand_template, renderer, quality, caption_source, asr_model, llm_provider, status, progress, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                ("gen_fresh", "nourbit", "source_a", "https://youtube.com/watch?v=test", 5, "profiles/nourbit_opus_style.json", "remotion", "production", "whisper", "medium", "deepseek", "running", 40),
+            )
+            changed = reconcile_generation_jobs(conn, stale_minutes=15)
+            row = conn.execute("SELECT status, progress FROM generation_jobs WHERE id = ?", ("gen_fresh",)).fetchone()
+            conn.close()
+
+        self.assertEqual(changed, 0)
+        self.assertEqual(row["status"], "running")
+        self.assertEqual(row["progress"], 40)
 
 
 if __name__ == "__main__":

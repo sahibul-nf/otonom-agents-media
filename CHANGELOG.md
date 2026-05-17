@@ -2,6 +2,7 @@
 
 ## 2026-05-17
 
+- Added generation-job heartbeat and stale-job recovery so interrupted batch runs no longer remain stuck in `running` after network drops, crashes, or server restarts.
 - Finished the dashboard component split by moving Review Studio and Brand Settings into dedicated modules and removing duplicated legacy blocks from `MediaStudioApp`.
 - Fixed a brand preview rendering bug caused by an unterminated template literal in `BrandSection`, restoring successful dashboard build output.
 - Kept seek interaction only in the native 9:16 player controls and preserved persisted per-clip rerender job status across refresh.

@@ -22,6 +22,8 @@ VALID_CAPTION_SOURCES = {"youtube", "whisper", "hybrid"}
 VALID_ASR_MODELS = {"small", "medium", "large-v3-turbo"}
 VALID_LLM_PROVIDERS = {"none", "openai", "deepseek", "groq"}
 VALID_LANGUAGES = {"id", "en", "ar", "ms", "auto"}
+GENERATION_JOB_HEARTBEAT_SECONDS = max(5, int(os.environ.get("GENERATION_JOB_HEARTBEAT_SECONDS", "10")))
+GENERATION_JOB_STALE_MINUTES = max(2, int(os.environ.get("GENERATION_JOB_STALE_MINUTES", "15")))
 
 
 def _runtime_requirements(config: dict[str, Any]) -> list[str]:
@@ -287,12 +289,57 @@ def append_job_log(conn, job_id: str, line: str, progress: int | None = None) ->
     conn.commit()
 
 
+def touch_generation_job(job_id: str) -> None:
+    conn = connect(DEFAULT_DB)
+    initialize(conn)
+    conn.execute(
+        """
+        UPDATE generation_jobs
+        SET updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND status IN ('queued', 'running')
+        """,
+        (job_id,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def reconcile_generation_jobs(conn, stale_minutes: int = GENERATION_JOB_STALE_MINUTES) -> int:
+    note = "\n[media-engine] job marked failed after stale heartbeat timeout\n"
+    result = conn.execute(
+        """
+        UPDATE generation_jobs
+        SET status = 'failed',
+            progress = 100,
+            error = CASE
+              WHEN trim(error) != '' THEN error
+              ELSE 'Generation job lost heartbeat. The worker likely stopped, crashed, or was interrupted.'
+            END,
+            log_text = substr(log_text || ?, -24000),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE status IN ('queued', 'running')
+          AND updated_at < datetime('now', ?)
+        """,
+        (note, f"-{max(2, stale_minutes)} minutes"),
+    )
+    conn.commit()
+    return result.rowcount
+
+
+def _heartbeat_generation_job(job_id: str, stop_event: threading.Event) -> None:
+    while not stop_event.wait(GENERATION_JOB_HEARTBEAT_SECONDS):
+        touch_generation_job(job_id)
+
+
 def run_generation_job(job_id: str, command: list[str]) -> None:
     conn = connect(DEFAULT_DB)
     initialize(conn)
     conn.execute("UPDATE generation_jobs SET status = 'running', progress = 5, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (job_id,))
     conn.commit()
     output = ""
+    heartbeat_stop = threading.Event()
+    heartbeat_thread = threading.Thread(target=_heartbeat_generation_job, args=(job_id, heartbeat_stop), daemon=True)
+    heartbeat_thread.start()
     try:
         process = subprocess.Popen(
             command,
@@ -342,12 +389,15 @@ def run_generation_job(job_id: str, command: list[str]) -> None:
         )
         conn.commit()
     finally:
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=1)
         conn.close()
 
 
 def get_generation_job(job_id: str) -> dict[str, Any]:
     conn = connect(DEFAULT_DB)
     initialize(conn)
+    reconcile_generation_jobs(conn)
     row = conn.execute("SELECT * FROM generation_jobs WHERE id = ?", (job_id,)).fetchone()
     conn.close()
     if not row:
@@ -361,6 +411,7 @@ def get_generation_job(job_id: str) -> dict[str, Any]:
 def list_generation_jobs(limit: int = 12) -> list[dict[str, Any]]:
     conn = connect(DEFAULT_DB)
     initialize(conn)
+    reconcile_generation_jobs(conn)
     rows = conn.execute(
         "SELECT * FROM generation_jobs ORDER BY created_at DESC, id DESC LIMIT ?",
         (limit,),
