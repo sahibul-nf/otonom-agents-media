@@ -51,6 +51,7 @@ type Section = "dashboard" | "generate" | "review" | "calendar" | "publish" | "b
 
 const defaultSourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
 const defaultTemplate = "profiles/nourbit_opus_style.json";
+type RerenderUiState = {status: "running" | "done" | "failed"; message: string; progress?: number};
 
 const nav = [
   {id: "dashboard", label: "Dashboard", icon: LayoutDashboard},
@@ -182,7 +183,7 @@ export function MediaStudioApp() {
   const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
-  const [rerendering, setRerendering] = useState<Record<string, {status: "running" | "done" | "failed"; message: string}>>({});
+  const [rerendering, setRerendering] = useState<Record<string, RerenderUiState>>({});
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
     sourceUrl: defaultSourceUrl,
@@ -209,15 +210,27 @@ export function MediaStudioApp() {
   const command = productionCommand(generateConfig);
   const selectedCaptionDraft = selected ? captionDrafts[selected.id] ?? (selected.captions || []).map((caption) => caption.text).filter(Boolean).join("\n") : "";
   const rerenderState = useMemo(() => {
-    const persisted: Record<string, {status: "running" | "done" | "failed"; message: string}> = {};
+    const persisted: Record<string, RerenderUiState> = {};
     for (const job of rerenderJobs) {
       if (persisted[job.candidate_id]) continue;
       if (job.status === "queued" || job.status === "running") {
-        persisted[job.candidate_id] = {status: "running", message: job.message || "Re-rendering video..."};
+        persisted[job.candidate_id] = {
+          status: "running",
+          message: job.message || "Re-rendering video...",
+          progress: typeof job.progress === "number" ? job.progress : 0,
+        };
       } else if (job.status === "failed") {
-        persisted[job.candidate_id] = {status: "failed", message: job.error || job.message || "Re-render failed"};
+        persisted[job.candidate_id] = {
+          status: "failed",
+          message: job.error || job.message || "Re-render failed",
+          progress: 100,
+        };
       } else if (job.status === "completed") {
-        persisted[job.candidate_id] = {status: "done", message: job.message || "Render updated"};
+        persisted[job.candidate_id] = {
+          status: "done",
+          message: job.message || "Render updated",
+          progress: 100,
+        };
       }
     }
     return {...persisted, ...rerendering};
@@ -454,7 +467,7 @@ export function MediaStudioApp() {
 
   async function rerenderClip(id: string) {
     setBusy(true);
-    setRerendering((items) => ({...items, [id]: {status: "running", message: "Re-rendering video..."}}));
+    setRerendering((items) => ({...items, [id]: {status: "running", message: "Queued for re-render", progress: 2}}));
     setStatus("Re-rendering selected clip...");
     try {
       const job = await apiPost<RerenderJob>("rerender", {
@@ -467,7 +480,14 @@ export function MediaStudioApp() {
       setStatus("Re-render job started");
       window.setTimeout(() => void refreshAll(), 900);
     } catch (error) {
-      setRerendering((items) => ({...items, [id]: {status: "failed", message: error instanceof Error ? error.message : "Re-render failed"}}));
+      setRerendering((items) => ({
+        ...items,
+        [id]: {
+          status: "failed",
+          message: error instanceof Error ? error.message : "Re-render failed",
+          progress: 100,
+        },
+      }));
       setStatus(error instanceof Error ? error.message : "Re-render failed");
     } finally {
       setBusy(false);

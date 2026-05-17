@@ -12,10 +12,12 @@ type ReviewFilter = {
   statuses: readonly string[];
 };
 
+type RerenderState = {status: "running" | "done" | "failed"; message: string; progress?: number};
+
 type Props = {
   clips: ClipCandidate[];
   selected?: ClipCandidate;
-  rerendering: Record<string, {status: "running" | "done" | "failed"; message: string}>;
+  rerendering: Record<string, RerenderState>;
   filter: string;
   reviewFilters: readonly ReviewFilter[];
   setFilter: (value: string) => void;
@@ -150,7 +152,6 @@ export function ReviewStudioSection({
                 }}
                 className={`relative grid cursor-pointer grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-visible rounded-[22px] border p-4 text-left transition 2xl:grid-cols-[88px_minmax(0,1fr)_minmax(220px,auto)] 2xl:items-center ${selected?.id === clip.id ? "z-10 border-cyan bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"} ${rowMenuId === clip.id ? "z-20" : ""}`}
               >
-                {renderState?.status === "running" ? <div className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-cyan/[0.10]"><div className="h-full w-1/2 animate-pulse rounded-full bg-cyan" /></div> : null}
                 <div className="grid h-14 place-items-center rounded-2xl bg-surface-raised text-sm font-semibold text-cyan">{formatDuration(clip.render_quality?.duration_ms)}</div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -159,6 +160,23 @@ export function ReviewStudioSection({
                     {renderState ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(renderState.status === "running" ? "running" : renderState.status === "failed" ? "failed" : "completed")}`}>{renderState.status === "running" ? "rendering" : renderState.status}</span> : null}
                   </div>
                   <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{renderState?.message || clip.viral_reason || "No curation reason yet."}</p>
+                  {renderState?.status === "running" ? (
+                    <div className="mt-3 rounded-[18px] border border-cyan/[0.18] bg-teal/[0.08] px-3 py-2.5">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <p className="truncate text-xs font-medium text-cyan">{renderState.message}</p>
+                        <p className="shrink-0 text-xs font-semibold text-white">{Math.max(0, Math.min(100, renderState.progress ?? 0))}%</p>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                        <div
+                          className="h-full rounded-full bg-cyan transition-all duration-500"
+                          style={{width: `${Math.max(6, Math.min(100, renderState.progress ?? 0))}%`}}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                  {renderState?.status === "failed" ? (
+                    <p className="mt-3 text-xs font-medium text-danger">Re-render stopped before completion. You can retry from the row menu.</p>
+                  ) : null}
                 </div>
                 <div className="col-span-2 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center 2xl:col-span-1 2xl:min-w-[220px] 2xl:grid-cols-[1fr_auto]">
                   <div className="grid w-fit grid-cols-2 gap-2">

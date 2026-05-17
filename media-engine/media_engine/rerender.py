@@ -7,7 +7,7 @@ import threading
 import uuid
 from argparse import Namespace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .autonomy import evaluate_quality_gate, get_autonomy_settings
 from .costs import estimate_clip_cost
@@ -99,13 +99,20 @@ def rerender_candidate(
     quality: str = "production",
     style_path: str | None = None,
     db_path: str | Path = DEFAULT_DB,
+    on_progress: Callable[[int, str], None] | None = None,
 ) -> dict[str, Any]:
+    def report(progress: int, message: str) -> None:
+        if on_progress:
+            on_progress(progress, message)
+
     conn = connect(db_path)
     initialize(conn)
+    report(8, "Loading clip data")
     row = fetch_one(conn, "SELECT * FROM clip_candidates WHERE id = ?", (candidate_id,))
     if not row:
         raise ValueError("candidate not found")
     candidate = _hydrate_candidate(dict(row))
+    report(18, "Loading profile and source clip")
     profile = _profile_for_candidate(conn, candidate["profile_id"])
     render_job = _latest_render(conn, candidate_id)
     render_metadata = _loads(render_job.get("metadata_json"))
@@ -120,12 +127,16 @@ def rerender_candidate(
     source_url = str(render_metadata.get("sourceUrl") or "")
     source_attribution = str(render_metadata.get("sourceAttribution") or "Source: Ribath Nouraniyyah Hasyimiyyah")
     resolved_renderer = "remotion" if quality == "production" and renderer == "ffmpeg" else renderer
+    report(34, "Preparing render contract")
     if resolved_renderer == "remotion":
+        report(52, "Rendering video with Remotion")
         output_path, contract = render_premium_remotion(candidate, profile, source_clip, source_url, source_attribution, style)
     else:
+        report(52, "Rendering video with FFmpeg")
         output_path, contract = render_premium_ffmpeg(candidate, profile, source_clip, source_url, source_attribution, style)
 
     job_id = Path(output_path).stem
+    report(82, "Running render QA checks")
     render_quality = build_render_quality_report(contract, output_path)
     candidate["render_quality"] = render_quality
     candidate["cost"] = estimate_clip_cost(
@@ -143,6 +154,7 @@ def rerender_candidate(
         candidate["review_deadline_at"] = gate.get("review_deadline_at", "")
         candidate["status"] = gate.get("status", "rendered")
 
+    report(92, "Saving render metadata")
     conn.execute(
         """
         INSERT INTO render_jobs
@@ -161,6 +173,7 @@ def rerender_candidate(
         ),
     )
     _update_candidate_after_rerender(conn, candidate)
+    report(100, "Render updated")
     return {
         "candidate_id": candidate["id"],
         "status": candidate.get("status", "rendered"),
@@ -208,14 +221,18 @@ def _run_rerender_job(
 ) -> None:
     conn = connect(db_path)
     initialize(conn)
+    def report(progress: int, message: str) -> None:
+        _set_job_state(conn, job_id, "running", progress, message)
+
     try:
-        _set_job_state(conn, job_id, "running", 10, "Loading clip and captions")
+        report(4, "Queued worker started")
         result = rerender_candidate(
             candidate_id=candidate_id,
             renderer=renderer,
             quality=quality,
             style_path=style_path,
             db_path=db_path,
+            on_progress=report,
         )
         _set_job_state(conn, job_id, "completed", 100, "Render updated", result=result)
     except Exception as exc:  # pragma: no cover - background guard
