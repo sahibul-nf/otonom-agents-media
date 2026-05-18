@@ -37,6 +37,7 @@ import {
   GenerationJob,
   GenreOption,
   platformLabel,
+  PublishAttempt,
   PublishTarget,
   RerenderJob,
   ScheduledPost,
@@ -179,6 +180,7 @@ export function MediaStudioApp() {
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [rerenderJobs, setRerenderJobs] = useState<RerenderJob[]>([]);
   const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
+  const [publishAttempts, setPublishAttempts] = useState<PublishAttempt[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("Ready");
@@ -240,7 +242,7 @@ export function MediaStudioApp() {
     setBusy(true);
     setStatus("Syncing media engine...");
     try {
-      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, durationRows, genreRows, jobRows, rerenderRows, scheduleRows, autonomyRows] = await Promise.all([
+      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, durationRows, genreRows, jobRows, rerenderRows, scheduleRows, autonomyRows, attemptRows] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>("targets"),
         apiGet<CredentialStatus>("credentials"),
@@ -252,6 +254,7 @@ export function MediaStudioApp() {
         apiGet<RerenderJob[]>("rerender-jobs"),
         apiGet<ScheduledPost[]>("schedule"),
         apiGet<AutonomySettings>("autonomy-settings"),
+        apiGet<PublishAttempt[]>("publish-attempts"),
       ]);
       setClips(reviewRows);
       setTargets(targetRows);
@@ -264,6 +267,7 @@ export function MediaStudioApp() {
       setRerenderJobs(rerenderRows);
       setSchedule(scheduleRows);
       setAutonomy(autonomyRows);
+      setPublishAttempts(attemptRows);
       setRerendering({});
       setSelectedId((current) => current || reviewRows[0]?.id || "");
       setStatus("Dashboard synced");
@@ -421,15 +425,29 @@ export function MediaStudioApp() {
     }
   }
 
-  async function publishTelegram(dryRun: boolean) {
+  async function publishSelectedPlatform(platform: string, dryRun: boolean) {
     if (!selected) return;
     setBusy(true);
     try {
-      await apiPost("publish-live", {candidate_id: selected.id, platform: "telegram_channel", dry_run: dryRun});
-      setStatus(dryRun ? "Telegram dry-run ready" : "Telegram published");
-      if (!dryRun) await refreshAll();
+      await apiPost("publish-live", {candidate_id: selected.id, platform, dry_run: dryRun});
+      setStatus(dryRun ? `${platformLabel(platform)} dry-run ready` : `${platformLabel(platform)} publish requested`);
+      await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Publish failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function publishDueNow(dryRun = false) {
+    setBusy(true);
+    setStatus(dryRun ? "Checking due publish queue..." : "Publishing due schedule...");
+    try {
+      const result = await apiPost<{count: number; processed?: unknown[]}>("publish-due", {limit: 5, dry_run: dryRun});
+      setStatus(`${dryRun ? "Checked" : "Processed"} ${result.count || 0} due publish item(s)`);
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Publish due failed");
     } finally {
       setBusy(false);
     }
@@ -611,7 +629,7 @@ export function MediaStudioApp() {
               schedule={schedule}
               onSection={setSection}
               onApprove={approveClip}
-              onPublish={() => publishTelegram(true)}
+              onPublish={() => publishDueNow(true)}
             />
           )}
 
@@ -656,11 +674,17 @@ export function MediaStudioApp() {
           )}
 
           {section === "calendar" && (
-            <CalendarSection schedule={schedule} approved={clips.filter((clip) => clip.status === "approved")} onSchedule={scheduleNext} onUnschedule={unscheduleClip} />
+            <CalendarSection schedule={schedule} approved={clips.filter((clip) => clip.status === "approved")} onSchedule={scheduleNext} onUnschedule={unscheduleClip} onPublishDue={() => publishDueNow(false)} onDryRunDue={() => publishDueNow(true)} />
           )}
 
           {section === "publish" && (
-            <PublishSection targets={targets} credentials={credentials} selected={selected} onDryRun={() => publishTelegram(true)} onLive={() => publishTelegram(false)} />
+            <PublishSection
+              targets={targets}
+              credentials={credentials}
+              selected={selected}
+              attempts={publishAttempts}
+              onPublishPlatform={publishSelectedPlatform}
+            />
           )}
 
           {section === "brand" && (
@@ -944,11 +968,15 @@ function CalendarSection({
   approved,
   onSchedule,
   onUnschedule,
+  onPublishDue,
+  onDryRunDue,
 }: {
   schedule: ScheduledPost[];
   approved: ClipCandidate[];
   onSchedule: (id: string) => void;
   onUnschedule: (id: string) => void;
+  onPublishDue: () => void;
+  onDryRunDue: () => void;
 }) {
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -956,9 +984,12 @@ function CalendarSection({
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-xl font-semibold text-white">Calendar queue</h3>
-            <p className="mt-1 text-sm text-zinc-400">Queue-only schedule for approved clips. Default cadence is 2 posts per day at 09:00 and 19:30 WIB.</p>
+            <p className="mt-1 text-sm text-zinc-400">Scheduled publish queue for approved clips. Default cadence is 2 posts per day at 09:00 and 19:30 WIB.</p>
           </div>
-          <span className="rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-4 py-2 text-sm font-semibold text-cyan">Queue only</span>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button onClick={onDryRunDue} className="rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300">Dry-run due</button>
+            <button onClick={onPublishDue} className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink">Publish due now</button>
+          </div>
         </div>
         <div className="grid gap-3">
           {schedule.length ? schedule.map((item) => (
@@ -973,6 +1004,18 @@ function CalendarSection({
                   <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
                 </div>
                 <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{item.viral_reason}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {item.platforms.map((platform) => {
+                    const result = item.platform_results?.[platform];
+                    const platformStatus = result?.status || (item.status === "published" ? "published" : "pending");
+                    return (
+                      <span key={platform} className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(platformStatus)}`}>
+                        {platformLabel(platform)} · {platformStatus}
+                      </span>
+                    );
+                  })}
+                </div>
+                {item.last_error ? <p className="mt-2 line-clamp-2 text-xs text-danger">{item.last_error}</p> : null}
               </div>
               <button onClick={() => onUnschedule(item.candidate_id)} className="rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300">Unschedule</button>
             </div>
@@ -996,15 +1039,29 @@ function CalendarSection({
   );
 }
 
-function PublishSection({targets, credentials, selected, onDryRun, onLive}: {targets: PublishTarget[]; credentials: CredentialStatus | null; selected?: ClipCandidate; onDryRun: () => void; onLive: () => void}) {
+function PublishSection({
+  targets,
+  credentials,
+  selected,
+  attempts,
+  onPublishPlatform,
+}: {
+  targets: PublishTarget[];
+  credentials: CredentialStatus | null;
+  selected?: ClipCandidate;
+  attempts: PublishAttempt[];
+  onPublishPlatform: (platform: string, dryRun: boolean) => void;
+}) {
+  const selectedAttempts = selected ? attempts.filter((attempt) => attempt.candidate_id === selected.id) : [];
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-xl font-semibold text-white">Publish Center</h3>
-        <p className="mt-1 text-sm text-zinc-400">Prepared for SaaS-style channel connection, but currently powered by local env credentials.</p>
+        <p className="mt-1 text-sm text-zinc-400">Live platform publishing powered by local env credentials, with each attempt recorded for review.</p>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           {targets.map((target) => {
             const ready = credentials?.platforms[target.platform]?.ready;
+            const latest = selectedAttempts.find((attempt) => attempt.platform === target.platform) || attempts.find((attempt) => attempt.platform === target.platform);
             return (
               <div key={target.platform} className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
                 <div className="flex items-center justify-between">
@@ -1017,6 +1074,17 @@ function PublishSection({targets, credentials, selected, onDryRun, onLive}: {tar
                   <SettingTile label="Mode" value={target.mode} />
                   <SettingTile label="Daily cap" value={target.daily_cap} />
                 </div>
+                <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs uppercase tracking-wide text-zinc-500">Last attempt</span>
+                    <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusTone(latest?.status || "pending")}`}>{latest?.status || "none"}</span>
+                  </div>
+                  {latest?.error ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-danger">{latest.error}</p> : null}
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button disabled={!selected} onClick={() => onPublishPlatform(target.platform, true)} className="h-10 rounded-full border border-cyan/[0.30] text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40">Dry-run</button>
+                  <button disabled={!selected || !ready} onClick={() => onPublishPlatform(target.platform, false)} className="h-10 rounded-full bg-cyan text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">Live</button>
+                </div>
               </div>
             );
           })}
@@ -1026,11 +1094,18 @@ function PublishSection({targets, credentials, selected, onDryRun, onLive}: {tar
         <h3 className="text-xl font-semibold text-white">Selected publish item</h3>
         <p className="mt-2 text-sm leading-6 text-zinc-400">{selected ? selected.title_hook : "Select or generate a clip before publishing."}</p>
         <div className="mt-5 grid gap-3">
-          <button disabled={!selected} onClick={onDryRun} className="h-12 rounded-full border border-cyan/[0.30] bg-teal/[0.10] font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40">Dry-run Telegram</button>
-          <button disabled={!selected} onClick={onLive} className="h-12 rounded-full bg-cyan font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">Publish Telegram Live</button>
           <div className="rounded-[22px] border border-warning/20 bg-warning/[0.10] p-4 text-sm leading-6 text-warning">
-            Live publish is enabled for Telegram first. Facebook, YouTube, and TikTok remain connector/dry-run surfaces until OAuth flows are productized.
+            Scheduled publish runs automatically from PM2. Manual live buttons here are for controlled retries and spot checks.
           </div>
+          {selectedAttempts.length ? selectedAttempts.slice(0, 8).map((attempt) => (
+            <div key={attempt.id} className="rounded-[18px] border border-white/[0.08] bg-canvas-deep p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-white">{platformLabel(attempt.platform)}</p>
+                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(attempt.status)}`}>{attempt.status}</span>
+              </div>
+              {attempt.error ? <p className="mt-2 text-xs leading-5 text-danger">{attempt.error}</p> : null}
+            </div>
+          )) : <EmptyState text="No publish attempts for this clip yet." />}
         </div>
       </div>
     </section>

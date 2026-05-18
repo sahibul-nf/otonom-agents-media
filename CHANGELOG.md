@@ -2,6 +2,9 @@
 
 ## 2026-05-17
 
+- Added due-schedule publishing across Telegram, YouTube Shorts, Facebook Reels, and TikTok with idempotent publish attempts, platform result tracking, and a PM2 publisher worker.
+- Removed the `public_third_party` permission-evidence blocker from platform publishing while keeping approval and schedule gates in place.
+- Upgraded Calendar and Publish Center to show scheduled publish status, platform chips, due publish actions, credential readiness, and last attempt errors.
 - Improved Review Studio re-render progress with real per-stage percentages, clearer stage copy, and a visible inline progress bar instead of an ambiguous pulse line.
 - Added generation-job heartbeat and stale-job recovery so interrupted batch runs no longer remain stuck in `running` after network drops, crashes, or server restarts.
 - Finished the dashboard component split by moving Review Studio and Brand Settings into dedicated modules and removing duplicated legacy blocks from `MediaStudioApp`.

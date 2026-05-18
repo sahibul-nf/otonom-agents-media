@@ -1,9 +1,13 @@
 import sqlite3
+import tempfile
 import unittest
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
+from unittest.mock import patch
 
 from media_engine.db import initialize
+from media_engine.schedule_publisher import process_due_publishes
 from media_engine.scheduler import list_scheduled_posts, schedule_candidate_next, unschedule_candidate
 
 
@@ -64,6 +68,127 @@ class SchedulerTests(unittest.TestCase):
         row = self.conn.execute("SELECT status FROM clip_candidates WHERE id = 'clip'").fetchone()
         self.assertEqual(row["status"], "approved")
         self.assertEqual(list_scheduled_posts(self.conn), [])
+
+    def test_due_publish_processes_platforms_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = f"{tmpdir}/media_engine.sqlite"
+            video_path = f"{tmpdir}/clip.mp4"
+            Path(video_path).write_bytes(b"video")
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            initialize(conn)
+            conn.execute(
+                "INSERT INTO media_profiles VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                ("nourbit", "Nourbit", "niche", "[]", "lecture_clean", "cta", "wm"),
+            )
+            conn.execute(
+                "INSERT INTO source_manifests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                ("src", "nourbit", "url", "community", "public_third_party", "", "[]", 1, "", "[]"),
+            )
+            for platform in ["telegram_channel", "youtube_shorts"]:
+                conn.execute(
+                    """
+                    INSERT INTO publish_targets
+                      (profile_id, platform, account_label, mode, require_approval, ai_disclosure_required, daily_cap)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    ("nourbit", platform, platform, "review_required", 1, 0, 2),
+                )
+            conn.execute(
+                """
+                INSERT INTO clip_candidates
+                  (id, profile_id, source_id, start_ms, end_ms, title_hook, viral_reason,
+                   transcript_span, risk_flags_json, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("clip", "nourbit", "src", 0, 1000, "Hook", "Reason", "Text", "[]", "scheduled"),
+            )
+            conn.execute(
+                """
+                INSERT INTO render_jobs
+                  (id, candidate_id, preset, crop_strategy, caption_style, status, output_path, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("render", "clip", "premium", "center", "caption", "rendered", video_path, "{}"),
+            )
+            conn.execute(
+                """
+                INSERT INTO scheduled_posts
+                  (id, candidate_id, profile_id, scheduled_at, status, publish_mode, platforms_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "sched",
+                    "clip",
+                    "nourbit",
+                    "2026-05-15T09:00+07:00",
+                    "scheduled",
+                    "scheduled_publish",
+                    '["telegram_channel", "youtube_shorts"]',
+                ),
+            )
+            conn.commit()
+            conn.close()
+
+            calls = []
+
+            def fake_publish(platform, payload):
+                calls.append(platform)
+                return {"platform": platform, "status": "published", "remote_id": f"{platform}_id"}
+
+            now = datetime(2026, 5, 15, 10, 0, tzinfo=ZoneInfo("Asia/Jakarta"))
+            with patch("media_engine.schedule_publisher.publish_live_payload", side_effect=fake_publish):
+                first = process_due_publishes(db_path=db_path, now=now, limit=5)
+                second = process_due_publishes(db_path=db_path, now=now, limit=5)
+
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT status, platform_results_json FROM scheduled_posts WHERE id = 'sched'").fetchone()
+            attempts = conn.execute("SELECT count(*) AS count FROM publish_attempts WHERE status = 'published'").fetchone()["count"]
+            conn.close()
+
+        self.assertEqual(first["processed"][0]["status"], "published")
+        self.assertEqual(second["count"], 0)
+        self.assertEqual(calls, ["telegram_channel", "youtube_shorts"])
+        self.assertEqual(row["status"], "published")
+        self.assertEqual(attempts, 2)
+
+    def test_due_publish_records_partial_failure(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = f"{tmpdir}/media_engine.sqlite"
+            video_path = f"{tmpdir}/clip.mp4"
+            Path(video_path).write_bytes(b"video")
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            initialize(conn)
+            conn.execute("INSERT INTO media_profiles VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", ("nourbit", "Nourbit", "niche", "[]", "lecture_clean", "cta", "wm"))
+            conn.execute("INSERT INTO source_manifests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", ("src", "nourbit", "url", "community", "public_third_party", "", "[]", 1, "", "[]"))
+            for platform in ["telegram_channel", "youtube_shorts"]:
+                conn.execute("INSERT INTO publish_targets (profile_id, platform, account_label, mode, require_approval, ai_disclosure_required, daily_cap) VALUES (?, ?, ?, ?, ?, ?, ?)", ("nourbit", platform, platform, "review_required", 1, 0, 2))
+            conn.execute("INSERT INTO clip_candidates (id, profile_id, source_id, start_ms, end_ms, title_hook, viral_reason, transcript_span, risk_flags_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", ("clip", "nourbit", "src", 0, 1000, "Hook", "Reason", "Text", "[]", "scheduled"))
+            conn.execute("INSERT INTO render_jobs (id, candidate_id, preset, crop_strategy, caption_style, status, output_path, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", ("render", "clip", "premium", "center", "caption", "rendered", video_path, "{}"))
+            conn.execute("INSERT INTO scheduled_posts (id, candidate_id, profile_id, scheduled_at, status, publish_mode, platforms_json) VALUES (?, ?, ?, ?, ?, ?, ?)", ("sched", "clip", "nourbit", "2026-05-15T09:00+07:00", "scheduled", "scheduled_publish", '["telegram_channel", "youtube_shorts"]'))
+            conn.commit()
+            conn.close()
+
+            def fake_publish(platform, payload):
+                if platform == "youtube_shorts":
+                    from media_engine.live_publishers import LivePublishError
+                    raise LivePublishError("youtube down")
+                return {"platform": platform, "status": "published", "remote_id": "telegram_id"}
+
+            now = datetime(2026, 5, 15, 10, 0, tzinfo=ZoneInfo("Asia/Jakarta"))
+            with patch("media_engine.schedule_publisher.publish_live_payload", side_effect=fake_publish):
+                result = process_due_publishes(db_path=db_path, now=now, limit=5)
+
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT status, last_error FROM scheduled_posts WHERE id = 'sched'").fetchone()
+            conn.close()
+
+        self.assertEqual(result["processed"][0]["status"], "partial_failed")
+        self.assertEqual(row["status"], "partial_failed")
+        self.assertIn("youtube down", row["last_error"])
 
 
 if __name__ == "__main__":

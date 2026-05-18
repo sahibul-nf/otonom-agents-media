@@ -175,10 +175,24 @@ export type ScheduledPost = {
   status: string;
   publish_mode: string;
   platforms: string[];
+  platform_results?: Record<string, {status?: string; error?: string; remote_id?: string; remote_url?: string; reason?: string}>;
+  published_at?: string;
+  last_error?: string;
   title_hook: string;
   viral_reason: string;
   candidate_status: string;
   output_path?: string;
+};
+
+export type PublishAttempt = {
+  id: string;
+  candidate_id: string;
+  platform: string;
+  mode: string;
+  status: string;
+  error: string;
+  payload?: Record<string, unknown>;
+  created_at: string;
 };
 
 export type AutonomySettings = {

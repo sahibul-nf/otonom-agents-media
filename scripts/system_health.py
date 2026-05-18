@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import socket
 import os
+import subprocess
 import sys
 from typing import Any
 from urllib.error import URLError, HTTPError
@@ -63,8 +64,20 @@ def collect_status() -> dict[str, Any]:
     }
 
     if credentials_ok and isinstance(credentials, dict):
-        connected = [key for key, value in credentials.items() if isinstance(value, dict) and value.get("configured")]
+        platforms = credentials.get("platforms") if isinstance(credentials.get("platforms"), dict) else {}
+        connected = [key for key, value in platforms.items() if isinstance(value, dict) and value.get("ready")]
         status["backend"]["configured_credentials"] = connected
+
+    try:
+        pm2 = subprocess.run(["pm2", "jlist"], capture_output=True, text=True, timeout=3, check=False)
+        apps = json.loads(pm2.stdout or "[]") if pm2.returncode == 0 else []
+        publisher = next((app for app in apps if app.get("name") == "otonom-media-publisher"), None)
+        status["pm2"] = {
+            "publisher_online": bool(publisher and publisher.get("pm2_env", {}).get("status") == "online"),
+            "publisher_status": publisher.get("pm2_env", {}).get("status") if publisher else "not_found",
+        }
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        status["pm2"] = {"publisher_online": False, "publisher_status": "unavailable"}
 
     healthy = (
         status["backend"]["port_open"]

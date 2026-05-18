@@ -20,11 +20,12 @@ from .duration_presets import duration_preset_options
 from .env_loader import load_env_file
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .genres import genre_options
-from .live_publishers import LivePublishError, publish_telegram_video
+from .live_publishers import LivePublishError, publish_live_payload
 from .models import PUBLISH_MODES
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
 from .rerender import create_rerender_job, list_rerender_jobs
+from .schedule_publisher import process_due_publishes
 from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule
 from .styles import load_style, save_style_template
 
@@ -184,6 +185,17 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             initialize(conn)
             process_due_auto_schedule(conn)
             self._send_json(list_scheduled_posts(conn))
+            return
+        if parsed.path == "/api/publish-attempts":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            rows = fetch_all(
+                conn,
+                "SELECT * FROM publish_attempts ORDER BY created_at DESC LIMIT 80",
+            )
+            for row in rows:
+                row["payload"] = _loads(row.get("payload_json"), {})
+            self._send_json(rows)
             return
         if parsed.path == "/api/credentials":
             load_env_file(ROOT.parent / ".env.local")
@@ -411,6 +423,22 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(result)
             return
 
+        if parsed.path == "/api/publish-due":
+            load_env_file(ROOT.parent / ".env.local")
+            try:
+                limit = int(payload.get("limit") or 5)
+            except (TypeError, ValueError):
+                limit = 5
+            result = process_due_publishes(
+                db_path=DEFAULT_DB,
+                env_file=ROOT.parent / ".env.local",
+                limit=max(1, min(20, limit)),
+                dry_run=bool(payload.get("dry_run", False)),
+                notify=True,
+            )
+            self._send_json(result)
+            return
+
         if parsed.path == "/api/archive":
             candidate_id = str(payload.get("candidate_id", "")).strip()
             if not candidate_id:
@@ -536,11 +564,8 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             if dry_run:
                 self._send_json({"status": "dry_run", "attempt": attempt, "payload": built_payload})
                 return
-            if platform != "telegram_channel":
-                self._send_json({"error": "live publishing is currently enabled for telegram_channel only"}, status=400)
-                return
             try:
-                result = publish_telegram_video(built_payload)
+                result = publish_live_payload(platform, built_payload)
             except LivePublishError as exc:
                 self._send_json({"error": str(exc), "attempt": attempt}, status=502)
                 return

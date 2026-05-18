@@ -152,6 +152,9 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   status TEXT NOT NULL,
   publish_mode TEXT NOT NULL DEFAULT 'queue_only',
   platforms_json TEXT NOT NULL DEFAULT '[]',
+  platform_results_json TEXT NOT NULL DEFAULT '{}',
+  published_at TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -210,6 +213,9 @@ SCHEMA_UPGRADES = {
     "scheduled_posts": {
         "publish_mode": "TEXT NOT NULL DEFAULT 'queue_only'",
         "platforms_json": "TEXT NOT NULL DEFAULT '[]'",
+        "platform_results_json": "TEXT NOT NULL DEFAULT '{}'",
+        "published_at": "TEXT NOT NULL DEFAULT ''",
+        "last_error": "TEXT NOT NULL DEFAULT ''",
         "note": "TEXT NOT NULL DEFAULT ''",
         "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
     },

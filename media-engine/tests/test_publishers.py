@@ -1,11 +1,23 @@
+import json
 import sqlite3
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from media_engine.db import initialize
 from media_engine.credentials import credential_status
-from media_engine.live_publishers import LivePublishError, publish_telegram_video
+from media_engine.live_publishers import (
+    LivePublishError,
+    publish_facebook_reel,
+    publish_telegram_video,
+    publish_tiktok_video,
+    publish_youtube_short,
+)
 from media_engine.publishers import build_payload, create_dry_run_attempt
+
+
+def json_dumps(value):
+    return json.dumps(value).encode("utf-8")
 
 
 class PublisherTests(unittest.TestCase):
@@ -55,7 +67,7 @@ class PublisherTests(unittest.TestCase):
             with self.assertRaises(LivePublishError):
                 publish_telegram_video({"video_path": "/tmp/does-not-exist.mp4", "caption": "Caption"})
 
-    def test_blocked_attempt_is_recorded(self):
+    def test_public_third_party_attempt_is_ready_when_candidate_approved(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         initialize(conn)
@@ -74,9 +86,105 @@ class PublisherTests(unittest.TestCase):
         target = {"platform": "facebook_reels", "mode": "auto_publish", "require_approval": 1}
         candidate = {"id": "clip", "title_hook": "Hook", "status": "approved"}
         attempt = create_dry_run_attempt(conn, source, target, candidate, {"output_path": "/tmp/clip.mp4"})
-        self.assertEqual(attempt["status"], "blocked")
-        self.assertIn("public third-party", attempt["error"])
+        self.assertEqual(attempt["status"], "ready")
+        self.assertEqual(attempt["error"], "")
         conn.close()
+
+    def test_youtube_publish_uses_oauth_and_resumable_upload(self):
+        responses = [
+            ({"access_token": "access"}, {}),
+            ({}, {"Location": "https://upload.youtube.test/session"}),
+            ({"id": "yt123"}, {}),
+        ]
+
+        class FakeResponse:
+            def __init__(self, body, headers):
+                self.body = body
+                self.headers = headers
+                self.status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return json_dumps(self.body)
+
+        def fake_urlopen(request, timeout=0):
+            body, headers = responses.pop(0)
+            return FakeResponse(body, headers)
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as video:
+            video.write(b"video")
+            video.flush()
+            with patch.dict("os.environ", {"YOUTUBE_CLIENT_ID": "id", "YOUTUBE_CLIENT_SECRET": "secret", "YOUTUBE_REFRESH_TOKEN": "refresh"}, clear=True):
+                with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+                    result = publish_youtube_short({"video_path": video.name, "title": "Hook", "caption": "Caption"})
+
+        self.assertEqual(result["platform"], "youtube_shorts")
+        self.assertEqual(result["remote_id"], "yt123")
+
+    def test_tiktok_publish_init_and_upload(self):
+        responses = [
+            ({"data": {"upload_url": "https://upload.tiktok.test", "publish_id": "tk123"}}, {}),
+            ({}, {}),
+        ]
+
+        class FakeResponse:
+            status = 200
+            def __init__(self, body):
+                self.body = body
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return json_dumps(self.body)
+
+        def fake_urlopen(request, timeout=0):
+            body, _headers = responses.pop(0)
+            return FakeResponse(body)
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as video:
+            video.write(b"video")
+            video.flush()
+            with patch.dict("os.environ", {"TIKTOK_ACCESS_TOKEN": "token"}, clear=True):
+                with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+                    result = publish_tiktok_video({"video_path": video.name, "caption": "Caption"})
+
+        self.assertEqual(result["platform"], "tiktok")
+        self.assertEqual(result["remote_id"], "tk123")
+
+    def test_facebook_reel_publish_start_upload_finish(self):
+        responses = [
+            ({"video_id": "fb123", "upload_url": "https://upload.facebook.test"}, {}),
+            ({}, {}),
+            ({"success": True}, {}),
+        ]
+
+        class FakeResponse:
+            status = 200
+            def __init__(self, body):
+                self.body = body
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return json_dumps(self.body)
+
+        def fake_urlopen(request, timeout=0):
+            body, _headers = responses.pop(0)
+            return FakeResponse(body)
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as video:
+            video.write(b"video")
+            video.flush()
+            with patch.dict("os.environ", {"META_PAGE_ID": "page", "META_PAGE_ACCESS_TOKEN": "token"}, clear=True):
+                with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+                    result = publish_facebook_reel({"video_path": video.name, "caption": "Caption"})
+
+        self.assertEqual(result["platform"], "facebook_reels")
+        self.assertEqual(result["remote_id"], "fb123")
 
 
 if __name__ == "__main__":

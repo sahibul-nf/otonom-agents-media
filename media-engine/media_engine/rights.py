@@ -45,13 +45,10 @@ def can_auto_publish(source: dict[str, Any], target: dict[str, Any]) -> GuardRes
     if mode != PUBLISH_AUTO:
         return GuardResult(False, f"unsupported publish mode: {mode}")
 
-    if rights_mode == RIGHTS_PUBLIC_THIRD_PARTY:
-        return GuardResult(False, "public third-party sources cannot auto-publish")
-
     if rights_mode in {RIGHTS_AUTHORIZED_COMMUNITY, RIGHTS_OWN_CHANNEL} and not evidence:
         return GuardResult(False, "permission evidence is required for auto-publish")
 
-    if rights_mode in {RIGHTS_AUTHORIZED_COMMUNITY, RIGHTS_OWN_CHANNEL, RIGHTS_USER_UPLOAD}:
+    if rights_mode in {RIGHTS_AUTHORIZED_COMMUNITY, RIGHTS_OWN_CHANNEL, RIGHTS_USER_UPLOAD, RIGHTS_PUBLIC_THIRD_PARTY}:
         return GuardResult(True, "auto-publish allowed")
 
     return GuardResult(False, f"unsupported rights mode: {rights_mode}")
@@ -70,16 +67,14 @@ def can_publish_candidate(
     if mode == PUBLISH_EXPORT_ONLY:
         return GuardResult(False, "target is export-only")
 
-    if source["permission_status"] == RIGHTS_PUBLIC_THIRD_PARTY:
-        return GuardResult(False, "public third-party sources require permission evidence before platform publishing")
-
-    if target.get("require_approval") and candidate["status"] != STATUS_APPROVED:
+    approved_statuses = {STATUS_APPROVED, "scheduled", "ready_to_publish", "publishing"}
+    if target.get("require_approval") and candidate["status"] not in approved_statuses:
         return GuardResult(False, "candidate must be approved first")
 
     if mode == PUBLISH_AUTO:
         return can_auto_publish(source, target)
 
-    if mode == PUBLISH_REVIEW_REQUIRED and candidate["status"] == STATUS_APPROVED:
+    if mode == PUBLISH_REVIEW_REQUIRED and candidate["status"] in approved_statuses:
         return GuardResult(True, "approved candidate can publish")
 
     return GuardResult(False, f"unsupported publish mode: {mode}")

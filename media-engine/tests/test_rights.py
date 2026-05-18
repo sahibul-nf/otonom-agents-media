@@ -5,12 +5,11 @@ from media_engine.rights import can_auto_publish, can_publish_candidate
 
 
 class RightsGuardTests(unittest.TestCase):
-    def test_public_third_party_cannot_auto_publish(self):
+    def test_public_third_party_can_auto_publish_when_target_allows(self):
         source = {"permission_status": "public_third_party", "permission_evidence": ""}
         target = {"mode": PUBLISH_AUTO}
         result = can_auto_publish(source, target)
-        self.assertFalse(result.allowed)
-        self.assertIn("public third-party", result.reason)
+        self.assertTrue(result.allowed)
 
     def test_authorized_community_requires_evidence_for_auto_publish(self):
         source = {"permission_status": "authorized_community", "permission_evidence": ""}
@@ -33,13 +32,19 @@ class RightsGuardTests(unittest.TestCase):
         self.assertFalse(result.allowed)
         self.assertIn("approved", result.reason)
 
-    def test_review_required_blocks_public_third_party_even_when_approved(self):
+    def test_review_required_allows_public_third_party_when_approved(self):
         source = {"permission_status": "public_third_party", "permission_evidence": ""}
         target = {"mode": PUBLISH_REVIEW_REQUIRED, "require_approval": 1}
         candidate = {"status": STATUS_APPROVED}
         result = can_publish_candidate(source, target, candidate)
-        self.assertFalse(result.allowed)
-        self.assertIn("permission evidence", result.reason)
+        self.assertTrue(result.allowed)
+
+    def test_review_required_allows_scheduled_candidate(self):
+        source = {"permission_status": "public_third_party", "permission_evidence": ""}
+        target = {"mode": PUBLISH_REVIEW_REQUIRED, "require_approval": 1}
+        candidate = {"status": "ready_to_publish"}
+        result = can_publish_candidate(source, target, candidate)
+        self.assertTrue(result.allowed)
 
     def test_review_required_allows_authorized_approved_candidate(self):
         source = {"permission_status": "authorized_community", "permission_evidence": "email approval 2026-05-09"}

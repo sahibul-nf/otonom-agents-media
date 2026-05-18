@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 DEFAULT_TZ = ZoneInfo("Asia/Jakarta")
 DEFAULT_SLOTS = (time(9, 0), time(19, 30))
-QUEUE_ONLY = "queue_only"
+SCHEDULED_PUBLISH = "scheduled_publish"
 
 
 def _parse_iso(value: str) -> datetime:
@@ -67,6 +67,10 @@ def list_scheduled_posts(conn: sqlite3.Connection, profile_id: str = "nourbit") 
     for row in rows:
         item = dict(row)
         item["platforms"] = json.loads(item.get("platforms_json") or "[]")
+        try:
+            item["platform_results"] = json.loads(item.get("platform_results_json") or "{}")
+        except json.JSONDecodeError:
+            item["platform_results"] = {}
         results.append(item)
     return results
 
@@ -124,7 +128,7 @@ def schedule_candidate_next(
             profile_id,
             _iso(scheduled_at),
             "scheduled",
-            QUEUE_ONLY,
+            SCHEDULED_PUBLISH,
             json.dumps(platform_list, ensure_ascii=False),
         ),
     )

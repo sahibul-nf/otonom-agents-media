@@ -4,7 +4,7 @@ Workspace for autonomous media systems across multiple niches.
 
 ## Projects
 
-- `media-engine/` — shared local-first multimedia engine, currently focused on Nourbit video clipping, review, render contracts, and multi-platform dry-run publishing.
+- `media-engine/` — shared local-first multimedia engine, currently focused on Nourbit video clipping, review, render contracts, scheduled publishing, and multi-platform publish adapters.
 - `apps/dashboard/` — Next.js SaaS dashboard for media operations, connected to the local `media-engine` review API.
 - `techtalk-autonomous/` — existing standalone TechTalk Intel automation.
 
@@ -63,6 +63,7 @@ This ecosystem starts:
 - `otonom-media-api`
 - `otonom-media-dashboard`
 - `otonom-media-health`
+- `otonom-media-publisher`
 
 Useful commands:
 
@@ -96,8 +97,8 @@ The dashboard now supports the daily Nourbit production loop:
 - Generate a production batch from a YouTube URL, clip count, length preset, renderer, caption source, LLM provider, and brand template.
 - Track background generation progress without blocking the browser.
 - Review and approve rendered clips.
-- Schedule approved clips into the next queue-only Nourbit slot. The V1 cadence is 2 posts per day at 09:00 and 19:30 WIB.
-- Publish remains explicit/manual by default; scheduled clips become ready queue items, not automatic live posts.
+- Schedule approved clips into the next Nourbit publish slot. The V1 cadence is 2 posts per day at 09:00 and 19:30 WIB.
+- Publish due clips automatically through the PM2 publisher worker, with Telegram, YouTube Shorts, Facebook Reels, and TikTok attempts recorded per platform.
 
 Clip length uses canonical strategy presets rather than raw second ranges:
 

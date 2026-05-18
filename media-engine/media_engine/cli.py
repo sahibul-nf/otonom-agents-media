@@ -17,7 +17,7 @@ from .credentials import credential_status
 from .curation import SAMPLE_NOURBIT_TRANSCRIPT, curate_dry_run
 from .db import DEFAULT_DB, ROOT, connect, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
 from .env_loader import load_env_file
-from .live_publishers import LivePublishError, publish_telegram_video
+from .live_publishers import LivePublishError, publish_live_payload
 from .genres import normalize_genres
 from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
@@ -25,6 +25,7 @@ from .publishers import build_payload
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
 from .rerender import rerender_from_args
+from .schedule_publisher import process_due_publishes
 from .styles import load_style
 from .transcript_quality import correct_asr_words
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
@@ -567,10 +568,8 @@ def cmd_publish_live(args: argparse.Namespace) -> None:
     if args.dry_run:
         print(json.dumps({"status": "dry_run", "payload": payload}, indent=2, ensure_ascii=False))
         return
-    if args.platform != "telegram_channel":
-        raise SystemExit("live publishing is currently enabled for telegram_channel only")
     try:
-        result = publish_telegram_video(payload)
+        result = publish_live_payload(args.platform, payload)
     except LivePublishError as exc:
         conn.execute(
             "UPDATE publish_attempts SET status = ?, error = ? WHERE id = ?",
@@ -584,6 +583,18 @@ def cmd_publish_live(args: argparse.Namespace) -> None:
     )
     conn.execute("UPDATE clip_candidates SET status = 'published' WHERE id = ?", (candidate["id"],))
     conn.commit()
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def cmd_publish_due(args: argparse.Namespace) -> None:
+    result = process_due_publishes(
+        db_path=args.db,
+        env_file=args.env_file,
+        profile_id=args.profile,
+        limit=args.limit,
+        dry_run=args.dry_run,
+        notify=not args.no_notify,
+    )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
@@ -751,6 +762,14 @@ def build_parser() -> argparse.ArgumentParser:
     publish_live.add_argument("--env-file", default="../.env.local")
     publish_live.add_argument("--dry-run", action="store_true")
     publish_live.set_defaults(func=cmd_publish_live)
+
+    publish_due = sub.add_parser("publish-due")
+    publish_due.add_argument("--profile", default="nourbit")
+    publish_due.add_argument("--env-file", default="../.env.local")
+    publish_due.add_argument("--limit", type=int, default=5)
+    publish_due.add_argument("--dry-run", action="store_true")
+    publish_due.add_argument("--no-notify", action="store_true")
+    publish_due.set_defaults(func=cmd_publish_due)
 
     rerender = sub.add_parser("rerender")
     rerender.add_argument("--candidate-id", required=True)
