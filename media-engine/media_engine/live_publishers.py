@@ -7,6 +7,7 @@ import mimetypes
 import os
 import secrets
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,129 @@ def _env_first(*keys: str) -> str:
             return value
     return ""
 
+
+def _http_json_get(url: str, headers: dict[str, str] | None = None, timeout_seconds: int = 20) -> dict[str, Any]:
+    request = urllib.request.Request(url, headers=headers or {}, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise LivePublishError(f"connection test failed: {exc}") from exc
+
+
+def validate_telegram_connection(timeout_seconds: int = 15) -> dict[str, Any]:
+    token = _env_first("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise LivePublishError("TELEGRAM_BOT_TOKEN is missing")
+    result = _http_json_get(f"https://api.telegram.org/bot{token}/getMe", timeout_seconds=timeout_seconds)
+    if not result.get("ok"):
+        raise LivePublishError(f"Telegram auth rejected: {result.get('description', 'unknown error')}")
+    return {"platform": "telegram_channel", "status": "authorized", "raw": result}
+
+
+def validate_facebook_connection(timeout_seconds: int = 20) -> dict[str, Any]:
+    page_id = _env_first("META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_ID")
+    page_token = _env_first("META_PAGE_ACCESS_TOKEN", "NOURBIT_FACEBOOK_PAGE_TOKEN")
+    api_version = _env_first("META_API_VERSION", "META_GRAPH_API_VERSION") or "v20.0"
+    if not page_id or not page_token:
+        raise LivePublishError("META_PAGE_ID/NOURBIT_FACEBOOK_PAGE_ID and META_PAGE_ACCESS_TOKEN/NOURBIT_FACEBOOK_PAGE_TOKEN are required")
+    result = _http_json_get(
+        f"https://graph.facebook.com/{api_version}/{page_id}?fields=name&access_token={urllib.parse.quote(page_token)}",
+        timeout_seconds=timeout_seconds,
+    )
+    if result.get("error"):
+        raise LivePublishError(f"Meta auth rejected: {result['error'].get('message', 'unknown error')}")
+    return {"platform": "facebook_reels", "status": "authorized", "raw": result}
+
+
+def validate_youtube_connection(timeout_seconds: int = 20) -> dict[str, Any]:
+    client_id = _env_first("YOUTUBE_CLIENT_ID")
+    client_secret = _env_first("YOUTUBE_CLIENT_SECRET")
+    refresh_token = _env_first("YOUTUBE_REFRESH_TOKEN")
+    if not client_id or not client_secret or not refresh_token:
+        raise LivePublishError("YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN are required")
+    token = _form_request(
+        "https://oauth2.googleapis.com/token",
+        {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
+        timeout_seconds=timeout_seconds,
+    ).get("access_token")
+    if not token:
+        raise LivePublishError("YouTube OAuth refresh did not return an access token")
+    result = _http_json_get(
+        "https://www.googleapis.com/youtube/v3/channels?part=id&mine=true",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout_seconds=timeout_seconds,
+    )
+    if result.get("error"):
+        raise LivePublishError(f"YouTube auth rejected: {result['error'].get('message', 'unknown error')}")
+    return {"platform": "youtube_shorts", "status": "authorized", "raw": result}
+
+
+def validate_tiktok_connection(timeout_seconds: int = 20) -> dict[str, Any]:
+    access_token = _env_first("TIKTOK_ACCESS_TOKEN")
+    if not access_token:
+        raise LivePublishError("TIKTOK_ACCESS_TOKEN is required")
+    # Read-only check; requires user.info.basic scope on most apps.
+    result = _http_json_get(
+        "https://open.tiktokapis.com/v2/user/info/?fields=open_id",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout_seconds=timeout_seconds,
+    )
+    if result.get("error"):
+        raise LivePublishError(f"TikTok auth rejected: {result['error'].get('message', 'unknown error')}")
+    return {"platform": "tiktok", "status": "authorized", "raw": result}
+
+
+def verify_published_remote(platform: str, remote_id: str, timeout_seconds: int = 20) -> bool:
+    remote_id = (remote_id or "").strip()
+    if not remote_id:
+        return False
+    try:
+        if platform == "youtube_shorts":
+            client_id = _env_first("YOUTUBE_CLIENT_ID")
+            client_secret = _env_first("YOUTUBE_CLIENT_SECRET")
+            refresh_token = _env_first("YOUTUBE_REFRESH_TOKEN")
+            if not client_id or not client_secret or not refresh_token:
+                return False
+            token = _form_request(
+                "https://oauth2.googleapis.com/token",
+                {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
+                timeout_seconds=timeout_seconds,
+            ).get("access_token")
+            if not token:
+                return False
+            result = _http_json_get(
+                "https://www.googleapis.com/youtube/v3/videos?part=id&id=" + urllib.parse.quote(remote_id),
+                headers={"Authorization": f"Bearer {token}"},
+                timeout_seconds=timeout_seconds,
+            )
+            return bool(result.get("items"))
+        if platform == "facebook_reels":
+            page_token = _env_first("META_PAGE_ACCESS_TOKEN", "NOURBIT_FACEBOOK_PAGE_TOKEN")
+            api_version = _env_first("META_API_VERSION", "META_GRAPH_API_VERSION") or "v20.0"
+            if not page_token:
+                return False
+            result = _http_json_get(
+                f"https://graph.facebook.com/{api_version}/{urllib.parse.quote(remote_id)}?fields=id&access_token={urllib.parse.quote(page_token)}",
+                timeout_seconds=timeout_seconds,
+            )
+            if result.get("error"):
+                return False
+            return str(result.get("id") or "").strip() == remote_id
+        # Telegram/TikTok are harder to verify idempotently without additional fetch scopes.
+        return True
+    except (LivePublishError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return False
 
 def _multipart_form(fields: dict[str, str], file_field: str, file_path: str) -> tuple[bytes, str]:
     boundary = f"mediaengine{secrets.token_hex(12)}"
@@ -183,7 +307,7 @@ def publish_youtube_short(payload: dict[str, Any], timeout_seconds: int = 300) -
             "categoryId": os.environ.get("YOUTUBE_CATEGORY_ID", "22"),
         },
         "status": {
-            "privacyStatus": os.environ.get("YOUTUBE_PRIVACY_STATUS", "private"),
+            "privacyStatus": os.environ.get("YOUTUBE_PRIVACY_STATUS", "public"),
             "selfDeclaredMadeForKids": False,
         },
     }
@@ -236,7 +360,7 @@ def publish_tiktok_video(payload: dict[str, Any], timeout_seconds: int = 300) ->
     init_payload = {
         "post_info": {
             "title": str(payload.get("caption") or "")[:2200],
-            "privacy_level": os.environ.get("TIKTOK_DEFAULT_VISIBILITY", "SELF_ONLY"),
+            "privacy_level": os.environ.get("TIKTOK_DEFAULT_VISIBILITY", "PUBLIC_TO_EVERYONE"),
             "disable_duet": False,
             "disable_comment": False,
             "disable_stitch": False,
@@ -312,6 +436,7 @@ def publish_facebook_reel(payload: dict[str, Any], timeout_seconds: int = 300) -
             "upload_phase": "finish",
             "video_id": video_id,
             "description": str(payload.get("caption") or ""),
+            "video_state": "PUBLISHED",
             "access_token": page_token,
         },
         timeout_seconds=timeout_seconds,

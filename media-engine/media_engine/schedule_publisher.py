@@ -14,7 +14,7 @@ from typing import Any
 
 from .db import DEFAULT_DB, connect, fetch_one, initialize
 from .env_loader import load_env_file
-from .live_publishers import LivePublishError, publish_live_payload
+from .live_publishers import LivePublishError, publish_live_payload, verify_published_remote
 from .publishers import build_payload, create_dry_run_attempt
 from .rights import can_publish_candidate
 from .scheduler import DEFAULT_TZ, _iso, refresh_due_posts
@@ -41,12 +41,41 @@ def latest_render_job(conn, candidate_id: str) -> dict[str, Any] | None:
 
 
 def already_published(conn, candidate_id: str, platform: str) -> bool:
-    return bool(
-        conn.execute(
-            "SELECT 1 FROM publish_attempts WHERE candidate_id = ? AND platform = ? AND status = 'published' LIMIT 1",
-            (candidate_id, platform),
-        ).fetchone()
-    )
+    row = conn.execute(
+        """
+        SELECT payload_json
+        FROM publish_attempts
+        WHERE candidate_id = ?
+          AND platform = ?
+          AND status = 'published'
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (candidate_id, platform),
+    ).fetchone()
+    if not row:
+        return False
+    payload = _loads(row["payload_json"], {}) if isinstance(row["payload_json"], str) else {}
+    live = payload.get("live_result") if isinstance(payload, dict) else {}
+    remote_id = str((live or {}).get("remote_id") or "")
+    return verify_published_remote(platform, remote_id)
+
+
+def in_retry_backoff(conn, candidate_id: str, platform: str, minutes: int = 10) -> bool:
+    # Prevent publish spam when the user clicks "Publish due now" repeatedly or when the worker is restarted.
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM publish_attempts
+        WHERE candidate_id = ?
+          AND platform = ?
+          AND status = 'failed'
+          AND created_at >= datetime('now', ?)
+        LIMIT 1
+        """,
+        (candidate_id, platform, f"-{max(1, int(minutes))} minutes"),
+    ).fetchone()
+    return bool(row)
 
 
 def archive_legacy_permission_attempts(conn) -> int:
@@ -54,7 +83,7 @@ def archive_legacy_permission_attempts(conn) -> int:
         """
         UPDATE publish_attempts
         SET status = 'legacy_blocked'
-        WHERE status = 'blocked'
+        WHERE status IN ('blocked', 'failed')
           AND lower(error) LIKE ?
         """,
         (f"%{LEGACY_PERMISSION_ERROR}%",),
@@ -141,7 +170,9 @@ def publish_candidate_platform(
 ) -> dict[str, Any]:
     platform = target["platform"]
     if already_published(conn, candidate["id"], platform):
-        return {"platform": platform, "status": "skipped", "reason": "already published"}
+        return {"platform": platform, "status": "skipped", "reason": "already posted (verified)"}
+    if in_retry_backoff(conn, candidate["id"], platform, minutes=12):
+        return {"platform": platform, "status": "cooldown", "reason": "cooldown after recent failure"}
 
     guard = can_publish_candidate(source, target, candidate)
     payload = build_payload(platform, candidate, render_job)

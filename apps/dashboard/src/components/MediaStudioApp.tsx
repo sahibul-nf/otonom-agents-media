@@ -54,6 +54,7 @@ const defaultSourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_
 const defaultTemplate = "profiles/nourbit_opus_style.json";
 type RerenderUiState = {status: "running" | "done" | "failed"; message: string; progress?: number};
 const publishPlatforms = ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"];
+const oauthPlatforms = new Set(["youtube_shorts", "facebook_reels", "tiktok"]);
 
 function cleanPublishStatus(status?: string) {
   if (!status) return "Not run";
@@ -63,9 +64,10 @@ function cleanPublishStatus(status?: string) {
     failed: "Retry needed",
     blocked: "Needs action",
     legacy_blocked: "Outdated",
-    skipped: "Already posted",
+    skipped: "Already posted (verified)",
     publishing: "Publishing",
     pending: "Waiting",
+    cooldown: "Cooling down",
   };
   return labels[status] || status.replaceAll("_", " ");
 }
@@ -76,7 +78,7 @@ function publishActionHint(error?: string) {
   if (value.includes("401") || value.includes("unauthorized") || value.includes("token")) return "Reconnect this platform account.";
   if (value.includes("broken pipe") || value.includes("timed out") || value.includes("urlopen")) return "Network/upload interrupted. Retry this platform.";
   if (value.includes("rendered video file")) return "Re-render the clip before publishing.";
-  if (value.includes("permission") && value.includes("evidence")) return "Outdated local guard. Retry publish after refresh.";
+  if (value.includes("permission") && value.includes("evidence")) return "Legacy local guard entry. Safe to retry this platform.";
   return error || "";
 }
 
@@ -94,6 +96,7 @@ function statusTone(status: string) {
   if (["running", "queued"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
   if (["failed", "rejected"].includes(status)) return "text-danger border-danger/[0.30] bg-danger/[0.10]";
   if (["held", "needs_caption_fix"].includes(status)) return "text-warning border-warning/[0.30] bg-warning/[0.10]";
+  if (["cooldown"].includes(status)) return "text-zinc-300 border-white/[0.14] bg-white/[0.04]";
   return "text-warning border-warning/[0.30] bg-warning/[0.10]";
 }
 
@@ -270,7 +273,20 @@ export function MediaStudioApp() {
     setBusy(true);
     setStatus("Syncing media engine...");
     try {
-      const [reviewRows, targetRows, credentialRows, styleRows, templateRows, durationRows, genreRows, jobRows, rerenderRows, scheduleRows, autonomyRows, attemptRows] = await Promise.all([
+      const [
+        reviewRows,
+        targetRows,
+        credentialRows,
+        styleRows,
+        templateRows,
+        durationRows,
+        genreRows,
+        jobRows,
+        rerenderRows,
+        scheduleRows,
+        autonomyRows,
+        attemptResult,
+      ] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>("targets"),
         apiGet<CredentialStatus>("credentials"),
@@ -282,7 +298,7 @@ export function MediaStudioApp() {
         apiGet<RerenderJob[]>("rerender-jobs"),
         apiGet<ScheduledPost[]>("schedule"),
         apiGet<AutonomySettings>("autonomy-settings"),
-        apiGet<PublishAttempt[]>("publish-attempts"),
+        apiGet<PublishAttempt[]>("publish-attempts").then((rows) => ({ok: true as const, rows})).catch((error) => ({ok: false as const, error})),
       ]);
       setClips(reviewRows);
       setTargets(targetRows);
@@ -295,7 +311,7 @@ export function MediaStudioApp() {
       setRerenderJobs(rerenderRows);
       setSchedule(scheduleRows);
       setAutonomy(autonomyRows);
-      setPublishAttempts(attemptRows);
+      setPublishAttempts(attemptResult.ok ? attemptResult.rows : []);
       setRerendering({});
       setPublishSelection((current) => {
         const enabled = targetRows
@@ -304,7 +320,12 @@ export function MediaStudioApp() {
         return current.length ? current.filter((platform) => enabled.includes(platform)) : enabled;
       });
       setSelectedId((current) => current || reviewRows[0]?.id || "");
-      setStatus("Dashboard synced");
+      if (!attemptResult.ok) {
+        const message = attemptResult.error instanceof Error ? attemptResult.error.message : "publish history temporarily unavailable";
+        setStatus(`Dashboard synced with warning: ${message}`);
+      } else {
+        setStatus("Dashboard synced");
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to sync");
     } finally {
@@ -504,6 +525,45 @@ export function MediaStudioApp() {
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Connection check failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startOauthConnect(platform: string) {
+    setBusy(true);
+    try {
+      const result = await apiPost<{platform: string; auth_url: string}>("oauth-start", {platform});
+      const popup = window.open(result.auth_url, "_blank", "width=560,height=760,noopener,noreferrer");
+      if (!popup) {
+        setStatus("Popup blocked. Allow popups, then click Connect again.");
+        return;
+      }
+      setStatus(`Continue OAuth in popup for ${platformLabel(platform)}...`);
+      const timer = window.setInterval(() => {
+        if (popup.closed) {
+          window.clearInterval(timer);
+          void refreshAll();
+          setStatus(`${platformLabel(platform)} OAuth finished. Refreshing status...`);
+        }
+      }, 800);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "OAuth start failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnectPlatform(platform: string) {
+    const ok = window.confirm(`Disconnect ${platformLabel(platform)} from this workspace?`);
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await apiPost("connection-disconnect", {platform});
+      setStatus(`${platformLabel(platform)} disconnected`);
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Disconnect failed");
     } finally {
       setBusy(false);
     }
@@ -767,6 +827,8 @@ export function MediaStudioApp() {
               selectedPlatforms={publishSelection}
               onTogglePlatform={togglePublishSelection}
               onTestConnection={testConnection}
+              onStartOauth={startOauthConnect}
+              onDisconnect={disconnectPlatform}
               onPublishPlatform={publishSelectedPlatform}
             />
           )}
@@ -1175,6 +1237,8 @@ function PublishSection({
   selectedPlatforms,
   onTogglePlatform,
   onTestConnection,
+  onStartOauth,
+  onDisconnect,
   onPublishPlatform,
 }: {
   targets: PublishTarget[];
@@ -1184,6 +1248,8 @@ function PublishSection({
   selectedPlatforms: string[];
   onTogglePlatform: (platform: string) => void;
   onTestConnection: (platform: string) => void;
+  onStartOauth: (platform: string) => void;
+  onDisconnect: (platform: string) => void;
   onPublishPlatform: (platform: string, dryRun: boolean) => void;
 }) {
   const selectedAttempts = selected ? attempts.filter((attempt) => attempt.candidate_id === selected.id) : [];
@@ -1213,6 +1279,7 @@ function PublishSection({
             const selectedForPublish = selectedPlatforms.includes(target.platform);
             const latest = latestByPlatform.get(target.platform) || attempts.find((attempt) => attempt.platform === target.platform);
             const recovery = publishActionHint(latest?.error);
+            const supportsOauth = oauthPlatforms.has(target.platform);
             return (
               <div key={target.platform} className={`rounded-[24px] border p-4 transition ${selectedForPublish ? "border-cyan/[0.30] bg-teal/[0.08]" : "border-white/[0.08] bg-canvas-deep"}`}>
                 <div className="flex items-center justify-between">
@@ -1235,12 +1302,26 @@ function PublishSection({
                     Missing: {(credential?.missing_keys || []).join(", ") || "credential"}. Connect via OAuth/token setup before live publishing.
                   </div>
                 ) : null}
-                <button
-                  onClick={() => onTestConnection(target.platform)}
-                  className="mt-3 h-9 w-full rounded-full border border-white/[0.10] text-xs font-semibold text-zinc-300 hover:border-cyan/[0.35] hover:text-cyan"
-                >
-                  {ready ? "Test connection" : "Connect / verify setup"}
-                </button>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => onTestConnection(target.platform)}
+                    className="h-9 rounded-full border border-white/[0.10] text-xs font-semibold text-zinc-300 hover:border-cyan/[0.35] hover:text-cyan"
+                  >
+                    Test
+                  </button>
+                  <button
+                    onClick={() => (supportsOauth ? onStartOauth(target.platform) : onTestConnection(target.platform))}
+                    className="h-9 rounded-full border border-cyan/[0.25] bg-cyan/[0.10] text-xs font-semibold text-cyan hover:bg-cyan/[0.16]"
+                  >
+                    {ready ? "Reconnect" : "Connect"}
+                  </button>
+                  <button
+                    onClick={() => onDisconnect(target.platform)}
+                    className="h-9 rounded-full border border-white/[0.10] text-xs font-semibold text-zinc-300 hover:border-danger/[0.35] hover:text-danger"
+                  >
+                    Disconnect
+                  </button>
+                </div>
                 <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs uppercase tracking-wide text-zinc-500">Current attempt</span>

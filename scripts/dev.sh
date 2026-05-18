@@ -44,10 +44,10 @@ backend_has_required_endpoints() {
 import json
 import sys
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 port = int(sys.argv[1])
-required = ("review", "schedule", "publish-attempts")
+required = ("review", "schedule", "publish-attempts", "connections")
 for endpoint in required:
     try:
         with urlopen(f"http://127.0.0.1:{port}/api/{endpoint}", timeout=2) as response:
@@ -56,6 +56,27 @@ for endpoint in required:
             json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
         sys.exit(1)
+
+try:
+    req = Request(
+        f"http://127.0.0.1:{port}/api/connection-test",
+        data=b'{"platform":"youtube_shorts"}',
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(req, timeout=2) as response:
+        if response.status >= 500:
+            sys.exit(1)
+        json.loads(response.read().decode("utf-8"))
+except HTTPError as exc:
+    if exc.code not in (400, 401, 409):
+        sys.exit(1)
+    try:
+        json.loads(exc.read().decode("utf-8"))
+    except (ValueError, json.JSONDecodeError):
+        sys.exit(1)
+except (URLError, TimeoutError, ValueError, json.JSONDecodeError):
+    sys.exit(1)
 sys.exit(0)
 PY
 }

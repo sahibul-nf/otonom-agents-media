@@ -8,6 +8,7 @@ import mimetypes
 import os
 import re
 import shutil
+from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -18,16 +19,34 @@ from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all, initialize
 from .credentials import credential_status
 from .duration_presets import duration_preset_options
 from .env_loader import load_env_file
+from .env_store import unset_env_keys
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .genres import genre_options
-from .live_publishers import LivePublishError, publish_live_payload
+from .live_publishers import (
+    LivePublishError,
+    publish_live_payload,
+    validate_facebook_connection,
+    validate_telegram_connection,
+    validate_tiktok_connection,
+    validate_youtube_connection,
+)
 from .models import PUBLISH_MODES
+from .oauth_flow import OAuthFlowError, complete_oauth, start_oauth
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
 from .rerender import create_rerender_job, list_rerender_jobs
 from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
 from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule, update_schedule_platforms
 from .styles import load_style, save_style_template
+
+
+ENV_FILE = ROOT.parent / ".env.local"
+PLATFORM_DISCONNECT_KEYS: dict[str, list[str]] = {
+    "telegram_channel": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "TELEGRAM_CHAT_ID"],
+    "youtube_shorts": ["YOUTUBE_REFRESH_TOKEN"],
+    "facebook_reels": ["META_PAGE_ACCESS_TOKEN"],
+    "tiktok": ["TIKTOK_ACCESS_TOKEN", "TIKTOK_REFRESH_TOKEN", "TIKTOK_OPEN_ID"],
+}
 
 
 def _artifact_path(value: str) -> Path | None:
@@ -99,6 +118,30 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/oauth/callback/"):
+            platform = parsed.path.rsplit("/", 1)[-1].strip()
+            query = {key: values[0] for key, values in parse_qs(parsed.query).items() if values}
+            host, port = self.server.server_address  # type: ignore[attr-defined]
+            server_base = f"http://{host}:{port}"
+            try:
+                result = complete_oauth(platform, query, server_base, ENV_FILE)
+            except OAuthFlowError as exc:
+                self._send_html(
+                    f"<h2>Connect failed</h2><p>{escape(str(exc))}</p><p>You can close this tab and retry from Publish Center.</p>",
+                    status=400,
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                self._send_html(
+                    f"<h2>Connect failed</h2><p>{escape(str(exc))}</p><p>You can close this tab and retry from Publish Center.</p>",
+                    status=500,
+                )
+                return
+            self._send_html(
+                f"<h2>Connected</h2><p>{escape(platform)} account is connected.</p>"
+                "<script>setTimeout(()=>window.close(), 1200);</script>",
+            )
+            return
         if parsed.path == "/api/review":
             conn = connect(DEFAULT_DB)
             initialize(conn)
@@ -204,21 +247,21 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(rows)
             return
         if parsed.path == "/api/credentials":
-            load_env_file(ROOT.parent / ".env.local")
+            load_env_file(ENV_FILE)
             self._send_json(credential_status())
             return
         if parsed.path == "/api/connections":
-            load_env_file(ROOT.parent / ".env.local")
+            load_env_file(ENV_FILE)
             credentials = credential_status()
             profile_targets = fetch_all(connect(DEFAULT_DB), "SELECT * FROM publish_targets ORDER BY platform")
             self._send_json({
                 "platforms": credentials["platforms"],
                 "targets": profile_targets,
                 "auth": {
-                    "telegram_channel": {"mode": "bot_token", "action": "configure_token"},
-                    "youtube_shorts": {"mode": "oauth", "action": "connect"},
-                    "facebook_reels": {"mode": "oauth", "action": "connect"},
-                    "tiktok": {"mode": "oauth", "action": "connect"},
+                    "telegram_channel": {"mode": "bot_token", "action": "configure_token", "disconnect_supported": True},
+                    "youtube_shorts": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
+                    "facebook_reels": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
+                    "tiktok": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
                 },
             })
             return
@@ -466,14 +509,14 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/publish-due":
-            load_env_file(ROOT.parent / ".env.local")
+            load_env_file(ENV_FILE)
             try:
                 limit = int(payload.get("limit") or 5)
             except (TypeError, ValueError):
                 limit = 5
             result = process_due_publishes(
                 db_path=DEFAULT_DB,
-                env_file=ROOT.parent / ".env.local",
+                env_file=ENV_FILE,
                 limit=max(1, min(20, limit)),
                 dry_run=bool(payload.get("dry_run", False)),
                 notify=True,
@@ -481,26 +524,78 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(result)
             return
 
+        if parsed.path == "/api/oauth-start":
+            platform = str(payload.get("platform", "")).strip()
+            host, port = self.server.server_address  # type: ignore[attr-defined]
+            server_base = f"http://{host}:{port}"
+            try:
+                result = start_oauth(platform, server_base, ENV_FILE)
+            except OAuthFlowError as exc:
+                self._send_json({"platform": platform, "error": str(exc)}, status=400)
+                return
+            self._send_json(
+                {
+                    "platform": result.platform,
+                    "auth_url": result.auth_url,
+                    "state": result.state,
+                    "expires_in": result.expires_in,
+                }
+            )
+            return
+
+        if parsed.path == "/api/connection-disconnect":
+            platform = str(payload.get("platform", "")).strip()
+            keys = PLATFORM_DISCONNECT_KEYS.get(platform)
+            if not keys:
+                self._send_json({"error": "unsupported platform"}, status=400)
+                return
+            unset_env_keys(ENV_FILE, keys)
+            self._send_json({"platform": platform, "status": "disconnected"})
+            return
+
         if parsed.path == "/api/connection-test":
             platform = str(payload.get("platform", "")).strip()
-            load_env_file(ROOT.parent / ".env.local")
+            load_env_file(ENV_FILE)
             status = credential_status().get("platforms", {}).get(platform)
             if not status:
                 self._send_json({"error": "unsupported platform"}, status=400)
                 return
-            if status.get("ready"):
-                self._send_json({"platform": platform, "status": "connected", "message": "Credentials are present for local publishing"})
-            else:
+            if not status.get("ready"):
                 self._send_json(
                     {
                         "platform": platform,
                         "status": "needs_setup",
                         "missing_keys": status.get("missing_keys", []),
-                        "message": "Complete OAuth/token setup, then refresh credentials",
-                        "error": "Complete OAuth/token setup, then refresh credentials",
+                        "message": "Credentials are missing. Add them to .env.local, then refresh.",
+                        "error": "Credentials are missing. Add them to .env.local, then refresh.",
                     },
                     status=409,
                 )
+                return
+            try:
+                if platform == "telegram_channel":
+                    result = validate_telegram_connection()
+                elif platform == "youtube_shorts":
+                    result = validate_youtube_connection()
+                elif platform == "facebook_reels":
+                    result = validate_facebook_connection()
+                elif platform == "tiktok":
+                    result = validate_tiktok_connection()
+                else:
+                    self._send_json({"error": "unsupported platform"}, status=400)
+                    return
+            except LivePublishError as exc:
+                self._send_json(
+                    {
+                        "platform": platform,
+                        "status": "unauthorized",
+                        "message": str(exc),
+                        "error": str(exc),
+                    },
+                    status=401,
+                )
+                return
+            self._send_json({"platform": platform, "status": "authorized", "message": "Account authorization verified", "result": result})
             return
 
         if parsed.path == "/api/archive":
@@ -594,7 +689,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             if not candidate_id or not platform:
                 self._send_json({"error": "candidate_id and platform are required"}, status=400)
                 return
-            load_env_file(ROOT.parent / ".env.local")
+            load_env_file(ENV_FILE)
             conn = connect(DEFAULT_DB)
             initialize(conn)
             candidate = conn.execute("SELECT * FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
@@ -659,6 +754,14 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_html(self, html: str, status: int = 200) -> None:
+        payload = f"<!doctype html><html><body style='font-family:system-ui;background:#0b0d12;color:#e6e8ef;padding:24px'>{html}</body></html>".encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
