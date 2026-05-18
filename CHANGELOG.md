@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-18
+
+- Removed the remaining publish permission blocker from the auto-publish guard and hid legacy blocked attempts from current dashboard state.
+- Added per-schedule and default platform target selection for Telegram, YouTube Shorts, Facebook Reels, and TikTok.
+- Improved Publish Center with target on/off controls, clearer connection status, connection verification actions, latest-attempt summaries, and recovery hints.
+- Fixed live publish failure recording so adapter errors update the publish attempt instead of leaving stale `ready` attempts behind.
+- Added recovery for stalled scheduled publish rows so interrupted workers can retry instead of leaving clips stuck in `publishing`.
+- Added environment alias support for Telegram and Meta credentials used by the local `.env.local` setup.
+
 ## 2026-05-17
 
 - Hardened local dev startup so a stale backend process missing new API endpoints is restarted instead of reused.

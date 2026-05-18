@@ -7,8 +7,8 @@ from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 from media_engine.db import initialize
-from media_engine.schedule_publisher import process_due_publishes
-from media_engine.scheduler import list_scheduled_posts, schedule_candidate_next, unschedule_candidate
+from media_engine.schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
+from media_engine.scheduler import list_scheduled_posts, schedule_candidate_next, unschedule_candidate, update_schedule_platforms
 
 
 class SchedulerTests(unittest.TestCase):
@@ -68,6 +68,47 @@ class SchedulerTests(unittest.TestCase):
         row = self.conn.execute("SELECT status FROM clip_candidates WHERE id = 'clip'").fetchone()
         self.assertEqual(row["status"], "approved")
         self.assertEqual(list_scheduled_posts(self.conn), [])
+
+    def test_update_schedule_platforms_overrides_targets(self):
+        self.add_clip("clip")
+        scheduled = schedule_candidate_next(
+            self.conn,
+            "clip",
+            platforms=["telegram_channel", "youtube_shorts", "facebook_reels"],
+            now=datetime(2026, 5, 15, 8, 0, tzinfo=ZoneInfo("Asia/Jakarta")),
+        )
+
+        updated = update_schedule_platforms(self.conn, scheduled["id"], ["telegram_channel", "tiktok"])
+        item = list_scheduled_posts(self.conn)[0]
+
+        self.assertEqual(updated["platforms"], ["telegram_channel", "tiktok"])
+        self.assertEqual(item["platforms"], ["telegram_channel", "tiktok"])
+
+    def test_legacy_permission_attempts_are_archived(self):
+        self.add_clip("clip")
+        self.conn.execute(
+            """
+            INSERT INTO publish_attempts
+              (id, candidate_id, platform, mode, status, payload_json, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "pub",
+                "clip",
+                "telegram_channel",
+                "review_required",
+                "blocked",
+                "{}",
+                "public third-party sources require permission evidence before platform publishing",
+            ),
+        )
+        self.conn.commit()
+
+        count = archive_legacy_permission_attempts(self.conn)
+        status = self.conn.execute("SELECT status FROM publish_attempts WHERE id = 'pub'").fetchone()["status"]
+
+        self.assertEqual(count, 1)
+        self.assertEqual(status, "legacy_blocked")
 
     def test_due_publish_processes_platforms_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmpdir:

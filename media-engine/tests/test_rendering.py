@@ -12,7 +12,7 @@ from media_engine.youtube_pipeline import TranscriptEntry, choose_nourbit_premiu
 
 
 class PremiumRenderingTests(unittest.TestCase):
-    def test_premium_contract_contains_review_safe_fields(self):
+    def test_premium_contract_contains_publish_gated_fields(self):
         candidate = {
             "id": "clip_test",
             "start_ms": 335000,
@@ -40,7 +40,7 @@ class PremiumRenderingTests(unittest.TestCase):
         self.assertEqual(contract["width"], 1080)
         self.assertEqual(contract["height"], 1920)
         self.assertTrue(contract["publishSafety"]["reviewRequired"])
-        self.assertFalse(contract["publishSafety"]["autoPublishAllowed"])
+        self.assertTrue(contract["publishSafety"]["autoPublishAllowed"])
         self.assertGreater(len(contract["captions"]), 0)
         self.assertEqual(contract["captionDiagnostics"]["maxConcurrentEvents"], 1)
 

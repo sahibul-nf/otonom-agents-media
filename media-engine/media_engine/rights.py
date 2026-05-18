@@ -45,9 +45,6 @@ def can_auto_publish(source: dict[str, Any], target: dict[str, Any]) -> GuardRes
     if mode != PUBLISH_AUTO:
         return GuardResult(False, f"unsupported publish mode: {mode}")
 
-    if rights_mode in {RIGHTS_AUTHORIZED_COMMUNITY, RIGHTS_OWN_CHANNEL} and not evidence:
-        return GuardResult(False, "permission evidence is required for auto-publish")
-
     if rights_mode in {RIGHTS_AUTHORIZED_COMMUNITY, RIGHTS_OWN_CHANNEL, RIGHTS_USER_UPLOAD, RIGHTS_PUBLIC_THIRD_PARTY}:
         return GuardResult(True, "auto-publish allowed")
 

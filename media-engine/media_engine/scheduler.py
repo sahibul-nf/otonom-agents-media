@@ -40,6 +40,30 @@ def refresh_due_posts(conn: sqlite3.Connection, now: datetime | None = None) -> 
                 "UPDATE clip_candidates SET status = 'ready_to_publish' WHERE id = ? AND status = 'scheduled'",
                 (row["candidate_id"],),
             )
+    stale_rows = conn.execute(
+        "SELECT id, candidate_id, updated_at FROM scheduled_posts WHERE status = 'publishing'"
+    ).fetchall()
+    for row in stale_rows:
+        updated_at = row["updated_at"] or ""
+        try:
+            parsed = datetime.fromisoformat(updated_at).replace(tzinfo=DEFAULT_TZ)
+        except ValueError:
+            parsed = now - timedelta(hours=1)
+        if now - parsed >= timedelta(minutes=20):
+            conn.execute(
+                """
+                UPDATE scheduled_posts
+                SET status = 'ready_to_publish',
+                    last_error = 'publish worker stalled; ready to retry',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (row["id"],),
+            )
+            conn.execute(
+                "UPDATE clip_candidates SET status = 'ready_to_publish' WHERE id = ? AND status = 'publishing'",
+                (row["candidate_id"],),
+            )
     conn.commit()
 
 
@@ -68,9 +92,16 @@ def list_scheduled_posts(conn: sqlite3.Connection, profile_id: str = "nourbit") 
         item = dict(row)
         item["platforms"] = json.loads(item.get("platforms_json") or "[]")
         try:
-            item["platform_results"] = json.loads(item.get("platform_results_json") or "{}")
+            platform_results = json.loads(item.get("platform_results_json") or "{}")
         except json.JSONDecodeError:
-            item["platform_results"] = {}
+            platform_results = {}
+        item["platform_results"] = {
+            platform: result
+            for platform, result in platform_results.items()
+            if "permission evidence" not in str(result.get("error") or result.get("reason") or "").lower()
+        }
+        if "permission evidence" in str(item.get("last_error") or "").lower():
+            item["last_error"] = ""
         results.append(item)
     return results
 
@@ -185,6 +216,25 @@ def update_schedule(conn: sqlite3.Connection, schedule_id: str, scheduled_at: st
     if result.rowcount == 0:
         raise ValueError("schedule not found")
     return {"id": schedule_id, "scheduled_at": _iso(parsed), "status": "scheduled"}
+
+
+def update_schedule_platforms(conn: sqlite3.Connection, schedule_id: str, platforms: list[str]) -> dict:
+    allowed = {"telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"}
+    normalized = [platform for platform in platforms if platform in allowed]
+    if not normalized:
+        raise ValueError("at least one publish platform is required")
+    result = conn.execute(
+        """
+        UPDATE scheduled_posts
+        SET platforms_json = ?, platform_results_json = '{}', last_error = '', updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (json.dumps(normalized, ensure_ascii=False), schedule_id),
+    )
+    conn.commit()
+    if result.rowcount == 0:
+        raise ValueError("schedule not found")
+    return {"id": schedule_id, "platforms": normalized}
 
 
 def unschedule_candidate(conn: sqlite3.Connection, candidate_id: str) -> dict:

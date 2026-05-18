@@ -53,6 +53,32 @@ type Section = "dashboard" | "generate" | "review" | "calendar" | "publish" | "b
 const defaultSourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
 const defaultTemplate = "profiles/nourbit_opus_style.json";
 type RerenderUiState = {status: "running" | "done" | "failed"; message: string; progress?: number};
+const publishPlatforms = ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"];
+
+function cleanPublishStatus(status?: string) {
+  if (!status) return "Not run";
+  const labels: Record<string, string> = {
+    ready: "Ready",
+    published: "Posted",
+    failed: "Retry needed",
+    blocked: "Needs action",
+    legacy_blocked: "Outdated",
+    skipped: "Already posted",
+    publishing: "Publishing",
+    pending: "Waiting",
+  };
+  return labels[status] || status.replaceAll("_", " ");
+}
+
+function publishActionHint(error?: string) {
+  const value = (error || "").toLowerCase();
+  if (!value) return "";
+  if (value.includes("401") || value.includes("unauthorized") || value.includes("token")) return "Reconnect this platform account.";
+  if (value.includes("broken pipe") || value.includes("timed out") || value.includes("urlopen")) return "Network/upload interrupted. Retry this platform.";
+  if (value.includes("rendered video file")) return "Re-render the clip before publishing.";
+  if (value.includes("permission") && value.includes("evidence")) return "Outdated local guard. Retry publish after refresh.";
+  return error || "";
+}
 
 const nav = [
   {id: "dashboard", label: "Dashboard", icon: LayoutDashboard},
@@ -187,6 +213,7 @@ export function MediaStudioApp() {
   const [busy, setBusy] = useState(false);
   const [rerendering, setRerendering] = useState<Record<string, RerenderUiState>>({});
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
+  const [publishSelection, setPublishSelection] = useState<string[]>(publishPlatforms);
   const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
     sourceUrl: defaultSourceUrl,
     count: 5,
@@ -206,6 +233,7 @@ export function MediaStudioApp() {
 
   const selected = useMemo(() => clips.find((clip) => clip.id === selectedId) || clips[0], [clips, selectedId]);
   const filtered = useMemo(() => clips.filter((clip) => matchesReviewFilter(clip, filter)), [clips, filter]);
+  const activeTargets = useMemo(() => targets.filter((target) => publishPlatforms.includes(target.platform)), [targets]);
   const approved = clips.filter((clip) => clip.status === "approved").length;
   const scheduledCount = clips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
@@ -269,6 +297,12 @@ export function MediaStudioApp() {
       setAutonomy(autonomyRows);
       setPublishAttempts(attemptRows);
       setRerendering({});
+      setPublishSelection((current) => {
+        const enabled = targetRows
+          .filter((target) => publishPlatforms.includes(target.platform) && target.mode !== "off")
+          .map((target) => target.platform);
+        return current.length ? current.filter((platform) => enabled.includes(platform)) : enabled;
+      });
       setSelectedId((current) => current || reviewRows[0]?.id || "");
       setStatus("Dashboard synced");
     } catch (error) {
@@ -370,7 +404,7 @@ export function MediaStudioApp() {
   async function scheduleNext(id: string) {
     setBusy(true);
     try {
-      await apiPost("schedule-next", {candidate_id: id});
+      await apiPost("schedule-next", {candidate_id: id, platforms: publishSelection});
       setStatus("Clip scheduled in next open slot");
       await refreshAll();
     } catch (error) {
@@ -378,6 +412,29 @@ export function MediaStudioApp() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function updateSchedulePlatforms(scheduleId: string, platforms: string[]) {
+    setBusy(true);
+    try {
+      await apiPost("schedule-platforms", {schedule_id: scheduleId, platforms});
+      setStatus("Publish targets updated");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Platform update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function togglePublishSelection(platform: string) {
+    setPublishSelection((current) => {
+      if (current.includes(platform)) {
+        const next = current.filter((item) => item !== platform);
+        return next.length ? next : current;
+      }
+      return [...current, platform];
+    });
   }
 
   async function unscheduleClip(id: string) {
@@ -434,6 +491,19 @@ export function MediaStudioApp() {
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Publish failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testConnection(platform: string) {
+    setBusy(true);
+    try {
+      await apiPost("connection-test", {platform});
+      setStatus(`${platformLabel(platform)} connected`);
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Connection check failed");
     } finally {
       setBusy(false);
     }
@@ -618,7 +688,7 @@ export function MediaStudioApp() {
             <MetricCard label="Total Clips" value={clips.length} detail="Candidates in review queue" icon={FileVideo} />
             <MetricCard label="Approved" value={approved} detail="Ready for schedule" icon={BadgeCheck} />
             <MetricCard label="Avg Score" value={metricAverage(clips)} detail="Overall content quality" icon={Gauge} />
-            <MetricCard label="Scheduled" value={scheduledCount} detail="Queue-only publish slots" icon={CalendarDays} />
+            <MetricCard label="Scheduled" value={scheduledCount} detail="Automated publish slots" icon={CalendarDays} />
           </section>
 
           {section === "dashboard" && (
@@ -674,15 +744,29 @@ export function MediaStudioApp() {
           )}
 
           {section === "calendar" && (
-            <CalendarSection schedule={schedule} approved={clips.filter((clip) => clip.status === "approved")} onSchedule={scheduleNext} onUnschedule={unscheduleClip} onPublishDue={() => publishDueNow(false)} onDryRunDue={() => publishDueNow(true)} />
+            <CalendarSection
+              schedule={schedule}
+              approved={clips.filter((clip) => clip.status === "approved")}
+              targets={activeTargets}
+              selectedPlatforms={publishSelection}
+              onToggleDefaultPlatform={togglePublishSelection}
+              onSchedule={scheduleNext}
+              onUnschedule={unscheduleClip}
+              onUpdateSchedulePlatforms={updateSchedulePlatforms}
+              onPublishDue={() => publishDueNow(false)}
+              onDryRunDue={() => publishDueNow(true)}
+            />
           )}
 
           {section === "publish" && (
             <PublishSection
-              targets={targets}
+              targets={activeTargets}
               credentials={credentials}
               selected={selected}
               attempts={publishAttempts}
+              selectedPlatforms={publishSelection}
+              onTogglePlatform={togglePublishSelection}
+              onTestConnection={testConnection}
               onPublishPlatform={publishSelectedPlatform}
             />
           )}
@@ -966,18 +1050,33 @@ function SelectTile({label, value, options, onChange}: {label: string; value: st
 function CalendarSection({
   schedule,
   approved,
+  targets,
+  selectedPlatforms,
+  onToggleDefaultPlatform,
   onSchedule,
   onUnschedule,
+  onUpdateSchedulePlatforms,
   onPublishDue,
   onDryRunDue,
 }: {
   schedule: ScheduledPost[];
   approved: ClipCandidate[];
+  targets: PublishTarget[];
+  selectedPlatforms: string[];
+  onToggleDefaultPlatform: (platform: string) => void;
   onSchedule: (id: string) => void;
   onUnschedule: (id: string) => void;
+  onUpdateSchedulePlatforms: (scheduleId: string, platforms: string[]) => void;
   onPublishDue: () => void;
   onDryRunDue: () => void;
 }) {
+  function toggleSchedulePlatform(item: ScheduledPost, platform: string) {
+    const current = item.platforms || [];
+    const next = current.includes(platform) ? current.filter((value) => value !== platform) : [...current, platform];
+    if (!next.length) return;
+    onUpdateSchedulePlatforms(item.id, next);
+  }
+
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
@@ -1005,13 +1104,21 @@ function CalendarSection({
                 </div>
                 <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{item.viral_reason}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {item.platforms.map((platform) => {
+                  {targets.map((target) => {
+                    const platform = target.platform;
+                    const enabled = item.platforms.includes(platform);
                     const result = item.platform_results?.[platform];
                     const platformStatus = result?.status || (item.status === "published" ? "published" : "pending");
                     return (
-                      <span key={platform} className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(platformStatus)}`}>
-                        {platformLabel(platform)} · {platformStatus}
-                      </span>
+                      <button
+                        key={platform}
+                        onClick={() => toggleSchedulePlatform(item, platform)}
+                        className={`rounded-full border px-2.5 py-1 text-left text-xs font-semibold transition ${
+                          enabled ? statusTone(platformStatus) : "border-white/[0.08] bg-white/[0.03] text-zinc-500"
+                        }`}
+                      >
+                        {platformLabel(platform)} · {enabled ? cleanPublishStatus(platformStatus) : "Off"}
+                      </button>
                     );
                   })}
                 </div>
@@ -1025,6 +1132,27 @@ function CalendarSection({
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <h3 className="text-lg font-semibold text-white">Approved clips</h3>
         <p className="mt-1 text-sm text-zinc-400">Add approved clips to the next available workspace slot.</p>
+        <div className="mt-5 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+          <p className="text-sm font-semibold text-white">Default publish targets</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">Used when you schedule a clip. You can still override each scheduled item.</p>
+          <div className="mt-3 grid gap-2">
+            {targets.map((target) => {
+              const active = selectedPlatforms.includes(target.platform);
+              return (
+                <button
+                  key={target.platform}
+                  onClick={() => onToggleDefaultPlatform(target.platform)}
+                  className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                    active ? "border-cyan/[0.45] bg-teal/[0.14] text-cyan" : "border-white/[0.08] bg-black/20 text-zinc-500"
+                  }`}
+                >
+                  <span>{platformLabel(target.platform)}</span>
+                  <span>{active ? "On" : "Off"}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="mt-5 grid gap-3">
           {approved.length ? approved.map((clip) => (
             <div key={clip.id} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
@@ -1044,46 +1172,85 @@ function PublishSection({
   credentials,
   selected,
   attempts,
+  selectedPlatforms,
+  onTogglePlatform,
+  onTestConnection,
   onPublishPlatform,
 }: {
   targets: PublishTarget[];
   credentials: CredentialStatus | null;
   selected?: ClipCandidate;
   attempts: PublishAttempt[];
+  selectedPlatforms: string[];
+  onTogglePlatform: (platform: string) => void;
+  onTestConnection: (platform: string) => void;
   onPublishPlatform: (platform: string, dryRun: boolean) => void;
 }) {
   const selectedAttempts = selected ? attempts.filter((attempt) => attempt.candidate_id === selected.id) : [];
+  const latestByPlatform = new Map<string, PublishAttempt>();
+  for (const attempt of selectedAttempts) {
+    if (!latestByPlatform.has(attempt.platform)) latestByPlatform.set(attempt.platform, attempt);
+  }
+  const latestSelectedAttempts = targets
+    .map((target) => latestByPlatform.get(target.platform))
+    .filter((attempt): attempt is PublishAttempt => Boolean(attempt));
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-xl font-semibold text-white">Publish Center</h3>
-        <p className="mt-1 text-sm text-zinc-400">Live platform publishing powered by local env credentials, with each attempt recorded for review.</p>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="text-xl font-semibold text-white">Publish Center</h3>
+            <p className="mt-1 text-sm text-zinc-400">Connect accounts, choose target platforms, and publish the selected approved clip.</p>
+          </div>
+          <div className="rounded-full border border-cyan/[0.25] bg-teal/[0.10] px-4 py-2 text-xs font-semibold text-cyan">
+            {targets.filter((target) => credentials?.platforms[target.platform]?.ready).length}/{targets.length} connected
+          </div>
+        </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           {targets.map((target) => {
             const ready = credentials?.platforms[target.platform]?.ready;
-            const latest = selectedAttempts.find((attempt) => attempt.platform === target.platform) || attempts.find((attempt) => attempt.platform === target.platform);
+            const credential = credentials?.platforms[target.platform];
+            const selectedForPublish = selectedPlatforms.includes(target.platform);
+            const latest = latestByPlatform.get(target.platform) || attempts.find((attempt) => attempt.platform === target.platform);
+            const recovery = publishActionHint(latest?.error);
             return (
-              <div key={target.platform} className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+              <div key={target.platform} className={`rounded-[24px] border p-4 transition ${selectedForPublish ? "border-cyan/[0.30] bg-teal/[0.08]" : "border-white/[0.08] bg-canvas-deep"}`}>
                 <div className="flex items-center justify-between">
                   <div className="grid h-11 w-11 place-items-center rounded-2xl bg-cyan text-ink"><Send className="h-5 w-5" /></div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${ready ? "bg-teal/[0.10] text-teal" : "bg-warning/[0.10] text-warning"}`}>{ready ? "Connected" : "Needs token"}</span>
+                  <button
+                    onClick={() => onTogglePlatform(target.platform)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedForPublish ? "border-cyan/[0.40] bg-cyan text-ink" : "border-white/[0.10] bg-white/[0.04] text-zinc-400"}`}
+                  >
+                    {selectedForPublish ? "Target on" : "Target off"}
+                  </button>
                 </div>
                 <h4 className="mt-4 font-semibold text-white">{platformLabel(target.platform)}</h4>
                 <p className="mt-1 text-sm text-zinc-400">{target.account_label}</p>
                 <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-zinc-400">
-                  <SettingTile label="Mode" value={target.mode} />
+                  <SettingTile label="Connection" value={ready ? "Connected" : "Needs setup"} />
                   <SettingTile label="Daily cap" value={target.daily_cap} />
                 </div>
+                {!ready ? (
+                  <div className="mt-3 rounded-2xl border border-warning/20 bg-warning/[0.08] p-3 text-xs leading-5 text-warning">
+                    Missing: {(credential?.missing_keys || []).join(", ") || "credential"}. Connect via OAuth/token setup before live publishing.
+                  </div>
+                ) : null}
+                <button
+                  onClick={() => onTestConnection(target.platform)}
+                  className="mt-3 h-9 w-full rounded-full border border-white/[0.10] text-xs font-semibold text-zinc-300 hover:border-cyan/[0.35] hover:text-cyan"
+                >
+                  {ready ? "Test connection" : "Connect / verify setup"}
+                </button>
                 <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs uppercase tracking-wide text-zinc-500">Last attempt</span>
-                    <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusTone(latest?.status || "pending")}`}>{latest?.status || "none"}</span>
+                    <span className="text-xs uppercase tracking-wide text-zinc-500">Current attempt</span>
+                    <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusTone(latest?.status || "pending")}`}>{cleanPublishStatus(latest?.status)}</span>
                   </div>
-                  {latest?.error ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-danger">{latest.error}</p> : null}
+                  {recovery ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-danger">{recovery}</p> : null}
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button disabled={!selected} onClick={() => onPublishPlatform(target.platform, true)} className="h-10 rounded-full border border-cyan/[0.30] text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40">Dry-run</button>
-                  <button disabled={!selected || !ready} onClick={() => onPublishPlatform(target.platform, false)} className="h-10 rounded-full bg-cyan text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">Live</button>
+                  <button disabled={!selected || !ready || !selectedForPublish} onClick={() => onPublishPlatform(target.platform, false)} className="h-10 rounded-full bg-cyan text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">Live</button>
                 </div>
               </div>
             );
@@ -1094,16 +1261,16 @@ function PublishSection({
         <h3 className="text-xl font-semibold text-white">Selected publish item</h3>
         <p className="mt-2 text-sm leading-6 text-zinc-400">{selected ? selected.title_hook : "Select or generate a clip before publishing."}</p>
         <div className="mt-5 grid gap-3">
-          <div className="rounded-[22px] border border-warning/20 bg-warning/[0.10] p-4 text-sm leading-6 text-warning">
-            Scheduled publish runs automatically from PM2. Manual live buttons here are for controlled retries and spot checks.
+          <div className="rounded-[22px] border border-cyan/[0.18] bg-teal/[0.08] p-4 text-sm leading-6 text-zinc-300">
+            Scheduled items publish through the PM2 worker. Manual live buttons are for retrying one selected platform after you review the current state.
           </div>
-          {selectedAttempts.length ? selectedAttempts.slice(0, 8).map((attempt) => (
+          {latestSelectedAttempts.length ? latestSelectedAttempts.map((attempt) => (
             <div key={attempt.id} className="rounded-[18px] border border-white/[0.08] bg-canvas-deep p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-white">{platformLabel(attempt.platform)}</p>
-                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(attempt.status)}`}>{attempt.status}</span>
+                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(attempt.status)}`}>{cleanPublishStatus(attempt.status)}</span>
               </div>
-              {attempt.error ? <p className="mt-2 text-xs leading-5 text-danger">{attempt.error}</p> : null}
+              {attempt.error ? <p className="mt-2 text-xs leading-5 text-danger">{publishActionHint(attempt.error)}</p> : null}
             </div>
           )) : <EmptyState text="No publish attempts for this clip yet." />}
         </div>

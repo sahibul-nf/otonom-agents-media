@@ -55,6 +55,22 @@ class PublisherTests(unittest.TestCase):
         self.assertFalse(status["platforms"]["youtube_shorts"]["ready"])
         self.assertNotIn("token", str(status))
 
+    def test_credential_status_accepts_env_aliases(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "TELEGRAM_BOT_TOKEN": "token",
+                "TELEGRAM_CHAT_ID": "@channel",
+                "META_PAGE_ACCESS_TOKEN": "page-token",
+                "NOURBIT_FACEBOOK_PAGE_ID": "page-id",
+            },
+            clear=True,
+        ):
+            status = credential_status()
+
+        self.assertTrue(status["platforms"]["telegram_channel"]["ready"])
+        self.assertTrue(status["platforms"]["facebook_reels"]["ready"])
+
     def test_telegram_live_publish_requires_rendered_file(self):
         with patch.dict(
             "os.environ",

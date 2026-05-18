@@ -25,8 +25,8 @@ from .models import PUBLISH_MODES
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
 from .rerender import create_rerender_job, list_rerender_jobs
-from .schedule_publisher import process_due_publishes
-from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule
+from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
+from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule, update_schedule_platforms
 from .styles import load_style, save_style_template
 
 
@@ -189,9 +189,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/publish-attempts":
             conn = connect(DEFAULT_DB)
             initialize(conn)
+            archive_legacy_permission_attempts(conn)
             rows = fetch_all(
                 conn,
-                "SELECT * FROM publish_attempts ORDER BY created_at DESC LIMIT 80",
+                """
+                SELECT * FROM publish_attempts
+                WHERE status != 'legacy_blocked'
+                ORDER BY created_at DESC
+                LIMIT 80
+                """,
             )
             for row in rows:
                 row["payload"] = _loads(row.get("payload_json"), {})
@@ -200,6 +206,21 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/credentials":
             load_env_file(ROOT.parent / ".env.local")
             self._send_json(credential_status())
+            return
+        if parsed.path == "/api/connections":
+            load_env_file(ROOT.parent / ".env.local")
+            credentials = credential_status()
+            profile_targets = fetch_all(connect(DEFAULT_DB), "SELECT * FROM publish_targets ORDER BY platform")
+            self._send_json({
+                "platforms": credentials["platforms"],
+                "targets": profile_targets,
+                "auth": {
+                    "telegram_channel": {"mode": "bot_token", "action": "configure_token"},
+                    "youtube_shorts": {"mode": "oauth", "action": "connect"},
+                    "facebook_reels": {"mode": "oauth", "action": "connect"},
+                    "tiktok": {"mode": "oauth", "action": "connect"},
+                },
+            })
             return
         if parsed.path == "/api/artifact":
             query = parse_qs(parsed.query)
@@ -379,13 +400,18 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/schedule-next":
             candidate_id = str(payload.get("candidate_id", "")).strip()
+            platforms = payload.get("platforms")
             if not candidate_id:
                 self._send_json({"error": "candidate_id is required"}, status=400)
                 return
             conn = connect(DEFAULT_DB)
             initialize(conn)
             try:
-                result = schedule_candidate_next(conn, candidate_id)
+                result = schedule_candidate_next(
+                    conn,
+                    candidate_id,
+                    platforms=platforms if isinstance(platforms, list) else None,
+                )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=400)
                 return
@@ -404,6 +430,22 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 result = update_schedule(conn, schedule_id, scheduled_at)
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=404)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/schedule-platforms":
+            schedule_id = str(payload.get("schedule_id", "")).strip()
+            platforms = payload.get("platforms")
+            if not schedule_id or not isinstance(platforms, list):
+                self._send_json({"error": "schedule_id and platforms are required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                result = update_schedule_platforms(conn, schedule_id, [str(platform) for platform in platforms])
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(result)
             return
@@ -437,6 +479,28 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 notify=True,
             )
             self._send_json(result)
+            return
+
+        if parsed.path == "/api/connection-test":
+            platform = str(payload.get("platform", "")).strip()
+            load_env_file(ROOT.parent / ".env.local")
+            status = credential_status().get("platforms", {}).get(platform)
+            if not status:
+                self._send_json({"error": "unsupported platform"}, status=400)
+                return
+            if status.get("ready"):
+                self._send_json({"platform": platform, "status": "connected", "message": "Credentials are present for local publishing"})
+            else:
+                self._send_json(
+                    {
+                        "platform": platform,
+                        "status": "needs_setup",
+                        "missing_keys": status.get("missing_keys", []),
+                        "message": "Complete OAuth/token setup, then refresh credentials",
+                        "error": "Complete OAuth/token setup, then refresh credentials",
+                    },
+                    status=409,
+                )
             return
 
         if parsed.path == "/api/archive":
@@ -567,6 +631,13 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             try:
                 result = publish_live_payload(platform, built_payload)
             except LivePublishError as exc:
+                conn.execute(
+                    "UPDATE publish_attempts SET status = ?, error = ? WHERE id = ?",
+                    ("failed", str(exc), attempt["id"]),
+                )
+                conn.commit()
+                attempt["status"] = "failed"
+                attempt["error"] = str(exc)
                 self._send_json({"error": str(exc), "attempt": attempt}, status=502)
                 return
             conn.execute(

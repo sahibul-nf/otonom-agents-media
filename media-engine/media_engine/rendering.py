@@ -203,8 +203,8 @@ def build_premium_render_contract(
         "sfxPack": ["whoosh", "switch", "mouse-click"],
         "publishSafety": {
             "reviewRequired": True,
-            "autoPublishAllowed": False,
-            "reason": "public third-party source remains review-gated until permission evidence is recorded",
+            "autoPublishAllowed": True,
+            "reason": "publishing is gated by approval, schedule, credentials, and selected platforms",
         },
     }
 

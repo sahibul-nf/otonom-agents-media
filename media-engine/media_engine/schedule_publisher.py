@@ -20,6 +20,9 @@ from .rights import can_publish_candidate
 from .scheduler import DEFAULT_TZ, _iso, refresh_due_posts
 
 
+LEGACY_PERMISSION_ERROR = "permission evidence"
+
+
 def _loads(value: str | None, fallback: Any) -> Any:
     try:
         data = json.loads(value or "")
@@ -44,6 +47,20 @@ def already_published(conn, candidate_id: str, platform: str) -> bool:
             (candidate_id, platform),
         ).fetchone()
     )
+
+
+def archive_legacy_permission_attempts(conn) -> int:
+    result = conn.execute(
+        """
+        UPDATE publish_attempts
+        SET status = 'legacy_blocked'
+        WHERE status = 'blocked'
+          AND lower(error) LIKE ?
+        """,
+        (f"%{LEGACY_PERMISSION_ERROR}%",),
+    )
+    conn.commit()
+    return int(result.rowcount or 0)
 
 
 def record_publish_attempt(
@@ -174,13 +191,14 @@ def process_due_publishes(
         load_env_file(env_file)
     conn = connect(db_path)
     initialize(conn)
+    archive_legacy_permission_attempts(conn)
     now = (now or datetime.now(DEFAULT_TZ)).astimezone(DEFAULT_TZ)
     refresh_due_posts(conn, now=now)
     rows = conn.execute(
         """
         SELECT * FROM scheduled_posts
         WHERE profile_id = ?
-          AND status IN ('ready_to_publish', 'partial_failed', 'failed')
+          AND status IN ('ready_to_publish', 'partial_failed', 'failed', 'publishing')
           AND scheduled_at <= ?
         ORDER BY scheduled_at ASC
         LIMIT ?

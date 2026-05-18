@@ -11,12 +11,11 @@ class RightsGuardTests(unittest.TestCase):
         result = can_auto_publish(source, target)
         self.assertTrue(result.allowed)
 
-    def test_authorized_community_requires_evidence_for_auto_publish(self):
+    def test_authorized_community_can_auto_publish_without_local_evidence(self):
         source = {"permission_status": "authorized_community", "permission_evidence": ""}
         target = {"mode": PUBLISH_AUTO}
         result = can_auto_publish(source, target)
-        self.assertFalse(result.allowed)
-        self.assertIn("evidence", result.reason)
+        self.assertTrue(result.allowed)
 
     def test_authorized_community_with_evidence_can_auto_publish(self):
         source = {"permission_status": "authorized_community", "permission_evidence": "email approval 2026-05-09"}

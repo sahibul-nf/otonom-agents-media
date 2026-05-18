@@ -6,7 +6,7 @@ Local-first V1 for autonomous short-form media production. This first slice focu
 
 - SQLite schema for profiles, source manifests, candidates, render jobs, publish targets, and publish attempts.
 - Nourbit profile with Facebook Reels, YouTube Shorts, TikTok, and Instagram Reels targets.
-- Rights guardrails that block auto-publish for public third-party sources.
+- Publish guardrails for approval state, platform mode, rendered files, credentials, and selected targets.
 - Dry-run curation from a timestamped transcript.
 - Minimal FFmpeg 1080x1920 renderer for fast local verification.
 - Premium Nourbit render path for source-video shorts with animated hook, word-timed kinetic captions, CTA, watermark, attribution, and review-safe metadata.
@@ -71,7 +71,7 @@ Install `faster-whisper` in the local Python environment before using `--caption
 
 ## Rights default
 
-`https://www.youtube.com/@nouraniyyahofficial` is seeded as `public_third_party`. That means exports and review are allowed, but auto-publish and monetization remain blocked until permission evidence is recorded in the source manifest.
+`https://www.youtube.com/@nouraniyyahofficial` is seeded as `public_third_party`. Publishing is not blocked by local permission evidence; copyright/source risk is owned by the publishing user, while the engine still requires approval or schedule gating plus valid platform credentials.
 
 ## Remotion note
 

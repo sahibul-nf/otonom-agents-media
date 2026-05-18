@@ -1,9 +1,4 @@
-"""Live publishing adapters.
-
-Only Telegram is enabled first because it has the smallest operational blast
-radius. Other platforms remain dry-run until their OAuth/app-review flows are
-implemented explicitly.
-"""
+"""Live publishing adapters."""
 
 from __future__ import annotations
 
@@ -20,6 +15,14 @@ from urllib.parse import urlencode
 
 class LivePublishError(RuntimeError):
     pass
+
+
+def _env_first(*keys: str) -> str:
+    for key in keys:
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+    return ""
 
 
 def _multipart_form(fields: dict[str, str], file_field: str, file_path: str) -> tuple[bytes, str]:
@@ -51,8 +54,8 @@ def _multipart_form(fields: dict[str, str], file_field: str, file_path: str) -> 
 
 
 def publish_telegram_video(payload: dict[str, Any], timeout_seconds: int = 120) -> dict[str, Any]:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
+    token = _env_first("TELEGRAM_BOT_TOKEN")
+    chat_id = _env_first("TELEGRAM_CHANNEL_ID", "TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         raise LivePublishError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID are required")
 
@@ -155,9 +158,9 @@ def _require_file(payload: dict[str, Any]) -> Path:
 
 
 def publish_youtube_short(payload: dict[str, Any], timeout_seconds: int = 300) -> dict[str, Any]:
-    client_id = os.environ.get("YOUTUBE_CLIENT_ID", "").strip()
-    client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
-    refresh_token = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
+    client_id = _env_first("YOUTUBE_CLIENT_ID")
+    client_secret = _env_first("YOUTUBE_CLIENT_SECRET")
+    refresh_token = _env_first("YOUTUBE_REFRESH_TOKEN")
     if not client_id or not client_secret or not refresh_token:
         raise LivePublishError("YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET and YOUTUBE_REFRESH_TOKEN are required")
     path = _require_file(payload)
@@ -226,7 +229,7 @@ def publish_youtube_short(payload: dict[str, Any], timeout_seconds: int = 300) -
 
 
 def publish_tiktok_video(payload: dict[str, Any], timeout_seconds: int = 300) -> dict[str, Any]:
-    access_token = os.environ.get("TIKTOK_ACCESS_TOKEN", "").strip()
+    access_token = _env_first("TIKTOK_ACCESS_TOKEN")
     if not access_token:
         raise LivePublishError("TIKTOK_ACCESS_TOKEN is required")
     path = _require_file(payload)
@@ -275,9 +278,9 @@ def publish_tiktok_video(payload: dict[str, Any], timeout_seconds: int = 300) ->
 
 
 def publish_facebook_reel(payload: dict[str, Any], timeout_seconds: int = 300) -> dict[str, Any]:
-    page_id = os.environ.get("META_PAGE_ID", "").strip()
-    page_token = os.environ.get("META_PAGE_ACCESS_TOKEN", "").strip()
-    api_version = os.environ.get("META_API_VERSION", "v20.0").strip() or "v20.0"
+    page_id = _env_first("META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_ID")
+    page_token = _env_first("META_PAGE_ACCESS_TOKEN", "NOURBIT_FACEBOOK_PAGE_TOKEN")
+    api_version = _env_first("META_API_VERSION", "META_GRAPH_API_VERSION") or "v20.0"
     if not page_id or not page_token:
         raise LivePublishError("META_PAGE_ID and META_PAGE_ACCESS_TOKEN are required")
     path = _require_file(payload)
