@@ -2,6 +2,7 @@
 
 ## 2026-05-17
 
+- Hardened local dev startup so a stale backend process missing new API endpoints is restarted instead of reused.
 - Added due-schedule publishing across Telegram, YouTube Shorts, Facebook Reels, and TikTok with idempotent publish attempts, platform result tracking, and a PM2 publisher worker.
 - Removed the `public_third_party` permission-evidence blocker from platform publishing while keeping approval and schedule gates in place.
 - Upgraded Calendar and Publish Center to show scheduled publish status, platform chips, due publish actions, credential readiness, and last attempt errors.

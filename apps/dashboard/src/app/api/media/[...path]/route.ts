@@ -45,6 +45,17 @@ async function forward(request: NextRequest, {params}: Params) {
       );
     }
   }
+  const mediaRequest = path[0] === "artifact";
+  if (!mediaRequest && response.status >= 400) {
+    const raw = await response.text();
+    return NextResponse.json(
+      {
+        error: `Media engine endpoint /api/${path.join("/")} returned ${response.status}. The backend may be stale; restart npm run dev.`,
+        raw: raw.slice(0, 500),
+      },
+      {status: response.status},
+    );
+  }
   const passthroughHeaders = new Headers();
   if (responseContentType) passthroughHeaders.set("Content-Type", responseContentType);
   for (const header of ["Accept-Ranges", "Content-Length", "Content-Range", "Content-Disposition"]) {

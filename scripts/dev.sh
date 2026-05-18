@@ -33,6 +33,41 @@ finally:
 PY
 }
 
+backend_pid_for_port() {
+  local port="$1"
+  lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | head -n 1 || true
+}
+
+backend_has_required_endpoints() {
+  local port="$1"
+  python3 - "$port" <<'PY'
+import json
+import sys
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
+
+port = int(sys.argv[1])
+required = ("review", "schedule", "publish-attempts")
+for endpoint in required:
+    try:
+        with urlopen(f"http://127.0.0.1:{port}/api/{endpoint}", timeout=2) as response:
+            if response.status >= 400:
+                sys.exit(1)
+            json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
+start_backend() {
+  (
+    cd "${ROOT_DIR}"
+    MEDIA_ENGINE_PORT="${BACKEND_PORT}" PYTHONPATH=media-engine "${PYTHON_BIN}" -m media_engine.review_server
+  ) &
+  BACKEND_PID=$!
+}
+
 PYTHON_BIN="$(pick_python)"
 
 cleanup() {
@@ -51,14 +86,20 @@ trap cleanup INT TERM EXIT
 
 echo "[otonom-media] starting backend on http://127.0.0.1:${BACKEND_PORT}"
 if is_port_open "${BACKEND_PORT}"; then
-  echo "[otonom-media] backend already running on port ${BACKEND_PORT}, reusing it"
-  BACKEND_PID=""
+  if backend_has_required_endpoints "${BACKEND_PORT}"; then
+    echo "[otonom-media] backend already running on port ${BACKEND_PORT}, reusing it"
+    BACKEND_PID=""
+  else
+    STALE_BACKEND_PID="$(backend_pid_for_port "${BACKEND_PORT}")"
+    echo "[otonom-media] backend on port ${BACKEND_PORT} is stale; restarting pid=${STALE_BACKEND_PID:-unknown}"
+    if [[ -n "${STALE_BACKEND_PID:-}" ]]; then
+      kill "${STALE_BACKEND_PID}" >/dev/null 2>&1 || true
+      sleep 0.5
+    fi
+    start_backend
+  fi
 else
-  (
-    cd "${ROOT_DIR}"
-    MEDIA_ENGINE_PORT="${BACKEND_PORT}" PYTHONPATH=media-engine "${PYTHON_BIN}" -m media_engine.review_server
-  ) &
-  BACKEND_PID=$!
+  start_backend
 fi
 
 echo "[otonom-media] starting frontend on http://127.0.0.1:${FRONTEND_PORT}"
