@@ -12,6 +12,7 @@ import {
   Gauge,
   LayoutDashboard,
   Loader2,
+  MoreHorizontal,
   Plus,
   RadioTower,
   RefreshCcw,
@@ -21,7 +22,7 @@ import {
   Sparkles,
   Wand2,
 } from "lucide-react";
-import {useEffect, useMemo, useRef, useState} from "react";
+import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
 import {
   apiGet,
   apiPath,
@@ -53,6 +54,8 @@ type Section = "dashboard" | "generate" | "review" | "calendar" | "publish" | "b
 const defaultSourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
 const defaultTemplate = "profiles/nourbit_opus_style.json";
 type RerenderUiState = {status: "running" | "done" | "failed"; message: string; progress?: number};
+type ActionUiState = {status: "running" | "done" | "failed"; message: string};
+type ToastMessage = {id: string; tone: "success" | "error" | "info"; message: string};
 const publishPlatforms = ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"];
 const oauthPlatforms = new Set(["youtube_shorts", "facebook_reels", "tiktok"]);
 
@@ -76,7 +79,9 @@ function publishActionHint(error?: string) {
   const value = (error || "").toLowerCase();
   if (!value) return "";
   if (value.includes("401") || value.includes("unauthorized") || value.includes("token")) return "Reconnect this platform account.";
-  if (value.includes("broken pipe") || value.includes("timed out") || value.includes("urlopen")) return "Network/upload interrupted. Retry this platform.";
+  if (value.includes("unaudited_client_can_only_post_to_private_accounts")) return "TikTok app belum audited. Set akun TikTok private + gunakan visibility SELF_ONLY, atau ajukan audit TikTok untuk publish publik.";
+  if (value.includes("telegram upload was interrupted") || value.includes("broken pipe") || value.includes("timed out") || value.includes("urlopen")) return "Telegram upload interrupted. The system will prepare a <49MB Telegram copy, then retry this platform.";
+  if (value.includes("above") && value.includes("after compression")) return "Telegram copy is still too large. Re-render a shorter clip or lower the render quality.";
   if (value.includes("rendered video file")) return "Re-render the clip before publishing.";
   if (value.includes("permission") && value.includes("evidence")) return "Legacy local guard entry. Safe to retry this platform.";
   return error || "";
@@ -214,6 +219,8 @@ export function MediaStudioApp() {
   const [filter, setFilter] = useState("all");
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
+  const [actionStates, setActionStates] = useState<Record<string, ActionUiState>>({});
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [rerendering, setRerendering] = useState<Record<string, RerenderUiState>>({});
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const [publishSelection, setPublishSelection] = useState<string[]>(publishPlatforms);
@@ -242,6 +249,36 @@ export function MediaStudioApp() {
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
   const command = productionCommand(generateConfig);
   const selectedCaptionDraft = selected ? captionDrafts[selected.id] ?? (selected.captions || []).map((caption) => caption.text).filter(Boolean).join("\n") : "";
+
+  function pushToast(message: string, tone: ToastMessage["tone"] = "info") {
+    const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    setToasts((items) => [{id, message, tone}, ...items].slice(0, 4));
+  }
+
+  function setAction(key: string, state?: ActionUiState) {
+    setActionStates((items) => {
+      const next = {...items};
+      if (state) next[key] = state;
+      else delete next[key];
+      return next;
+    });
+  }
+
+  async function runAction<T>(key: string, message: string, task: () => Promise<T>, doneMessage?: string) {
+    setAction(key, {status: "running", message});
+    try {
+      const result = await task();
+      if (doneMessage) pushToast(doneMessage, "success");
+      setAction(key, {status: "done", message: doneMessage || "Done"});
+      window.setTimeout(() => setAction(key), 2200);
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Action failed";
+      setAction(key, {status: "failed", message: errorMessage});
+      pushToast(errorMessage, "error");
+      throw error;
+    }
+  }
   const rerenderState = useMemo(() => {
     const persisted: Record<string, RerenderUiState> = {};
     for (const job of rerenderJobs) {
@@ -336,6 +373,7 @@ export function MediaStudioApp() {
   async function copyText(value: string, label = "Copied") {
     await navigator.clipboard.writeText(value);
     setStatus(label);
+    pushToast(label, "success");
   }
 
   async function approveClip(id: string) {
@@ -449,6 +487,9 @@ export function MediaStudioApp() {
   }
 
   function togglePublishSelection(platform: string) {
+    const nextEnabled = !publishSelection.includes(platform);
+    const key = `target:${platform}`;
+    setAction(key, {status: "running", message: nextEnabled ? "Enabling target" : "Disabling target"});
     setPublishSelection((current) => {
       if (current.includes(platform)) {
         const next = current.filter((item) => item !== platform);
@@ -456,6 +497,8 @@ export function MediaStudioApp() {
       }
       return [...current, platform];
     });
+    window.setTimeout(() => setAction(key, {status: "done", message: nextEnabled ? "Target enabled" : "Target disabled"}), 180);
+    window.setTimeout(() => setAction(key), 1600);
   }
 
   async function unscheduleClip(id: string) {
@@ -505,67 +548,72 @@ export function MediaStudioApp() {
 
   async function publishSelectedPlatform(platform: string, dryRun: boolean) {
     if (!selected) return;
-    setBusy(true);
+    const key = `publish:${platform}:${selected.id}:${dryRun ? "dry" : "live"}`;
+    const message = dryRun ? `Preparing ${platformLabel(platform)} dry-run...` : `Publishing ${platformLabel(platform)}...`;
+    setStatus(message);
     try {
-      await apiPost("publish-live", {candidate_id: selected.id, platform, dry_run: dryRun});
+      await runAction(key, message, () => apiPost("publish-live", {candidate_id: selected.id, platform, dry_run: dryRun}), dryRun ? `${platformLabel(platform)} dry-run ready` : `${platformLabel(platform)} publish finished`);
       setStatus(dryRun ? `${platformLabel(platform)} dry-run ready` : `${platformLabel(platform)} publish requested`);
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Publish failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function testConnection(platform: string) {
-    setBusy(true);
+    const key = `test:${platform}`;
+    const message = `Testing ${platformLabel(platform)} connection...`;
+    setStatus(message);
     try {
-      await apiPost("connection-test", {platform});
+      await runAction(key, message, () => apiPost("connection-test", {platform}), `${platformLabel(platform)} connected`);
       setStatus(`${platformLabel(platform)} connected`);
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Connection check failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function startOauthConnect(platform: string) {
-    setBusy(true);
+    const key = `connect:${platform}`;
     try {
-      const result = await apiPost<{platform: string; auth_url: string}>("oauth-start", {platform});
+      const result = await runAction(
+        key,
+        `Opening ${platformLabel(platform)} OAuth...`,
+        () => apiPost<{platform: string; auth_url: string}>("oauth-start", {platform}),
+      );
       const popup = window.open(result.auth_url, "_blank", "width=560,height=760,noopener,noreferrer");
       if (!popup) {
         setStatus("Popup blocked. Allow popups, then click Connect again.");
+        setAction(key, {status: "failed", message: "Popup blocked"});
         return;
       }
       setStatus(`Continue OAuth in popup for ${platformLabel(platform)}...`);
+      setAction(key, {status: "running", message: "Waiting for OAuth popup"});
       const timer = window.setInterval(() => {
         if (popup.closed) {
           window.clearInterval(timer);
           void refreshAll();
           setStatus(`${platformLabel(platform)} OAuth finished. Refreshing status...`);
+          setAction(key, {status: "done", message: "OAuth finished"});
+          pushToast(`${platformLabel(platform)} OAuth finished`, "success");
+          window.setTimeout(() => setAction(key), 2200);
         }
       }, 800);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "OAuth start failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function disconnectPlatform(platform: string) {
     const ok = window.confirm(`Disconnect ${platformLabel(platform)} from this workspace?`);
     if (!ok) return;
-    setBusy(true);
+    const key = `disconnect:${platform}`;
     try {
-      await apiPost("connection-disconnect", {platform});
+      await runAction(key, `Disconnecting ${platformLabel(platform)}...`, () => apiPost("connection-disconnect", {platform}), `${platformLabel(platform)} disconnected`);
       setStatus(`${platformLabel(platform)} disconnected`);
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Disconnect failed");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -653,6 +701,14 @@ export function MediaStudioApp() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!toasts.length) return;
+    const timer = window.setTimeout(() => {
+      setToasts((items) => items.slice(0, -1));
+    }, 4600);
+    return () => window.clearTimeout(timer);
+  }, [toasts]);
 
   useEffect(() => {
     const hasRunningGeneration = jobs.some((job) => job.status === "queued" || job.status === "running");
@@ -825,6 +881,7 @@ export function MediaStudioApp() {
               selected={selected}
               attempts={publishAttempts}
               selectedPlatforms={publishSelection}
+              actionStates={actionStates}
               onTogglePlatform={togglePublishSelection}
               onTestConnection={testConnection}
               onStartOauth={startOauthConnect}
@@ -859,6 +916,7 @@ export function MediaStudioApp() {
             );
           })}
         </nav>
+        <ToastStack toasts={toasts} onDismiss={(id) => setToasts((items) => items.filter((item) => item.id !== id))} />
       </main>
     </div>
   );
@@ -1235,6 +1293,7 @@ function PublishSection({
   selected,
   attempts,
   selectedPlatforms,
+  actionStates,
   onTogglePlatform,
   onTestConnection,
   onStartOauth,
@@ -1246,6 +1305,7 @@ function PublishSection({
   selected?: ClipCandidate;
   attempts: PublishAttempt[];
   selectedPlatforms: string[];
+  actionStates: Record<string, ActionUiState>;
   onTogglePlatform: (platform: string) => void;
   onTestConnection: (platform: string) => void;
   onStartOauth: (platform: string) => void;
@@ -1280,16 +1340,20 @@ function PublishSection({
             const latest = latestByPlatform.get(target.platform) || attempts.find((attempt) => attempt.platform === target.platform);
             const recovery = publishActionHint(latest?.error);
             const supportsOauth = oauthPlatforms.has(target.platform);
+            const activeAction = [
+              actionStates[`publish:${target.platform}:${selected?.id || ""}:live`],
+              actionStates[`publish:${target.platform}:${selected?.id || ""}:dry`],
+              actionStates[`test:${target.platform}`],
+              actionStates[`connect:${target.platform}`],
+              actionStates[`disconnect:${target.platform}`],
+              actionStates[`target:${target.platform}`],
+            ].find((item) => item?.status === "running");
+            const isBusy = Boolean(activeAction);
             return (
               <div key={target.platform} className={`rounded-[24px] border p-4 transition ${selectedForPublish ? "border-cyan/[0.30] bg-teal/[0.08]" : "border-white/[0.08] bg-canvas-deep"}`}>
                 <div className="flex items-center justify-between">
                   <div className="grid h-11 w-11 place-items-center rounded-2xl bg-cyan text-ink"><Send className="h-5 w-5" /></div>
-                  <button
-                    onClick={() => onTogglePlatform(target.platform)}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold ${selectedForPublish ? "border-cyan/[0.40] bg-cyan text-ink" : "border-white/[0.10] bg-white/[0.04] text-zinc-400"}`}
-                  >
-                    {selectedForPublish ? "Target on" : "Target off"}
-                  </button>
+                  <SwitchControl checked={selectedForPublish} disabled={isBusy} label="Target" onChange={() => onTogglePlatform(target.platform)} />
                 </div>
                 <h4 className="mt-4 font-semibold text-white">{platformLabel(target.platform)}</h4>
                 <p className="mt-1 text-sm text-zinc-400">{target.account_label}</p>
@@ -1302,36 +1366,35 @@ function PublishSection({
                     Missing: {(credential?.missing_keys || []).join(", ") || "credential"}. Connect via OAuth/token setup before live publishing.
                   </div>
                 ) : null}
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => onTestConnection(target.platform)}
-                    className="h-9 rounded-full border border-white/[0.10] text-xs font-semibold text-zinc-300 hover:border-cyan/[0.35] hover:text-cyan"
-                  >
-                    Test
-                  </button>
-                  <button
-                    onClick={() => (supportsOauth ? onStartOauth(target.platform) : onTestConnection(target.platform))}
-                    className="h-9 rounded-full border border-cyan/[0.25] bg-cyan/[0.10] text-xs font-semibold text-cyan hover:bg-cyan/[0.16]"
-                  >
-                    {ready ? "Reconnect" : "Connect"}
-                  </button>
-                  <button
-                    onClick={() => onDisconnect(target.platform)}
-                    className="h-9 rounded-full border border-white/[0.10] text-xs font-semibold text-zinc-300 hover:border-danger/[0.35] hover:text-danger"
-                  >
-                    Disconnect
-                  </button>
-                </div>
                 <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs uppercase tracking-wide text-zinc-500">Current attempt</span>
-                    <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusTone(latest?.status || "pending")}`}>{cleanPublishStatus(latest?.status)}</span>
+                    <span className={`inline-flex max-w-[70%] items-center gap-1 truncate rounded-full border px-2 py-1 text-xs font-semibold ${statusTone(activeAction ? "running" : latest?.status || "pending")}`}>
+                      {activeAction ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : null}
+                      <span className="truncate">{activeAction?.message || cleanPublishStatus(latest?.status)}</span>
+                    </span>
                   </div>
                   {recovery ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-danger">{recovery}</p> : null}
+                  {activeAction ? <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.08]"><div className="h-full w-2/3 animate-pulse rounded-full bg-cyan" /></div> : null}
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <button disabled={!selected} onClick={() => onPublishPlatform(target.platform, true)} className="h-10 rounded-full border border-cyan/[0.30] text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40">Dry-run</button>
-                  <button disabled={!selected || !ready || !selectedForPublish} onClick={() => onPublishPlatform(target.platform, false)} className="h-10 rounded-full bg-cyan text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">Live</button>
+                <div className="mt-4 flex items-center gap-2">
+                  <button
+                    disabled={!selected || !ready || !selectedForPublish || isBusy}
+                    onClick={() => onPublishPlatform(target.platform, false)}
+                    className="h-10 flex-1 rounded-full bg-cyan text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {actionStates[`publish:${target.platform}:${selected?.id || ""}:live`]?.status === "running" ? "Publishing..." : "Publish now"}
+                  </button>
+                  <PlatformActionMenu
+                    disabled={isBusy}
+                    ready={Boolean(ready)}
+                    supportsOauth={supportsOauth}
+                    platform={target.platform}
+                    onTestConnection={onTestConnection}
+                    onStartOauth={onStartOauth}
+                    onDisconnect={onDisconnect}
+                    onDryRun={() => onPublishPlatform(target.platform, true)}
+                  />
                 </div>
               </div>
             );
@@ -1357,6 +1420,105 @@ function PublishSection({
         </div>
       </div>
     </section>
+  );
+}
+
+function SwitchControl({checked, disabled, label, onChange}: {checked: boolean; disabled?: boolean; label: string; onChange: () => void}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onChange}
+      className={`inline-flex h-8 items-center gap-2 rounded-full border px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked ? "border-cyan/[0.45] bg-cyan text-ink" : "border-white/[0.12] bg-white/[0.04] text-zinc-400"
+      }`}
+    >
+      <span>{label}</span>
+      <span className={`relative h-5 w-9 rounded-full transition ${checked ? "bg-ink/25" : "bg-white/[0.10]"}`}>
+        <span className={`absolute top-1 h-3 w-3 rounded-full bg-current transition ${checked ? "left-5 text-ink" : "left-1 text-zinc-500"}`} />
+      </span>
+    </button>
+  );
+}
+
+function PlatformActionMenu({
+  disabled,
+  ready,
+  supportsOauth,
+  platform,
+  onTestConnection,
+  onStartOauth,
+  onDisconnect,
+  onDryRun,
+}: {
+  disabled?: boolean;
+  ready: boolean;
+  supportsOauth: boolean;
+  platform: string;
+  onTestConnection: (platform: string) => void;
+  onStartOauth: (platform: string) => void;
+  onDisconnect: (platform: string) => void;
+  onDryRun: () => void;
+}) {
+  return (
+    <details className="group relative">
+      <summary
+        aria-disabled={disabled}
+        className={`grid h-10 w-10 list-none place-items-center rounded-full border border-white/[0.10] bg-white/[0.04] text-zinc-200 marker:hidden ${
+          disabled ? "pointer-events-none opacity-50" : "cursor-pointer hover:border-cyan/[0.35] hover:text-cyan"
+        }`}
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </summary>
+      <div className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-2xl border border-white/[0.10] bg-canvas-deep p-1 shadow-2xl">
+        <MenuAction onClick={() => onTestConnection(platform)}>Test connection</MenuAction>
+        <MenuAction onClick={() => (supportsOauth ? onStartOauth(platform) : onTestConnection(platform))}>{ready ? "Reconnect" : "Connect"}</MenuAction>
+        <MenuAction onClick={onDryRun}>Create dry-run</MenuAction>
+        <MenuAction danger onClick={() => onDisconnect(platform)}>Disconnect</MenuAction>
+      </div>
+    </details>
+  );
+}
+
+function MenuAction({children, danger, onClick}: {children: ReactNode; danger?: boolean; onClick: () => void}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.currentTarget.closest("details")?.removeAttribute("open");
+        onClick();
+      }}
+      className={`flex h-10 w-full items-center rounded-xl px-3 text-left text-xs font-semibold transition ${
+        danger ? "text-danger hover:bg-danger/[0.10]" : "text-zinc-200 hover:bg-white/[0.06] hover:text-cyan"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToastStack({toasts, onDismiss}: {toasts: ToastMessage[]; onDismiss: (id: string) => void}) {
+  if (!toasts.length) return null;
+  return (
+    <div className="fixed right-4 top-24 z-50 grid w-[min(360px,calc(100vw-32px))] gap-2">
+      {toasts.map((toast) => (
+        <button
+          key={toast.id}
+          onClick={() => onDismiss(toast.id)}
+          className={`rounded-2xl border px-4 py-3 text-left text-sm shadow-2xl backdrop-blur-xl ${
+            toast.tone === "error"
+              ? "border-danger/[0.30] bg-danger/[0.14] text-red-100"
+              : toast.tone === "success"
+                ? "border-teal/[0.30] bg-teal/[0.14] text-teal"
+                : "border-cyan/[0.28] bg-canvas-deep/[0.92] text-zinc-100"
+          }`}
+        >
+          {toast.message}
+        </button>
+      ))}
+    </div>
   );
 }
 

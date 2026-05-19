@@ -8,6 +8,7 @@ from media_engine.db import initialize
 from media_engine.credentials import credential_status
 from media_engine.live_publishers import (
     LivePublishError,
+    prepare_telegram_video,
     publish_facebook_reel,
     publish_telegram_video,
     publish_tiktok_video,
@@ -82,6 +83,53 @@ class PublisherTests(unittest.TestCase):
         ):
             with self.assertRaises(LivePublishError):
                 publish_telegram_video({"video_path": "/tmp/does-not-exist.mp4", "caption": "Caption"})
+
+    def test_telegram_prepare_uses_original_when_under_limit(self):
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as video:
+            video.write(b"small")
+            video.flush()
+
+            result = prepare_telegram_video(video.name, target_bytes=1024)
+
+        self.assertFalse(result["compressed"])
+        self.assertEqual(result["upload_size"], 5)
+
+    def test_telegram_publish_uses_prepared_upload_path(self):
+        calls = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self):
+                return json_dumps({"ok": True, "result": {"message_id": 123, "chat": {"id": "@channel"}}})
+
+        def fake_urlopen(request, timeout=0):
+            calls.append(request.data)
+            return FakeResponse()
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as original, tempfile.NamedTemporaryFile(suffix=".mp4") as prepared:
+            original.write(b"original")
+            original.flush()
+            prepared.write(b"prepared")
+            prepared.flush()
+            with patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "token", "TELEGRAM_CHANNEL_ID": "@channel"}, clear=True):
+                with patch("media_engine.live_publishers.prepare_telegram_video") as prepare:
+                    prepare.return_value = {
+                        "path": prepared.name,
+                        "compressed": True,
+                        "original_path": original.name,
+                        "original_size": 8,
+                        "upload_size": 8,
+                        "limit": 1024,
+                    }
+                    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+                        result = publish_telegram_video({"video_path": original.name, "caption": "Caption"})
+
+        self.assertEqual(result["message_id"], 123)
+        self.assertTrue(result["upload"]["compressed"])
+        self.assertIn(b"prepared", calls[0])
 
     def test_public_third_party_attempt_is_ready_when_candidate_approved(self):
         conn = sqlite3.connect(":memory:")

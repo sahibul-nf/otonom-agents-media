@@ -720,6 +720,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"attempt": attempt, "error": attempt["error"]}, status=409)
                 return
             built_payload = build_payload(platform, candidate, dict(render_job) if render_job else None)
+            built_payload["dry_run"] = dry_run
             if dry_run:
                 self._send_json({"status": "dry_run", "attempt": attempt, "payload": built_payload})
                 return

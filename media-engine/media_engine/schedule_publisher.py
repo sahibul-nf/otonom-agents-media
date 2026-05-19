@@ -176,6 +176,7 @@ def publish_candidate_platform(
 
     guard = can_publish_candidate(source, target, candidate)
     payload = build_payload(platform, candidate, render_job)
+    payload["dry_run"] = dry_run
     payload["title"] = str(candidate.get("title_hook") or "Short")
     if not guard.allowed:
         attempt = record_publish_attempt(conn, candidate["id"], platform, target["mode"], "blocked", payload, guard.reason)

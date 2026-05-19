@@ -6,6 +6,7 @@ import json
 import mimetypes
 import os
 import secrets
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -16,6 +17,10 @@ from urllib.parse import urlencode
 
 class LivePublishError(RuntimeError):
     pass
+
+
+TELEGRAM_DEFAULT_MAX_UPLOAD_MB = 49
+TELEGRAM_AUDIO_KBPS = 96
 
 
 def _env_first(*keys: str) -> str:
@@ -51,8 +56,9 @@ def validate_facebook_connection(timeout_seconds: int = 20) -> dict[str, Any]:
     api_version = _env_first("META_API_VERSION", "META_GRAPH_API_VERSION") or "v20.0"
     if not page_id or not page_token:
         raise LivePublishError("META_PAGE_ID/NOURBIT_FACEBOOK_PAGE_ID and META_PAGE_ACCESS_TOKEN/NOURBIT_FACEBOOK_PAGE_TOKEN are required")
+    query = urllib.parse.urlencode({"fields": "name", "access_token": page_token})
     result = _http_json_get(
-        f"https://graph.facebook.com/{api_version}/{page_id}?fields=name&access_token={urllib.parse.quote(page_token)}",
+        f"https://graph.facebook.com/{api_version}/{page_id}?{query}",
         timeout_seconds=timeout_seconds,
     )
     if result.get("error"):
@@ -98,8 +104,11 @@ def validate_tiktok_connection(timeout_seconds: int = 20) -> dict[str, Any]:
         headers={"Authorization": f"Bearer {access_token}"},
         timeout_seconds=timeout_seconds,
     )
-    if result.get("error"):
-        raise LivePublishError(f"TikTok auth rejected: {result['error'].get('message', 'unknown error')}")
+    error = result.get("error") if isinstance(result, dict) else None
+    if isinstance(error, dict):
+        code = str(error.get("code") or "").strip().lower()
+        if code and code != "ok":
+            raise LivePublishError(f"TikTok auth rejected: {error.get('message', 'unknown error')} ({code})")
     return {"platform": "tiktok", "status": "authorized", "raw": result}
 
 
@@ -137,8 +146,9 @@ def verify_published_remote(platform: str, remote_id: str, timeout_seconds: int 
             api_version = _env_first("META_API_VERSION", "META_GRAPH_API_VERSION") or "v20.0"
             if not page_token:
                 return False
+            query = urllib.parse.urlencode({"fields": "id", "access_token": page_token})
             result = _http_json_get(
-                f"https://graph.facebook.com/{api_version}/{urllib.parse.quote(remote_id)}?fields=id&access_token={urllib.parse.quote(page_token)}",
+                f"https://graph.facebook.com/{api_version}/{urllib.parse.quote(remote_id)}?{query}",
                 timeout_seconds=timeout_seconds,
             )
             if result.get("error"):
@@ -148,6 +158,119 @@ def verify_published_remote(platform: str, remote_id: str, timeout_seconds: int 
         return True
     except (LivePublishError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
         return False
+
+
+def telegram_max_upload_bytes() -> int:
+    raw_value = _env_first("TELEGRAM_MAX_UPLOAD_MB") or str(TELEGRAM_DEFAULT_MAX_UPLOAD_MB)
+    try:
+        value = float(raw_value)
+    except ValueError:
+        value = TELEGRAM_DEFAULT_MAX_UPLOAD_MB
+    return int(max(1, value) * 1024 * 1024)
+
+
+def _video_duration_seconds(path: Path) -> float:
+    command = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        duration = float((result.stdout or "").strip())
+    except (subprocess.CalledProcessError, ValueError, FileNotFoundError) as exc:
+        raise LivePublishError("ffprobe is required to prepare Telegram video upload") from exc
+    if duration <= 0:
+        raise LivePublishError("Telegram video duration could not be detected")
+    return duration
+
+
+def _telegram_compressed_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}_telegram{path.suffix}")
+
+
+def prepare_telegram_video(video_path: str, target_bytes: int | None = None) -> dict[str, Any]:
+    source = Path(video_path)
+    if not source.exists():
+        raise LivePublishError("rendered video file is required for Telegram publish")
+
+    limit = target_bytes or telegram_max_upload_bytes()
+    original_size = source.stat().st_size
+    if original_size <= limit:
+        return {
+            "path": str(source),
+            "compressed": False,
+            "original_size": original_size,
+            "upload_size": original_size,
+            "limit": limit,
+        }
+
+    duration = _video_duration_seconds(source)
+    output = _telegram_compressed_path(source)
+    safety_target = int(limit * 0.92)
+    total_kbps = max(450, int((safety_target * 8) / max(duration, 1) / 1000))
+    video_kbps = max(320, total_kbps - TELEGRAM_AUDIO_KBPS)
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-pix_fmt",
+        "yuv420p",
+        "-b:v",
+        f"{video_kbps}k",
+        "-maxrate",
+        f"{int(video_kbps * 1.25)}k",
+        "-bufsize",
+        f"{int(video_kbps * 2)}k",
+        "-c:a",
+        "aac",
+        "-b:a",
+        f"{TELEGRAM_AUDIO_KBPS}k",
+        "-movflags",
+        "+faststart",
+        str(output),
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except FileNotFoundError as exc:
+        raise LivePublishError("ffmpeg is required to compress Telegram video uploads") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip().splitlines()[-1:] or ["unknown ffmpeg error"]
+        raise LivePublishError(f"Telegram compression failed: {detail[0]}") from exc
+
+    compressed_size = output.stat().st_size if output.exists() else 0
+    if compressed_size <= 0:
+        raise LivePublishError("Telegram compression did not create an output file")
+    if compressed_size > limit:
+        raise LivePublishError(
+            f"Telegram video remains above {limit // 1024 // 1024}MB after compression ({compressed_size // 1024 // 1024}MB)"
+        )
+    return {
+        "path": str(output),
+        "compressed": True,
+        "original_path": str(source),
+        "original_size": original_size,
+        "upload_size": compressed_size,
+        "limit": limit,
+        "duration_seconds": duration,
+        "video_bitrate_kbps": video_kbps,
+        "audio_bitrate_kbps": TELEGRAM_AUDIO_KBPS,
+    }
+
 
 def _multipart_form(fields: dict[str, str], file_field: str, file_path: str) -> tuple[bytes, str]:
     boundary = f"mediaengine{secrets.token_hex(12)}"
@@ -184,8 +307,9 @@ def publish_telegram_video(payload: dict[str, Any], timeout_seconds: int = 120) 
         raise LivePublishError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID are required")
 
     video_path = str(payload.get("video_path") or "")
-    if not video_path or not Path(video_path).exists():
+    if not video_path:
         raise LivePublishError("rendered video file is required for Telegram publish")
+    prepared = prepare_telegram_video(video_path)
 
     fields = {
         "chat_id": chat_id,
@@ -193,7 +317,7 @@ def publish_telegram_video(payload: dict[str, Any], timeout_seconds: int = 120) 
         "parse_mode": str(payload.get("parse_mode") or "HTML"),
         "supports_streaming": "true" if payload.get("supports_streaming", True) else "false",
     }
-    body, boundary = _multipart_form(fields, "video", video_path)
+    body, boundary = _multipart_form(fields, "video", prepared["path"])
     request = urllib.request.Request(
         f"https://api.telegram.org/bot{token}/sendVideo",
         data=body,
@@ -204,6 +328,9 @@ def publish_telegram_video(payload: dict[str, Any], timeout_seconds: int = 120) 
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             result = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        detail = str(exc)
+        if "Broken pipe" in detail or "timed out" in detail:
+            raise LivePublishError("Telegram upload was interrupted. The video was prepared for Telegram size limits; retry this platform.") from exc
         raise LivePublishError(f"Telegram publish failed: {exc}") from exc
     if not result.get("ok"):
         raise LivePublishError(f"Telegram publish rejected: {result.get('description', 'unknown error')}")
@@ -214,6 +341,7 @@ def publish_telegram_video(payload: dict[str, Any], timeout_seconds: int = 120) 
         "remote_id": str(message.get("message_id") or ""),
         "message_id": message.get("message_id"),
         "chat_id": message.get("chat", {}).get("id"),
+        "upload": prepared,
         "raw": result,
     }
 
@@ -231,6 +359,21 @@ def _json_request(
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            data = {}
+        if isinstance(data, dict):
+            error = data.get("error")
+            if isinstance(error, dict):
+                code = str(error.get("code") or "").strip()
+                message = str(error.get("message") or "").strip()
+                detail = f"{message} ({code})".strip() if code else message
+                if detail:
+                    raise LivePublishError(f"publish request failed: {detail}") from exc
+        raise LivePublishError(f"publish request failed: HTTP Error {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise LivePublishError(f"publish request failed: {exc}") from exc
 
@@ -269,6 +412,21 @@ def _upload_bytes(
             if not text.strip():
                 return {"status": response.status}
             return json.loads(text)
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            data = {}
+        if isinstance(data, dict):
+            error = data.get("error")
+            if isinstance(error, dict):
+                code = str(error.get("code") or "").strip()
+                message = str(error.get("message") or "").strip()
+                detail = f"{message} ({code})".strip() if code else message
+                if detail:
+                    raise LivePublishError(f"video upload failed: {detail}") from exc
+        raise LivePublishError(f"video upload failed: HTTP Error {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise LivePublishError(f"video upload failed: {exc}") from exc
 
@@ -372,12 +530,26 @@ def publish_tiktok_video(payload: dict[str, Any], timeout_seconds: int = 300) ->
             "total_chunk_count": 1,
         },
     }
-    init = _json_request(
-        "https://open.tiktokapis.com/v2/post/publish/video/init/",
-        init_payload,
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout_seconds=timeout_seconds,
-    )
+    try:
+        init = _json_request(
+            "https://open.tiktokapis.com/v2/post/publish/video/init/",
+            init_payload,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout_seconds=timeout_seconds,
+        )
+    except LivePublishError as exc:
+        message = str(exc).lower()
+        requested_visibility = str(init_payload.get("post_info", {}).get("privacy_level") or "")
+        if "unaudited_client_can_only_post_to_private_accounts" in message and requested_visibility != "SELF_ONLY":
+            init_payload["post_info"]["privacy_level"] = "SELF_ONLY"
+            init = _json_request(
+                "https://open.tiktokapis.com/v2/post/publish/video/init/",
+                init_payload,
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout_seconds=timeout_seconds,
+            )
+        else:
+            raise
     data = init.get("data") or {}
     upload_url = data.get("upload_url")
     publish_id = data.get("publish_id")
