@@ -1,6 +1,6 @@
 "use client";
 
-import {AlertTriangle, ListFilter, Loader2, MessageSquareText, MoreHorizontal, Trash2} from "lucide-react";
+import {AlertTriangle, CheckCircle2, ListFilter, Loader2, MessageSquareText, MoreHorizontal, Trash2} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 import {ClipCandidate, formatDuration, formatTimestamp, scoreValue} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
@@ -38,6 +38,19 @@ type Props = {
   onSaveCaptions: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
 };
+
+function clipWarnings(clip?: ClipCandidate) {
+  if (!clip) return [];
+  const warnings: {label: string; tone: "warning" | "danger" | "info"}[] = [];
+  const coverage = clip.render_quality?.caption_coverage;
+  const confidence = clip.score?.caption_confidence || clip.score?.asr_confidence;
+  if (clip.status === "needs_caption_fix") warnings.push({label: "Caption repair needed", tone: "warning"});
+  if (typeof coverage === "number" && coverage < 0.9) warnings.push({label: `Coverage ${Math.round(coverage * 100)}%`, tone: "warning"});
+  if ((clip.render_quality?.caption_overlap_count || 0) > 0) warnings.push({label: "Caption overlap", tone: "danger"});
+  if (typeof confidence === "number" && confidence < 82) warnings.push({label: `ASR ${Math.round(confidence)}`, tone: "warning"});
+  if (clip.caption_corrections?.manual_edit) warnings.push({label: "Manual caption edit", tone: "info"});
+  return warnings;
+}
 
 export function ReviewStudioSection({
   clips,
@@ -148,6 +161,7 @@ export function ReviewStudioSection({
             const primaryState = actionStates[primaryKey];
             const rowAction = primaryState || actionStates[`clip:${clip.id}:hold`] || actionStates[`clip:${clip.id}:reject`] || actionStates[`clip:${clip.id}:delete`] || actionStates[`clip:${clip.id}:rerender`];
             const rowBusy = rowAction?.status === "running" || renderState?.status === "running";
+            const warnings = clipWarnings(clip);
             return (
               <article
                 key={clip.id}
@@ -171,6 +185,24 @@ export function ReviewStudioSection({
                     {rowAction && renderState?.status !== "running" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(rowAction.status === "running" ? "running" : rowAction.status)}`}>{rowAction.message}</span> : null}
                   </div>
                   <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{rowAction?.status === "running" ? rowAction.message : renderState?.message || clip.viral_reason || "No curation reason yet."}</p>
+                  {warnings.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {warnings.slice(0, 3).map((warning) => (
+                        <span
+                          key={warning.label}
+                          className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                            warning.tone === "danger"
+                              ? "border-danger/[0.24] bg-danger/[0.08] text-danger"
+                              : warning.tone === "warning"
+                                ? "border-warning/[0.24] bg-warning/[0.08] text-warning"
+                                : "border-cyan/[0.22] bg-teal/[0.08] text-cyan"
+                          }`}
+                        >
+                          {warning.label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   {renderState?.status === "running" ? (
                     <div className="mt-3 rounded-[18px] border border-cyan/[0.18] bg-teal/[0.08] px-3 py-2.5">
                       <div className="mb-2 flex items-center justify-between gap-3">
@@ -283,6 +315,7 @@ function InsightPanel({
   const saveState = clip ? actionStates[`caption:${clip.id}:save`] : undefined;
   const rerenderState = clip ? actionStates[`clip:${clip.id}:rerender`] : undefined;
   const actionBusy = saveState?.status === "running" || rerenderState?.status === "running";
+  const warnings = clipWarnings(clip);
   return (
     <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
       <h3 className="text-lg font-semibold text-white">Clip intelligence</h3>
@@ -304,6 +337,24 @@ function InsightPanel({
             <SettingTile label="Coverage" value={`${Math.round((clip.render_quality?.caption_coverage || 0) * 100)}%`} />
             <SettingTile label="Gate" value={clip.quality_gate?.passed ? "Auto eligible" : "Review"} />
             <SettingTile label="Corrections" value={clip.caption_corrections?.manual_edit ? "Manual edit" : clip.caption_corrections?.correction_count || 0} />
+          </div>
+          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+              <CheckCircle2 className="h-4 w-4 text-cyan" />
+              Quality checks
+            </div>
+            {warnings.length ? (
+              <div className="grid gap-2">
+                {warnings.map((warning) => (
+                  <div key={warning.label} className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2 text-xs">
+                    <span className="font-semibold text-zinc-300">{warning.label}</span>
+                    <span className={warning.tone === "danger" ? "text-danger" : warning.tone === "warning" ? "text-warning" : "text-cyan"}>{warning.tone === "info" ? "noted" : "review"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm leading-6 text-zinc-400">No visible QA issues on this clip. Still review the first 3 seconds and final sentence before publishing.</p>
+            )}
           </div>
           <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
             <div className="mb-3 flex items-center justify-between gap-3">

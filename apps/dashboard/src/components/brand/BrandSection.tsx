@@ -1,7 +1,7 @@
 "use client";
 
 import {useState} from "react";
-import {Loader2} from "lucide-react";
+import {CheckCircle2, Loader2} from "lucide-react";
 import {apiGet, apiPost, AutonomySettings, BrandTemplate, StyleProfile} from "@/lib/media-api";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
@@ -154,13 +154,24 @@ export function BrandSection({
           </div>
         </div>
         <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-          <h4 className="font-semibold text-white">Available templates</h4>
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="font-semibold text-white">Available templates</h4>
+            <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{templates.length} saved</span>
+          </div>
           <div className="mt-3 grid gap-2">
             {templates.length ? templates.map((template) => (
-              <div key={template.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-3">
-                <span className="text-sm text-zinc-200">{template.label}</span>
-                <span className="text-xs text-zinc-500">{template.path}</span>
-              </div>
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => void loadTemplate(template.path)}
+                className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition ${selectedTemplate === template.path ? "bg-teal/[0.14] text-cyan ring-1 ring-cyan/[0.26]" : "bg-surface text-zinc-200 hover:bg-surface-raised"}`}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold">{template.label}</span>
+                  <span className="mt-1 block truncate text-xs text-zinc-500">{template.path}</span>
+                </span>
+                {selectedTemplate === template.path ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : null}
+              </button>
             )) : <EmptyState text="No style templates found." />}
           </div>
         </div>
@@ -183,10 +194,10 @@ export function BrandSection({
           </div>
           {autonomyBusy ? <p className="mt-3 text-xs font-medium text-cyan">{autonomyBusy.message}</p> : null}
           <div className="mt-4 grid grid-cols-2 gap-2">
-            <SettingTile label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
-            <SettingTile label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
-            <SettingTile label="Overall gate" value={autonomy?.overall_threshold || 82} />
-            <SettingTile label="Caption gate" value={autonomy?.caption_threshold || 90} />
+            <ReadinessMini ready={Boolean(autonomy?.review_grace_hours)} label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
+            <ReadinessMini ready={Boolean(autonomy?.auto_schedule_enabled)} label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
+            <ReadinessMini ready label="Overall gate" value={autonomy?.overall_threshold || 82} />
+            <ReadinessMini ready label="Caption gate" value={autonomy?.caption_threshold || 90} />
           </div>
         </div>
       </div>
@@ -228,11 +239,14 @@ export function BrandSection({
   );
 }
 
-function SettingTile({label, value}: {label: string; value: string | number}) {
+function ReadinessMini({ready, label, value}: {ready: boolean; label: string; value: string | number}) {
   return (
-    <div className="rounded-[18px] border border-white/[0.08] bg-canvas-deep p-4">
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-white">{value}</p>
+    <div className="flex items-center justify-between gap-3 rounded-[18px] border border-white/[0.08] bg-canvas-deep p-4">
+      <div className="min-w-0">
+        <p className="text-xs text-zinc-500">{label}</p>
+        <p className="mt-1 truncate text-sm font-semibold text-white">{value}</p>
+      </div>
+      <CheckCircle2 className={ready ? "h-4 w-4 shrink-0 text-cyan" : "h-4 w-4 shrink-0 text-zinc-600"} />
     </div>
   );
 }

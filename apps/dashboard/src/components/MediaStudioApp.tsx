@@ -4,28 +4,26 @@ import {
   AlertTriangle,
   BadgeCheck,
   CalendarDays,
+  CheckCircle2,
   Clapperboard,
   Copy,
-  Database,
   Eye,
   FileVideo,
   Gauge,
   LayoutDashboard,
   Loader2,
   MoreHorizontal,
-  Plus,
   RadioTower,
   RefreshCcw,
-  Rocket,
   Send,
   Settings,
   Sparkles,
   Wand2,
+  XCircle,
 } from "lucide-react";
 import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
 import {
   apiGet,
-  apiPath,
   apiPost,
   AutonomySettings,
   BrandTemplate,
@@ -80,6 +78,17 @@ function cleanPublishStatus(status?: string) {
     cooldown: "Cooling down",
   };
   return labels[status] || status.replaceAll("_", " ");
+}
+
+function formatPlatformMode(mode?: string) {
+  if (!mode) return "Review";
+  const labels: Record<string, string> = {
+    off: "Off",
+    review_required: "Review",
+    auto_publish: "Auto",
+    dry_run: "Dry-run",
+  };
+  return labels[mode] || mode.replaceAll("_", " ");
 }
 
 function publishActionHint(error?: string) {
@@ -807,7 +816,7 @@ export function MediaStudioApp() {
                 <span className="hidden sm:inline">Copy command</span>
                 <span className="sm:hidden">Copy</span>
               </button>
-              <div className="min-w-0 truncate text-left text-xs text-cyan sm:min-w-[150px] sm:text-right">{status}</div>
+              <StatusPill busy={busy} status={status} />
             </div>
           </div>
         </header>
@@ -824,7 +833,6 @@ export function MediaStudioApp() {
             <DashboardSection
               clips={clips}
               selected={selected}
-              credentials={credentials}
               schedule={schedule}
               actionStates={actionStates}
               onSection={setSection}
@@ -952,10 +960,39 @@ function MetricCard({label, value, detail, icon: Icon}: {label: string; value: s
   );
 }
 
+function StatusPill({busy, status}: {busy: boolean; status: string}) {
+  const isError = /failed|error|invalid|offline|unauthorized|blocked/i.test(status);
+  return (
+    <div
+      className={`inline-flex min-w-0 items-center justify-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold ${
+        isError
+          ? "border-danger/[0.28] bg-danger/[0.10] text-danger"
+          : busy
+            ? "border-cyan/[0.28] bg-teal/[0.10] text-cyan"
+            : "border-teal/[0.22] bg-teal/[0.08] text-teal"
+      }`}
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : isError ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+      <span className="max-w-[220px] truncate">{status}</span>
+    </div>
+  );
+}
+
+function ReadinessLine({ready, label, detail}: {ready: boolean; label: string; detail: string}) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-black/15 px-3 py-2">
+      <span className="inline-flex min-w-0 items-center gap-2">
+        {ready ? <CheckCircle2 className="h-4 w-4 shrink-0 text-cyan" /> : <XCircle className="h-4 w-4 shrink-0 text-zinc-600" />}
+        <span className="truncate text-sm font-semibold text-zinc-200">{label}</span>
+      </span>
+      <span className={ready ? "shrink-0 text-xs font-semibold text-cyan" : "shrink-0 text-xs text-zinc-500"}>{detail}</span>
+    </div>
+  );
+}
+
 function DashboardSection({
   clips,
   selected,
-  credentials,
   schedule,
   actionStates,
   onSection,
@@ -964,7 +1001,6 @@ function DashboardSection({
 }: {
   clips: ClipCandidate[];
   selected?: ClipCandidate;
-  credentials: CredentialStatus | null;
   schedule: ScheduledPost[];
   actionStates: Record<string, ActionUiState>;
   onSection: (section: Section) => void;
@@ -972,6 +1008,7 @@ function DashboardSection({
   onPublish: () => void;
 }) {
   const top = clips.slice(0, 4);
+  const approvedCount = clips.filter((clip) => clip.status === "approved").length;
   return (
     <section className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
@@ -981,6 +1018,11 @@ function DashboardSection({
             <p className="mt-1 text-sm text-zinc-400">A compact operating room for your next batch.</p>
           </div>
           <button onClick={() => onSection("generate")} className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink">Generate</button>
+        </div>
+        <div className="mb-4 grid gap-2 rounded-[22px] border border-cyan/[0.16] bg-teal/[0.07] p-3 text-xs text-zinc-400 sm:grid-cols-3">
+          <ReadinessLine ready={clips.length > 0} label="Candidates" detail={clips.length ? `${clips.length} in queue` : "Generate first"} />
+          <ReadinessLine ready={approvedCount > 0} label="Approval" detail={approvedCount ? `${approvedCount} approved` : "Review needed"} />
+          <ReadinessLine ready={schedule.length > 0} label="Calendar" detail={schedule.length ? `${schedule.length} scheduled` : "No slots yet"} />
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           {[
@@ -1002,7 +1044,14 @@ function DashboardSection({
             <button onClick={() => onSection("review")} className="text-sm font-medium text-cyan">Open Review Studio</button>
           </div>
           <div className="grid gap-2">
-            {top.length ? top.map((clip) => <CompactClip key={clip.id} clip={clip} actionState={actionStates[`clip:${clip.id}:approve`]} onApprove={onApprove} />) : <EmptyState text="No clips yet. Start with Generate to produce a new batch." />}
+            {top.length ? top.map((clip) => <CompactClip key={clip.id} clip={clip} actionState={actionStates[`clip:${clip.id}:approve`]} onApprove={onApprove} />) : (
+              <EmptyState
+                title="No clips yet"
+                text="Start with Generate to produce a ranked batch."
+                actionLabel="Open Generate"
+                onAction={() => onSection("generate")}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1023,7 +1072,14 @@ function DashboardSection({
                 </div>
                 <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
               </div>
-            )) : <EmptyState text="No scheduled clips yet. Approve a clip, then schedule the next slot." />}
+            )) : (
+              <EmptyState
+                title="No scheduled clips"
+                text="Approve a clip, then place it into the next publishing slot."
+                actionLabel="Open Review"
+                onAction={() => onSection("review")}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1105,6 +1161,9 @@ function GenerateSection({
                 ))}
               </select>
             </label>
+            <div className="rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 py-3 text-xs leading-5 text-zinc-500">
+              Engine still trims exact boundaries adaptively. Current window: <span className="font-semibold text-zinc-200">{config.clipMinSeconds}s-{config.clipMaxSeconds}s</span>.
+            </div>
           </div>
           <div className="grid gap-2">
             <div>
@@ -1120,8 +1179,12 @@ function GenerateSection({
                     type="button"
                     onClick={() => toggleGenre(genre.id)}
                     className={`rounded-[18px] border px-4 py-3 text-left transition ${active ? "border-cyan bg-teal/[0.14] text-white" : "border-white/[0.08] bg-canvas-deep text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
+                    aria-pressed={active}
                   >
-                    <span className="text-sm font-semibold">{genre.label}</span>
+                    <span className="flex items-center justify-between gap-3 text-sm font-semibold">
+                      {genre.label}
+                      {active ? <BadgeCheck className="h-4 w-4 text-cyan" /> : null}
+                    </span>
                     <span className="mt-1 block text-xs leading-5 text-zinc-500">{genre.description}</span>
                   </button>
                 );
@@ -1168,6 +1231,11 @@ function GenerateSection({
                 <div className="h-full rounded-full bg-cyan transition-all" style={{width: `${Math.max(4, Math.min(100, latest.progress || 0))}%`}} />
               </div>
               <p className="text-xs text-zinc-400">{latest.progress || 0}% · {latest.count} clips · {latest.llm_provider}/{latest.caption_source}</p>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <ReadinessLine ready={(latest.progress || 0) >= 20} label="Curate" detail="Moments" />
+                <ReadinessLine ready={(latest.progress || 0) >= 55} label="Captions" detail="ASR" />
+                <ReadinessLine ready={(latest.progress || 0) >= 90} label="Render" detail="Output" />
+              </div>
               <pre className="max-h-40 overflow-auto rounded-2xl bg-black/40 p-3 text-[11px] leading-5 text-zinc-400">{latest.error || latest.log_text || "Waiting for logs..."}</pre>
             </div>
           ) : (
@@ -1272,10 +1340,11 @@ function CalendarSection({
                         key={platform}
                         onClick={() => toggleSchedulePlatform(item, platform)}
                         disabled={platformAction?.status === "running"}
-                        className={`rounded-full border px-2.5 py-1 text-left text-xs font-semibold transition ${
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-left text-xs font-semibold transition ${
                           enabled ? statusTone(platformStatus) : "border-white/[0.08] bg-white/[0.03] text-zinc-500"
                         } disabled:cursor-not-allowed disabled:opacity-50`}
                       >
+                        {enabled ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
                         {platformAction?.status === "running" ? "Updating..." : `${platformLabel(platform)} · ${enabled ? cleanPublishStatus(platformStatus) : "Off"}`}
                       </button>
                     );
@@ -1292,7 +1361,7 @@ function CalendarSection({
                 {actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" ? "Removing..." : "Unschedule"}
               </button>
             </div>
-          )) : <EmptyState text="No scheduled posts yet. Approve clips first, then assign the next open slot." />}
+          )) : <EmptyState title="No scheduled posts" text="Approve clips first, then assign the next open slot." />}
         </div>
       </div>
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
@@ -1327,8 +1396,13 @@ function CalendarSection({
         <div className="mt-5 grid gap-3">
           {approved.length ? approved.map((clip) => (
             <div key={clip.id} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-              <p className="font-semibold text-white">{clip.title_hook}</p>
-              <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold text-white">{clip.title_hook}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
+                </div>
+                <ScoreBubble value={clip.score?.overall_score} />
+              </div>
               <button
                 disabled={actionStates[`clip:${clip.id}:schedule`]?.status === "running"}
                 onClick={() => onSchedule(clip.id)}
@@ -1338,7 +1412,7 @@ function CalendarSection({
                 {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? "Scheduling..." : "Schedule next slot"}
               </button>
             </div>
-          )) : <EmptyState text="No approved clips waiting for schedule." />}
+          )) : <EmptyState title="No approved clips" text="Review and approve a rendered clip before scheduling." />}
         </div>
       </div>
     </section>
@@ -1398,6 +1472,7 @@ function PublishSection({
             const latest = latestByPlatform.get(target.platform) || attempts.find((attempt) => attempt.platform === target.platform);
             const recovery = publishActionHint(latest?.error);
             const supportsOauth = oauthPlatforms.has(target.platform);
+            const selectedRendered = Boolean(selected?.output_path || selected?.render_quality?.output_path);
             const activeAction = [
               actionStates[`publish:${target.platform}:${selected?.id || ""}:live`],
               actionStates[`publish:${target.platform}:${selected?.id || ""}:dry`],
@@ -1417,8 +1492,14 @@ function PublishSection({
                 <p className="mt-1 text-sm text-zinc-400">{target.account_label}</p>
                 <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-zinc-400">
                   <SettingTile label="Connection" value={ready ? "Connected" : "Needs setup"} />
-                  <SettingTile label="Daily cap" value={target.daily_cap} />
+                  <SettingTile label="Mode" value={formatPlatformMode(target.mode)} />
                 </div>
+                <PublishReadiness
+                  ready={Boolean(ready)}
+                  selected={Boolean(selected)}
+                  rendered={selectedRendered}
+                  targeted={selectedForPublish}
+                />
                 {!ready ? (
                   <div className="mt-3 rounded-2xl border border-warning/20 bg-warning/[0.08] p-3 text-xs leading-5 text-warning">
                     Missing: {(credential?.missing_keys || []).join(", ") || "credential"}. Connect via OAuth/token setup before live publishing.
@@ -1437,7 +1518,7 @@ function PublishSection({
                 </div>
                 <div className="mt-4 flex items-center gap-2">
                   <button
-                    disabled={!selected || !ready || !selectedForPublish || isBusy}
+                    disabled={!selected || !ready || !selectedForPublish || !selectedRendered || isBusy}
                     onClick={() => onPublishPlatform(target.platform, false)}
                     className="h-10 flex-1 rounded-full bg-cyan text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -1464,8 +1545,27 @@ function PublishSection({
         <p className="mt-2 text-sm leading-6 text-zinc-400">{selected ? selected.title_hook : "Select or generate a clip before publishing."}</p>
         <div className="mt-5 grid gap-3">
           <div className="rounded-[22px] border border-cyan/[0.18] bg-teal/[0.08] p-4 text-sm leading-6 text-zinc-300">
-            Scheduled items publish through the PM2 worker. Manual live buttons are for retrying one selected platform after you review the current state.
+            Scheduled items publish through the PM2 worker. Manual publish is available only when a clip is selected, rendered, connected, and target-enabled.
           </div>
+          {selected ? (
+            <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+              <p className="text-xs uppercase tracking-wide text-zinc-500">Ready targets</p>
+              <div className="mt-3 grid gap-2">
+                {targets.map((target) => {
+                  const ready = credentials?.platforms[target.platform]?.ready;
+                  const enabled = selectedPlatforms.includes(target.platform);
+                  return (
+                    <ReadinessLine
+                      key={target.platform}
+                      ready={Boolean(ready && enabled)}
+                      label={platformLabel(target.platform)}
+                      detail={!enabled ? "Target off" : ready ? "Ready" : "Reconnect"}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           {latestSelectedAttempts.length ? latestSelectedAttempts.map((attempt) => (
             <div key={attempt.id} className="rounded-[18px] border border-white/[0.08] bg-canvas-deep p-3">
               <div className="flex items-center justify-between gap-2">
@@ -1474,7 +1574,7 @@ function PublishSection({
               </div>
               {attempt.error ? <p className="mt-2 text-xs leading-5 text-danger">{publishActionHint(attempt.error)}</p> : null}
             </div>
-          )) : <EmptyState text="No publish attempts for this clip yet." />}
+          )) : <EmptyState title="No attempts yet" text="Run a dry-run or publish one selected platform to record the first attempt." />}
         </div>
       </div>
     </section>
@@ -1498,6 +1598,16 @@ function SwitchControl({checked, disabled, label, onChange}: {checked: boolean; 
         <span className={`absolute top-1 h-3 w-3 rounded-full bg-current transition ${checked ? "left-5 text-ink" : "left-1 text-zinc-500"}`} />
       </span>
     </button>
+  );
+}
+
+function PublishReadiness({ready, selected, rendered, targeted}: {ready: boolean; selected: boolean; rendered: boolean; targeted: boolean}) {
+  return (
+    <div className="mt-3 grid gap-1.5 rounded-2xl border border-white/[0.08] bg-black/15 p-3">
+      <ReadinessLine ready={ready} label="Account" detail={ready ? "Connected" : "Connect"} />
+      <ReadinessLine ready={targeted} label="Target" detail={targeted ? "On" : "Off"} />
+      <ReadinessLine ready={selected && rendered} label="Clip" detail={!selected ? "Select" : rendered ? "Rendered" : "Render"} />
+    </div>
   );
 }
 
@@ -1699,42 +1809,18 @@ function SettingTile({label, value}: {label: string; value: string | number}) {
   );
 }
 
-function TextField({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
+function EmptyState({title = "Nothing here yet", text, actionLabel, onAction}: {title?: string; text: string; actionLabel?: string; onAction?: () => void}) {
   return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-      {label}
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
-    </label>
-  );
-}
-
-function NumberField({label, value, min, max, onChange}: {label: string; value: number; min: number; max: number; onChange: (value: number) => void}) {
-  return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-      {label}
-      <input type="number" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
-    </label>
-  );
-}
-
-function ColorField({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
-  return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-      {label}
-      <div className="flex h-11 items-center gap-2 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 focus-within:border-cyan/[0.35]">
-        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-7 w-8 rounded border-0 bg-transparent p-0" />
-        <input value={value} onChange={(event) => onChange(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold normal-case tracking-normal text-white outline-none" />
-      </div>
-    </label>
-  );
-}
-
-function EmptyState({text}: {text: string}) {
-  return (
-    <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center text-sm text-zinc-500">
+    <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center">
       <div>
         <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-zinc-600" />
-        {text}
+        <p className="text-sm font-semibold text-zinc-300">{title}</p>
+        <p className="mt-1 max-w-sm text-sm leading-6 text-zinc-500">{text}</p>
+        {actionLabel && onAction ? (
+          <button type="button" onClick={onAction} className="mt-4 rounded-full border border-cyan/[0.28] bg-teal/[0.10] px-4 py-2 text-xs font-semibold text-cyan">
+            {actionLabel}
+          </button>
+        ) : null}
       </div>
     </div>
   );
