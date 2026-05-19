@@ -56,6 +56,13 @@ const defaultTemplate = "profiles/nourbit_opus_style.json";
 type RerenderUiState = {status: "running" | "done" | "failed"; message: string; progress?: number};
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 type ToastMessage = {id: string; tone: "success" | "error" | "info"; message: string};
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  tone?: "danger" | "default";
+  onConfirm: () => void;
+};
 const publishPlatforms = ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"];
 const oauthPlatforms = new Set(["youtube_shorts", "facebook_reels", "tiktok"]);
 
@@ -221,6 +228,7 @@ export function MediaStudioApp() {
   const [busy, setBusy] = useState(false);
   const [actionStates, setActionStates] = useState<Record<string, ActionUiState>>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [rerendering, setRerendering] = useState<Record<string, RerenderUiState>>({});
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const [publishSelection, setPublishSelection] = useState<string[]>(publishPlatforms);
@@ -500,9 +508,17 @@ export function MediaStudioApp() {
     }
   }
 
-  async function deleteClip(id: string) {
-    const ok = window.confirm("Delete this clip and local artifacts?");
-    if (!ok) return;
+  function deleteClip(id: string) {
+    setConfirmDialog({
+      title: "Delete rendered clip?",
+      message: "This removes the clip from the review queue and deletes its local rendered artifacts.",
+      confirmLabel: "Delete clip",
+      tone: "danger",
+      onConfirm: () => void performDeleteClip(id),
+    });
+  }
+
+  async function performDeleteClip(id: string) {
     const key = `clip:${id}:delete`;
     try {
       await runAction(key, "Deleting clip artifacts...", async () => {
@@ -516,9 +532,17 @@ export function MediaStudioApp() {
     }
   }
 
-  async function clearQueue() {
-    const ok = window.confirm("Delete all clips and local artifacts from the review queue?");
-    if (!ok) return;
+  function clearQueue() {
+    setConfirmDialog({
+      title: "Clear review queue?",
+      message: "This deletes every visible clip candidate and its local artifacts from this workspace.",
+      confirmLabel: "Clear queue",
+      tone: "danger",
+      onConfirm: () => void performClearQueue(),
+    });
+  }
+
+  async function performClearQueue() {
     const key = "queue:clear";
     try {
       await runAction(key, "Clearing review queue...", async () => {
@@ -590,9 +614,17 @@ export function MediaStudioApp() {
     }
   }
 
-  async function disconnectPlatform(platform: string) {
-    const ok = window.confirm(`Disconnect ${platformLabel(platform)} from this workspace?`);
-    if (!ok) return;
+  function disconnectPlatform(platform: string) {
+    setConfirmDialog({
+      title: `Disconnect ${platformLabel(platform)}?`,
+      message: "Publishing will stay disabled for this channel until you connect it again.",
+      confirmLabel: "Disconnect",
+      tone: "danger",
+      onConfirm: () => void performDisconnectPlatform(platform),
+    });
+  }
+
+  async function performDisconnectPlatform(platform: string) {
     const key = `disconnect:${platform}`;
     try {
       await runAction(key, `Disconnecting ${platformLabel(platform)}...`, () => apiPost("connection-disconnect", {platform}), `${platformLabel(platform)} disconnected`);
@@ -902,6 +934,8 @@ export function MediaStudioApp() {
           })}
         </nav>
         <ToastStack toasts={toasts} onDismiss={(id) => setToasts((items) => items.filter((item) => item.id !== id))} />
+        <ActionMonitor actionStates={actionStates} />
+        <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
       </main>
     </div>
   );
@@ -1272,17 +1306,20 @@ function CalendarSection({
               const active = selectedPlatforms.includes(target.platform);
               const targetState = actionStates[`target:${target.platform}`];
               return (
-                <button
+                <div
                   key={target.platform}
-                  onClick={() => onToggleDefaultPlatform(target.platform)}
-                  disabled={targetState?.status === "running"}
                   className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition ${
                     active ? "border-cyan/[0.45] bg-teal/[0.14] text-cyan" : "border-white/[0.08] bg-black/20 text-zinc-500"
-                  } disabled:cursor-not-allowed disabled:opacity-50`}
+                  }`}
                 >
                   <span>{platformLabel(target.platform)}</span>
-                  <span>{targetState?.status === "running" ? "..." : active ? "On" : "Off"}</span>
-                </button>
+                  <SwitchControl
+                    checked={active}
+                    disabled={targetState?.status === "running"}
+                    label={targetState?.status === "running" ? "Saving" : active ? "On" : "Off"}
+                    onChange={() => onToggleDefaultPlatform(target.platform)}
+                  />
+                </div>
               );
             })}
           </div>
@@ -1562,6 +1599,67 @@ function ToastStack({toasts, onDismiss}: {toasts: ToastMessage[]; onDismiss: (id
           {toast.message}
         </button>
       ))}
+    </div>
+  );
+}
+
+function ActionMonitor({actionStates}: {actionStates: Record<string, ActionUiState>}) {
+  const actions = Object.entries(actionStates)
+    .filter(([, state]) => state.status === "running" || state.status === "failed")
+    .slice(0, 4);
+  if (!actions.length) return null;
+  return (
+    <div className="fixed bottom-20 right-4 z-40 grid w-[min(360px,calc(100vw-32px))] gap-2 lg:bottom-5">
+      {actions.map(([key, state]) => (
+        <div
+          key={key}
+          className={`rounded-[20px] border px-4 py-3 shadow-2xl backdrop-blur-xl ${
+            state.status === "failed" ? "border-danger/[0.30] bg-danger/[0.14] text-red-100" : "border-cyan/[0.26] bg-canvas-deep/[0.92] text-zinc-100"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {state.status === "running" ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-danger" />}
+            <p className="min-w-0 flex-1 truncate text-sm font-semibold">{state.message}</p>
+          </div>
+          {state.status === "running" ? (
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+              <div className="h-full w-2/3 animate-pulse rounded-full bg-cyan" />
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ConfirmDialog({dialog, onClose}: {dialog: ConfirmDialogState | null; onClose: () => void}) {
+  if (!dialog) return null;
+  const danger = dialog.tone === "danger";
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div className="w-full max-w-md rounded-[28px] border border-white/[0.10] bg-surface p-5 shadow-2xl">
+        <div className={`mb-4 grid h-12 w-12 place-items-center rounded-2xl ${danger ? "bg-danger/[0.14] text-danger" : "bg-teal/[0.14] text-cyan"}`}>
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <h3 id="confirm-title" className="text-xl font-semibold text-white">{dialog.title}</h3>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">{dialog.message}</p>
+        <div className="mt-6 grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={onClose} className="h-11 rounded-full border border-white/[0.10] text-sm font-semibold text-zinc-300 hover:bg-white/[0.04]">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const onConfirm = dialog.onConfirm;
+              onClose();
+              onConfirm();
+            }}
+            className={`h-11 rounded-full text-sm font-semibold ${danger ? "bg-danger text-white" : "bg-cyan text-ink"}`}
+          >
+            {dialog.confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
