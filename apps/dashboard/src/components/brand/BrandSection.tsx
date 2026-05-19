@@ -1,12 +1,16 @@
 "use client";
 
 import {useState} from "react";
+import {Loader2} from "lucide-react";
 import {apiGet, apiPost, AutonomySettings, BrandTemplate, StyleProfile} from "@/lib/media-api";
+
+type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 
 type Props = {
   style: StyleProfile | null;
   templates: BrandTemplate[];
   autonomy: AutonomySettings | null;
+  actionStates: Record<string, ActionUiState>;
   command: string;
   defaultTemplate: string;
   onCopy: () => void;
@@ -31,6 +35,7 @@ export function BrandSection({
   style,
   templates,
   autonomy,
+  actionStates,
   command,
   defaultTemplate,
   onCopy,
@@ -54,6 +59,8 @@ export function BrandSection({
   const [label, setLabel] = useState("Custom Workspace Template");
   const [editor, setEditor] = useState(editorFromStyle(style));
   const [saveState, setSaveState] = useState("Ready");
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
 
   const updateEditor = (patch: Partial<typeof editor>) => setEditor((current) => ({...current, ...patch}));
   const stylePayload: StyleProfile = {
@@ -71,6 +78,7 @@ export function BrandSection({
   };
 
   async function saveTemplate() {
+    setSaveBusy(true);
     setSaveState("Saving...");
     try {
       await apiPost("brand-template", {label, style: stylePayload, base_template: selectedTemplate});
@@ -78,11 +86,14 @@ export function BrandSection({
       await onTemplateSaved();
     } catch (error) {
       setSaveState(error instanceof Error ? error.message : "Save failed");
+    } finally {
+      setSaveBusy(false);
     }
   }
 
   async function loadTemplate(path: string) {
     setSelectedTemplate(path);
+    setTemplateBusy(true);
     setSaveState("Loading template...");
     try {
       const loaded = await apiGet<StyleProfile>(`style?path=${encodeURIComponent(path)}`);
@@ -92,8 +103,11 @@ export function BrandSection({
       setSaveState("Template loaded");
     } catch (error) {
       setSaveState(error instanceof Error ? error.message : "Template load failed");
+    } finally {
+      setTemplateBusy(false);
     }
   }
+  const autonomyBusy = Object.entries(actionStates).find(([key, state]) => key.startsWith("autonomy:") && state.status === "running")?.[1];
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -105,8 +119,9 @@ export function BrandSection({
             Base template
             <select
               value={selectedTemplate}
+              disabled={templateBusy}
               onChange={(event) => void loadTemplate(event.target.value)}
-              className="h-12 rounded-2xl border border-cyan/[0.28] bg-canvas-deep px-4 text-sm font-semibold text-white outline-none"
+              className="h-12 rounded-2xl border border-cyan/[0.28] bg-canvas-deep px-4 text-sm font-semibold text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
               {(templates.length ? templates : [{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}]).map((template) => (
                 <option key={template.id} value={template.path}>{template.label}</option>
@@ -127,9 +142,15 @@ export function BrandSection({
           </div>
           <TextField label="Watermark text" value={editor.watermarkText} onChange={(value) => updateEditor({watermarkText: value})} />
           <div className="flex flex-wrap items-center gap-3">
-            <button type="button" onClick={saveTemplate} className="rounded-full bg-cyan px-5 py-3 text-sm font-semibold text-ink">Save as template</button>
-            <button type="button" onClick={() => void loadTemplate(selectedTemplate)} className="rounded-full border border-white/[0.10] px-5 py-3 text-sm font-semibold text-zinc-300">Reset</button>
-            <span className="text-sm text-cyan">{saveState}</span>
+            <button type="button" disabled={saveBusy || templateBusy} onClick={saveTemplate} className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
+              {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {saveBusy ? "Saving..." : "Save as template"}
+            </button>
+            <button type="button" disabled={saveBusy || templateBusy} onClick={() => void loadTemplate(selectedTemplate)} className="inline-flex items-center gap-2 rounded-full border border-white/[0.10] px-5 py-3 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
+              {templateBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {templateBusy ? "Loading..." : "Reset"}
+            </button>
+            <span className={`text-sm ${saveState.toLowerCase().includes("failed") ? "text-danger" : "text-cyan"}`}>{saveState}</span>
           </div>
         </div>
         <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
@@ -151,13 +172,16 @@ export function BrandSection({
               <button
                 key={mode}
                 type="button"
+                disabled={Boolean(autonomyBusy)}
                 onClick={() => onAutonomyMode(mode)}
-                className={`rounded-full px-3 py-2 text-sm font-semibold capitalize ${autonomy?.autonomy_mode === mode ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
+                className={`inline-flex items-center justify-center gap-2 rounded-full px-3 py-2 text-sm font-semibold capitalize disabled:cursor-not-allowed disabled:opacity-50 ${autonomy?.autonomy_mode === mode ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
               >
-                {mode}
+                {actionStates[`autonomy:${mode}`]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                {actionStates[`autonomy:${mode}`]?.status === "running" ? "Saving..." : mode}
               </button>
             ))}
           </div>
+          {autonomyBusy ? <p className="mt-3 text-xs font-medium text-cyan">{autonomyBusy.message}</p> : null}
           <div className="mt-4 grid grid-cols-2 gap-2">
             <SettingTile label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
             <SettingTile label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />

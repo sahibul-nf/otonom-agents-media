@@ -1,6 +1,6 @@
 "use client";
 
-import {AlertTriangle, ListFilter, MessageSquareText, MoreHorizontal, Trash2} from "lucide-react";
+import {AlertTriangle, ListFilter, Loader2, MessageSquareText, MoreHorizontal, Trash2} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 import {ClipCandidate, formatDuration, formatTimestamp, scoreValue} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
@@ -13,6 +13,7 @@ type ReviewFilter = {
 };
 
 type RerenderState = {status: "running" | "done" | "failed"; message: string; progress?: number};
+type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 
 type Props = {
   clips: ClipCandidate[];
@@ -20,6 +21,7 @@ type Props = {
   rerendering: Record<string, RerenderState>;
   filter: string;
   reviewFilters: readonly ReviewFilter[];
+  actionStates: Record<string, ActionUiState>;
   setFilter: (value: string) => void;
   setSelectedId: (id: string) => void;
   captionDraft: string;
@@ -43,6 +45,7 @@ export function ReviewStudioSection({
   rerendering,
   filter,
   reviewFilters,
+  actionStates,
   setFilter,
   setSelectedId,
   captionDraft,
@@ -64,6 +67,7 @@ export function ReviewStudioSection({
   const queueMenuRef = useRef<HTMLDivElement>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
   const activeFilter = reviewFilters.find((item) => item.id === filter) || reviewFilters[0];
+  const clearState = actionStates["queue:clear"];
 
   useEffect(() => {
     function closeMenus(event: MouseEvent) {
@@ -121,13 +125,15 @@ export function ReviewStudioSection({
                 <div className="mt-2 border-t border-white/[0.08] pt-2">
                   <button
                     type="button"
+                    disabled={clearState?.status === "running"}
                     onClick={() => {
                       setQueueMenuOpen(false);
                       onClear();
                     }}
-                    className="inline-flex w-full items-center gap-2 rounded-[18px] px-4 py-3 text-sm font-semibold text-danger hover:bg-danger/[0.10]"
+                    className="inline-flex w-full items-center gap-2 rounded-[18px] px-4 py-3 text-sm font-semibold text-danger hover:bg-danger/[0.10] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Trash2 className="h-4 w-4" /> Clear queue
+                    {clearState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {clearState?.status === "running" ? "Clearing..." : "Clear queue"}
                   </button>
                 </div>
               </div>
@@ -138,6 +144,10 @@ export function ReviewStudioSection({
         <div className="grid gap-2">
           {clips.length ? clips.map((clip) => {
             const renderState = rerendering[clip.id];
+            const primaryKey = clip.status === "approved" ? `clip:${clip.id}:schedule` : `clip:${clip.id}:approve`;
+            const primaryState = actionStates[primaryKey];
+            const rowAction = primaryState || actionStates[`clip:${clip.id}:hold`] || actionStates[`clip:${clip.id}:reject`] || actionStates[`clip:${clip.id}:delete`] || actionStates[`clip:${clip.id}:rerender`];
+            const rowBusy = rowAction?.status === "running" || renderState?.status === "running";
             return (
               <article
                 key={clip.id}
@@ -158,8 +168,9 @@ export function ReviewStudioSection({
                     <h4 className="truncate text-base font-semibold text-white">{clip.title_hook}</h4>
                     {clip.status !== "draft" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(clip.status)}`}>{clip.status}</span> : null}
                     {renderState ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(renderState.status === "running" ? "running" : renderState.status === "failed" ? "failed" : "completed")}`}>{renderState.status === "running" ? "rendering" : renderState.status}</span> : null}
+                    {rowAction && renderState?.status !== "running" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(rowAction.status === "running" ? "running" : rowAction.status)}`}>{rowAction.message}</span> : null}
                   </div>
-                  <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{renderState?.message || clip.viral_reason || "No curation reason yet."}</p>
+                  <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{rowAction?.status === "running" ? rowAction.message : renderState?.message || clip.viral_reason || "No curation reason yet."}</p>
                   {renderState?.status === "running" ? (
                     <div className="mt-3 rounded-[18px] border border-cyan/[0.18] bg-teal/[0.08] px-3 py-2.5">
                       <div className="mb-2 flex items-center justify-between gap-3">
@@ -191,10 +202,12 @@ export function ReviewStudioSection({
                         if (clip.status === "approved") onSchedule(clip.id);
                         else onApprove(clip.id);
                       }}
-                      disabled={renderState?.status === "running"}
+                      disabled={rowBusy}
                       className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {primaryReviewAction(clip)}
+                      {primaryState?.status === "running" ? (
+                        <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> {clip.status === "approved" ? "Scheduling..." : "Approving..."}</span>
+                      ) : primaryReviewAction(clip)}
                     </button>
                     <button
                       type="button"
@@ -202,7 +215,8 @@ export function ReviewStudioSection({
                         event.stopPropagation();
                         setRowMenuId(rowMenuId === clip.id ? "" : clip.id);
                       }}
-                      className="rounded-full border border-white/[0.10] bg-surface px-3 py-2 text-zinc-300 hover:text-white"
+                      disabled={rowBusy}
+                      className="rounded-full border border-white/[0.10] bg-surface px-3 py-2 text-zinc-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                       aria-label={`More actions for ${clip.title_hook}`}
                     >
                       <MoreHorizontal className="h-4 w-4" />
@@ -241,6 +255,7 @@ export function ReviewStudioSection({
           clip={selected}
           captionDraft={captionDraft}
           setCaptionDraft={setCaptionDraft}
+          actionStates={actionStates}
           onSaveCaptions={onSaveCaptions}
           onRerender={onRerender}
         />
@@ -253,16 +268,21 @@ function InsightPanel({
   clip,
   captionDraft,
   setCaptionDraft,
+  actionStates,
   onSaveCaptions,
   onRerender,
 }: {
   clip?: ClipCandidate;
   captionDraft: string;
   setCaptionDraft: (value: string) => void;
+  actionStates: Record<string, ActionUiState>;
   onSaveCaptions: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
 }) {
   const captionCount = clip?.captions?.length || 0;
+  const saveState = clip ? actionStates[`caption:${clip.id}:save`] : undefined;
+  const rerenderState = clip ? actionStates[`clip:${clip.id}:rerender`] : undefined;
+  const actionBusy = saveState?.status === "running" || rerenderState?.status === "running";
   return (
     <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
       <h3 className="text-lg font-semibold text-white">Clip intelligence</h3>
@@ -293,11 +313,11 @@ function InsightPanel({
               </div>
               <button
                 type="button"
-                disabled={!captionCount}
+                disabled={!captionCount || actionBusy}
                 onClick={() => onRerender(clip.id)}
                 className="shrink-0 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Re-render
+                {rerenderState?.status === "running" ? <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Starting...</span> : "Re-render"}
               </button>
             </div>
             <textarea
@@ -311,13 +331,18 @@ function InsightPanel({
               <p className="text-xs text-zinc-500">One line maps to one timed caption group.</p>
               <button
                 type="button"
-                disabled={!captionCount}
+                disabled={!captionCount || actionBusy}
                 onClick={() => onSaveCaptions(clip.id, captionDraft)}
                 className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Save text edits
+                {saveState?.status === "running" ? <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Saving...</span> : "Save text edits"}
               </button>
             </div>
+            {saveState || rerenderState ? (
+              <p className={`mt-3 text-xs font-medium ${saveState?.status === "failed" || rerenderState?.status === "failed" ? "text-danger" : "text-cyan"}`}>
+                {(saveState || rerenderState)?.message}
+              </p>
+            ) : null}
           </div>
           <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><MessageSquareText className="h-4 w-4 text-cyan" /> Post copy</div>

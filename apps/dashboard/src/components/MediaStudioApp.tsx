@@ -377,112 +377,100 @@ export function MediaStudioApp() {
   }
 
   async function approveClip(id: string) {
-    setBusy(true);
+    const key = `clip:${id}:approve`;
     try {
-      await apiPost("approve", {candidate_id: id});
-      setClips((items) => items.map((clip) => (clip.id === id ? {...clip, status: "approved"} : clip)));
+      await runAction(key, "Approving clip...", async () => {
+        await apiPost("approve", {candidate_id: id});
+        setClips((items) => items.map((clip) => (clip.id === id ? {...clip, status: "approved"} : clip)));
+      }, "Clip approved");
       setStatus("Clip approved");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Approve failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function holdClip(id: string) {
-    setBusy(true);
+    const key = `clip:${id}:hold`;
     try {
-      await apiPost("hold", {candidate_id: id});
+      await runAction(key, "Holding for review...", () => apiPost("hold", {candidate_id: id}), "Clip held for manual review");
       setStatus("Clip held for manual review");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Hold failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function rejectClip(id: string) {
-    setBusy(true);
+    const key = `clip:${id}:reject`;
     try {
-      await apiPost("reject", {candidate_id: id});
+      await runAction(key, "Rejecting clip...", () => apiPost("reject", {candidate_id: id}), "Clip rejected");
       setStatus("Clip rejected");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Reject failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function updateAutonomyMode(mode: string) {
     if (!autonomy) return;
-    setBusy(true);
+    const key = `autonomy:${mode}`;
     try {
-      const next = await apiPost<AutonomySettings>("autonomy-settings", {...autonomy, autonomy_mode: mode});
+      const next = await runAction(key, `Switching autonomy to ${mode}...`, () => apiPost<AutonomySettings>("autonomy-settings", {...autonomy, autonomy_mode: mode}), `Autonomy set to ${mode}`);
       setAutonomy(next);
       setStatus(`Autonomy mode set to ${mode}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Autonomy update failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function startGeneration() {
-    setBusy(true);
-    setStatus("Generation job queued...");
+    const key = "generate:start";
     try {
-      const job = await apiPost<GenerationJob>("generation-jobs", {
-        source_url: generateConfig.sourceUrl,
-        count: generateConfig.count,
-        clip_length_preset: generateConfig.clipLength,
-        clip_min_seconds: generateConfig.clipMinSeconds,
-        clip_max_seconds: generateConfig.clipMaxSeconds,
-        genres: generateConfig.genres,
-        brand_template: generateConfig.brandTemplate,
-        renderer: generateConfig.renderer,
-        quality: generateConfig.quality,
-        caption_source: generateConfig.captionSource,
-        asr_model: generateConfig.asrModel,
-        speech_language: generateConfig.speechLanguage,
-        transcript_languages: generateConfig.transcriptLanguages,
-        llm_provider: generateConfig.llmProvider,
-        env_file: "../.env.local",
-      });
+      setStatus("Generation job queued...");
+      const job = await runAction(key, "Starting generation batch...", () => apiPost<GenerationJob>("generation-jobs", {
+          source_url: generateConfig.sourceUrl,
+          count: generateConfig.count,
+          clip_length_preset: generateConfig.clipLength,
+          clip_min_seconds: generateConfig.clipMinSeconds,
+          clip_max_seconds: generateConfig.clipMaxSeconds,
+          genres: generateConfig.genres,
+          brand_template: generateConfig.brandTemplate,
+          renderer: generateConfig.renderer,
+          quality: generateConfig.quality,
+          caption_source: generateConfig.captionSource,
+          asr_model: generateConfig.asrModel,
+          speech_language: generateConfig.speechLanguage,
+          transcript_languages: generateConfig.transcriptLanguages,
+          llm_provider: generateConfig.llmProvider,
+          env_file: "../.env.local",
+        }), "Generation batch started");
       setJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
       setStatus("Generation running in background");
       window.setTimeout(() => void refreshAll(), 1600);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Generation failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function scheduleNext(id: string) {
-    setBusy(true);
+    const key = `clip:${id}:schedule`;
     try {
-      await apiPost("schedule-next", {candidate_id: id, platforms: publishSelection});
+      await runAction(key, "Scheduling next slot...", () => apiPost("schedule-next", {candidate_id: id, platforms: publishSelection}), "Clip scheduled");
       setStatus("Clip scheduled in next open slot");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Schedule failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function updateSchedulePlatforms(scheduleId: string, platforms: string[]) {
-    setBusy(true);
+    const key = `schedule:${scheduleId}:platforms`;
     try {
-      await apiPost("schedule-platforms", {schedule_id: scheduleId, platforms});
+      await runAction(key, "Updating publish targets...", () => apiPost("schedule-platforms", {schedule_id: scheduleId, platforms}), "Publish targets updated");
       setStatus("Publish targets updated");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Platform update failed");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -502,47 +490,45 @@ export function MediaStudioApp() {
   }
 
   async function unscheduleClip(id: string) {
-    setBusy(true);
+    const key = `clip:${id}:unschedule`;
     try {
-      await apiPost("unschedule", {candidate_id: id});
+      await runAction(key, "Returning clip to approved queue...", () => apiPost("unschedule", {candidate_id: id}), "Clip unscheduled");
       setStatus("Clip returned to approved queue");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unschedule failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function deleteClip(id: string) {
     const ok = window.confirm("Delete this clip and local artifacts?");
     if (!ok) return;
-    setBusy(true);
+    const key = `clip:${id}:delete`;
     try {
-      await apiPost("delete-candidate", {candidate_id: id, delete_artifacts: true});
-      setClips((items) => items.filter((clip) => clip.id !== id));
-      if (selectedId === id) setSelectedId("");
+      await runAction(key, "Deleting clip artifacts...", async () => {
+        await apiPost("delete-candidate", {candidate_id: id, delete_artifacts: true});
+        setClips((items) => items.filter((clip) => clip.id !== id));
+        if (selectedId === id) setSelectedId("");
+      }, "Clip deleted");
       setStatus("Clip deleted");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Delete failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function clearQueue() {
     const ok = window.confirm("Delete all clips and local artifacts from the review queue?");
     if (!ok) return;
-    setBusy(true);
+    const key = "queue:clear";
     try {
-      await apiPost("clear-review", {confirm: "DELETE", delete_artifacts: true});
-      setClips([]);
-      setSelectedId("");
+      await runAction(key, "Clearing review queue...", async () => {
+        await apiPost("clear-review", {confirm: "DELETE", delete_artifacts: true});
+        setClips([]);
+        setSelectedId("");
+      }, "Queue cleared");
       setStatus("Queue cleared");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Clear failed");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -618,16 +604,15 @@ export function MediaStudioApp() {
   }
 
   async function publishDueNow(dryRun = false) {
-    setBusy(true);
-    setStatus(dryRun ? "Checking due publish queue..." : "Publishing due schedule...");
+    const key = dryRun ? "publish:due:dry" : "publish:due:live";
     try {
-      const result = await apiPost<{count: number; processed?: unknown[]}>("publish-due", {limit: 5, dry_run: dryRun});
+      setStatus(dryRun ? "Checking due publish queue..." : "Publishing due schedule...");
+      const result = await runAction(key, dryRun ? "Checking due publish queue..." : "Publishing due schedule...", () => apiPost<{count: number; processed?: unknown[]}>("publish-due", {limit: 5, dry_run: dryRun}));
       setStatus(`${dryRun ? "Checked" : "Processed"} ${result.count || 0} due publish item(s)`);
+      pushToast(`${dryRun ? "Checked" : "Processed"} ${result.count || 0} due publish item(s)`, "success");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Publish due failed");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -649,29 +634,27 @@ export function MediaStudioApp() {
       setStatus("No caption lines to save");
       return;
     }
-    setBusy(true);
+    const key = `caption:${id}:save`;
     try {
-      await apiPost("caption-corrections", {candidate_id: id, captions});
+      await runAction(key, "Saving caption edits...", () => apiPost("caption-corrections", {candidate_id: id, captions}), "Caption edits saved");
       setStatus("Caption edits saved. Re-render this clip to update the video.");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Caption save failed");
-    } finally {
-      setBusy(false);
     }
   }
 
   async function rerenderClip(id: string) {
-    setBusy(true);
+    const key = `clip:${id}:rerender`;
     setRerendering((items) => ({...items, [id]: {status: "running", message: "Queued for re-render", progress: 2}}));
     setStatus("Re-rendering selected clip...");
     try {
-      const job = await apiPost<RerenderJob>("rerender", {
+      const job = await runAction(key, "Starting re-render job...", () => apiPost<RerenderJob>("rerender", {
         candidate_id: id,
         renderer: "remotion",
         quality: "production",
         style: generateConfig.brandTemplate || defaultTemplate,
-      });
+      }), "Re-render job started");
       setRerenderJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
       setStatus("Re-render job started");
       window.setTimeout(() => void refreshAll(), 900);
@@ -685,8 +668,6 @@ export function MediaStudioApp() {
         },
       }));
       setStatus(error instanceof Error ? error.message : "Re-render failed");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -813,6 +794,7 @@ export function MediaStudioApp() {
               selected={selected}
               credentials={credentials}
               schedule={schedule}
+              actionStates={actionStates}
               onSection={setSection}
               onApprove={approveClip}
               onPublish={() => publishDueNow(true)}
@@ -826,7 +808,7 @@ export function MediaStudioApp() {
               durationPresets={durationPresets}
               genres={genres}
               jobs={jobs}
-              busy={busy}
+              actionState={actionStates["generate:start"]}
               setConfig={setGenerateConfig}
               command={command}
               onGenerate={startGeneration}
@@ -841,6 +823,7 @@ export function MediaStudioApp() {
               rerendering={rerenderState}
               filter={filter}
               reviewFilters={reviewFilters}
+              actionStates={actionStates}
               setFilter={setFilter}
               setSelectedId={setSelectedId}
               captionDraft={selectedCaptionDraft}
@@ -865,6 +848,7 @@ export function MediaStudioApp() {
               approved={clips.filter((clip) => clip.status === "approved")}
               targets={activeTargets}
               selectedPlatforms={publishSelection}
+              actionStates={actionStates}
               onToggleDefaultPlatform={togglePublishSelection}
               onSchedule={scheduleNext}
               onUnschedule={unscheduleClip}
@@ -895,6 +879,7 @@ export function MediaStudioApp() {
               style={style}
               templates={templates}
               autonomy={autonomy}
+              actionStates={actionStates}
               command={command}
               defaultTemplate={defaultTemplate}
               onCopy={() => copyText(command, "Production command copied")}
@@ -938,6 +923,7 @@ function DashboardSection({
   selected,
   credentials,
   schedule,
+  actionStates,
   onSection,
   onApprove,
   onPublish,
@@ -946,6 +932,7 @@ function DashboardSection({
   selected?: ClipCandidate;
   credentials: CredentialStatus | null;
   schedule: ScheduledPost[];
+  actionStates: Record<string, ActionUiState>;
   onSection: (section: Section) => void;
   onApprove: (id: string) => void;
   onPublish: () => void;
@@ -981,7 +968,7 @@ function DashboardSection({
             <button onClick={() => onSection("review")} className="text-sm font-medium text-cyan">Open Review Studio</button>
           </div>
           <div className="grid gap-2">
-            {top.length ? top.map((clip) => <CompactClip key={clip.id} clip={clip} onApprove={onApprove} />) : <EmptyState text="No clips yet. Start with Generate to produce a new batch." />}
+            {top.length ? top.map((clip) => <CompactClip key={clip.id} clip={clip} actionState={actionStates[`clip:${clip.id}:approve`]} onApprove={onApprove} />) : <EmptyState text="No clips yet. Start with Generate to produce a new batch." />}
           </div>
         </div>
       </div>
@@ -1016,7 +1003,7 @@ function GenerateSection({
   durationPresets,
   genres,
   jobs,
-  busy,
+  actionState,
   setConfig,
   command,
   onGenerate,
@@ -1027,13 +1014,14 @@ function GenerateSection({
   durationPresets: DurationPreset[];
   genres: GenreOption[];
   jobs: GenerationJob[];
-  busy: boolean;
+  actionState?: ActionUiState;
   setConfig: (value: GenerateConfig) => void;
   command: string;
   onGenerate: () => void;
   onCopy: () => void;
 }) {
   const latest = jobs[0];
+  const isStarting = actionState?.status === "running";
   const update = (patch: Partial<GenerateConfig>) => setConfig({...config, ...patch});
   const presetOptions = durationPresets.length ? durationPresets : [{id: "auto", label: "Auto (0-3 min)", detail: "20-180s", range_label: "0-3 min", best_for: "General use", min_ms: 20_000, target_ms: 90_000, max_ms: 180_000, intent: "Automatic duration"}];
   const genreOptions = genres.length ? genres : [
@@ -1122,10 +1110,11 @@ function GenerateSection({
             <SelectTile label="LLM" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
             <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
           </div>
-          <button disabled={busy || !config.sourceUrl.trim()} onClick={onGenerate} className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-            Generate batch
+          <button disabled={isStarting || !config.sourceUrl.trim()} onClick={onGenerate} className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
+            {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            {isStarting ? "Starting batch..." : "Generate batch"}
           </button>
+          {actionState ? <InlineActionStatus state={actionState} /> : null}
         </div>
       </div>
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
@@ -1172,6 +1161,7 @@ function CalendarSection({
   approved,
   targets,
   selectedPlatforms,
+  actionStates,
   onToggleDefaultPlatform,
   onSchedule,
   onUnschedule,
@@ -1183,6 +1173,7 @@ function CalendarSection({
   approved: ClipCandidate[];
   targets: PublishTarget[];
   selectedPlatforms: string[];
+  actionStates: Record<string, ActionUiState>;
   onToggleDefaultPlatform: (platform: string) => void;
   onSchedule: (id: string) => void;
   onUnschedule: (id: string) => void;
@@ -1196,6 +1187,9 @@ function CalendarSection({
     if (!next.length) return;
     onUpdateSchedulePlatforms(item.id, next);
   }
+  const dryRunState = actionStates["publish:due:dry"];
+  const publishDueState = actionStates["publish:due:live"];
+  const dueBusy = dryRunState?.status === "running" || publishDueState?.status === "running";
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -1206,10 +1200,19 @@ function CalendarSection({
             <p className="mt-1 text-sm text-zinc-400">Scheduled publish queue for approved clips. Default cadence is 2 posts per day at 09:00 and 19:30 WIB.</p>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
-            <button onClick={onDryRunDue} className="rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300">Dry-run due</button>
-            <button onClick={onPublishDue} className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink">Publish due now</button>
+            <button disabled={dueBusy} onClick={onDryRunDue} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
+              {dryRunState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Dry-run due
+            </button>
+            <button disabled={dueBusy} onClick={onPublishDue} className="inline-flex items-center justify-center gap-2 rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
+              {publishDueState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {publishDueState?.status === "running" ? "Publishing..." : "Publish due now"}
+            </button>
           </div>
         </div>
+        {dryRunState?.status === "running" || publishDueState?.status === "running" ? (
+          <div className="mb-4"><InlineActionStatus state={publishDueState?.status === "running" ? publishDueState : dryRunState} /></div>
+        ) : null}
         <div className="grid gap-3">
           {schedule.length ? schedule.map((item) => (
             <div key={item.id} className="grid gap-3 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4 md:grid-cols-[160px_minmax(0,1fr)_140px] md:items-center">
@@ -1228,23 +1231,32 @@ function CalendarSection({
                     const platform = target.platform;
                     const enabled = item.platforms.includes(platform);
                     const result = item.platform_results?.[platform];
+                    const platformAction = actionStates[`schedule:${item.id}:platforms`];
                     const platformStatus = result?.status || (item.status === "published" ? "published" : "pending");
                     return (
                       <button
                         key={platform}
                         onClick={() => toggleSchedulePlatform(item, platform)}
+                        disabled={platformAction?.status === "running"}
                         className={`rounded-full border px-2.5 py-1 text-left text-xs font-semibold transition ${
                           enabled ? statusTone(platformStatus) : "border-white/[0.08] bg-white/[0.03] text-zinc-500"
-                        }`}
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
                       >
-                        {platformLabel(platform)} · {enabled ? cleanPublishStatus(platformStatus) : "Off"}
+                        {platformAction?.status === "running" ? "Updating..." : `${platformLabel(platform)} · ${enabled ? cleanPublishStatus(platformStatus) : "Off"}`}
                       </button>
                     );
                   })}
                 </div>
                 {item.last_error ? <p className="mt-2 line-clamp-2 text-xs text-danger">{item.last_error}</p> : null}
               </div>
-              <button onClick={() => onUnschedule(item.candidate_id)} className="rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300">Unschedule</button>
+              <button
+                disabled={actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running"}
+                onClick={() => onUnschedule(item.candidate_id)}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" ? "Removing..." : "Unschedule"}
+              </button>
             </div>
           )) : <EmptyState text="No scheduled posts yet. Approve clips first, then assign the next open slot." />}
         </div>
@@ -1258,16 +1270,18 @@ function CalendarSection({
           <div className="mt-3 grid gap-2">
             {targets.map((target) => {
               const active = selectedPlatforms.includes(target.platform);
+              const targetState = actionStates[`target:${target.platform}`];
               return (
                 <button
                   key={target.platform}
                   onClick={() => onToggleDefaultPlatform(target.platform)}
+                  disabled={targetState?.status === "running"}
                   className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition ${
                     active ? "border-cyan/[0.45] bg-teal/[0.14] text-cyan" : "border-white/[0.08] bg-black/20 text-zinc-500"
-                  }`}
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
                 >
                   <span>{platformLabel(target.platform)}</span>
-                  <span>{active ? "On" : "Off"}</span>
+                  <span>{targetState?.status === "running" ? "..." : active ? "On" : "Off"}</span>
                 </button>
               );
             })}
@@ -1278,7 +1292,14 @@ function CalendarSection({
             <div key={clip.id} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
               <p className="font-semibold text-white">{clip.title_hook}</p>
               <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
-              <button onClick={() => onSchedule(clip.id)} className="mt-4 h-10 w-full rounded-full bg-cyan text-sm font-semibold text-ink">Schedule next slot</button>
+              <button
+                disabled={actionStates[`clip:${clip.id}:schedule`]?.status === "running"}
+                onClick={() => onSchedule(clip.id)}
+                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-cyan text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? "Scheduling..." : "Schedule next slot"}
+              </button>
             </div>
           )) : <EmptyState text="No approved clips waiting for schedule." />}
         </div>
@@ -1499,6 +1520,29 @@ function MenuAction({children, danger, onClick}: {children: ReactNode; danger?: 
   );
 }
 
+function InlineActionStatus({state}: {state?: ActionUiState}) {
+  if (!state) return null;
+  const tone =
+    state.status === "failed"
+      ? "border-danger/[0.26] bg-danger/[0.10] text-danger"
+      : state.status === "done"
+        ? "border-teal/[0.26] bg-teal/[0.10] text-teal"
+        : "border-cyan/[0.26] bg-teal/[0.10] text-cyan";
+  return (
+    <div className={`rounded-2xl border px-3 py-2 text-xs font-medium ${tone}`}>
+      <div className="flex items-center gap-2">
+        {state.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+        <span>{state.message}</span>
+      </div>
+      {state.status === "running" ? (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+          <div className="h-full w-2/3 animate-pulse rounded-full bg-cyan" />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ToastStack({toasts, onDismiss}: {toasts: ToastMessage[]; onDismiss: (id: string) => void}) {
   if (!toasts.length) return null;
   return (
@@ -1522,7 +1566,8 @@ function ToastStack({toasts, onDismiss}: {toasts: ToastMessage[]; onDismiss: (id
   );
 }
 
-function CompactClip({clip, onApprove}: {clip: ClipCandidate; onApprove: (id: string) => void}) {
+function CompactClip({clip, actionState, onApprove}: {clip: ClipCandidate; actionState?: ActionUiState; onApprove: (id: string) => void}) {
+  const isApproving = actionState?.status === "running";
   return (
     <div className="grid gap-3 rounded-[18px] border border-white/[0.08] bg-surface-raised px-4 py-3 md:grid-cols-[minmax(0,1fr)_58px_auto] md:items-center">
       <div className="min-w-0">
@@ -1530,7 +1575,10 @@ function CompactClip({clip, onApprove}: {clip: ClipCandidate; onApprove: (id: st
         <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
       </div>
       <ScoreBubble value={clip.score?.overall_score} />
-      <button onClick={() => onApprove(clip.id)} className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal">Approve</button>
+      <button disabled={isApproving} onClick={() => onApprove(clip.id)} className="inline-flex items-center justify-center gap-1.5 rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-50">
+        {isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+        {isApproving ? "Approving..." : "Approve"}
+      </button>
     </div>
   );
 }
