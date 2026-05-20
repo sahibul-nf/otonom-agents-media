@@ -91,6 +91,34 @@ function formatPlatformMode(mode?: string) {
   return labels[mode] || mode.replaceAll("_", " ");
 }
 
+function formatClipStatus(status?: string) {
+  if (!status) return "Unknown";
+  const labels: Record<string, string> = {
+    approved: "Approved",
+    completed: "Completed",
+    draft: "Draft",
+    failed: "Failed",
+    held: "Held",
+    needs_caption_fix: "Caption fix",
+    pending_auto_schedule: "Auto queue",
+    published: "Published",
+    ready: "Ready",
+    ready_to_publish: "Ready to publish",
+    rendered: "Rendered",
+    running: "Running",
+    scheduled: "Scheduled",
+  };
+  return labels[status] || status.replaceAll("_", " ");
+}
+
+function canApproveClip(clip: ClipCandidate) {
+  return ["draft", "rendered", "needs_caption_fix", "held", "pending_auto_schedule"].includes(clip.status);
+}
+
+function canScheduleClip(clip: ClipCandidate) {
+  return clip.status === "approved";
+}
+
 function publishActionHint(error?: string) {
   const value = (error || "").toLowerCase();
   if (!value) return "";
@@ -108,7 +136,7 @@ const nav = [
   {id: "generate", label: "Generate", icon: Wand2},
   {id: "review", label: "Review Studio", icon: Clapperboard},
   {id: "calendar", label: "Calendar", icon: CalendarDays},
-  {id: "publish", label: "Publish Center", icon: Send},
+  {id: "publish", label: "Channels", icon: Send},
   {id: "brand", label: "Brand Settings", icon: Settings},
 ] as const;
 
@@ -182,7 +210,6 @@ const reviewFilters = [
   {id: "repair", label: "Repair", hint: "Clips blocked by caption confidence or quality gates before they can be scheduled.", statuses: ["needs_caption_fix"]},
   {id: "scheduled", label: "Scheduled", hint: "Approved clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
   {id: "published", label: "Published", hint: "Clips already sent to a live channel.", statuses: ["published"]},
-  {id: "rejected", label: "Rejected", hint: "Clips intentionally removed from production consideration.", statuses: ["rejected"]},
 ] as const;
 
 function matchesReviewFilter(clip: ClipCandidate, filter: string) {
@@ -192,9 +219,12 @@ function matchesReviewFilter(clip: ClipCandidate, filter: string) {
 }
 
 function primaryReviewAction(clip: ClipCandidate) {
-  if (clip.status === "approved") return "Schedule";
-  if (clip.status === "held" || clip.status === "rejected") return "Restore";
-  return "Approve";
+  if (canScheduleClip(clip)) return "Schedule";
+  if (canApproveClip(clip)) return clip.status === "needs_caption_fix" ? "Approve after fix" : "Approve";
+  if (clip.status === "published") return "Published";
+  if (clip.status === "ready_to_publish") return "Ready";
+  if (clip.status === "scheduled") return "Scheduled";
+  return formatClipStatus(clip.status);
 }
 
 function productionCommand(config: GenerateConfig) {
@@ -417,17 +447,6 @@ export function MediaStudioApp() {
     }
   }
 
-  async function rejectClip(id: string) {
-    const key = `clip:${id}:reject`;
-    try {
-      await runAction(key, "Rejecting clip...", () => apiPost("reject", {candidate_id: id}), "Clip rejected");
-      setStatus("Clip rejected");
-      await refreshAll();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Reject failed");
-    }
-  }
-
   async function updateAutonomyMode(mode: string) {
     if (!autonomy) return;
     const key = `autonomy:${mode}`;
@@ -497,8 +516,7 @@ export function MediaStudioApp() {
     setAction(key, {status: "running", message: nextEnabled ? "Enabling target" : "Disabling target"});
     setPublishSelection((current) => {
       if (current.includes(platform)) {
-        const next = current.filter((item) => item !== platform);
-        return next.length ? next : current;
+        return current.filter((item) => item !== platform);
       }
       return [...current, platform];
     });
@@ -562,20 +580,6 @@ export function MediaStudioApp() {
       setStatus("Queue cleared");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Clear failed");
-    }
-  }
-
-  async function publishSelectedPlatform(platform: string, dryRun: boolean) {
-    if (!selected) return;
-    const key = `publish:${platform}:${selected.id}:${dryRun ? "dry" : "live"}`;
-    const message = dryRun ? `Preparing ${platformLabel(platform)} dry-run...` : `Publishing ${platformLabel(platform)}...`;
-    setStatus(message);
-    try {
-      await runAction(key, message, () => apiPost("publish-live", {candidate_id: selected.id, platform, dry_run: dryRun}), dryRun ? `${platformLabel(platform)} dry-run ready` : `${platformLabel(platform)} publish finished`);
-      setStatus(dryRun ? `${platformLabel(platform)} dry-run ready` : `${platformLabel(platform)} publish requested`);
-      await refreshAll();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Publish failed");
     }
   }
 
@@ -811,11 +815,6 @@ export function MediaStudioApp() {
               <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh
               </button>
-              <button onClick={() => copyText(command, "Production command copied")} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 overflow-hidden rounded-full bg-cyan px-4 text-sm font-semibold text-ink hover:bg-cyan/90 sm:px-5">
-                <Copy className="h-4 w-4 shrink-0" />
-                <span className="hidden sm:inline">Copy command</span>
-                <span className="sm:hidden">Copy</span>
-              </button>
               <StatusPill busy={busy} status={status} />
             </div>
           </div>
@@ -874,7 +873,6 @@ export function MediaStudioApp() {
               onApprove={approveClip}
               onSchedule={scheduleNext}
               onHold={holdClip}
-              onReject={rejectClip}
               onDelete={deleteClip}
               onClear={clearQueue}
               onSaveCaptions={saveCaptionCorrections}
@@ -902,7 +900,6 @@ export function MediaStudioApp() {
             <PublishSection
               targets={activeTargets}
               credentials={credentials}
-              selected={selected}
               attempts={publishAttempts}
               selectedPlatforms={publishSelection}
               actionStates={actionStates}
@@ -910,7 +907,6 @@ export function MediaStudioApp() {
               onTestConnection={testConnection}
               onStartOauth={startOauthConnect}
               onDisconnect={disconnectPlatform}
-              onPublishPlatform={publishSelectedPlatform}
             />
           )}
 
@@ -920,9 +916,7 @@ export function MediaStudioApp() {
               templates={templates}
               autonomy={autonomy}
               actionStates={actionStates}
-              command={command}
               defaultTemplate={defaultTemplate}
-              onCopy={() => copyText(command, "Production command copied")}
               onAutonomyMode={updateAutonomyMode}
               onTemplateSaved={refreshAll}
             />
@@ -1070,7 +1064,7 @@ function DashboardSection({
                   <p className="truncate text-sm font-medium text-zinc-200">{item.title_hook}</p>
                   <p className="mt-1 text-xs text-zinc-500">{formatSchedule(item.scheduled_at)}</p>
                 </div>
-                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
+                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{formatClipStatus(item.status)}</span>
               </div>
             )) : (
               <EmptyState
@@ -1325,7 +1319,7 @@ function CalendarSection({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h4 className="truncate text-base font-semibold text-white">{item.title_hook}</h4>
-                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{formatClipStatus(item.status)}</span>
                 </div>
                 <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{item.viral_reason}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -1404,12 +1398,12 @@ function CalendarSection({
                 <ScoreBubble value={clip.score?.overall_score} />
               </div>
               <button
-                disabled={actionStates[`clip:${clip.id}:schedule`]?.status === "running"}
+                disabled={actionStates[`clip:${clip.id}:schedule`]?.status === "running" || !selectedPlatforms.length}
                 onClick={() => onSchedule(clip.id)}
                 className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-cyan text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? "Scheduling..." : "Schedule next slot"}
+                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? "Scheduling..." : selectedPlatforms.length ? "Schedule next slot" : "Turn on a target first"}
               </button>
             </div>
           )) : <EmptyState title="No approved clips" text="Review and approve a rendered clip before scheduling." />}
@@ -1422,7 +1416,6 @@ function CalendarSection({
 function PublishSection({
   targets,
   credentials,
-  selected,
   attempts,
   selectedPlatforms,
   actionStates,
@@ -1430,11 +1423,9 @@ function PublishSection({
   onTestConnection,
   onStartOauth,
   onDisconnect,
-  onPublishPlatform,
 }: {
   targets: PublishTarget[];
   credentials: CredentialStatus | null;
-  selected?: ClipCandidate;
   attempts: PublishAttempt[];
   selectedPlatforms: string[];
   actionStates: Record<string, ActionUiState>;
@@ -1442,23 +1433,18 @@ function PublishSection({
   onTestConnection: (platform: string) => void;
   onStartOauth: (platform: string) => void;
   onDisconnect: (platform: string) => void;
-  onPublishPlatform: (platform: string, dryRun: boolean) => void;
 }) {
-  const selectedAttempts = selected ? attempts.filter((attempt) => attempt.candidate_id === selected.id) : [];
   const latestByPlatform = new Map<string, PublishAttempt>();
-  for (const attempt of selectedAttempts) {
+  for (const attempt of attempts) {
     if (!latestByPlatform.has(attempt.platform)) latestByPlatform.set(attempt.platform, attempt);
   }
-  const latestSelectedAttempts = targets
-    .map((target) => latestByPlatform.get(target.platform))
-    .filter((attempt): attempt is PublishAttempt => Boolean(attempt));
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <h3 className="text-xl font-semibold text-white">Publish Center</h3>
-            <p className="mt-1 text-sm text-zinc-400">Connect accounts, choose target platforms, and publish the selected approved clip.</p>
+            <h3 className="text-xl font-semibold text-white">Channels</h3>
+            <p className="mt-1 text-sm text-zinc-400">Connect social accounts and choose default publish targets. Actual publishing happens from Calendar or clip actions.</p>
           </div>
           <div className="rounded-full border border-cyan/[0.25] bg-teal/[0.10] px-4 py-2 text-xs font-semibold text-cyan">
             {targets.filter((target) => credentials?.platforms[target.platform]?.ready).length}/{targets.length} connected
@@ -1469,13 +1455,10 @@ function PublishSection({
             const ready = credentials?.platforms[target.platform]?.ready;
             const credential = credentials?.platforms[target.platform];
             const selectedForPublish = selectedPlatforms.includes(target.platform);
-            const latest = latestByPlatform.get(target.platform) || attempts.find((attempt) => attempt.platform === target.platform);
+            const latest = latestByPlatform.get(target.platform);
             const recovery = publishActionHint(latest?.error);
             const supportsOauth = oauthPlatforms.has(target.platform);
-            const selectedRendered = Boolean(selected?.output_path || selected?.render_quality?.output_path);
             const activeAction = [
-              actionStates[`publish:${target.platform}:${selected?.id || ""}:live`],
-              actionStates[`publish:${target.platform}:${selected?.id || ""}:dry`],
               actionStates[`test:${target.platform}`],
               actionStates[`connect:${target.platform}`],
               actionStates[`disconnect:${target.platform}`],
@@ -1494,12 +1477,7 @@ function PublishSection({
                   <SettingTile label="Connection" value={ready ? "Connected" : "Needs setup"} />
                   <SettingTile label="Mode" value={formatPlatformMode(target.mode)} />
                 </div>
-                <PublishReadiness
-                  ready={Boolean(ready)}
-                  selected={Boolean(selected)}
-                  rendered={selectedRendered}
-                  targeted={selectedForPublish}
-                />
+                <ChannelReadiness ready={Boolean(ready)} targeted={selectedForPublish} />
                 {!ready ? (
                   <div className="mt-3 rounded-2xl border border-warning/20 bg-warning/[0.08] p-3 text-xs leading-5 text-warning">
                     Missing: {(credential?.missing_keys || []).join(", ") || "credential"}. Connect via OAuth/token setup before live publishing.
@@ -1518,11 +1496,11 @@ function PublishSection({
                 </div>
                 <div className="mt-4 flex items-center gap-2">
                   <button
-                    disabled={!selected || !ready || !selectedForPublish || !selectedRendered || isBusy}
-                    onClick={() => onPublishPlatform(target.platform, false)}
-                    className="h-10 flex-1 rounded-full bg-cyan text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={isBusy}
+                    onClick={() => onTestConnection(target.platform)}
+                    className="h-10 flex-1 rounded-full border border-cyan/[0.24] bg-teal/[0.08] text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {actionStates[`publish:${target.platform}:${selected?.id || ""}:live`]?.status === "running" ? "Publishing..." : "Publish now"}
+                    {actionStates[`test:${target.platform}`]?.status === "running" ? "Testing..." : "Test connection"}
                   </button>
                   <PlatformActionMenu
                     disabled={isBusy}
@@ -1532,7 +1510,6 @@ function PublishSection({
                     onTestConnection={onTestConnection}
                     onStartOauth={onStartOauth}
                     onDisconnect={onDisconnect}
-                    onDryRun={() => onPublishPlatform(target.platform, true)}
                   />
                 </div>
               </div>
@@ -1541,32 +1518,30 @@ function PublishSection({
         </div>
       </div>
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-xl font-semibold text-white">Selected publish item</h3>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">{selected ? selected.title_hook : "Select or generate a clip before publishing."}</p>
+        <h3 className="text-xl font-semibold text-white">Channel readiness</h3>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">Use this page to connect accounts. Schedule and publish controls live next to clips, where the content context is visible.</p>
         <div className="mt-5 grid gap-3">
           <div className="rounded-[22px] border border-cyan/[0.18] bg-teal/[0.08] p-4 text-sm leading-6 text-zinc-300">
-            Scheduled items publish through the PM2 worker. Manual publish is available only when a clip is selected, rendered, connected, and target-enabled.
+            Scheduled items publish through the PM2 worker. For a one-off publish, open Calendar and run the due queue for the selected scheduled clip.
           </div>
-          {selected ? (
-            <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-              <p className="text-xs uppercase tracking-wide text-zinc-500">Ready targets</p>
-              <div className="mt-3 grid gap-2">
-                {targets.map((target) => {
-                  const ready = credentials?.platforms[target.platform]?.ready;
-                  const enabled = selectedPlatforms.includes(target.platform);
-                  return (
-                    <ReadinessLine
-                      key={target.platform}
-                      ready={Boolean(ready && enabled)}
-                      label={platformLabel(target.platform)}
-                      detail={!enabled ? "Target off" : ready ? "Ready" : "Reconnect"}
-                    />
-                  );
-                })}
-              </div>
+          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+            <p className="text-xs uppercase tracking-wide text-zinc-500">Default targets</p>
+            <div className="mt-3 grid gap-2">
+              {targets.map((target) => {
+                const ready = credentials?.platforms[target.platform]?.ready;
+                const enabled = selectedPlatforms.includes(target.platform);
+                return (
+                  <ReadinessLine
+                    key={target.platform}
+                    ready={Boolean(ready && enabled)}
+                    label={platformLabel(target.platform)}
+                    detail={!enabled ? "Target off" : ready ? "Ready" : "Reconnect"}
+                  />
+                );
+              })}
             </div>
-          ) : null}
-          {latestSelectedAttempts.length ? latestSelectedAttempts.map((attempt) => (
+          </div>
+          {Array.from(latestByPlatform.values()).length ? Array.from(latestByPlatform.values()).map((attempt) => (
             <div key={attempt.id} className="rounded-[18px] border border-white/[0.08] bg-canvas-deep p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-white">{platformLabel(attempt.platform)}</p>
@@ -1574,7 +1549,7 @@ function PublishSection({
               </div>
               {attempt.error ? <p className="mt-2 text-xs leading-5 text-danger">{publishActionHint(attempt.error)}</p> : null}
             </div>
-          )) : <EmptyState title="No attempts yet" text="Run a dry-run or publish one selected platform to record the first attempt." />}
+          )) : <EmptyState title="No channel activity yet" text="Connection tests and scheduled publishing attempts will appear here." />}
         </div>
       </div>
     </section>
@@ -1601,12 +1576,12 @@ function SwitchControl({checked, disabled, label, onChange}: {checked: boolean; 
   );
 }
 
-function PublishReadiness({ready, selected, rendered, targeted}: {ready: boolean; selected: boolean; rendered: boolean; targeted: boolean}) {
+function ChannelReadiness({ready, targeted}: {ready: boolean; targeted: boolean}) {
   return (
     <div className="mt-3 grid gap-1.5 rounded-2xl border border-white/[0.08] bg-black/15 p-3">
       <ReadinessLine ready={ready} label="Account" detail={ready ? "Connected" : "Connect"} />
-      <ReadinessLine ready={targeted} label="Target" detail={targeted ? "On" : "Off"} />
-      <ReadinessLine ready={selected && rendered} label="Clip" detail={!selected ? "Select" : rendered ? "Rendered" : "Render"} />
+      <ReadinessLine ready={targeted} label="Default target" detail={targeted ? "On" : "Off"} />
+      <ReadinessLine ready label="Publish controls" detail="Calendar" />
     </div>
   );
 }
@@ -1619,7 +1594,6 @@ function PlatformActionMenu({
   onTestConnection,
   onStartOauth,
   onDisconnect,
-  onDryRun,
 }: {
   disabled?: boolean;
   ready: boolean;
@@ -1628,7 +1602,6 @@ function PlatformActionMenu({
   onTestConnection: (platform: string) => void;
   onStartOauth: (platform: string) => void;
   onDisconnect: (platform: string) => void;
-  onDryRun: () => void;
 }) {
   return (
     <details className="group relative">
@@ -1643,7 +1616,6 @@ function PlatformActionMenu({
       <div className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-2xl border border-white/[0.10] bg-canvas-deep p-1 shadow-2xl">
         <MenuAction onClick={() => onTestConnection(platform)}>Test connection</MenuAction>
         <MenuAction onClick={() => (supportsOauth ? onStartOauth(platform) : onTestConnection(platform))}>{ready ? "Reconnect" : "Connect"}</MenuAction>
-        <MenuAction onClick={onDryRun}>Create dry-run</MenuAction>
         <MenuAction danger onClick={() => onDisconnect(platform)}>Disconnect</MenuAction>
       </div>
     </details>
@@ -1776,6 +1748,7 @@ function ConfirmDialog({dialog, onClose}: {dialog: ConfirmDialogState | null; on
 
 function CompactClip({clip, actionState, onApprove}: {clip: ClipCandidate; actionState?: ActionUiState; onApprove: (id: string) => void}) {
   const isApproving = actionState?.status === "running";
+  const canApprove = canApproveClip(clip);
   return (
     <div className="grid gap-3 rounded-[18px] border border-white/[0.08] bg-surface-raised px-4 py-3 md:grid-cols-[minmax(0,1fr)_58px_auto] md:items-center">
       <div className="min-w-0">
@@ -1783,9 +1756,9 @@ function CompactClip({clip, actionState, onApprove}: {clip: ClipCandidate; actio
         <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
       </div>
       <ScoreBubble value={clip.score?.overall_score} />
-      <button disabled={isApproving} onClick={() => onApprove(clip.id)} className="inline-flex items-center justify-center gap-1.5 rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-50">
+      <button disabled={isApproving || !canApprove} onClick={() => canApprove && onApprove(clip.id)} className="inline-flex items-center justify-center gap-1.5 rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-50">
         {isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-        {isApproving ? "Approving..." : "Approve"}
+        {isApproving ? "Approving..." : canApprove ? "Approve" : formatClipStatus(clip.status)}
       </button>
     </div>
   );

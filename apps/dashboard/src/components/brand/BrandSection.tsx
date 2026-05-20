@@ -1,6 +1,6 @@
 "use client";
 
-import {useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {CheckCircle2, Loader2} from "lucide-react";
 import {apiGet, apiPost, AutonomySettings, BrandTemplate, StyleProfile} from "@/lib/media-api";
 
@@ -11,12 +11,21 @@ type Props = {
   templates: BrandTemplate[];
   autonomy: AutonomySettings | null;
   actionStates: Record<string, ActionUiState>;
-  command: string;
   defaultTemplate: string;
-  onCopy: () => void;
   onAutonomyMode: (mode: string) => void;
   onTemplateSaved: () => void;
 };
+
+const fontOptions = [
+  {value: "Sora", label: "Sora", note: "Brand default"},
+  {value: "Inter", label: "Inter", note: "Clean UI sans"},
+  {value: "Montserrat", label: "Montserrat", note: "Bold editorial"},
+  {value: "Poppins", label: "Poppins", note: "Rounded social captions"},
+  {value: "Roboto", label: "Roboto", note: "Android/system friendly"},
+  {value: "Arial", label: "Arial", note: "Universal fallback"},
+  {value: "system-ui", label: "System UI", note: "Device native"},
+  {value: "__custom", label: "Custom font", note: "Advanced"},
+];
 
 function hexFromColor(value: unknown, fallback = "#000000") {
   const text = String(value || "").trim();
@@ -36,9 +45,7 @@ export function BrandSection({
   templates,
   autonomy,
   actionStates,
-  command,
   defaultTemplate,
-  onCopy,
   onAutonomyMode,
   onTemplateSaved,
 }: Props) {
@@ -61,6 +68,34 @@ export function BrandSection({
   const [saveState, setSaveState] = useState("Ready");
   const [templateBusy, setTemplateBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [fontAvailability, setFontAvailability] = useState<"checking" | "available" | "fallback">("checking");
+  const selectedFontOption = useMemo(() => fontOptions.some((font) => font.value === editor.fontFamily) ? editor.fontFamily : "__custom", [editor.fontFamily]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkFont() {
+      setFontAvailability("checking");
+      if (editor.fontFamily === "system-ui") {
+        setFontAvailability("available");
+        return;
+      }
+      const fonts = document.fonts;
+      if (!fonts?.check) {
+        setFontAvailability("fallback");
+        return;
+      }
+      try {
+        await fonts.ready;
+        if (!cancelled) setFontAvailability(fonts.check(`16px "${editor.fontFamily}"`) ? "available" : "fallback");
+      } catch {
+        if (!cancelled) setFontAvailability("fallback");
+      }
+    }
+    void checkFont();
+    return () => {
+      cancelled = true;
+    };
+  }, [editor.fontFamily]);
 
   const updateEditor = (patch: Partial<typeof editor>) => setEditor((current) => ({...current, ...patch}));
   const stylePayload: StyleProfile = {
@@ -133,7 +168,13 @@ export function BrandSection({
             <input value={label} onChange={(event) => setLabel(event.target.value)} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 text-sm text-zinc-200 outline-none focus:border-cyan/[0.35]" />
           </label>
           <div className="grid gap-3 md:grid-cols-2">
-            <TextField label="Font family" value={editor.fontFamily} onChange={(value) => updateEditor({fontFamily: value})} />
+            <FontField
+              value={editor.fontFamily}
+              selectedOption={selectedFontOption}
+              availability={fontAvailability}
+              onSelect={(value) => updateEditor({fontFamily: value === "__custom" ? editor.fontFamily : value})}
+              onCustom={(value) => updateEditor({fontFamily: value})}
+            />
             <NumberField label="Font size" value={editor.fontSize} min={28} max={76} onChange={(value) => updateEditor({fontSize: value})} />
             <ColorField label="Text color" value={editor.textColor} onChange={(value) => updateEditor({textColor: value})} />
             <ColorField label="Highlight" value={editor.highlightColor} onChange={(value) => updateEditor({highlightColor: value})} />
@@ -227,13 +268,6 @@ export function BrandSection({
             </div>
           </div>
         </div>
-        <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h4 className="font-semibold text-white">Run command</h4>
-            <button onClick={onCopy} className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink">Copy</button>
-          </div>
-          <pre className="max-h-[180px] overflow-auto rounded-[18px] bg-black/30 p-4 text-[11px] leading-5 text-zinc-400">{command}</pre>
-        </div>
       </div>
     </section>
   );
@@ -257,6 +291,48 @@ function TextField({label, value, onChange}: {label: string; value: string; onCh
       {label}
       <input value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
     </label>
+  );
+}
+
+function FontField({
+  value,
+  selectedOption,
+  availability,
+  onSelect,
+  onCustom,
+}: {
+  value: string;
+  selectedOption: string;
+  availability: "checking" | "available" | "fallback";
+  onSelect: (value: string) => void;
+  onCustom: (value: string) => void;
+}) {
+  const availabilityLabel =
+    availability === "checking" ? "Checking font..." : availability === "available" ? "Available on this device" : "Will use renderer/browser fallback";
+  return (
+    <div className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      Font family
+      <select
+        value={selectedOption}
+        onChange={(event) => onSelect(event.target.value)}
+        className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
+      >
+        {fontOptions.map((font) => (
+          <option key={font.value} value={font.value}>{font.label} - {font.note}</option>
+        ))}
+      </select>
+      {selectedOption === "__custom" ? (
+        <input
+          value={value}
+          onChange={(event) => onCustom(event.target.value)}
+          placeholder="Exact installed font name"
+          className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
+        />
+      ) : null}
+      <span className={availability === "available" ? "text-cyan" : availability === "checking" ? "text-zinc-500" : "text-warning"}>
+        {availabilityLabel}
+      </span>
+    </div>
   );
 }
 

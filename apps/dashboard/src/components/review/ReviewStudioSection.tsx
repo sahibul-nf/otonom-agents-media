@@ -32,7 +32,6 @@ type Props = {
   onApprove: (id: string) => void;
   onSchedule: (id: string) => void;
   onHold: (id: string) => void;
-  onReject: (id: string) => void;
   onDelete: (id: string) => void;
   onClear: () => void;
   onSaveCaptions: (id: string, draft: string) => void;
@@ -69,7 +68,6 @@ export function ReviewStudioSection({
   onApprove,
   onSchedule,
   onHold,
-  onReject,
   onDelete,
   onClear,
   onSaveCaptions,
@@ -81,6 +79,28 @@ export function ReviewStudioSection({
   const rowMenuRef = useRef<HTMLDivElement>(null);
   const activeFilter = reviewFilters.find((item) => item.id === filter) || reviewFilters[0];
   const clearState = actionStates["queue:clear"];
+
+  function formatStatus(status?: string) {
+    const labels: Record<string, string> = {
+      approved: "Approved",
+      completed: "Completed",
+      draft: "Draft",
+      failed: "Failed",
+      held: "Held",
+      needs_caption_fix: "Caption fix",
+      pending_auto_schedule: "Auto queue",
+      published: "Published",
+      ready_to_publish: "Ready to publish",
+      rendered: "Rendered",
+      running: "Running",
+      scheduled: "Scheduled",
+    };
+    return labels[status || ""] || String(status || "Unknown").replaceAll("_", " ");
+  }
+
+  function canRunPrimaryAction(clip: ClipCandidate) {
+    return ["draft", "rendered", "needs_caption_fix", "held", "pending_auto_schedule", "approved"].includes(clip.status);
+  }
 
   useEffect(() => {
     function closeMenus(event: MouseEvent) {
@@ -159,7 +179,7 @@ export function ReviewStudioSection({
             const renderState = rerendering[clip.id];
             const primaryKey = clip.status === "approved" ? `clip:${clip.id}:schedule` : `clip:${clip.id}:approve`;
             const primaryState = actionStates[primaryKey];
-            const rowAction = primaryState || actionStates[`clip:${clip.id}:hold`] || actionStates[`clip:${clip.id}:reject`] || actionStates[`clip:${clip.id}:delete`] || actionStates[`clip:${clip.id}:rerender`];
+            const rowAction = primaryState || actionStates[`clip:${clip.id}:hold`] || actionStates[`clip:${clip.id}:delete`] || actionStates[`clip:${clip.id}:rerender`];
             const rowBusy = rowAction?.status === "running" || renderState?.status === "running";
             const warnings = clipWarnings(clip);
             return (
@@ -180,8 +200,8 @@ export function ReviewStudioSection({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="truncate text-base font-semibold text-white">{clip.title_hook}</h4>
-                    {clip.status !== "draft" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(clip.status)}`}>{clip.status}</span> : null}
-                    {renderState ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(renderState.status === "running" ? "running" : renderState.status === "failed" ? "failed" : "completed")}`}>{renderState.status === "running" ? "rendering" : renderState.status}</span> : null}
+                    {clip.status !== "draft" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(clip.status)}`}>{formatStatus(clip.status)}</span> : null}
+                    {renderState ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(renderState.status === "running" ? "running" : renderState.status === "failed" ? "failed" : "completed")}`}>{renderState.status === "running" ? "Rendering" : formatStatus(renderState.status)}</span> : null}
                     {rowAction && renderState?.status !== "running" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(rowAction.status === "running" ? "running" : rowAction.status)}`}>{rowAction.message}</span> : null}
                   </div>
                   <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{rowAction?.status === "running" ? rowAction.message : renderState?.message || clip.viral_reason || "No curation reason yet."}</p>
@@ -231,10 +251,11 @@ export function ReviewStudioSection({
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
+                        if (!canRunPrimaryAction(clip)) return;
                         if (clip.status === "approved") onSchedule(clip.id);
                         else onApprove(clip.id);
                       }}
-                      disabled={rowBusy}
+                      disabled={rowBusy || !canRunPrimaryAction(clip)}
                       className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {primaryState?.status === "running" ? (
@@ -263,8 +284,11 @@ export function ReviewStudioSection({
                           <button type="button" onClick={() => { setRowMenuId(""); onHold(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-warning hover:bg-warning/[0.10]">Hold</button>
                         ) : null}
                         <button type="button" onClick={() => { setRowMenuId(""); onRerender(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white">Re-render</button>
-                        {clip.status !== "rejected" ? (
-                          <button type="button" onClick={() => { setRowMenuId(""); onReject(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-danger hover:bg-danger/[0.10]">Reject</button>
+                        {clip.status === "scheduled" || clip.status === "ready_to_publish" ? (
+                          <button type="button" disabled className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-500">Managed in Calendar</button>
+                        ) : null}
+                        {clip.status === "published" ? (
+                          <button type="button" disabled className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-500">Already published</button>
                         ) : null}
                         <button type="button" onClick={() => { setRowMenuId(""); onDelete(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-danger hover:bg-danger/[0.10]">Delete</button>
                       </div>
