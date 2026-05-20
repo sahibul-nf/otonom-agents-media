@@ -14,12 +14,14 @@ from media_engine.scoring import score_candidate_text
 from media_engine.transcript_quality import correct_text_with_glossary
 from media_engine.youtube_pipeline import (
     TranscriptEntry,
+    build_candidate,
     choose_nourbit_premium_candidates,
     fetch_youtube_transcript,
     hook_subtitle_for_span,
     opening_strength,
     refine_end_boundary,
     refine_start_boundary,
+    title_for_span,
     _transcript_cache_path,
 )
 
@@ -266,6 +268,82 @@ class V2CurationTests(unittest.TestCase):
 
         self.assertIn("validasi", subtitle)
         self.assertLessEqual(len(subtitle.split()), 14)
+
+    def test_title_fallback_is_derived_from_transcript_not_static(self):
+        span = (
+            "itu adalah apa maksudnya mujahadah sebelum kita disiksa oleh keadaan "
+            "maka siksa diri sebelum disiksa oleh hawa nafsu"
+        )
+
+        title = title_for_span(span)
+        subtitle = hook_subtitle_for_span(span, title)
+
+        self.assertEqual(title, "Mujahadah: Siksa Diri Sebelum Disiksa")
+        self.assertNotEqual(title, "Allah Tidak Pernah Jauh")
+        self.assertNotEqual(subtitle, "Potongan singkat untuk menenangkan hati dan meluruskan arah.")
+        self.assertIn("mujahadah", subtitle.lower())
+
+    def test_unknown_title_fallback_uses_content_phrase(self):
+        span = "cerita guru membimbing murid menjaga adab ketika belajar dan menerima nasihat"
+
+        title = title_for_span(span)
+        subtitle = hook_subtitle_for_span(span, title)
+
+        self.assertEqual(title, "Cerita Guru Membimbing Murid Menjaga Adab Ketika")
+        self.assertIn("cerita guru", subtitle.lower())
+        self.assertNotIn("Allah Tidak Pernah Jauh", title)
+
+    def test_candidate_rejects_static_llm_title_and_reason_when_span_mismatches(self):
+        texts = [
+            "cerita guru membimbing murid menjaga adab ketika belajar",
+            "nasihat ini membuat murid lebih siap menerima ilmu",
+        ]
+        entries = [
+            TranscriptEntry(index * 1000, (index + 1) * 1000, texts[index % len(texts)])
+            for index in range(70)
+        ]
+
+        candidate = choose_nourbit_premium_candidates(
+            "nourbit",
+            "source",
+            entries,
+            {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}},
+            count=1,
+            llm_provider="none",
+            duration_preset="standard_short",
+        )[0]
+
+        self.assertNotEqual(candidate["title_hook"], "Allah Tidak Pernah Jauh")
+        self.assertNotEqual(candidate["viral_reason"], "Potongan singkat untuk menenangkan hati dan meluruskan arah.")
+        self.assertIn("murid", candidate["title_hook"].lower())
+        self.assertEqual(candidate["curation_metadata"]["title_source"], "heuristic_span")
+
+    def test_build_candidate_rejects_irrelevant_llm_static_fallbacks(self):
+        entries = [
+            TranscriptEntry(index * 1000, (index + 1) * 1000, "nasihat guru menjaga adab murid ketika belajar")
+            for index in range(70)
+        ]
+
+        candidate = build_candidate(
+            "nourbit",
+            "source",
+            entries,
+            0,
+            60_000,
+            1,
+            {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}},
+            llm_provider="deepseek",
+            llm_suggestion={
+                "title_hook": "Allah Tidak Pernah Jauh",
+                "hook_subtitle": "Potongan singkat untuk menenangkan hati dan meluruskan arah.",
+                "viral_reason": "Potongan singkat untuk menenangkan hati dan meluruskan arah.",
+            },
+        )
+
+        self.assertNotEqual(candidate["title_hook"], "Allah Tidak Pernah Jauh")
+        self.assertNotEqual(candidate["viral_reason"], "Potongan singkat untuk menenangkan hati dan meluruskan arah.")
+        self.assertEqual(candidate["curation_metadata"]["title_source"], "heuristic_span")
+        self.assertEqual(candidate["curation_metadata"]["reason_source"], "heuristic_span")
 
     def test_cli_parser_supports_v2_commands(self):
         args = build_parser().parse_args(

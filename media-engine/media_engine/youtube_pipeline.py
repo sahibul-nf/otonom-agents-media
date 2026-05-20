@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import uuid
@@ -43,6 +44,98 @@ KEYWORDS = (
     "syukur",
     "nikmat",
 )
+
+TITLE_STOPWORDS = {
+    "ada",
+    "adalah",
+    "agar",
+    "akan",
+    "aku",
+    "anda",
+    "apa",
+    "baik",
+    "bahwa",
+    "bagi",
+    "bisa",
+    "dalam",
+    "dan",
+    "dari",
+    "dengan",
+    "di",
+    "dia",
+    "ini",
+    "itu",
+    "jadi",
+    "jika",
+    "juga",
+    "kalau",
+    "kami",
+    "kan",
+    "karena",
+    "ke",
+    "kita",
+    "lah",
+    "lagi",
+    "maka",
+    "mereka",
+    "nah",
+    "nggak",
+    "tidak",
+    "orang",
+    "pada",
+    "pun",
+    "saat",
+    "saja",
+    "sebagai",
+    "sebab",
+    "secara",
+    "sehingga",
+    "seperti",
+    "supaya",
+    "tapi",
+    "telah",
+    "terus",
+    "untuk",
+    "wa",
+    "ya",
+    "yang",
+}
+
+SPECIAL_TITLE_WORDS = {
+    "allah": "Allah",
+    "rasulullah": "Rasulullah",
+    "dzikir": "Dzikir",
+    "zikir": "Zikir",
+    "qalbu": "Qalbu",
+    "hajar": "Hajar",
+    "aswad": "Aswad",
+}
+
+TITLE_RULES = (
+    (("mujahadah", "siksa"), "Mujahadah: Siksa Diri Sebelum Disiksa"),
+    (("mujahadah",), "Makna Mujahadah yang Sering Terlupa"),
+    (("dompet", "qalbu"), "Isi Dompet Qalbu dengan Nama Allah"),
+    (("hajar", "aswad"), "Hajar Aswad: Tangan Kanan Allah"),
+    (("takut", "netizen"), "Takut Netizen atau Takut Allah?"),
+    (("kesepian",), "Kenapa Hati Masih Kesepian?"),
+    (("bahagia", "allah"), "Bahagia Hanya dengan Allah"),
+    (("mesra", "galak"), "Allah Itu Mesra, Bukan Galak"),
+    (("hati", "tenang"), "Rahasia Hati yang Tenang"),
+    (("zikir",), "Zikir yang Membuat Hati Tenang"),
+    (("dzikir",), "Dzikir yang Membuat Hati Tenang"),
+    (("ibadah",), "Untuk Siapa Ibadah Kita?"),
+    (("amal",), "Untuk Siapa Amal Kita?"),
+    (("allah", "jauh"), "Saat Allah Terasa Jauh"),
+    (("allah", "dekat"), "Allah Selalu Dekat dengan Kita"),
+)
+
+STATIC_FALLBACK_TITLES = {
+    "allah tidak pernah jauh",
+}
+
+STATIC_FALLBACK_SUBTITLES = {
+    "potongan singkat untuk menenangkan hati dan meluruskan arah.",
+}
 
 MIN_PREMIUM_DURATION_MS = 45_000
 TARGET_PREMIUM_DURATION_MS = 95_000
@@ -142,15 +235,41 @@ def fetch_youtube_transcript(url: str, languages: list[str] | None = None, use_c
     return entries
 
 
+def _span_words(span: str) -> list[str]:
+    return re.findall(r"[a-zA-Z0-9']+", span.lower())
+
+
+def _content_words(span: str) -> list[str]:
+    return [word for word in _span_words(span) if word not in TITLE_STOPWORDS and len(word) > 2]
+
+
+def _title_case_words(words: list[str]) -> str:
+    title_words = [SPECIAL_TITLE_WORDS.get(word, word.capitalize()) for word in words]
+    return " ".join(title_words)
+
+
+def _best_title_phrase(span: str, min_words: int = 4, max_words: int = 7) -> str:
+    words = _content_words(span)
+    if not words:
+        return "Inti Nasihat Singkat"
+
+    deduped: list[str] = []
+    for word in words:
+        if not deduped or deduped[-1] != word:
+            deduped.append(word)
+
+    phrase = deduped[:max_words]
+    if len(phrase) < min_words:
+        phrase = (phrase + deduped[max_words : max_words + (min_words - len(phrase))])[:min_words]
+    return _title_case_words(phrase[:max_words])
+
+
 def title_for_span(span: str) -> str:
     lowered = span.lower()
-    if "kesepian" in lowered:
-        return "Kenapa Hati Masih Kesepian?"
-    if "hati" in lowered and "tenang" in lowered:
-        return "Rahasia Hati yang Tenang"
-    if "ibadah" in lowered or "amal" in lowered:
-        return "Untuk Siapa Ibadah Kita?"
-    return "Allah Tidak Pernah Jauh"
+    for required_words, title in TITLE_RULES:
+        if all(word in lowered for word in required_words):
+            return title
+    return _best_title_phrase(span)
 
 
 def hook_subtitle_for_span(span: str, title: str) -> str:
@@ -167,7 +286,35 @@ def hook_subtitle_for_span(span: str, title: str) -> str:
         return "Cara memandang Allah yang membuat hati lebih pulang."
     if "ibadah" in lowered or "amal" in lowered:
         return "Pengingat lembut tentang niat yang sering diam-diam bergeser."
-    return "Potongan singkat untuk menenangkan hati dan meluruskan arah."
+    phrase = _best_title_phrase(span, min_words=3, max_words=5).lower()
+    if phrase == "inti nasihat singkat":
+        return "Cuplikan reflektif dengan pesan utama yang perlu ditinjau sebelum publish."
+    return f"Cuplikan reflektif tentang {phrase}, diambil dari inti pembahasan."
+
+
+def _title_is_relevant(title: str, span: str) -> bool:
+    normalized_title = title.strip().lower()
+    if not normalized_title:
+        return False
+    title_words = [word for word in _span_words(title) if word not in TITLE_STOPWORDS and len(word) > 2]
+    if not title_words:
+        return False
+    span_word_set = set(_span_words(span))
+    overlap = sum(1 for word in title_words if word in span_word_set)
+    if normalized_title in STATIC_FALLBACK_TITLES and overlap < 2:
+        return False
+    return overlap >= max(1, min(2, len(title_words) // 2))
+
+
+def _subtitle_is_relevant(subtitle: str, span: str) -> bool:
+    normalized_subtitle = subtitle.strip().lower()
+    if not normalized_subtitle or normalized_subtitle in STATIC_FALLBACK_SUBTITLES:
+        return False
+    subtitle_words = [word for word in _span_words(subtitle) if word not in TITLE_STOPWORDS and len(word) > 3]
+    if not subtitle_words:
+        return False
+    span_word_set = set(_span_words(span))
+    return any(word in span_word_set for word in subtitle_words)
 
 
 def heuristic_window_score(text: str, title: str, duration_ms: int, duration_preset: DurationPreset | None = None) -> int:
@@ -346,12 +493,27 @@ def build_candidate(
     end_ms = refine_end_boundary(entries, start_ms, end_ms, duration_preset.max_ms, duration_preset.min_ms)
     window = [item for item in entries if item.start_ms < end_ms and item.end_ms > start_ms]
     span = " ".join(item.text for item in window)
-    title = str((llm_suggestion or {}).get("title_hook") or title_for_span(span))
-    hook_subtitle = str((llm_suggestion or {}).get("hook_subtitle") or hook_subtitle_for_span(span, title))
-    viral_reason = str(
-        (llm_suggestion or {}).get("viral_reason")
-        or hook_subtitle
-    )
+    suggested_title = str((llm_suggestion or {}).get("title_hook") or "").strip()
+    if suggested_title and _title_is_relevant(suggested_title, span):
+        title = suggested_title
+        title_source = "llm"
+    else:
+        title = title_for_span(span)
+        title_source = "heuristic_span"
+    suggested_subtitle = str((llm_suggestion or {}).get("hook_subtitle") or "").strip()
+    if suggested_subtitle and _subtitle_is_relevant(suggested_subtitle, span):
+        hook_subtitle = suggested_subtitle
+        subtitle_source = "llm"
+    else:
+        hook_subtitle = hook_subtitle_for_span(span, title)
+        subtitle_source = "heuristic_span"
+    suggested_reason = str((llm_suggestion or {}).get("viral_reason") or "").strip()
+    if suggested_reason and _subtitle_is_relevant(suggested_reason, span):
+        viral_reason = suggested_reason
+        reason_source = "llm"
+    else:
+        viral_reason = hook_subtitle
+        reason_source = subtitle_source
     caption_style = style.get("caption", {})
     ai_style = style.get("ai", {})
     word_timeline = build_word_timeline(
@@ -398,6 +560,9 @@ def build_candidate(
         "genres": genres,
         "boundary_confidence": boundary_score,
         "opening_strength": opening_score,
+        "title_source": title_source,
+        "subtitle_source": subtitle_source,
+        "reason_source": reason_source,
     }
     return {
         "id": f"clip_{uuid.uuid4().hex[:12]}",
