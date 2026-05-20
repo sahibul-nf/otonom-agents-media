@@ -49,7 +49,11 @@ def build_post_caption(
     source_attribution: str = "Source: Ribath Nouraniyyah Hasyimiyyah",
 ) -> str:
     title = str(candidate.get("title_hook") or "").strip()
-    subtitle = _render_subtitle(render_job) or str(candidate.get("viral_reason") or "").strip()
+    subtitle = (
+        str(candidate.get("hook_subtitle") or "").strip()
+        or _render_subtitle(render_job)
+        or str(candidate.get("viral_reason") or "").strip()
+    )
     hashtags = " ".join(NOURBIT_HASHTAGS)
     lines = [
         title,

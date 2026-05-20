@@ -58,6 +58,7 @@ type ConfirmDialogState = {
   title: string;
   message: string;
   confirmLabel: string;
+  cancelLabel?: string;
   tone?: "danger" | "default";
   onConfirm: () => void;
 };
@@ -263,6 +264,7 @@ export function MediaStudioApp() {
   const [publishAttempts, setPublishAttempts] = useState<PublishAttempt[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [filter, setFilter] = useState("all");
+  const [showPublished, setShowPublished] = useState(false);
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
   const [actionStates, setActionStates] = useState<Record<string, ActionUiState>>({});
@@ -289,7 +291,10 @@ export function MediaStudioApp() {
   });
 
   const selected = useMemo(() => clips.find((clip) => clip.id === selectedId) || clips[0], [clips, selectedId]);
-  const filtered = useMemo(() => clips.filter((clip) => matchesReviewFilter(clip, filter)), [clips, filter]);
+  const filtered = useMemo(
+    () => clips.filter((clip) => matchesReviewFilter(clip, filter)).filter((clip) => showPublished || filter === "published" || clip.status !== "published"),
+    [clips, filter, showPublished],
+  );
   const activeTargets = useMemo(() => targets.filter((target) => publishPlatforms.includes(target.platform)), [targets]);
   const approved = clips.filter((clip) => clip.status === "approved").length;
   const scheduledCount = clips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
@@ -716,6 +721,62 @@ export function MediaStudioApp() {
     }
   }
 
+  async function refreshClipMetadata(id: string, mode: "smart" | "local" = "smart") {
+    const key = `clip:${id}:metadata`;
+    try {
+      await runAction(
+        key,
+        mode === "smart" ? "Refreshing metadata with smart fallback..." : "Refreshing metadata locally...",
+        () => apiPost("metadata-refresh", {candidate_id: id, mode}),
+        "Metadata refreshed",
+      );
+      await refreshAll();
+      setConfirmDialog({
+        title: "Metadata refreshed",
+        message: "Title, description, scoring, and post copy are updated. Re-render now if you want the new hook baked into the video file.",
+        confirmLabel: "Re-render now",
+        cancelLabel: "Later",
+        onConfirm: () => void rerenderClip(id),
+      });
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Metadata refresh failed");
+    }
+  }
+
+  async function saveClipBoundary(id: string, startMs: number, endMs: number, rerenderAfter: boolean) {
+    const key = `clip:${id}:boundary`;
+    try {
+      const result = await runAction(
+        key,
+        rerenderAfter ? "Saving timing and starting re-render..." : "Saving clip timing...",
+        () => apiPost<{rerender_job?: RerenderJob}>("clip-boundary", {
+          candidate_id: id,
+          start_ms: startMs,
+          end_ms: endMs,
+          rerender_after: rerenderAfter,
+          renderer: "remotion",
+          quality: "production",
+          style: generateConfig.brandTemplate || defaultTemplate,
+        }),
+        rerenderAfter ? "Timing saved. Re-render started." : "Timing saved",
+      );
+      if (result.rerender_job) {
+        setRerenderJobs((items) => [result.rerender_job!, ...items.filter((item) => item.id !== result.rerender_job!.id)]);
+      } else if (!rerenderAfter) {
+        setConfirmDialog({
+          title: "Timing saved",
+          message: "The clip boundary changed. Re-render now to generate a video file with the new start/end timing.",
+          confirmLabel: "Re-render now",
+          cancelLabel: "Later",
+          onConfirm: () => void rerenderClip(id),
+        });
+      }
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Timing update failed");
+    }
+  }
+
   function setSelectedCaptionDraft(value: string) {
     if (!selected) return;
     setCaptionDrafts((items) => ({...items, [selected.id]: value}));
@@ -861,9 +922,11 @@ export function MediaStudioApp() {
               selected={selected}
               rerendering={rerenderState}
               filter={filter}
+              showPublished={showPublished}
               reviewFilters={reviewFilters}
               actionStates={actionStates}
               setFilter={setFilter}
+              setShowPublished={setShowPublished}
               setSelectedId={setSelectedId}
               captionDraft={selectedCaptionDraft}
               setCaptionDraft={setSelectedCaptionDraft}
@@ -877,6 +940,8 @@ export function MediaStudioApp() {
               onClear={clearQueue}
               onSaveCaptions={saveCaptionCorrections}
               onRerender={rerenderClip}
+              onRefreshMetadata={refreshClipMetadata}
+              onSaveBoundary={saveClipBoundary}
             />
           )}
 
@@ -1727,7 +1792,7 @@ function ConfirmDialog({dialog, onClose}: {dialog: ConfirmDialogState | null; on
         <p className="mt-2 text-sm leading-6 text-zinc-400">{dialog.message}</p>
         <div className="mt-6 grid gap-2 sm:grid-cols-2">
           <button type="button" onClick={onClose} className="h-11 rounded-full border border-white/[0.10] text-sm font-semibold text-zinc-300 hover:bg-white/[0.04]">
-            Cancel
+            {dialog.cancelLabel || "Cancel"}
           </button>
           <button
             type="button"

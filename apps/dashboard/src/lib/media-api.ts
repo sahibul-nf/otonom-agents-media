@@ -20,6 +20,7 @@ export type ClipCandidate = {
   id: string;
   status: ClipStatus;
   title_hook: string;
+  hook_subtitle?: string;
   viral_reason: string;
   start_ms: number;
   end_ms: number;

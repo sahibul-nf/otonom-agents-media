@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .autonomy import get_autonomy_settings, update_autonomy_settings
 from .caption_edits import merge_caption_corrections
+from .clip_boundaries import update_clip_boundary
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all, initialize
 from .credentials import credential_status
 from .duration_presets import duration_preset_options
@@ -31,6 +32,7 @@ from .live_publishers import (
     validate_youtube_connection,
 )
 from .models import PUBLISH_MODES
+from .metadata_refresh import refresh_candidate_metadata
 from .oauth_flow import OAuthFlowError, complete_oauth, start_oauth
 from .post_copy import build_post_caption
 from .publishers import build_payload, create_dry_run_attempt
@@ -434,11 +436,67 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     renderer=str(payload.get("renderer") or "remotion"),
                     quality=str(payload.get("quality") or "production"),
                     style_path=str(payload.get("style") or "") or None,
+                    force_source_refresh=bool(payload.get("force_source_refresh", False)),
+                    regenerate_captions=bool(payload.get("regenerate_captions", False)),
                 )
             except (RuntimeError, ValueError) as exc:
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(result, status=202)
+            return
+
+        if parsed.path == "/api/metadata-refresh":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            mode = str(payload.get("mode") or "smart").strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            load_env_file(ENV_FILE)
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                result = refresh_candidate_metadata(conn, candidate_id, mode=mode)
+                if bool(payload.get("rerender_after", False)):
+                    result["rerender_job"] = create_rerender_job(
+                        candidate_id,
+                        renderer=str(payload.get("renderer") or "remotion"),
+                        quality=str(payload.get("quality") or "production"),
+                        style_path=str(payload.get("style") or "") or None,
+                    )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/clip-boundary":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            try:
+                start_ms = int(payload.get("start_ms"))
+                end_ms = int(payload.get("end_ms"))
+            except (TypeError, ValueError):
+                self._send_json({"error": "start_ms and end_ms are required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                result = update_clip_boundary(conn, candidate_id, start_ms, end_ms)
+                if bool(payload.get("rerender_after", False)):
+                    result["rerender_job"] = create_rerender_job(
+                        candidate_id,
+                        renderer=str(payload.get("renderer") or "remotion"),
+                        quality=str(payload.get("quality") or "production"),
+                        style_path=str(payload.get("style") or "") or None,
+                        force_source_refresh=True,
+                        regenerate_captions=True,
+                    )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
             return
 
         if parsed.path == "/api/schedule-next":

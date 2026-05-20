@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS clip_candidates (
   start_ms INTEGER NOT NULL,
   end_ms INTEGER NOT NULL,
   title_hook TEXT NOT NULL,
+  hook_subtitle TEXT NOT NULL DEFAULT '',
   viral_reason TEXT NOT NULL,
   transcript_span TEXT NOT NULL,
   risk_flags_json TEXT NOT NULL,
@@ -186,6 +187,7 @@ def connect(db_path: Path | str = DEFAULT_DB) -> sqlite3.Connection:
 
 SCHEMA_UPGRADES = {
     "clip_candidates": {
+        "hook_subtitle": "TEXT NOT NULL DEFAULT ''",
         "score_json": "TEXT NOT NULL DEFAULT '{}'",
         "curation_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
         "caption_source": "TEXT NOT NULL DEFAULT 'youtube'",
@@ -221,6 +223,8 @@ SCHEMA_UPGRADES = {
     },
     "rerender_jobs": {
         "style_path": "TEXT NOT NULL DEFAULT ''",
+        "force_source_refresh": "INTEGER NOT NULL DEFAULT 0",
+        "regenerate_captions": "INTEGER NOT NULL DEFAULT 0",
         "status": "TEXT NOT NULL DEFAULT 'queued'",
         "progress": "INTEGER NOT NULL DEFAULT 0",
         "message": "TEXT NOT NULL DEFAULT ''",

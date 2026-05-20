@@ -10,11 +10,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .autonomy import evaluate_quality_gate, get_autonomy_settings
+from .asr import load_or_create_asr_words
+from .caption_composer import compose_caption_groups
 from .costs import estimate_clip_cost
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_one, initialize, load_json, seed_profile
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_remotion
 from .styles import load_style
+from .transcript_quality import correct_asr_words
+from .youtube_pipeline import download_youtube_section
 
 
 def _loads(value: str | None) -> dict[str, Any]:
@@ -46,6 +50,17 @@ def _find_source_clip(profile_id: str, candidate_id: str, render_metadata: dict[
     if matches:
         return str(matches[-1])
     raise ValueError("source clip is missing; regenerate the batch before rerendering")
+
+
+def _source_url_for_candidate(conn, candidate: dict[str, Any], render_metadata: dict[str, Any]) -> str:
+    url = str(render_metadata.get("sourceUrl") or "").strip()
+    if url:
+        return url
+    source = fetch_one(conn, "SELECT source_url FROM source_manifests WHERE id = ?", (candidate["source_id"],))
+    url = str((source or {}).get("source_url") or "").strip()
+    if not url:
+        raise ValueError("source URL is missing; cannot download the edited boundary")
+    return url
 
 
 def _profile_for_candidate(conn, profile_id: str) -> dict[str, Any]:
@@ -93,6 +108,45 @@ def _update_candidate_after_rerender(conn, candidate: dict[str, Any]) -> None:
     conn.commit()
 
 
+def _regenerate_captions(candidate: dict[str, Any], source_clip: str, style: dict[str, Any], model_name: str = "medium") -> None:
+    asr_path = Path(source_clip).resolve().parents[1] / f"{Path(source_clip).stem}_{model_name}_asr.json"
+    prompt = "Allah, Rasulullah, dzikir, zikir, qalbu, sholawat, istighfar, ma'rifat, taubat, syukur"
+    words, asr_metadata = load_or_create_asr_words(
+        source_clip,
+        str(asr_path),
+        model_name=model_name,
+        language="id",
+        initial_prompt=prompt,
+    )
+    words, correction_metadata = correct_asr_words(words)
+    captions, composer_metadata = compose_caption_groups(
+        words,
+        max_words_per_caption=int(style.get("caption", {}).get("max_words_per_caption", 3)),
+    )
+    if not captions:
+        return
+    candidate["timed_captions"] = captions
+    candidate["caption_source"] = "whisper"
+    candidate["asr_metadata"] = {
+        **asr_metadata,
+        **correction_metadata,
+        "caption_composer": {
+            **composer_metadata,
+            "low_confidence_word_count": correction_metadata.get("low_confidence_word_count", 0),
+        },
+    }
+    candidate["caption_corrections"] = {
+        **correction_metadata,
+        "manual_edit_stale": False,
+        "regenerated_after_boundary_edit": True,
+    }
+    candidate["score"] = {
+        **candidate.get("score", {}),
+        "asr_confidence": int(round((composer_metadata.get("avg_word_confidence") or 0.82) * 100)),
+        "caption_sync_score": 95 if composer_metadata.get("caption_count", 0) else 0,
+    }
+
+
 def rerender_candidate(
     candidate_id: str,
     renderer: str = "remotion",
@@ -100,6 +154,8 @@ def rerender_candidate(
     style_path: str | None = None,
     db_path: str | Path = DEFAULT_DB,
     on_progress: Callable[[int, str], None] | None = None,
+    force_source_refresh: bool = False,
+    regenerate_captions: bool = False,
 ) -> dict[str, Any]:
     def report(progress: int, message: str) -> None:
         if on_progress:
@@ -116,15 +172,29 @@ def rerender_candidate(
     profile = _profile_for_candidate(conn, candidate["profile_id"])
     render_job = _latest_render(conn, candidate_id)
     render_metadata = _loads(render_job.get("metadata_json"))
-    source_clip = _find_source_clip(candidate["profile_id"], candidate_id, render_metadata)
+    if force_source_refresh:
+        source_url = _source_url_for_candidate(conn, candidate, render_metadata)
+        report(24, "Downloading source for edited boundary")
+        source_clip = download_youtube_section(source_url, candidate["profile_id"], candidate)
+    else:
+        source_clip = _find_source_clip(candidate["profile_id"], candidate_id, render_metadata)
+        source_url = str(render_metadata.get("sourceUrl") or "")
     style = load_style(style_path)
 
     edited = candidate.get("caption_corrections", {}).get("edited_captions")
-    if isinstance(edited, list) and edited:
+    edited_is_stale = bool(candidate.get("caption_corrections", {}).get("manual_edit_stale"))
+    if regenerate_captions:
+        report(30, "Regenerating captions for edited boundary")
+        _regenerate_captions(
+            candidate,
+            source_clip,
+            style,
+            model_name=str(candidate.get("asr_metadata", {}).get("model") or "medium"),
+        )
+    elif isinstance(edited, list) and edited and not edited_is_stale:
         candidate["timed_captions"] = edited
         candidate["caption_source"] = "manual_edit"
 
-    source_url = str(render_metadata.get("sourceUrl") or "")
     source_attribution = str(render_metadata.get("sourceAttribution") or "Source: Ribath Nouraniyyah Hasyimiyyah")
     resolved_renderer = "remotion" if quality == "production" and renderer == "ffmpeg" else renderer
     report(34, "Preparing render contract")
@@ -218,6 +288,8 @@ def _run_rerender_job(
     quality: str,
     style_path: str | None,
     db_path: str | Path,
+    force_source_refresh: bool = False,
+    regenerate_captions: bool = False,
 ) -> None:
     conn = connect(db_path)
     initialize(conn)
@@ -233,6 +305,8 @@ def _run_rerender_job(
             style_path=style_path,
             db_path=db_path,
             on_progress=report,
+            force_source_refresh=force_source_refresh,
+            regenerate_captions=regenerate_captions,
         )
         _set_job_state(conn, job_id, "completed", 100, "Render updated", result=result)
     except Exception as exc:  # pragma: no cover - background guard
@@ -283,6 +357,8 @@ def create_rerender_job(
     renderer: str = "remotion",
     quality: str = "production",
     style_path: str | None = None,
+    force_source_refresh: bool = False,
+    regenerate_captions: bool = False,
     start: bool = True,
     db_path: str | Path = DEFAULT_DB,
 ) -> dict[str, Any]:
@@ -306,17 +382,18 @@ def create_rerender_job(
     conn.execute(
         """
         INSERT INTO rerender_jobs
-          (id, candidate_id, renderer, quality, style_path, status, progress, message, result_json, error)
-        VALUES (?, ?, ?, ?, ?, 'queued', 0, 'Queued', '{}', '')
+          (id, candidate_id, renderer, quality, style_path, force_source_refresh, regenerate_captions,
+           status, progress, message, result_json, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, 'Queued', '{}', '')
         """,
-        (job_id, candidate_id, renderer, quality, style_path or ""),
+        (job_id, candidate_id, renderer, quality, style_path or "", int(force_source_refresh), int(regenerate_captions)),
     )
     conn.commit()
     conn.close()
     if start:
         thread = threading.Thread(
             target=_run_rerender_job,
-            args=(job_id, candidate_id, renderer, quality, style_path, db_path),
+            args=(job_id, candidate_id, renderer, quality, style_path, db_path, force_source_refresh, regenerate_captions),
             daemon=True,
         )
         thread.start()
@@ -330,4 +407,6 @@ def rerender_from_args(args: Namespace) -> dict[str, Any]:
         quality=args.quality,
         style_path=args.style,
         db_path=args.db,
+        force_source_refresh=getattr(args, "force_source_refresh", False),
+        regenerate_captions=getattr(args, "regenerate_captions", False),
     )

@@ -1,6 +1,6 @@
 "use client";
 
-import {AlertTriangle, CheckCircle2, ListFilter, Loader2, MessageSquareText, MoreHorizontal, Trash2} from "lucide-react";
+import {AlertTriangle, CheckCircle2, Clock3, ListFilter, Loader2, MessageSquareText, MoreHorizontal, RefreshCcw, Trash2} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 import {ClipCandidate, formatDuration, formatTimestamp, scoreValue} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
@@ -20,9 +20,11 @@ type Props = {
   selected?: ClipCandidate;
   rerendering: Record<string, RerenderState>;
   filter: string;
+  showPublished: boolean;
   reviewFilters: readonly ReviewFilter[];
   actionStates: Record<string, ActionUiState>;
   setFilter: (value: string) => void;
+  setShowPublished: (value: boolean) => void;
   setSelectedId: (id: string) => void;
   captionDraft: string;
   setCaptionDraft: (value: string) => void;
@@ -36,7 +38,11 @@ type Props = {
   onClear: () => void;
   onSaveCaptions: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
+  onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
+  onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
 };
+
+type DetailTab = "metadata" | "timing" | "captions" | "post" | "quality";
 
 function clipWarnings(clip?: ClipCandidate) {
   if (!clip) return [];
@@ -56,9 +62,11 @@ export function ReviewStudioSection({
   selected,
   rerendering,
   filter,
+  showPublished,
   reviewFilters,
   actionStates,
   setFilter,
+  setShowPublished,
   setSelectedId,
   captionDraft,
   setCaptionDraft,
@@ -72,9 +80,12 @@ export function ReviewStudioSection({
   onClear,
   onSaveCaptions,
   onRerender,
+  onRefreshMetadata,
+  onSaveBoundary,
 }: Props) {
   const [queueMenuOpen, setQueueMenuOpen] = useState(false);
   const [rowMenuId, setRowMenuId] = useState("");
+  const [detailTab, setDetailTab] = useState<DetailTab>("metadata");
   const queueMenuRef = useRef<HTMLDivElement>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
   const activeFilter = reviewFilters.find((item) => item.id === filter) || reviewFilters[0];
@@ -117,7 +128,7 @@ export function ReviewStudioSection({
   }, []);
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_430px]">
+    <section className="grid gap-5 2xl:grid-cols-[minmax(520px,1fr)_minmax(360px,440px)_360px]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -155,6 +166,20 @@ export function ReviewStudioSection({
                     <span className="text-xs leading-5 text-zinc-500">{item.hint}</span>
                   </button>
                 ))}
+                <div className="mt-2 border-t border-white/[0.08] px-2 py-3">
+                  <label className="flex cursor-pointer items-center justify-between gap-4 rounded-[18px] px-2 py-2 text-sm font-semibold text-zinc-200">
+                    <span>Show published</span>
+                    <span className={`relative h-6 w-11 rounded-full border transition ${showPublished ? "border-cyan bg-cyan" : "border-white/[0.12] bg-white/[0.06]"}`}>
+                      <input
+                        type="checkbox"
+                        checked={showPublished}
+                        onChange={(event) => setShowPublished(event.target.checked)}
+                        className="sr-only"
+                      />
+                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${showPublished ? "left-5" : "left-0.5"}`} />
+                    </span>
+                  </label>
+                </div>
                 <div className="mt-2 border-t border-white/[0.08] pt-2">
                   <button
                     type="button"
@@ -283,6 +308,8 @@ export function ReviewStudioSection({
                         {clip.status === "pending_auto_schedule" ? (
                           <button type="button" onClick={() => { setRowMenuId(""); onHold(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-warning hover:bg-warning/[0.10]">Hold</button>
                         ) : null}
+                        <button type="button" onClick={() => { setRowMenuId(""); onRefreshMetadata(clip.id, "smart"); }} className="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white"><RefreshCcw className="h-3.5 w-3.5" /> Refresh metadata</button>
+                        <button type="button" onClick={() => { setRowMenuId(""); setSelectedId(clip.id); setDetailTab("timing"); }} className="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white"><Clock3 className="h-3.5 w-3.5" /> Edit timing</button>
                         <button type="button" onClick={() => { setRowMenuId(""); onRerender(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white">Re-render</button>
                         {clip.status === "scheduled" || clip.status === "ready_to_publish" ? (
                           <button type="button" disabled className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-500">Managed in Calendar</button>
@@ -305,126 +332,251 @@ export function ReviewStudioSection({
           }) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
         </div>
       </div>
+      <InsightPanel
+        clip={selected}
+        activeTab={detailTab}
+        setActiveTab={setDetailTab}
+        captionDraft={captionDraft}
+        setCaptionDraft={setCaptionDraft}
+        actionStates={actionStates}
+        onSaveCaptions={onSaveCaptions}
+        onRerender={onRerender}
+        onRefreshMetadata={onRefreshMetadata}
+        onSaveBoundary={onSaveBoundary}
+      />
       <div className="grid gap-5">
         <PreviewPanel clip={selected} statusTone={statusTone} />
-        <InsightPanel
-          clip={selected}
-          captionDraft={captionDraft}
-          setCaptionDraft={setCaptionDraft}
-          actionStates={actionStates}
-          onSaveCaptions={onSaveCaptions}
-          onRerender={onRerender}
-        />
       </div>
     </section>
   );
 }
 
+function parseTimecode(value: string) {
+  const parts = value.trim().split(":").map((part) => Number(part));
+  if (!parts.length || parts.some((part) => !Number.isFinite(part) || part < 0)) return null;
+  let seconds = 0;
+  if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+  else if (parts.length === 1) seconds = parts[0];
+  else return null;
+  return Math.round(seconds * 1000);
+}
+
+function boundaryValidation(startText: string, endText: string) {
+  const startMs = parseTimecode(startText);
+  const endMs = parseTimecode(endText);
+  if (startMs === null || endMs === null) return {valid: false, message: "Use HH:MM:SS, MM:SS, or seconds.", startMs: 0, endMs: 0};
+  if (endMs <= startMs) return {valid: false, message: "End time must be after start time.", startMs, endMs};
+  const duration = endMs - startMs;
+  if (duration < 20_000 || duration > 180_000) return {valid: false, message: "Duration must stay between 20 seconds and 3 minutes.", startMs, endMs};
+  return {valid: true, message: `${formatDuration(duration)} duration`, startMs, endMs};
+}
+
 function InsightPanel({
   clip,
+  activeTab,
+  setActiveTab,
   captionDraft,
   setCaptionDraft,
   actionStates,
   onSaveCaptions,
   onRerender,
+  onRefreshMetadata,
+  onSaveBoundary,
 }: {
   clip?: ClipCandidate;
+  activeTab: DetailTab;
+  setActiveTab: (tab: DetailTab) => void;
   captionDraft: string;
   setCaptionDraft: (value: string) => void;
   actionStates: Record<string, ActionUiState>;
   onSaveCaptions: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
+  onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
+  onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
 }) {
+  const tabs: {id: DetailTab; label: string}[] = [
+    {id: "metadata", label: "Metadata"},
+    {id: "timing", label: "Timing"},
+    {id: "captions", label: "Captions"},
+    {id: "post", label: "Post copy"},
+    {id: "quality", label: "Quality"},
+  ];
   const captionCount = clip?.captions?.length || 0;
   const saveState = clip ? actionStates[`caption:${clip.id}:save`] : undefined;
   const rerenderState = clip ? actionStates[`clip:${clip.id}:rerender`] : undefined;
-  const actionBusy = saveState?.status === "running" || rerenderState?.status === "running";
+  const metadataState = clip ? actionStates[`clip:${clip.id}:metadata`] : undefined;
+  const boundaryState = clip ? actionStates[`clip:${clip.id}:boundary`] : undefined;
+  const actionBusy = saveState?.status === "running" || rerenderState?.status === "running" || metadataState?.status === "running" || boundaryState?.status === "running";
   const warnings = clipWarnings(clip);
   return (
     <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
       <h3 className="text-lg font-semibold text-white">Clip intelligence</h3>
       {clip ? (
         <div className="mt-4 grid gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-zinc-500">Hook</p>
-            <p className="mt-1 text-lg font-semibold text-white">{clip.title_hook}</p>
+          <div className="flex flex-wrap gap-2 rounded-full border border-white/[0.08] bg-canvas-deep p-1">
+            {tabs.map((tab) => (
+              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-full px-3 py-2 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink" : "text-zinc-400 hover:text-white"}`}>
+                {tab.label}
+              </button>
+            ))}
           </div>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-zinc-500">Why it works</p>
-            <p className="mt-1 text-sm leading-6 text-zinc-300">{clip.viral_reason || "No reason recorded."}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <SettingTile label="Start" value={formatTimestamp(clip.start_ms)} />
-            <SettingTile label="End" value={formatTimestamp(clip.end_ms)} />
-            <SettingTile label="Cost" value={`$${Number(clip.cost?.estimated_total || 0).toFixed(4)}`} />
-            <SettingTile label="Caption" value={clip.caption_source || "-"} />
-            <SettingTile label="Coverage" value={`${Math.round((clip.render_quality?.caption_coverage || 0) * 100)}%`} />
-            <SettingTile label="Gate" value={clip.quality_gate?.passed ? "Auto eligible" : "Review"} />
-            <SettingTile label="Corrections" value={clip.caption_corrections?.manual_edit ? "Manual edit" : clip.caption_corrections?.correction_count || 0} />
-          </div>
-          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-              <CheckCircle2 className="h-4 w-4 text-cyan" />
-              Quality checks
-            </div>
-            {warnings.length ? (
-              <div className="grid gap-2">
-                {warnings.map((warning) => (
-                  <div key={warning.label} className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2 text-xs">
-                    <span className="font-semibold text-zinc-300">{warning.label}</span>
-                    <span className={warning.tone === "danger" ? "text-danger" : warning.tone === "warning" ? "text-warning" : "text-cyan"}>{warning.tone === "info" ? "noted" : "review"}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm leading-6 text-zinc-400">No visible QA issues on this clip. Still review the first 3 seconds and final sentence before publishing.</p>
-            )}
-          </div>
-          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
+          {activeTab === "metadata" ? (
+            <div className="grid gap-4">
               <div>
-                <div className="text-sm font-semibold text-white">Caption editor</div>
-                <p className="mt-1 text-xs text-zinc-500">{captionCount} timed lines · save text, then re-render this item</p>
+                <p className="text-xs uppercase tracking-wide text-zinc-500">Hook</p>
+                <p className="mt-1 text-lg font-semibold text-white">{clip.title_hook}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-zinc-500">Description</p>
+                <p className="mt-1 text-sm leading-6 text-zinc-300">{clip.hook_subtitle || clip.viral_reason || "No reason recorded."}</p>
               </div>
               <button
                 type="button"
-                disabled={!captionCount || actionBusy}
-                onClick={() => onRerender(clip.id)}
-                className="shrink-0 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={actionBusy}
+                onClick={() => onRefreshMetadata(clip.id, "smart")}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-4 text-sm font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {rerenderState?.status === "running" ? <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Starting...</span> : "Re-render"}
+                {metadataState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                {metadataState?.status === "running" ? "Refreshing..." : "Refresh metadata"}
               </button>
             </div>
-            <textarea
-              value={captionDraft}
-              disabled={!captionCount}
-              onChange={(event) => setCaptionDraft(event.target.value)}
-              className="min-h-40 w-full resize-y rounded-2xl border border-white/[0.08] bg-black/30 px-3 py-3 text-sm leading-6 text-zinc-200 outline-none focus:border-cyan/[0.35] disabled:cursor-not-allowed disabled:opacity-50"
-              spellCheck={false}
-            />
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <p className="text-xs text-zinc-500">One line maps to one timed caption group.</p>
-              <button
-                type="button"
-                disabled={!captionCount || actionBusy}
-                onClick={() => onSaveCaptions(clip.id, captionDraft)}
-                className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {saveState?.status === "running" ? <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Saving...</span> : "Save text edits"}
-              </button>
+          ) : null}
+          {activeTab === "timing" ? (
+            <TimingEditor key={clip.id} clip={clip} actionBusy={actionBusy} boundaryState={boundaryState} onSaveBoundary={onSaveBoundary} />
+          ) : null}
+          {activeTab === "captions" ? (
+            <CaptionEditor clip={clip} captionDraft={captionDraft} setCaptionDraft={setCaptionDraft} actionBusy={actionBusy} captionCount={captionCount} saveState={saveState} rerenderState={rerenderState} onSaveCaptions={onSaveCaptions} onRerender={onRerender} />
+          ) : null}
+          {activeTab === "post" ? (
+            <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><MessageSquareText className="h-4 w-4 text-cyan" /> Post copy</div>
+              <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-400">{clip.post_caption || "Post caption will appear after render metadata is available."}</p>
             </div>
-            {saveState || rerenderState ? (
-              <p className={`mt-3 text-xs font-medium ${saveState?.status === "failed" || rerenderState?.status === "failed" ? "text-danger" : "text-cyan"}`}>
-                {(saveState || rerenderState)?.message}
-              </p>
-            ) : null}
-          </div>
-          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><MessageSquareText className="h-4 w-4 text-cyan" /> Post copy</div>
-            <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-400">{clip.post_caption || "Post caption will appear after render metadata is available."}</p>
-          </div>
+          ) : null}
+          {activeTab === "quality" ? (
+            <QualityPanel clip={clip} warnings={warnings} />
+          ) : null}
+          {metadataState || boundaryState ? (
+            <p className={`text-xs font-medium ${metadataState?.status === "failed" || boundaryState?.status === "failed" ? "text-danger" : "text-cyan"}`}>{(metadataState || boundaryState)?.message}</p>
+          ) : null}
         </div>
       ) : <EmptyState text="Select a clip to inspect curation, captions, and publish copy." />}
+    </div>
+  );
+}
+
+function CaptionEditor({clip, captionDraft, setCaptionDraft, actionBusy, captionCount, saveState, rerenderState, onSaveCaptions, onRerender}: {
+  clip: ClipCandidate;
+  captionDraft: string;
+  setCaptionDraft: (value: string) => void;
+  actionBusy: boolean;
+  captionCount: number;
+  saveState?: ActionUiState;
+  rerenderState?: ActionUiState;
+  onSaveCaptions: (id: string, draft: string) => void;
+  onRerender: (id: string) => void;
+}) {
+  return (
+    <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-white">Caption editor</div>
+          <p className="mt-1 text-xs text-zinc-500">{captionCount} timed lines · save text, then re-render this item</p>
+        </div>
+        <button
+          type="button"
+          disabled={!captionCount || actionBusy}
+          onClick={() => onRerender(clip.id)}
+          className="shrink-0 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {rerenderState?.status === "running" ? <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Starting...</span> : "Re-render"}
+        </button>
+      </div>
+      <textarea
+        value={captionDraft}
+        disabled={!captionCount}
+        onChange={(event) => setCaptionDraft(event.target.value)}
+        className="min-h-56 w-full resize-y rounded-2xl border border-white/[0.08] bg-black/30 px-3 py-3 text-sm leading-6 text-zinc-200 outline-none focus:border-cyan/[0.35] disabled:cursor-not-allowed disabled:opacity-50"
+        spellCheck={false}
+      />
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-xs text-zinc-500">One line maps to one timed caption group.</p>
+        <button
+          type="button"
+          disabled={!captionCount || actionBusy}
+          onClick={() => onSaveCaptions(clip.id, captionDraft)}
+          className="rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {saveState?.status === "running" ? <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> Saving...</span> : "Save text edits"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TimingEditor({clip, actionBusy, boundaryState, onSaveBoundary}: {
+  clip: ClipCandidate;
+  actionBusy: boolean;
+  boundaryState?: ActionUiState;
+  onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
+}) {
+  const [timingStart, setTimingStart] = useState(formatTimestamp(clip.start_ms));
+  const [timingEnd, setTimingEnd] = useState(formatTimestamp(clip.end_ms));
+  const boundary = boundaryValidation(timingStart, timingEnd);
+  return (
+    <div className="grid gap-4">
+      <div className="grid grid-cols-2 gap-3">
+        <label className="grid gap-2 text-sm font-semibold text-zinc-300">
+          Start
+          <input value={timingStart} onChange={(event) => setTimingStart(event.target.value)} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-white outline-none focus:border-cyan/[0.45]" />
+        </label>
+        <label className="grid gap-2 text-sm font-semibold text-zinc-300">
+          End
+          <input value={timingEnd} onChange={(event) => setTimingEnd(event.target.value)} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-white outline-none focus:border-cyan/[0.45]" />
+        </label>
+      </div>
+      <p className={`text-xs font-medium ${boundary.valid ? "text-cyan" : "text-danger"}`}>{boundary.message}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button type="button" disabled={!boundary.valid || actionBusy || clip.status === "published"} onClick={() => onSaveBoundary(clip.id, boundary.startMs, boundary.endMs, false)} className="h-11 rounded-full border border-white/[0.10] text-sm font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40">Save timing</button>
+        <button type="button" disabled={!boundary.valid || actionBusy || clip.status === "published"} onClick={() => onSaveBoundary(clip.id, boundary.startMs, boundary.endMs, true)} className="h-11 rounded-full bg-cyan text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">
+          {boundaryState?.status === "running" ? "Saving..." : "Save + re-render"}
+        </button>
+      </div>
+      {clip.status === "published" ? <p className="text-xs text-warning">Published clips are locked for audit safety.</p> : null}
+    </div>
+  );
+}
+
+function QualityPanel({clip, warnings}: {clip: ClipCandidate; warnings: {label: string; tone: "warning" | "danger" | "info"}[]}) {
+  return (
+    <div className="grid gap-4">
+      <div className="grid grid-cols-2 gap-2">
+        <SettingTile label="Start" value={formatTimestamp(clip.start_ms)} />
+        <SettingTile label="End" value={formatTimestamp(clip.end_ms)} />
+        <SettingTile label="Cost" value={`$${Number(clip.cost?.estimated_total || 0).toFixed(4)}`} />
+        <SettingTile label="Caption" value={clip.caption_source || "-"} />
+        <SettingTile label="Coverage" value={`${Math.round((clip.render_quality?.caption_coverage || 0) * 100)}%`} />
+        <SettingTile label="Gate" value={clip.quality_gate?.passed ? "Auto eligible" : "Review"} />
+      </div>
+      <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+          <CheckCircle2 className="h-4 w-4 text-cyan" />
+          Quality checks
+        </div>
+        {warnings.length ? (
+          <div className="grid gap-2">
+            {warnings.map((warning) => (
+              <div key={warning.label} className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2 text-xs">
+                <span className="font-semibold text-zinc-300">{warning.label}</span>
+                <span className={warning.tone === "danger" ? "text-danger" : warning.tone === "warning" ? "text-warning" : "text-cyan"}>{warning.tone === "info" ? "noted" : "review"}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm leading-6 text-zinc-400">No visible QA issues on this clip. Still review the first 3 seconds and final sentence before publishing.</p>
+        )}
+      </div>
     </div>
   );
 }

@@ -140,11 +140,11 @@ def insert_candidate(conn, candidate: dict[str, Any]) -> None:
     conn.execute(
         """
         INSERT OR REPLACE INTO clip_candidates
-          (id, profile_id, source_id, start_ms, end_ms, title_hook, viral_reason,
+          (id, profile_id, source_id, start_ms, end_ms, title_hook, hook_subtitle, viral_reason,
            transcript_span, risk_flags_json, score_json, curation_metadata_json,
            caption_source, asr_metadata_json, render_quality_json, cost_json,
            quality_gate_json, caption_corrections_json, dedupe_key, review_deadline_at, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             candidate["id"],
@@ -153,6 +153,7 @@ def insert_candidate(conn, candidate: dict[str, Any]) -> None:
             candidate["start_ms"],
             candidate["end_ms"],
             candidate["title_hook"],
+            candidate.get("hook_subtitle", ""),
             candidate["viral_reason"],
             candidate["transcript_span"],
             json.dumps(candidate["risk_flags"], ensure_ascii=False),
@@ -176,13 +177,14 @@ def update_candidate_metadata(conn, candidate: dict[str, Any]) -> None:
     conn.execute(
         """
         UPDATE clip_candidates
-        SET score_json = ?, curation_metadata_json = ?, caption_source = ?,
+        SET hook_subtitle = ?, score_json = ?, curation_metadata_json = ?, caption_source = ?,
             asr_metadata_json = ?, render_quality_json = ?, cost_json = ?,
             quality_gate_json = ?, caption_corrections_json = ?, dedupe_key = ?,
             review_deadline_at = ?, status = ?
         WHERE id = ?
         """,
         (
+            candidate.get("hook_subtitle", ""),
             json.dumps(candidate.get("score", {}), ensure_ascii=False),
             json.dumps(candidate.get("curation_metadata", {}), ensure_ascii=False),
             candidate.get("caption_source", "youtube"),
