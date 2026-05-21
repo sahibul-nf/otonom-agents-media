@@ -14,6 +14,13 @@ type ReviewFilter = {
 
 type RerenderState = {status: "running" | "done" | "failed"; message: string; progress?: number};
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
+type ReadinessItem = {
+  id: "hook" | "timing" | "captions" | "qa" | "post";
+  label: string;
+  status: "ready" | "review" | "blocked";
+  tab: DetailTab;
+  note: string;
+};
 
 type Props = {
   clips: ClipCandidate[];
@@ -59,6 +66,55 @@ function clipWarnings(clip?: ClipCandidate) {
 
 function canRunPrimaryAction(clip: ClipCandidate) {
   return ["draft", "rendered", "needs_caption_fix", "held", "pending_auto_schedule", "approved"].includes(clip.status);
+}
+
+function clipReadinessItems(clip: ClipCandidate): ReadinessItem[] {
+  const duration = clip.end_ms - clip.start_ms;
+  const coverage = clip.render_quality?.caption_coverage;
+  const confidence = clip.score?.caption_confidence || clip.score?.asr_confidence;
+  const qualityScore = clip.render_quality?.quality_score;
+  const captionBlocked = clip.status === "needs_caption_fix" || (clip.render_quality?.caption_overlap_count || 0) > 0;
+  return [
+    {
+      id: "hook",
+      label: "Hook",
+      status: clip.title_hook && (clip.hook_subtitle || clip.viral_reason) ? "ready" : "review",
+      tab: "metadata",
+      note: clip.title_hook ? "Title and reason present" : "Needs stronger metadata",
+    },
+    {
+      id: "timing",
+      label: "Timing",
+      status: duration >= 20_000 && duration <= 180_000 ? "ready" : "blocked",
+      tab: "timing",
+      note: `${formatDuration(duration)} clip span`,
+    },
+    {
+      id: "captions",
+      label: "Captions",
+      status: captionBlocked ? "blocked" : typeof coverage === "number" && coverage < 0.9 || typeof confidence === "number" && confidence < 82 ? "review" : "ready",
+      tab: "captions",
+      note: captionBlocked ? "Repair captions before approval" : typeof coverage === "number" ? `${Math.round(coverage * 100)}% coverage` : "Caption timing available",
+    },
+    {
+      id: "qa",
+      label: "QA",
+      status: typeof qualityScore === "number" && qualityScore < 85 ? "review" : "ready",
+      tab: "quality",
+      note: typeof qualityScore === "number" ? `${Math.round(qualityScore)} quality score` : "Review preview manually",
+    },
+    {
+      id: "post",
+      label: "Post copy",
+      status: clip.post_caption ? "ready" : "review",
+      tab: "post",
+      note: clip.post_caption ? "Caption copy ready" : "Missing publish copy",
+    },
+  ];
+}
+
+function firstReadinessBlock(items: ReadinessItem[]) {
+  return items.find((item) => item.status === "blocked") || items.find((item) => item.status === "review");
 }
 
 export function ReviewStudioSection({
@@ -455,11 +511,20 @@ function ClipSummary({
   const metadataState = actionStates[`clip:${clip.id}:metadata`];
   const rerenderState = actionStates[`clip:${clip.id}:rerender`];
   const busy = primaryState?.status === "running" || metadataState?.status === "running" || rerenderState?.status === "running";
-  const primaryLabel = primaryState?.status === "running" ? "Working..." : canRunPrimaryAction(clip) ? primaryReviewAction(clip) : clip.status === "published" ? "Published" : "Managed";
+  const readiness = clipReadinessItems(clip);
+  const nextIssue = firstReadinessBlock(readiness);
+  const shouldRepairBeforeApprove = nextIssue && nextIssue.status === "blocked" && clip.status !== "approved";
+  const primaryLabel = primaryState?.status === "running"
+    ? "Working..."
+    : shouldRepairBeforeApprove
+      ? nextIssue.id === "captions" ? "Fix captions first" : `Review ${nextIssue.label.toLowerCase()}`
+      : canRunPrimaryAction(clip) ? primaryReviewAction(clip) : clip.status === "published" ? "Published" : "Managed";
   const primaryHint = clip.status === "approved"
     ? "Approved clips can be added to the publishing schedule."
+    : shouldRepairBeforeApprove
+      ? `${nextIssue.note}. Open the editor before approving this clip.`
     : canRunPrimaryAction(clip)
-      ? "Approve when the hook, timing, caption, and preview are ready."
+      ? nextIssue ? `${nextIssue.label} may need a final glance, but no blocker is detected.` : "This clip passes visible readiness checks."
       : "This clip is already managed by schedule or publish state.";
 
   return (
@@ -481,6 +546,31 @@ function ClipSummary({
 
       <div className="grid gap-3 rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
         <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Readiness</div>
+            <div className="text-xs font-medium text-zinc-500">{readiness.filter((item) => item.status === "ready").length}/{readiness.length} ready</div>
+          </div>
+          <div className="grid grid-cols-5 gap-1.5">
+            {readiness.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.tab)}
+                className={`grid h-12 place-items-center rounded-[14px] border text-[10px] font-semibold transition ${
+                  item.status === "ready"
+                    ? "border-teal/[0.24] bg-teal/[0.08] text-teal"
+                    : item.status === "blocked"
+                      ? "border-danger/[0.24] bg-danger/[0.08] text-danger"
+                      : "border-warning/[0.24] bg-warning/[0.08] text-warning"
+                }`}
+                title={item.note}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
           <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Review decision</div>
           <p className="mt-1 text-xs leading-5 text-zinc-500">{primaryHint}</p>
         </div>
@@ -489,6 +579,10 @@ function ClipSummary({
           disabled={busy || !canRunPrimaryAction(clip)}
           onClick={() => {
             if (!canRunPrimaryAction(clip)) return;
+            if (shouldRepairBeforeApprove) {
+              setActiveTab(nextIssue.tab);
+              return;
+            }
             if (clip.status === "approved") onSchedule(clip.id);
             else onApprove(clip.id);
           }}
@@ -586,6 +680,11 @@ function InsightPanel({
     {id: "post", label: "Post"},
     {id: "quality", label: "QA"},
   ];
+  const tabGroups: {label: string; tabs: {id: DetailTab; label: string}[]}[] = [
+    {label: "Content", tabs: tabs.filter((tab) => tab.id === "metadata" || tab.id === "post")},
+    {label: "Edit", tabs: tabs.filter((tab) => tab.id === "timing" || tab.id === "captions")},
+    {label: "Checks", tabs: tabs.filter((tab) => tab.id === "quality")},
+  ];
   const captionCount = clip?.captions?.length || 0;
   const saveState = clip ? actionStates[`caption:${clip.id}:save`] : undefined;
   const rerenderState = clip ? actionStates[`clip:${clip.id}:rerender`] : undefined;
@@ -606,11 +705,18 @@ function InsightPanel({
             <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Editing {activeTabLabel}</span>
             <span className="hidden text-xs text-zinc-600 sm:inline">Switch only when you need a different repair surface.</span>
           </div>
-          <div className="flex gap-1 overflow-x-auto rounded-full border border-white/[0.08] bg-black/24 p-1">
-            {tabs.map((tab) => (
-              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink shadow-[0_0_18px_rgba(108,226,238,0.18)]" : "text-zinc-400 hover:bg-white/[0.04] hover:text-white"}`}>
-                {tab.label}
-              </button>
+          <div className="grid gap-2 rounded-[18px] border border-white/[0.08] bg-black/24 p-2 lg:grid-cols-[1fr_1fr_auto]">
+            {tabGroups.map((group) => (
+              <div key={group.label} className="grid gap-1">
+                <div className="px-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-600">{group.label}</div>
+                <div className="flex gap-1">
+                  {group.tabs.map((tab) => (
+                    <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink shadow-[0_0_18px_rgba(108,226,238,0.18)]" : "text-zinc-400 hover:bg-white/[0.04] hover:text-white"}`}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>
