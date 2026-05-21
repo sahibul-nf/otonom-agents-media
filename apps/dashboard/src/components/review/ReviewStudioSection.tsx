@@ -404,7 +404,6 @@ function ReviewDetailPane({
             </div>
             <ClipSummary
               clip={clip}
-              activeTab={activeTab}
               setActiveTab={setActiveTab}
               actionStates={actionStates}
               primaryReviewAction={primaryReviewAction}
@@ -417,6 +416,7 @@ function ReviewDetailPane({
           <InsightPanel
             clip={clip}
             activeTab={activeTab}
+            setActiveTab={setActiveTab}
             captionDraft={captionDraft}
             setCaptionDraft={setCaptionDraft}
             actionStates={actionStates}
@@ -433,7 +433,6 @@ function ReviewDetailPane({
 
 function ClipSummary({
   clip,
-  activeTab,
   setActiveTab,
   actionStates,
   primaryReviewAction,
@@ -443,7 +442,6 @@ function ClipSummary({
   onRerender,
 }: {
   clip: ClipCandidate;
-  activeTab: DetailTab;
   setActiveTab: (tab: DetailTab) => void;
   actionStates: Record<string, ActionUiState>;
   primaryReviewAction: (clip: ClipCandidate) => string;
@@ -457,13 +455,6 @@ function ClipSummary({
   const metadataState = actionStates[`clip:${clip.id}:metadata`];
   const rerenderState = actionStates[`clip:${clip.id}:rerender`];
   const busy = primaryState?.status === "running" || metadataState?.status === "running" || rerenderState?.status === "running";
-  const tabs: {id: DetailTab; label: string}[] = [
-    {id: "metadata", label: "Metadata"},
-    {id: "timing", label: "Timing"},
-    {id: "captions", label: "Captions"},
-    {id: "post", label: "Post"},
-    {id: "quality", label: "QA"},
-  ];
 
   return (
     <div className="grid gap-4 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
@@ -530,16 +521,6 @@ function ClipSummary({
         </div>
       </div>
 
-      <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-2">
-        <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Edit sections</div>
-        <div className="flex flex-wrap gap-2">
-        {tabs.map((tab) => (
-          <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-full px-3 py-2 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink" : "text-zinc-400 hover:text-white"}`}>
-            {tab.label}
-          </button>
-        ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -568,6 +549,7 @@ function boundaryValidation(startText: string, endText: string) {
 function InsightPanel({
   clip,
   activeTab,
+  setActiveTab,
   captionDraft,
   setCaptionDraft,
   actionStates,
@@ -578,6 +560,7 @@ function InsightPanel({
 }: {
   clip?: ClipCandidate;
   activeTab: DetailTab;
+  setActiveTab: (tab: DetailTab) => void;
   captionDraft: string;
   setCaptionDraft: (value: string) => void;
   actionStates: Record<string, ActionUiState>;
@@ -586,6 +569,13 @@ function InsightPanel({
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
 }) {
+  const tabs: {id: DetailTab; label: string}[] = [
+    {id: "metadata", label: "Metadata"},
+    {id: "timing", label: "Timing"},
+    {id: "captions", label: "Captions"},
+    {id: "post", label: "Post"},
+    {id: "quality", label: "QA"},
+  ];
   const captionCount = clip?.captions?.length || 0;
   const saveState = clip ? actionStates[`caption:${clip.id}:save`] : undefined;
   const rerenderState = clip ? actionStates[`clip:${clip.id}:rerender`] : undefined;
@@ -595,10 +585,20 @@ function InsightPanel({
   const warnings = clipWarnings(clip);
   return (
     <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-col gap-4">
         <div>
           <h3 className="text-lg font-semibold text-white">Editor</h3>
           <p className="mt-1 text-xs text-zinc-500">Fine-tune the selected clip without leaving review.</p>
+        </div>
+        <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-2">
+          <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Edit sections</div>
+          <div className="flex flex-wrap gap-2">
+            {tabs.map((tab) => (
+              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-full px-3 py-2 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink" : "text-zinc-400 hover:text-white"}`}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {clip ? (

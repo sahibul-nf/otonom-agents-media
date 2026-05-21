@@ -36,6 +36,7 @@ function VideoPreviewPlayer({output}: {output: string}) {
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
 
@@ -98,13 +99,43 @@ function VideoPreviewPlayer({output}: {output: string}) {
           setIsMuted(event.currentTarget.muted);
         }}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime || 0)}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onEnded={() => setIsPlaying(false)}
+        onPlay={() => {
+          setIsPlaying(true);
+          setControlsVisible(false);
+        }}
+        onPause={() => {
+          setIsPlaying(false);
+          setControlsVisible(true);
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          setControlsVisible(true);
+        }}
         onClick={() => void togglePlayback()}
       />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent px-4 pb-4 pt-14">
-        <div className="pointer-events-auto rounded-[20px] border border-white/10 bg-black/48 px-3 py-3 backdrop-blur-md">
+      <div
+        className="pointer-events-auto absolute inset-0 z-0"
+        onMouseEnter={() => setControlsVisible(true)}
+        onMouseLeave={() => {
+          if (isPlaying) setControlsVisible(false);
+        }}
+        onFocus={() => setControlsVisible(true)}
+      >
+        <button
+          type="button"
+          aria-label={isPlaying ? "Show preview controls" : "Play preview"}
+          onClick={() => {
+            if (isPlaying) {
+              setControlsVisible(true);
+              return;
+            }
+            void togglePlayback();
+          }}
+          className="absolute inset-0 cursor-default bg-transparent"
+        />
+      </div>
+      <div className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/72 via-black/10 to-transparent px-4 pb-3 pt-5 transition-opacity duration-200 ${controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"}`}>
+        <div className="pointer-events-auto rounded-[16px] border border-white/10 bg-black/34 px-3 py-2 shadow-lg backdrop-blur-md">
           <input
             type="range"
             min={0}
@@ -117,12 +148,12 @@ function VideoPreviewPlayer({output}: {output: string}) {
             aria-label="Seek preview video"
             disabled={!isReady}
           />
-          <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="mt-1.5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => skipBy(-5)}
-                className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/6 text-zinc-100 transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40"
+                className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-white/6 text-zinc-100 transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={!isReady}
                 aria-label="Seek backward 5 seconds"
               >
@@ -131,7 +162,7 @@ function VideoPreviewPlayer({output}: {output: string}) {
               <button
                 type="button"
                 onClick={() => void togglePlayback()}
-                className="grid h-10 w-10 place-items-center rounded-full bg-cyan text-ink transition hover:bg-cyan/90 disabled:cursor-not-allowed disabled:opacity-40"
+                className="grid h-9 w-9 place-items-center rounded-full bg-cyan text-ink transition hover:bg-cyan/90 disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={!isReady}
                 aria-label={isPlaying ? "Pause preview" : "Play preview"}
               >
@@ -140,7 +171,7 @@ function VideoPreviewPlayer({output}: {output: string}) {
               <button
                 type="button"
                 onClick={() => skipBy(5)}
-                className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/6 text-zinc-100 transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40"
+                className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-white/6 text-zinc-100 transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={!isReady}
                 aria-label="Seek forward 5 seconds"
               >
@@ -149,7 +180,7 @@ function VideoPreviewPlayer({output}: {output: string}) {
               <button
                 type="button"
                 onClick={toggleMuted}
-                className="grid h-9 w-9 place-items-center rounded-full border border-white/10 bg-white/6 text-zinc-100 transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40"
+                className="grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-white/6 text-zinc-100 transition hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={!isReady}
                 aria-label={isMuted ? "Unmute preview" : "Mute preview"}
               >
