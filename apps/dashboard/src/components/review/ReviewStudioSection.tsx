@@ -1,6 +1,6 @@
 "use client";
 
-import {AlertTriangle, CheckCircle2, Clock3, ListFilter, Loader2, MessageSquareText, MoreHorizontal, RefreshCcw, Trash2} from "lucide-react";
+import {AlertTriangle, CheckCircle2, Clock3, ListFilter, Loader2, MessageSquareText, MoreHorizontal, RefreshCcw, Scissors, Trash2} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 import {ClipCandidate, formatDuration, formatTimestamp, scoreValue} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
@@ -826,23 +826,103 @@ function TimingEditor({clip, actionBusy, boundaryState, onSaveBoundary}: {
   const [timingStart, setTimingStart] = useState(formatTimestamp(clip.start_ms));
   const [timingEnd, setTimingEnd] = useState(formatTimestamp(clip.end_ms));
   const boundary = boundaryValidation(timingStart, timingEnd);
+  const trimStartMs = boundary.startMs || clip.start_ms;
+  const trimEndMs = boundary.endMs || clip.end_ms;
+  const clipDuration = Math.max(1, clip.end_ms - clip.start_ms);
+  const startPercent = Math.max(0, Math.min(100, ((trimStartMs - clip.start_ms) / clipDuration) * 100));
+  const endPercent = Math.max(0, Math.min(100, ((trimEndMs - clip.start_ms) / clipDuration) * 100));
+  const hasTrimChange = trimStartMs !== clip.start_ms || trimEndMs !== clip.end_ms;
+  const controlsDisabled = actionBusy || clip.status === "published";
+
+  function setStartMs(nextMs: number) {
+    const clamped = Math.min(Math.max(clip.start_ms, nextMs), trimEndMs - 20_000);
+    setTimingStart(formatTimestamp(clamped));
+  }
+
+  function setEndMs(nextMs: number) {
+    const clamped = Math.max(Math.min(clip.end_ms, nextMs), trimStartMs + 20_000);
+    setTimingEnd(formatTimestamp(clamped));
+  }
+
+  function nudgeStart(deltaMs: number) {
+    setStartMs(trimStartMs + deltaMs);
+  }
+
+  function nudgeEnd(deltaMs: number) {
+    setEndMs(trimEndMs + deltaMs);
+  }
+
   return (
     <div className="grid gap-4">
+      <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+        <div className="mb-3 flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Scissors className="h-4 w-4 text-cyan" />
+              Trim clip
+            </div>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">Move the start/end handles, then re-render this clip to produce the trimmed video.</p>
+          </div>
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${hasTrimChange ? "border-warning/[0.24] bg-warning/[0.08] text-warning" : "border-teal/[0.24] bg-teal/[0.08] text-teal"}`}>
+            {hasTrimChange ? "Unsaved trim" : "Current cut"}
+          </span>
+        </div>
+        <div className="relative mt-6 h-12 rounded-[18px] border border-white/[0.08] bg-black/28 px-3">
+          <div className="absolute left-4 right-4 top-1/2 h-1 -translate-y-1/2 rounded-full bg-white/[0.08]">
+            <div className="absolute top-0 h-full rounded-full bg-cyan" style={{left: `${startPercent}%`, right: `${100 - endPercent}%`}} />
+          </div>
+          <input
+            type="range"
+            min={clip.start_ms}
+            max={Math.max(clip.start_ms + 20_000, trimEndMs - 20_000)}
+            step={500}
+            value={Math.max(clip.start_ms, Math.min(trimStartMs, trimEndMs - 20_000))}
+            disabled={controlsDisabled}
+            onChange={(event) => setStartMs(Number(event.currentTarget.value))}
+            className="absolute inset-x-3 top-1/2 z-10 h-1 -translate-y-1/2 cursor-pointer appearance-none bg-transparent accent-[#6ce2ee] disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Trim start"
+          />
+          <input
+            type="range"
+            min={Math.min(clip.end_ms - 20_000, trimStartMs + 20_000)}
+            max={clip.end_ms}
+            step={500}
+            value={Math.min(clip.end_ms, Math.max(trimEndMs, trimStartMs + 20_000))}
+            disabled={controlsDisabled}
+            onChange={(event) => setEndMs(Number(event.currentTarget.value))}
+            className="absolute inset-x-3 top-1/2 z-20 h-1 -translate-y-1/2 cursor-pointer appearance-none bg-transparent accent-[#6ce2ee] disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Trim end"
+          />
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-3 text-xs font-medium tabular-nums">
+          <span className="text-zinc-500">{formatTimestamp(clip.start_ms)}</span>
+          <span className={boundary.valid ? "text-cyan" : "text-danger"}>{boundary.message}</span>
+          <span className="text-zinc-500">{formatTimestamp(clip.end_ms)}</span>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <label className="grid gap-2 text-sm font-semibold text-zinc-300">
           Start
           <input value={timingStart} onChange={(event) => setTimingStart(event.target.value)} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-white outline-none focus:border-cyan/[0.45]" />
+          <span className="grid grid-cols-2 gap-2">
+            <button type="button" disabled={controlsDisabled} onClick={() => nudgeStart(-1000)} className="h-9 rounded-full border border-white/[0.10] text-xs text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40">-1s</button>
+            <button type="button" disabled={controlsDisabled} onClick={() => nudgeStart(1000)} className="h-9 rounded-full border border-white/[0.10] text-xs text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40">+1s</button>
+          </span>
         </label>
         <label className="grid gap-2 text-sm font-semibold text-zinc-300">
           End
           <input value={timingEnd} onChange={(event) => setTimingEnd(event.target.value)} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-white outline-none focus:border-cyan/[0.45]" />
+          <span className="grid grid-cols-2 gap-2">
+            <button type="button" disabled={controlsDisabled} onClick={() => nudgeEnd(-1000)} className="h-9 rounded-full border border-white/[0.10] text-xs text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40">-1s</button>
+            <button type="button" disabled={controlsDisabled} onClick={() => nudgeEnd(1000)} className="h-9 rounded-full border border-white/[0.10] text-xs text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40">+1s</button>
+          </span>
         </label>
       </div>
-      <p className={`text-xs font-medium ${boundary.valid ? "text-cyan" : "text-danger"}`}>{boundary.message}</p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <button type="button" disabled={!boundary.valid || actionBusy || clip.status === "published"} onClick={() => onSaveBoundary(clip.id, boundary.startMs, boundary.endMs, false)} className="h-11 rounded-full border border-white/[0.10] text-sm font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40">Save timing</button>
-        <button type="button" disabled={!boundary.valid || actionBusy || clip.status === "published"} onClick={() => onSaveBoundary(clip.id, boundary.startMs, boundary.endMs, true)} className="h-11 rounded-full bg-cyan text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">
-          {boundaryState?.status === "running" ? "Saving..." : "Save + re-render"}
+        <button type="button" disabled={!boundary.valid || controlsDisabled || !hasTrimChange} onClick={() => onSaveBoundary(clip.id, boundary.startMs, boundary.endMs, false)} className="h-11 rounded-full border border-white/[0.10] text-sm font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40">Save trim only</button>
+        <button type="button" disabled={!boundary.valid || controlsDisabled || !hasTrimChange} onClick={() => onSaveBoundary(clip.id, boundary.startMs, boundary.endMs, true)} className="h-11 rounded-full bg-cyan text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40">
+          {boundaryState?.status === "running" ? "Trimming..." : "Apply trim + re-render"}
         </button>
       </div>
       {clip.status === "published" ? <p className="text-xs text-warning">Published clips are locked for audit safety.</p> : null}
