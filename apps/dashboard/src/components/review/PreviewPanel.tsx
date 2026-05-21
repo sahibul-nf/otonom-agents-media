@@ -85,7 +85,14 @@ function VideoPreviewPlayer({output}: {output: string}) {
   }
 
   return (
-    <>
+    <div
+      className="absolute inset-0"
+      onMouseMove={() => setControlsVisible(true)}
+      onMouseLeave={() => {
+        if (isPlaying) setControlsVisible(false);
+      }}
+      onFocus={() => setControlsVisible(true)}
+    >
       <video
         ref={videoRef}
         playsInline
@@ -115,11 +122,6 @@ function VideoPreviewPlayer({output}: {output: string}) {
       />
       <div
         className="pointer-events-auto absolute inset-0 z-0"
-        onMouseEnter={() => setControlsVisible(true)}
-        onMouseLeave={() => {
-          if (isPlaying) setControlsVisible(false);
-        }}
-        onFocus={() => setControlsVisible(true)}
       >
         <button
           type="button"
@@ -193,6 +195,6 @@ function VideoPreviewPlayer({output}: {output: string}) {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
