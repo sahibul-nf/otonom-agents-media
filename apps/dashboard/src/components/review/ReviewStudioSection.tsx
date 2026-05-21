@@ -455,6 +455,12 @@ function ClipSummary({
   const metadataState = actionStates[`clip:${clip.id}:metadata`];
   const rerenderState = actionStates[`clip:${clip.id}:rerender`];
   const busy = primaryState?.status === "running" || metadataState?.status === "running" || rerenderState?.status === "running";
+  const primaryLabel = primaryState?.status === "running" ? "Working..." : canRunPrimaryAction(clip) ? primaryReviewAction(clip) : clip.status === "published" ? "Published" : "Managed";
+  const primaryHint = clip.status === "approved"
+    ? "Approved clips can be added to the publishing schedule."
+    : canRunPrimaryAction(clip)
+      ? "Approve when the hook, timing, caption, and preview are ready."
+      : "This clip is already managed by schedule or publish state.";
 
   return (
     <div className="grid gap-4 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
@@ -473,17 +479,34 @@ function ClipSummary({
         <SettingTile label="Caption" value={clip.caption_source || "-"} />
       </div>
 
-      <div className="grid gap-2 rounded-[20px] border border-white/[0.08] bg-black/20 p-2">
-        <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Fast actions</div>
-        <div className="grid grid-cols-2 gap-2">
+      <div className="grid gap-3 rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Review decision</div>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">{primaryHint}</p>
+        </div>
+        <button
+          type="button"
+          disabled={busy || !canRunPrimaryAction(clip)}
+          onClick={() => {
+            if (!canRunPrimaryAction(clip)) return;
+            if (clip.status === "approved") onSchedule(clip.id);
+            else onApprove(clip.id);
+          }}
+          className="inline-flex h-11 items-center justify-center rounded-[16px] bg-cyan px-3 text-sm font-semibold text-ink transition hover:bg-cyan/90 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {primaryLabel}
+        </button>
+        <div className="border-t border-white/[0.07] pt-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Repair tools</div>
+          <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
             disabled={busy}
             onClick={() => onRefreshMetadata(clip.id, "smart")}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[16px] border border-cyan/[0.30] bg-teal/[0.10] px-3 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.30] hover:text-cyan disabled:cursor-not-allowed disabled:opacity-40"
           >
             {metadataState?.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
-            Refresh
+            Metadata
           </button>
           <button
             type="button"
@@ -496,28 +519,15 @@ function ClipSummary({
             <Clock3 className="h-3.5 w-3.5" />
             Timing
           </button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             disabled={busy}
             onClick={() => onRerender(clip.id)}
-            className="h-10 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-10 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.30] hover:text-cyan disabled:cursor-not-allowed disabled:opacity-40"
           >
             {rerenderState?.status === "running" ? "Rendering..." : "Re-render"}
           </button>
-          <button
-            type="button"
-            disabled={busy || !canRunPrimaryAction(clip)}
-            onClick={() => {
-              if (!canRunPrimaryAction(clip)) return;
-              if (clip.status === "approved") onSchedule(clip.id);
-              else onApprove(clip.id);
-            }}
-            className="h-10 rounded-[16px] bg-cyan px-3 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {primaryState?.status === "running" ? "Working..." : canRunPrimaryAction(clip) ? primaryReviewAction(clip) : clip.status === "published" ? "Published" : "Managed"}
-          </button>
+          </div>
         </div>
       </div>
 
@@ -583,6 +593,7 @@ function InsightPanel({
   const boundaryState = clip ? actionStates[`clip:${clip.id}:boundary`] : undefined;
   const actionBusy = saveState?.status === "running" || rerenderState?.status === "running" || metadataState?.status === "running" || boundaryState?.status === "running";
   const warnings = clipWarnings(clip);
+  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label || "Metadata";
   return (
     <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
       <div className="mb-4 flex flex-col gap-4">
@@ -590,11 +601,14 @@ function InsightPanel({
           <h3 className="text-lg font-semibold text-white">Editor</h3>
           <p className="mt-1 text-xs text-zinc-500">Fine-tune the selected clip without leaving review.</p>
         </div>
-        <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-2">
-          <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Edit sections</div>
-          <div className="flex flex-wrap gap-2">
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Editing {activeTabLabel}</span>
+            <span className="hidden text-xs text-zinc-600 sm:inline">Switch only when you need a different repair surface.</span>
+          </div>
+          <div className="flex gap-1 overflow-x-auto rounded-full border border-white/[0.08] bg-black/24 p-1">
             {tabs.map((tab) => (
-              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-full px-3 py-2 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink" : "text-zinc-400 hover:text-white"}`}>
+              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink shadow-[0_0_18px_rgba(108,226,238,0.18)]" : "text-zinc-400 hover:bg-white/[0.04] hover:text-white"}`}>
                 {tab.label}
               </button>
             ))}
