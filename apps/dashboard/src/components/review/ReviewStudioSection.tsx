@@ -57,6 +57,10 @@ function clipWarnings(clip?: ClipCandidate) {
   return warnings;
 }
 
+function canRunPrimaryAction(clip: ClipCandidate) {
+  return ["draft", "rendered", "needs_caption_fix", "held", "pending_auto_schedule", "approved"].includes(clip.status);
+}
+
 export function ReviewStudioSection({
   clips,
   selected,
@@ -107,10 +111,6 @@ export function ReviewStudioSection({
       scheduled: "Scheduled",
     };
     return labels[status || ""] || String(status || "Unknown").replaceAll("_", " ");
-  }
-
-  function canRunPrimaryAction(clip: ClipCandidate) {
-    return ["draft", "rendered", "needs_caption_fix", "held", "pending_auto_schedule", "approved"].includes(clip.status);
   }
 
   useEffect(() => {
@@ -344,6 +344,9 @@ export function ReviewStudioSection({
         onRerender={onRerender}
         onRefreshMetadata={onRefreshMetadata}
         onSaveBoundary={onSaveBoundary}
+        primaryReviewAction={primaryReviewAction}
+        onApprove={onApprove}
+        onSchedule={onSchedule}
       />
     </section>
   );
@@ -361,6 +364,9 @@ function ReviewDetailPane({
   onRerender,
   onRefreshMetadata,
   onSaveBoundary,
+  primaryReviewAction,
+  onApprove,
+  onSchedule,
 }: {
   clip?: ClipCandidate;
   statusTone: (status: string) => string;
@@ -373,29 +379,158 @@ function ReviewDetailPane({
   onRerender: (id: string) => void;
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
+  primaryReviewAction: (clip: ClipCandidate) => string;
+  onApprove: (id: string) => void;
+  onSchedule: (id: string) => void;
 }) {
   return (
     <aside className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-      <div className="mb-5">
-        <h3 className="text-xl font-semibold text-white">Clip workspace</h3>
-        <p className="mt-1 text-sm text-zinc-400">Preview, metadata, timing, captions, and publish copy for the selected clip.</p>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-xl font-semibold text-white">Clip Inspector</h3>
+          <p className="mt-1 text-sm text-zinc-400">Preview-first workspace for metadata, timing, captions, and publish copy.</p>
+        </div>
+        {clip ? <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip.status)}`}>{clip.status.replaceAll("_", " ")}</span> : null}
       </div>
-      <div className="grid gap-5 2xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] 2xl:items-start">
-        <PreviewPanel clip={clip} statusTone={statusTone} embedded />
-        <InsightPanel
-          clip={clip}
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          captionDraft={captionDraft}
-          setCaptionDraft={setCaptionDraft}
-          actionStates={actionStates}
-          onSaveCaptions={onSaveCaptions}
-          onRerender={onRerender}
-          onRefreshMetadata={onRefreshMetadata}
-          onSaveBoundary={onSaveBoundary}
-        />
-      </div>
+      {clip ? (
+        <div className="grid gap-5">
+          <div className="grid gap-5 2xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] 2xl:items-start">
+            <PreviewPanel clip={clip} statusTone={statusTone} embedded hideHeader />
+            <ClipSummary
+              clip={clip}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              actionStates={actionStates}
+              primaryReviewAction={primaryReviewAction}
+              onApprove={onApprove}
+              onSchedule={onSchedule}
+              onRefreshMetadata={onRefreshMetadata}
+              onRerender={onRerender}
+            />
+          </div>
+          <InsightPanel
+            clip={clip}
+            activeTab={activeTab}
+            captionDraft={captionDraft}
+            setCaptionDraft={setCaptionDraft}
+            actionStates={actionStates}
+            onSaveCaptions={onSaveCaptions}
+            onRerender={onRerender}
+            onRefreshMetadata={onRefreshMetadata}
+            onSaveBoundary={onSaveBoundary}
+          />
+        </div>
+      ) : <EmptyState text="Select a clip to inspect preview, metadata, timing, captions, and publish copy." />}
     </aside>
+  );
+}
+
+function ClipSummary({
+  clip,
+  activeTab,
+  setActiveTab,
+  actionStates,
+  primaryReviewAction,
+  onApprove,
+  onSchedule,
+  onRefreshMetadata,
+  onRerender,
+}: {
+  clip: ClipCandidate;
+  activeTab: DetailTab;
+  setActiveTab: (tab: DetailTab) => void;
+  actionStates: Record<string, ActionUiState>;
+  primaryReviewAction: (clip: ClipCandidate) => string;
+  onApprove: (id: string) => void;
+  onSchedule: (id: string) => void;
+  onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
+  onRerender: (id: string) => void;
+}) {
+  const primaryKey = clip.status === "approved" ? `clip:${clip.id}:schedule` : `clip:${clip.id}:approve`;
+  const primaryState = actionStates[primaryKey];
+  const metadataState = actionStates[`clip:${clip.id}:metadata`];
+  const rerenderState = actionStates[`clip:${clip.id}:rerender`];
+  const busy = primaryState?.status === "running" || metadataState?.status === "running" || rerenderState?.status === "running";
+  const tabs: {id: DetailTab; label: string}[] = [
+    {id: "metadata", label: "Metadata"},
+    {id: "timing", label: "Timing"},
+    {id: "captions", label: "Captions"},
+    {id: "post", label: "Post"},
+    {id: "quality", label: "QA"},
+  ];
+
+  return (
+    <div className="grid gap-4 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-xl font-semibold leading-tight text-white">{clip.title_hook}</h4>
+          {clip.caption_corrections?.manual_edit ? <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-2.5 py-1 text-xs font-semibold text-cyan">Manual edit</span> : null}
+        </div>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">{clip.hook_subtitle || clip.viral_reason || "No clip description yet."}</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:grid-cols-2">
+        <SettingTile label="Score" value={scoreValue(clip.score?.overall_score)} />
+        <SettingTile label="QA" value={scoreValue(clip.render_quality?.quality_score)} />
+        <SettingTile label="Duration" value={formatDuration(clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms)} />
+        <SettingTile label="Caption" value={clip.caption_source || "-"} />
+      </div>
+
+      <div className="grid gap-2">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRefreshMetadata(clip.id, "smart")}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {metadataState?.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+            Metadata
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setActiveTab("timing");
+            }}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Clock3 className="h-3.5 w-3.5" />
+            Timing
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRerender(clip.id)}
+            className="h-10 rounded-full border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {rerenderState?.status === "running" ? "Rendering..." : "Re-render"}
+          </button>
+          <button
+            type="button"
+            disabled={busy || !canRunPrimaryAction(clip)}
+            onClick={() => {
+              if (!canRunPrimaryAction(clip)) return;
+              if (clip.status === "approved") onSchedule(clip.id);
+              else onApprove(clip.id);
+            }}
+            className="h-10 rounded-full bg-cyan px-3 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {primaryState?.status === "running" ? "Working..." : canRunPrimaryAction(clip) ? primaryReviewAction(clip) : clip.status === "published" ? "Published" : "Managed"}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 rounded-[18px] border border-white/[0.08] bg-black/20 p-1">
+        {tabs.map((tab) => (
+          <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-full px-3 py-2 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink" : "text-zinc-400 hover:text-white"}`}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -423,7 +558,6 @@ function boundaryValidation(startText: string, endText: string) {
 function InsightPanel({
   clip,
   activeTab,
-  setActiveTab,
   captionDraft,
   setCaptionDraft,
   actionStates,
@@ -434,7 +568,6 @@ function InsightPanel({
 }: {
   clip?: ClipCandidate;
   activeTab: DetailTab;
-  setActiveTab: (tab: DetailTab) => void;
   captionDraft: string;
   setCaptionDraft: (value: string) => void;
   actionStates: Record<string, ActionUiState>;
@@ -443,13 +576,6 @@ function InsightPanel({
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
 }) {
-  const tabs: {id: DetailTab; label: string}[] = [
-    {id: "metadata", label: "Metadata"},
-    {id: "timing", label: "Timing"},
-    {id: "captions", label: "Captions"},
-    {id: "post", label: "Post copy"},
-    {id: "quality", label: "Quality"},
-  ];
   const captionCount = clip?.captions?.length || 0;
   const saveState = clip ? actionStates[`caption:${clip.id}:save`] : undefined;
   const rerenderState = clip ? actionStates[`clip:${clip.id}:rerender`] : undefined;
@@ -458,17 +584,15 @@ function InsightPanel({
   const actionBusy = saveState?.status === "running" || rerenderState?.status === "running" || metadataState?.status === "running" || boundaryState?.status === "running";
   const warnings = clipWarnings(clip);
   return (
-    <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-      <h3 className="text-lg font-semibold text-white">Clip intelligence</h3>
+    <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-white">Editor</h3>
+          <p className="mt-1 text-xs text-zinc-500">Fine-tune the selected clip without leaving review.</p>
+        </div>
+      </div>
       {clip ? (
-        <div className="mt-4 grid gap-4">
-          <div className="flex flex-wrap gap-2 rounded-full border border-white/[0.08] bg-canvas-deep p-1">
-            {tabs.map((tab) => (
-              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-full px-3 py-2 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink" : "text-zinc-400 hover:text-white"}`}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="grid gap-4">
           {activeTab === "metadata" ? (
             <div className="grid gap-4">
               <div>

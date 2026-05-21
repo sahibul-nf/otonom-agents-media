@@ -8,16 +8,17 @@ type PreviewPanelProps = {
   clip?: ClipCandidate;
   statusTone: (status: string) => string;
   embedded?: boolean;
+  hideHeader?: boolean;
 };
 
-export function PreviewPanel({clip, statusTone, embedded = false}: PreviewPanelProps) {
+export function PreviewPanel({clip, statusTone, embedded = false, hideHeader = false}: PreviewPanelProps) {
   const output = clip?.output_path || clip?.render_quality?.output_path;
   return (
     <div className={embedded ? "" : "rounded-[28px] border border-white/[0.08] bg-surface p-5"}>
-      <div className="mb-4 flex items-center justify-between">
+      {!hideHeader ? <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">9:16 Preview</h3>
         <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip?.status || "empty")}`}>{clip?.status || "No clip"}</span>
-      </div>
+      </div> : null}
       <div className="relative mx-auto grid aspect-[9/16] max-h-[620px] w-full max-w-[350px] place-items-center overflow-hidden rounded-[26px] border border-white/[0.10] bg-black">
         {output ? <VideoPreviewPlayer key={output} output={output} /> : (
           <div className="grid place-items-center gap-3 px-8 text-center text-sm text-zinc-500">
