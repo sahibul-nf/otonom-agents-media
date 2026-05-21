@@ -128,7 +128,7 @@ export function ReviewStudioSection({
   }, []);
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(520px,1fr)_minmax(560px,0.9fr)]">
+    <section className="grid gap-5 xl:grid-cols-[minmax(520px,1fr)_minmax(560px,0.9fr)] xl:items-start">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -384,18 +384,24 @@ function ReviewDetailPane({
   onSchedule: (id: string) => void;
 }) {
   return (
-    <aside className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
+    <aside className="rounded-[28px] border border-white/[0.08] bg-surface p-5 xl:sticky xl:top-5">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-xl font-semibold text-white">Clip Inspector</h3>
-          <p className="mt-1 text-sm text-zinc-400">Preview-first workspace for metadata, timing, captions, and publish copy.</p>
+          <p className="mt-1 text-sm text-zinc-400">Preview first, edit only what matters for this selected clip.</p>
         </div>
         {clip ? <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip.status)}`}>{clip.status.replaceAll("_", " ")}</span> : null}
       </div>
       {clip ? (
         <div className="grid gap-5">
           <div className="grid gap-5 2xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] 2xl:items-start">
-            <PreviewPanel clip={clip} statusTone={statusTone} embedded hideHeader />
+            <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Preview</span>
+                <span className="text-xs font-medium tabular-nums text-cyan">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</span>
+              </div>
+              <PreviewPanel clip={clip} statusTone={statusTone} embedded hideHeader />
+            </div>
             <ClipSummary
               clip={clip}
               activeTab={activeTab}
@@ -476,16 +482,17 @@ function ClipSummary({
         <SettingTile label="Caption" value={clip.caption_source || "-"} />
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid gap-2 rounded-[20px] border border-white/[0.08] bg-black/20 p-2">
+        <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Fast actions</div>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             disabled={busy}
             onClick={() => onRefreshMetadata(clip.id, "smart")}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-3 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[16px] border border-cyan/[0.30] bg-teal/[0.10] px-3 text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
           >
             {metadataState?.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
-            Metadata
+            Refresh
           </button>
           <button
             type="button"
@@ -493,7 +500,7 @@ function ClipSummary({
             onClick={() => {
               setActiveTab("timing");
             }}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Clock3 className="h-3.5 w-3.5" />
             Timing
@@ -504,7 +511,7 @@ function ClipSummary({
             type="button"
             disabled={busy}
             onClick={() => onRerender(clip.id)}
-            className="h-10 rounded-full border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-10 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {rerenderState?.status === "running" ? "Rendering..." : "Re-render"}
           </button>
@@ -516,19 +523,22 @@ function ClipSummary({
               if (clip.status === "approved") onSchedule(clip.id);
               else onApprove(clip.id);
             }}
-            className="h-10 rounded-full bg-cyan px-3 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+            className="h-10 rounded-[16px] bg-cyan px-3 text-xs font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             {primaryState?.status === "running" ? "Working..." : canRunPrimaryAction(clip) ? primaryReviewAction(clip) : clip.status === "published" ? "Published" : "Managed"}
           </button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 rounded-[18px] border border-white/[0.08] bg-black/20 p-1">
+      <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-2">
+        <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Edit sections</div>
+        <div className="flex flex-wrap gap-2">
         {tabs.map((tab) => (
           <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-full px-3 py-2 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink" : "text-zinc-400 hover:text-white"}`}>
             {tab.label}
           </button>
         ))}
+        </div>
       </div>
     </div>
   );
