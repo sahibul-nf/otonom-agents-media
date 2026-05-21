@@ -7,12 +7,13 @@ import {apiPath, ClipCandidate} from "@/lib/media-api";
 type PreviewPanelProps = {
   clip?: ClipCandidate;
   statusTone: (status: string) => string;
+  embedded?: boolean;
 };
 
-export function PreviewPanel({clip, statusTone}: PreviewPanelProps) {
+export function PreviewPanel({clip, statusTone, embedded = false}: PreviewPanelProps) {
   const output = clip?.output_path || clip?.render_quality?.output_path;
   return (
-    <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
+    <div className={embedded ? "" : "rounded-[28px] border border-white/[0.08] bg-surface p-5"}>
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">9:16 Preview</h3>
         <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip?.status || "empty")}`}>{clip?.status || "No clip"}</span>

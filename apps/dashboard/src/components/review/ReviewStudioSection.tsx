@@ -128,7 +128,7 @@ export function ReviewStudioSection({
   }, []);
 
   return (
-    <section className="grid gap-5 2xl:grid-cols-[minmax(520px,1fr)_minmax(360px,440px)_360px]">
+    <section className="grid gap-5 xl:grid-cols-[minmax(520px,1fr)_minmax(560px,0.9fr)]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -332,8 +332,9 @@ export function ReviewStudioSection({
           }) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
         </div>
       </div>
-      <InsightPanel
+      <ReviewDetailPane
         clip={selected}
+        statusTone={statusTone}
         activeTab={detailTab}
         setActiveTab={setDetailTab}
         captionDraft={captionDraft}
@@ -344,10 +345,57 @@ export function ReviewStudioSection({
         onRefreshMetadata={onRefreshMetadata}
         onSaveBoundary={onSaveBoundary}
       />
-      <div className="grid gap-5">
-        <PreviewPanel clip={selected} statusTone={statusTone} />
-      </div>
     </section>
+  );
+}
+
+function ReviewDetailPane({
+  clip,
+  statusTone,
+  activeTab,
+  setActiveTab,
+  captionDraft,
+  setCaptionDraft,
+  actionStates,
+  onSaveCaptions,
+  onRerender,
+  onRefreshMetadata,
+  onSaveBoundary,
+}: {
+  clip?: ClipCandidate;
+  statusTone: (status: string) => string;
+  activeTab: DetailTab;
+  setActiveTab: (tab: DetailTab) => void;
+  captionDraft: string;
+  setCaptionDraft: (value: string) => void;
+  actionStates: Record<string, ActionUiState>;
+  onSaveCaptions: (id: string, draft: string) => void;
+  onRerender: (id: string) => void;
+  onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
+  onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
+}) {
+  return (
+    <aside className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
+      <div className="mb-5">
+        <h3 className="text-xl font-semibold text-white">Clip workspace</h3>
+        <p className="mt-1 text-sm text-zinc-400">Preview, metadata, timing, captions, and publish copy for the selected clip.</p>
+      </div>
+      <div className="grid gap-5 2xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] 2xl:items-start">
+        <PreviewPanel clip={clip} statusTone={statusTone} embedded />
+        <InsightPanel
+          clip={clip}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          captionDraft={captionDraft}
+          setCaptionDraft={setCaptionDraft}
+          actionStates={actionStates}
+          onSaveCaptions={onSaveCaptions}
+          onRerender={onRerender}
+          onRefreshMetadata={onRefreshMetadata}
+          onSaveBoundary={onSaveBoundary}
+        />
+      </div>
+    </aside>
   );
 }
 
