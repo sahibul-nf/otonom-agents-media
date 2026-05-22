@@ -145,58 +145,99 @@ export function BrandSection({
   const autonomyBusy = Object.entries(actionStates).find(([key, state]) => key.startsWith("autonomy:") && state.status === "running")?.[1];
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-xl font-semibold text-white">Brand template editor</h3>
-        <p className="mt-1 text-sm text-zinc-400">Tune the caption and watermark look with an instant browser preview. Saving creates a reusable local template.</p>
-        <div className="mt-5 grid gap-4">
-          <label className="grid gap-2 text-sm font-medium text-zinc-300">
-            Base template
-            <select
-              value={selectedTemplate}
-              disabled={templateBusy}
-              onChange={(event) => void loadTemplate(event.target.value)}
-              className="h-12 rounded-2xl border border-cyan/[0.28] bg-canvas-deep px-4 text-sm font-semibold text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {(templates.length ? templates : [{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}]).map((template) => (
-                <option key={template.id} value={template.path}>{template.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-zinc-300">
-            Template name
-            <input value={label} onChange={(event) => setLabel(event.target.value)} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 text-sm text-zinc-200 outline-none focus:border-cyan/[0.35]" />
-          </label>
-          <div className="grid gap-3 md:grid-cols-2">
-            <FontField
-              value={editor.fontFamily}
-              selectedOption={selectedFontOption}
-              availability={fontAvailability}
-              onSelect={(value) => updateEditor({fontFamily: value === "__custom" ? editor.fontFamily : value})}
-              onCustom={(value) => updateEditor({fontFamily: value})}
-            />
-            <NumberField label="Font size" value={editor.fontSize} min={28} max={76} onChange={(value) => updateEditor({fontSize: value})} />
-            <ColorField label="Text color" value={editor.textColor} onChange={(value) => updateEditor({textColor: value})} />
-            <ColorField label="Highlight" value={editor.highlightColor} onChange={(value) => updateEditor({highlightColor: value})} />
-            <ColorField label="Caption background" value={editor.backgroundColor} onChange={(value) => updateEditor({backgroundColor: value})} />
-            <NumberField label="Stroke width" value={editor.strokeWidth} min={0} max={16} onChange={(value) => updateEditor({strokeWidth: value})} />
+    <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      <div className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Brand system</p>
+            <h3 className="mt-1 text-xl font-semibold text-white">Template editor</h3>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Tune reusable caption, overlay, and automation defaults before rendering a production batch.</p>
           </div>
-          <TextField label="Watermark text" value={editor.watermarkText} onChange={(value) => updateEditor({watermarkText: value})} />
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${saveState.toLowerCase().includes("failed") ? "border-danger/30 bg-danger/10 text-danger" : "border-cyan/[0.22] bg-teal/[0.08] text-cyan"}`}>
+            {saveState}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 className="font-semibold text-white">Template source</h4>
+                <p className="mt-1 text-sm text-zinc-500">Start from a saved style, then save the edited version as a reusable template.</p>
+              </div>
+              {templateBusy ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan" /> : null}
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,.8fr)]">
+              <label className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
+                Base template
+                <select
+                  value={selectedTemplate}
+                  disabled={templateBusy}
+                  onChange={(event) => void loadTemplate(event.target.value)}
+                  className="h-12 min-w-0 rounded-2xl border border-cyan/[0.28] bg-surface px-4 text-sm font-semibold text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {(templates.length ? templates : [{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}]).map((template) => (
+                    <option key={template.id} value={template.path}>{template.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
+                New template name
+                <input value={label} onChange={(event) => setLabel(event.target.value)} className="h-12 min-w-0 rounded-2xl border border-white/[0.08] bg-surface px-4 text-sm text-zinc-200 outline-none focus:border-cyan/[0.35]" />
+              </label>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h4 className="font-semibold text-white">Caption style</h4>
+                <p className="mt-1 text-sm text-zinc-500">Controls affect the generated caption overlay and the preview on the right.</p>
+              </div>
+              <span className="rounded-full border border-white/[0.08] bg-surface px-3 py-1 text-xs font-semibold text-zinc-400">{editor.fontSize}px caption</span>
+            </div>
+            <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">
+              <FontField
+                value={editor.fontFamily}
+                selectedOption={selectedFontOption}
+                availability={fontAvailability}
+                onSelect={(value) => updateEditor({fontFamily: value === "__custom" ? editor.fontFamily : value})}
+                onCustom={(value) => updateEditor({fontFamily: value})}
+              />
+              <NumberField label="Font size" value={editor.fontSize} min={28} max={76} onChange={(value) => updateEditor({fontSize: value})} />
+              <ColorField label="Text color" value={editor.textColor} onChange={(value) => updateEditor({textColor: value})} />
+              <ColorField label="Highlight" value={editor.highlightColor} onChange={(value) => updateEditor({highlightColor: value})} />
+              <ColorField label="Caption background" value={editor.backgroundColor} onChange={(value) => updateEditor({backgroundColor: value})} />
+              <NumberField label="Stroke width" value={editor.strokeWidth} min={0} max={16} onChange={(value) => updateEditor({strokeWidth: value})} />
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <h4 className="font-semibold text-white">Overlay</h4>
+            <p className="mt-1 text-sm text-zinc-500">Keep the persistent watermark short enough for vertical video safe areas.</p>
+            <div className="mt-4">
+              <TextField label="Watermark text" value={editor.watermarkText} onChange={(value) => updateEditor({watermarkText: value})} />
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" disabled={saveBusy || templateBusy} onClick={saveTemplate} className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
               {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saveBusy ? "Saving..." : "Save as template"}
+              {saveBusy ? "Saving..." : "Save template"}
             </button>
             <button type="button" disabled={saveBusy || templateBusy} onClick={() => void loadTemplate(selectedTemplate)} className="inline-flex items-center gap-2 rounded-full border border-white/[0.10] px-5 py-3 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
               {templateBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {templateBusy ? "Loading..." : "Reset"}
+              {templateBusy ? "Loading..." : "Reset to base"}
             </button>
-            <span className={`text-sm ${saveState.toLowerCase().includes("failed") ? "text-danger" : "text-cyan"}`}>{saveState}</span>
           </div>
         </div>
+
         <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
           <div className="flex items-center justify-between gap-3">
-            <h4 className="font-semibold text-white">Available templates</h4>
+            <div>
+              <h4 className="font-semibold text-white">Template library</h4>
+              <p className="mt-1 text-sm text-zinc-500">Saved styles available for future batch generation.</p>
+            </div>
             <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{templates.length} saved</span>
           </div>
           <div className="mt-3 grid gap-2">
@@ -205,10 +246,13 @@ export function BrandSection({
                 key={template.id}
                 type="button"
                 onClick={() => void loadTemplate(template.path)}
-                className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition ${selectedTemplate === template.path ? "bg-teal/[0.14] text-cyan ring-1 ring-cyan/[0.26]" : "bg-surface text-zinc-200 hover:bg-surface-raised"}`}
+                className={`flex min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition ${selectedTemplate === template.path ? "bg-teal/[0.14] text-cyan ring-1 ring-cyan/[0.26]" : "bg-surface text-zinc-200 hover:bg-surface-raised"}`}
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold">{template.label}</span>
+                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-semibold">{template.label}</span>
+                    {selectedTemplate === template.path ? <span className="rounded-full border border-cyan/[0.22] bg-cyan/[0.08] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan">Active base</span> : null}
+                  </span>
                   <span className="mt-1 block truncate text-xs text-zinc-500">{template.path}</span>
                 </span>
                 {selectedTemplate === template.path ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : null}
@@ -216,10 +260,16 @@ export function BrandSection({
             )) : <EmptyState text="No style templates found." />}
           </div>
         </div>
+
         <div className="mt-5 rounded-[24px] border border-cyan/[0.18] bg-teal/[0.08] p-4">
-          <h4 className="font-semibold text-white">Autonomous mode</h4>
-          <p className="mt-1 text-sm leading-6 text-zinc-400">Assisted mode gives you {autonomy?.review_grace_hours || 12}h to approve before high-score clips enter the schedule queue.</p>
-          <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="font-semibold text-white">Autonomous mode</h4>
+              <p className="mt-1 text-sm leading-6 text-zinc-400">Assisted mode gives you {autonomy?.review_grace_hours || 12}h to approve before high-score clips enter the schedule queue.</p>
+            </div>
+            <span className="rounded-full border border-cyan/[0.18] px-3 py-1 text-xs font-semibold capitalize text-cyan">{autonomy?.autonomy_mode || "off"}</span>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
             {["off", "assisted", "full"].map((mode) => (
               <button
                 key={mode}
@@ -234,7 +284,7 @@ export function BrandSection({
             ))}
           </div>
           {autonomyBusy ? <p className="mt-3 text-xs font-medium text-cyan">{autonomyBusy.message}</p> : null}
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
             <ReadinessMini ready={Boolean(autonomy?.review_grace_hours)} label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
             <ReadinessMini ready={Boolean(autonomy?.auto_schedule_enabled)} label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
             <ReadinessMini ready label="Overall gate" value={autonomy?.overall_threshold || 82} />
@@ -242,9 +292,16 @@ export function BrandSection({
           </div>
         </div>
       </div>
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-xl font-semibold text-white">Live brand preview</h3>
-        <div className="mt-5 mx-auto flex aspect-[9/16] max-h-[620px] w-full max-w-[350px] flex-col justify-between overflow-hidden rounded-[28px] border border-white/[0.10] bg-[radial-gradient(circle_at_50%_20%,rgba(108,226,238,.18),transparent_34%),linear-gradient(180deg,#31343a,#111214_68%)] p-7 shadow-glow">
+
+      <aside className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 sm:p-5 xl:sticky xl:top-24 xl:self-start">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-xl font-semibold text-white">Live preview</h3>
+            <p className="mt-1 text-sm text-zinc-500">Instant browser preview, no render needed.</p>
+          </div>
+          <span className="rounded-full border border-cyan/[0.18] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">9:16</span>
+        </div>
+        <div className="mt-4 mx-auto flex aspect-[9/16] max-h-[620px] w-full max-w-[350px] flex-col justify-between overflow-hidden rounded-[28px] border border-white/[0.10] bg-[radial-gradient(circle_at_50%_20%,rgba(108,226,238,.18),transparent_34%),linear-gradient(180deg,#31343a,#111214_68%)] p-7 shadow-glow">
           <div>
             <p className="text-center text-3xl font-black leading-tight text-white drop-shadow-lg">Bahagia Hanya dengan Allah</p>
             <p className="mx-auto mt-3 max-w-[260px] text-center text-sm font-semibold leading-5 text-zinc-200">Pesan singkat yang menenangkan hati dan meluruskan arah.</p>
@@ -268,8 +325,22 @@ export function BrandSection({
             </div>
           </div>
         </div>
-      </div>
+        <div className="mt-4 grid gap-2 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-3 text-xs">
+          <PreviewSpec label="Font" value={editor.fontFamily} />
+          <PreviewSpec label="Caption" value={`${editor.fontSize}px / stroke ${editor.strokeWidth}px`} />
+          <PreviewSpec label="Watermark" value={editor.watermarkText || "None"} />
+        </div>
+      </aside>
     </section>
+  );
+}
+
+function PreviewSpec({label, value}: {label: string; value: string}) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl bg-surface px-3 py-2">
+      <span className="text-zinc-500">{label}</span>
+      <span className="min-w-0 truncate font-semibold text-zinc-200">{value}</span>
+    </div>
   );
 }
 
