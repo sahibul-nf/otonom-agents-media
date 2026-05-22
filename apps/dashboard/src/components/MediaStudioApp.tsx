@@ -713,6 +713,26 @@ export function MediaStudioApp() {
     }
   }
 
+  async function generatePostCopy(id: string) {
+    const key = `post:${id}:generate`;
+    try {
+      const result = await runAction(
+        key,
+        "Generating post copy with AI...",
+        () => apiPost<{post_caption: string; source?: string}>("post-copy-generate", {
+          candidate_id: id,
+          llm_provider: generateConfig.llmProvider,
+        }),
+        "Post copy regenerated",
+      );
+      setPostCopyDrafts((items) => ({...items, [id]: result.post_caption}));
+      setStatus(result.source?.startsWith("llm_") ? "AI post copy generated." : "Post copy generated from transcript fallback.");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Post copy generation failed");
+    }
+  }
+
   async function rerenderClip(id: string) {
     const key = `clip:${id}:rerender`;
     setRerendering((items) => ({...items, [id]: {status: "running", message: "Queued for re-render", progress: 2}}));
@@ -966,6 +986,7 @@ export function MediaStudioApp() {
               onClear={clearQueue}
               onSaveCaptions={saveCaptionCorrections}
               onSavePostCopy={savePostCopy}
+              onGeneratePostCopy={generatePostCopy}
               onRerender={rerenderClip}
               onRefreshMetadata={refreshClipMetadata}
               onSaveBoundary={saveClipBoundary}

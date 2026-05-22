@@ -34,7 +34,7 @@ from .live_publishers import (
 from .models import PUBLISH_MODES
 from .metadata_refresh import refresh_candidate_metadata
 from .oauth_flow import OAuthFlowError, complete_oauth, start_oauth
-from .post_copy import build_post_caption, sanitize_post_caption
+from .post_copy import build_post_caption, generate_post_caption, sanitize_post_caption
 from .publishers import build_payload, create_dry_run_attempt
 from .rerender import create_rerender_job, list_rerender_jobs
 from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
@@ -463,6 +463,56 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 "candidate_id": candidate_id,
                 "post_caption": sanitized,
                 "char_count": len(sanitized),
+            })
+            return
+
+        if parsed.path == "/api/post-copy-generate":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            preferred_provider = str(payload.get("llm_provider") or "").strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            load_env_file(ENV_FILE)
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            row = conn.execute(
+                """
+                SELECT cc.*, rj.metadata_json AS render_metadata_json
+                FROM clip_candidates cc
+                LEFT JOIN render_jobs rj ON rj.candidate_id = cc.id
+                WHERE cc.id = ?
+                ORDER BY rj.created_at DESC
+                LIMIT 1
+                """,
+                (candidate_id,),
+            ).fetchone()
+            if not row:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            if row["status"] == "published":
+                self._send_json({"error": "published clip post copy is locked"}, status=400)
+                return
+            candidate = dict(row)
+            metadata = _loads(candidate.get("curation_metadata_json"), {})
+            generated = generate_post_caption(
+                candidate,
+                {"metadata_json": candidate.get("render_metadata_json") or "{}"},
+                preferred_provider=preferred_provider,
+            )
+            metadata["post_caption_override"] = generated["post_caption"]
+            metadata["post_caption_source"] = generated["source"]
+            conn.execute(
+                """
+                UPDATE clip_candidates
+                SET curation_metadata_json = ?
+                WHERE id = ?
+                """,
+                (json.dumps(metadata, ensure_ascii=False), candidate_id),
+            )
+            conn.commit()
+            self._send_json({
+                "candidate_id": candidate_id,
+                **generated,
             })
             return
 

@@ -1,6 +1,6 @@
 "use client";
 
-import {AlertTriangle, CheckCircle2, Clock3, ListFilter, Loader2, MessageSquareText, MoreHorizontal, RefreshCcw, Scissors, Trash2} from "lucide-react";
+import {AlertTriangle, CheckCircle2, Clock3, ListFilter, Loader2, MessageSquareText, MoreHorizontal, RefreshCcw, Scissors, Sparkles, Trash2} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
 import {ClipCandidate, formatDuration, formatTimestamp, scoreValue} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
@@ -47,6 +47,7 @@ type Props = {
   onClear: () => void;
   onSaveCaptions: (id: string, draft: string) => void;
   onSavePostCopy: (id: string, draft: string) => void;
+  onGeneratePostCopy: (id: string) => void;
   onRerender: (id: string) => void;
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
@@ -145,6 +146,7 @@ export function ReviewStudioSection({
   onClear,
   onSaveCaptions,
   onSavePostCopy,
+  onGeneratePostCopy,
   onRerender,
   onRefreshMetadata,
   onSaveBoundary,
@@ -406,6 +408,7 @@ export function ReviewStudioSection({
         actionStates={actionStates}
         onSaveCaptions={onSaveCaptions}
         onSavePostCopy={onSavePostCopy}
+        onGeneratePostCopy={onGeneratePostCopy}
         onRerender={onRerender}
         onRefreshMetadata={onRefreshMetadata}
         onSaveBoundary={onSaveBoundary}
@@ -429,6 +432,7 @@ function ReviewDetailPane({
   actionStates,
   onSaveCaptions,
   onSavePostCopy,
+  onGeneratePostCopy,
   onRerender,
   onRefreshMetadata,
   onSaveBoundary,
@@ -447,6 +451,7 @@ function ReviewDetailPane({
   actionStates: Record<string, ActionUiState>;
   onSaveCaptions: (id: string, draft: string) => void;
   onSavePostCopy: (id: string, draft: string) => void;
+  onGeneratePostCopy: (id: string) => void;
   onRerender: (id: string) => void;
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
@@ -495,6 +500,7 @@ function ReviewDetailPane({
             actionStates={actionStates}
             onSaveCaptions={onSaveCaptions}
             onSavePostCopy={onSavePostCopy}
+            onGeneratePostCopy={onGeneratePostCopy}
             onRerender={onRerender}
             onRefreshMetadata={onRefreshMetadata}
             onSaveBoundary={onSaveBoundary}
@@ -679,6 +685,7 @@ function InsightPanel({
   actionStates,
   onSaveCaptions,
   onSavePostCopy,
+  onGeneratePostCopy,
   onRerender,
   onRefreshMetadata,
   onSaveBoundary,
@@ -693,6 +700,7 @@ function InsightPanel({
   actionStates: Record<string, ActionUiState>;
   onSaveCaptions: (id: string, draft: string) => void;
   onSavePostCopy: (id: string, draft: string) => void;
+  onGeneratePostCopy: (id: string) => void;
   onRerender: (id: string) => void;
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
@@ -775,7 +783,7 @@ function InsightPanel({
             <CaptionEditor clip={clip} captionDraft={captionDraft} setCaptionDraft={setCaptionDraft} actionBusy={actionBusy} captionCount={captionCount} saveState={saveState} rerenderState={rerenderState} onSaveCaptions={onSaveCaptions} onRerender={onRerender} />
           ) : null}
           {activeTab === "post" ? (
-            <PostCopyEditor clip={clip} draft={postCopyDraft} setDraft={setPostCopyDraft} actionBusy={actionBusy} saveState={actionStates[`post:${clip.id}:save`]} onSavePostCopy={onSavePostCopy} />
+            <PostCopyEditor clip={clip} draft={postCopyDraft} setDraft={setPostCopyDraft} actionBusy={actionBusy} saveState={actionStates[`post:${clip.id}:save`]} generateState={actionStates[`post:${clip.id}:generate`]} onSavePostCopy={onSavePostCopy} onGeneratePostCopy={onGeneratePostCopy} />
           ) : null}
           {activeTab === "quality" ? (
             <QualityPanel clip={clip} warnings={warnings} />
@@ -789,13 +797,15 @@ function InsightPanel({
   );
 }
 
-function PostCopyEditor({clip, draft, setDraft, actionBusy, saveState, onSavePostCopy}: {
+function PostCopyEditor({clip, draft, setDraft, actionBusy, saveState, generateState, onSavePostCopy, onGeneratePostCopy}: {
   clip: ClipCandidate;
   draft: string;
   setDraft: (value: string) => void;
   actionBusy: boolean;
   saveState?: ActionUiState;
+  generateState?: ActionUiState;
   onSavePostCopy: (id: string, draft: string) => void;
+  onGeneratePostCopy: (id: string) => void;
 }) {
   const hashtags = Array.from(new Set((draft.match(/(^|\s)(#[\p{L}\p{N}_]+)/gu) || []).map((tag) => tag.trim())));
   const overHashtagLimit = hashtags.length > 5;
@@ -831,17 +841,28 @@ function PostCopyEditor({clip, draft, setDraft, actionBusy, saveState, onSavePos
       />
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className={`text-xs ${overHashtagLimit ? "text-danger" : locked ? "text-warning" : "text-zinc-500"}`}>
-          {locked ? "Published post copy is locked for audit safety." : overHashtagLimit ? "Remove extra hashtags before saving." : "This copy is used by scheduled and live publish payloads."}
+          {generateState?.status === "done" ? generateState.message : locked ? "Published post copy is locked for audit safety." : overHashtagLimit ? "Remove extra hashtags before saving." : "This copy is used by scheduled and live publish payloads."}
         </p>
-        <button
-          type="button"
-          disabled={actionBusy || locked || empty || overHashtagLimit}
-          onClick={() => onSavePostCopy(clip.id, draft)}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {saveState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {saveState?.status === "running" ? "Saving..." : "Save post copy"}
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            disabled={actionBusy || locked}
+            onClick={() => onGeneratePostCopy(clip.id)}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-cyan/[0.28] bg-teal/[0.10] px-5 text-sm font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {generateState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {generateState?.status === "running" ? "Generating..." : "Regenerate with AI"}
+          </button>
+          <button
+            type="button"
+            disabled={actionBusy || locked || empty || overHashtagLimit}
+            onClick={() => onSavePostCopy(clip.id, draft)}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {saveState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {saveState?.status === "running" ? "Saving..." : "Save post copy"}
+          </button>
+        </div>
       </div>
     </div>
   );

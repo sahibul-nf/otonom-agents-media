@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
+
+from .llm import LLMError, call_llm_json
 
 
 MAX_POST_COPY_CHARS = 400
@@ -48,6 +51,19 @@ def _candidate_metadata(candidate: dict[str, Any]) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _available_provider(preferred: str = "") -> str:
+    candidates = [preferred, "deepseek", "openai", "groq"]
+    for provider in candidates:
+        provider = (provider or "").strip().lower()
+        if provider == "deepseek" and os.environ.get("DEEPSEEK_API_KEY"):
+            return provider
+        if provider == "openai" and os.environ.get("OPENAI_API_KEY"):
+            return provider
+        if provider == "groq" and os.environ.get("GROQ_API_KEY"):
+            return provider
+    return "none"
 
 
 def _split_hashtags(text: str) -> tuple[str, list[str]]:
@@ -119,3 +135,76 @@ def build_post_caption(
         hashtags,
     ]
     return _compact_lines(lines, min(PLATFORM_LIMITS.get(platform, MAX_POST_COPY_CHARS), MAX_POST_COPY_CHARS))
+
+
+def _local_generated_post_caption(candidate: dict[str, Any], render_job: dict[str, Any] | None = None) -> str:
+    title = str(candidate.get("title_hook") or "").strip()
+    subtitle = (
+        str(candidate.get("hook_subtitle") or "").strip()
+        or _render_subtitle(render_job)
+        or str(candidate.get("viral_reason") or "").strip()
+    )
+    span = str(candidate.get("transcript_span") or "").strip()
+    excerpt_words = [word.strip(".,!?;:()[]{}\"'“”‘’") for word in span.split() if len(word.strip(".,!?;:()[]{}\"'“”‘’")) > 3]
+    excerpt = " ".join(excerpt_words[:14])
+    body = title
+    if subtitle:
+        body = f"{title}\n\n{subtitle}"
+    if excerpt and excerpt.lower() not in body.lower():
+        body = f"{body}\n\n{excerpt}..."
+    return sanitize_post_caption(f"{body}\n\n{' '.join(NOURBIT_HASHTAGS[:MAX_POST_COPY_HASHTAGS])}")
+
+
+def generate_post_caption(
+    candidate: dict[str, Any],
+    render_job: dict[str, Any] | None = None,
+    preferred_provider: str = "",
+) -> dict[str, str | int]:
+    """Generate short social post copy with an optional LLM and safe local fallback."""
+    metadata = _candidate_metadata(candidate)
+    provider = _available_provider(preferred_provider or str(metadata.get("llm_provider") or ""))
+    fallback = _local_generated_post_caption(candidate, render_job)
+    source = "local_transcript"
+    caption = fallback
+
+    if provider != "none":
+        system_prompt = (
+            "You are a social video copywriter for short Islamic reminder clips. "
+            "Return strict JSON only. Do not invent claims outside the transcript."
+        )
+        user_prompt = json.dumps(
+            {
+                "task": "Write a warm Indonesian post caption for this short-form video.",
+                "rules": [
+                    "post_caption must be under 400 characters after hashtags.",
+                    "Use at most 5 hashtags.",
+                    "Do not mention platform mechanics, AI, or automation.",
+                    "Use the title/subtitle as context, but match the transcript content.",
+                    "Keep it sincere, not salesy.",
+                ],
+                "title_hook": str(candidate.get("title_hook") or "").strip(),
+                "hook_subtitle": str(candidate.get("hook_subtitle") or "").strip(),
+                "viral_reason": str(candidate.get("viral_reason") or "").strip(),
+                "transcript_span": str(candidate.get("transcript_span") or "")[:2400],
+                "suggested_hashtags": NOURBIT_HASHTAGS[:MAX_POST_COPY_HASHTAGS],
+                "required_json_shape": {"post_caption": "string"},
+            },
+            ensure_ascii=False,
+        )
+        try:
+            result = call_llm_json(provider, system_prompt, user_prompt, timeout_seconds=35)
+            if isinstance(result, dict):
+                generated = sanitize_post_caption(str(result.get("post_caption") or ""))
+                if generated:
+                    caption = generated
+                    source = f"llm_{provider}"
+        except (LLMError, ValueError, TypeError):
+            caption = fallback
+            source = "local_transcript_fallback"
+
+    return {
+        "post_caption": caption,
+        "source": source,
+        "char_count": len(caption),
+        "hashtag_count": caption.count("#"),
+    }

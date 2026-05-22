@@ -15,7 +15,7 @@ from media_engine.live_publishers import (
     publish_youtube_short,
 )
 from media_engine.publishers import build_payload, create_dry_run_attempt
-from media_engine.post_copy import build_post_caption, sanitize_post_caption
+from media_engine.post_copy import build_post_caption, generate_post_caption, sanitize_post_caption
 
 
 def json_dumps(value):
@@ -76,6 +76,41 @@ class PublisherTests(unittest.TestCase):
         caption = sanitize_post_caption("Isi post #A #B #C #D #E #F #A")
 
         self.assertEqual(caption.count("#"), 5)
+
+    def test_generate_post_caption_uses_llm_when_available(self):
+        candidate = {
+            "id": "clip1",
+            "title_hook": "Rahasia Hati Tenang",
+            "hook_subtitle": "Pengingat lembut tentang hati yang sering diam-diam bergeser.",
+            "viral_reason": "Reason",
+            "transcript_span": "Hati yang tenang itu lahir dari ingat kepada Allah dan menjaga arah niat.",
+        }
+        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}, clear=True), patch(
+            "media_engine.post_copy.call_llm_json",
+            return_value={"post_caption": "Tenangkan hati dengan mengingat Allah dan menjaga niat.\n\n#Nourbit #KajianIslam #NasihatHati #Dzikir #IslamicReminder #Extra"},
+        ) as call:
+            result = generate_post_caption(candidate, preferred_provider="deepseek")
+
+        self.assertEqual(result["source"], "llm_deepseek")
+        self.assertLessEqual(result["char_count"], 400)
+        self.assertEqual(result["hashtag_count"], 5)
+        self.assertIn("Tenangkan hati", result["post_caption"])
+        call.assert_called_once()
+
+    def test_generate_post_caption_falls_back_without_key(self):
+        candidate = {
+            "id": "clip1",
+            "title_hook": "Rahasia Hati Tenang",
+            "hook_subtitle": "Pengingat lembut tentang hati yang sering diam-diam bergeser.",
+            "viral_reason": "Reason",
+            "transcript_span": "Hati yang tenang itu lahir dari ingat kepada Allah dan menjaga arah niat.",
+        }
+        with patch.dict("os.environ", {}, clear=True):
+            result = generate_post_caption(candidate, preferred_provider="deepseek")
+
+        self.assertEqual(result["source"], "local_transcript")
+        self.assertLessEqual(result["char_count"], 400)
+        self.assertLessEqual(result["hashtag_count"], 5)
 
     def test_credential_status_marks_ready_without_exposing_values(self):
         with patch.dict(
