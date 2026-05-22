@@ -35,6 +35,8 @@ type Props = {
   setSelectedId: (id: string) => void;
   captionDraft: string;
   setCaptionDraft: (value: string) => void;
+  postCopyDraft: string;
+  setPostCopyDraft: (value: string) => void;
   statusTone: (status: string) => string;
   formatDeadline: (value?: string) => string;
   primaryReviewAction: (clip: ClipCandidate) => string;
@@ -44,6 +46,7 @@ type Props = {
   onDelete: (id: string) => void;
   onClear: () => void;
   onSaveCaptions: (id: string, draft: string) => void;
+  onSavePostCopy: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
@@ -130,6 +133,8 @@ export function ReviewStudioSection({
   setSelectedId,
   captionDraft,
   setCaptionDraft,
+  postCopyDraft,
+  setPostCopyDraft,
   statusTone,
   formatDeadline,
   primaryReviewAction,
@@ -139,6 +144,7 @@ export function ReviewStudioSection({
   onDelete,
   onClear,
   onSaveCaptions,
+  onSavePostCopy,
   onRerender,
   onRefreshMetadata,
   onSaveBoundary,
@@ -395,8 +401,11 @@ export function ReviewStudioSection({
         setActiveTab={setDetailTab}
         captionDraft={captionDraft}
         setCaptionDraft={setCaptionDraft}
+        postCopyDraft={postCopyDraft}
+        setPostCopyDraft={setPostCopyDraft}
         actionStates={actionStates}
         onSaveCaptions={onSaveCaptions}
+        onSavePostCopy={onSavePostCopy}
         onRerender={onRerender}
         onRefreshMetadata={onRefreshMetadata}
         onSaveBoundary={onSaveBoundary}
@@ -415,8 +424,11 @@ function ReviewDetailPane({
   setActiveTab,
   captionDraft,
   setCaptionDraft,
+  postCopyDraft,
+  setPostCopyDraft,
   actionStates,
   onSaveCaptions,
+  onSavePostCopy,
   onRerender,
   onRefreshMetadata,
   onSaveBoundary,
@@ -430,8 +442,11 @@ function ReviewDetailPane({
   setActiveTab: (tab: DetailTab) => void;
   captionDraft: string;
   setCaptionDraft: (value: string) => void;
+  postCopyDraft: string;
+  setPostCopyDraft: (value: string) => void;
   actionStates: Record<string, ActionUiState>;
   onSaveCaptions: (id: string, draft: string) => void;
+  onSavePostCopy: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
@@ -475,8 +490,11 @@ function ReviewDetailPane({
             setActiveTab={setActiveTab}
             captionDraft={captionDraft}
             setCaptionDraft={setCaptionDraft}
+            postCopyDraft={postCopyDraft}
+            setPostCopyDraft={setPostCopyDraft}
             actionStates={actionStates}
             onSaveCaptions={onSaveCaptions}
+            onSavePostCopy={onSavePostCopy}
             onRerender={onRerender}
             onRefreshMetadata={onRefreshMetadata}
             onSaveBoundary={onSaveBoundary}
@@ -656,8 +674,11 @@ function InsightPanel({
   setActiveTab,
   captionDraft,
   setCaptionDraft,
+  postCopyDraft,
+  setPostCopyDraft,
   actionStates,
   onSaveCaptions,
+  onSavePostCopy,
   onRerender,
   onRefreshMetadata,
   onSaveBoundary,
@@ -667,8 +688,11 @@ function InsightPanel({
   setActiveTab: (tab: DetailTab) => void;
   captionDraft: string;
   setCaptionDraft: (value: string) => void;
+  postCopyDraft: string;
+  setPostCopyDraft: (value: string) => void;
   actionStates: Record<string, ActionUiState>;
   onSaveCaptions: (id: string, draft: string) => void;
+  onSavePostCopy: (id: string, draft: string) => void;
   onRerender: (id: string) => void;
   onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
@@ -751,10 +775,7 @@ function InsightPanel({
             <CaptionEditor clip={clip} captionDraft={captionDraft} setCaptionDraft={setCaptionDraft} actionBusy={actionBusy} captionCount={captionCount} saveState={saveState} rerenderState={rerenderState} onSaveCaptions={onSaveCaptions} onRerender={onRerender} />
           ) : null}
           {activeTab === "post" ? (
-            <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><MessageSquareText className="h-4 w-4 text-cyan" /> Post copy</div>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-400">{clip.post_caption || "Post caption will appear after render metadata is available."}</p>
-            </div>
+            <PostCopyEditor clip={clip} draft={postCopyDraft} setDraft={setPostCopyDraft} actionBusy={actionBusy} saveState={actionStates[`post:${clip.id}:save`]} onSavePostCopy={onSavePostCopy} />
           ) : null}
           {activeTab === "quality" ? (
             <QualityPanel clip={clip} warnings={warnings} />
@@ -764,6 +785,64 @@ function InsightPanel({
           ) : null}
         </div>
       ) : <EmptyState text="Select a clip to inspect curation, captions, and publish copy." />}
+    </div>
+  );
+}
+
+function PostCopyEditor({clip, draft, setDraft, actionBusy, saveState, onSavePostCopy}: {
+  clip: ClipCandidate;
+  draft: string;
+  setDraft: (value: string) => void;
+  actionBusy: boolean;
+  saveState?: ActionUiState;
+  onSavePostCopy: (id: string, draft: string) => void;
+}) {
+  const hashtags = Array.from(new Set((draft.match(/(^|\s)(#[\p{L}\p{N}_]+)/gu) || []).map((tag) => tag.trim())));
+  const overHashtagLimit = hashtags.length > 5;
+  const empty = !draft.trim();
+  const locked = clip.status === "published";
+
+  return (
+    <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+            <MessageSquareText className="h-4 w-4 text-cyan" />
+            Post copy
+          </div>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">Keep it short for cross-platform posting: max 400 characters and 5 hashtags.</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 text-xs font-semibold">
+          <span className={`rounded-full border px-2.5 py-1 ${draft.length > 380 ? "border-warning/[0.28] bg-warning/[0.08] text-warning" : "border-teal/[0.24] bg-teal/[0.08] text-teal"}`}>
+            {draft.length}/400
+          </span>
+          <span className={`rounded-full border px-2.5 py-1 ${overHashtagLimit ? "border-danger/[0.28] bg-danger/[0.08] text-danger" : "border-teal/[0.24] bg-teal/[0.08] text-teal"}`}>
+            {hashtags.length}/5 tags
+          </span>
+        </div>
+      </div>
+      <textarea
+        value={draft}
+        maxLength={400}
+        disabled={locked}
+        onChange={(event) => setDraft(event.target.value)}
+        className="min-h-40 w-full resize-y rounded-2xl border border-white/[0.08] bg-black/30 px-3 py-3 text-sm leading-6 text-zinc-200 outline-none focus:border-cyan/[0.35] disabled:cursor-not-allowed disabled:opacity-50"
+        placeholder="Write a short caption and up to five hashtags..."
+      />
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className={`text-xs ${overHashtagLimit ? "text-danger" : locked ? "text-warning" : "text-zinc-500"}`}>
+          {locked ? "Published post copy is locked for audit safety." : overHashtagLimit ? "Remove extra hashtags before saving." : "This copy is used by scheduled and live publish payloads."}
+        </p>
+        <button
+          type="button"
+          disabled={actionBusy || locked || empty || overHashtagLimit}
+          onClick={() => onSavePostCopy(clip.id, draft)}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {saveState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {saveState?.status === "running" ? "Saving..." : "Save post copy"}
+        </button>
+      </div>
     </div>
   );
 }

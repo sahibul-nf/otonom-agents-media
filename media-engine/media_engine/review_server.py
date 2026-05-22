@@ -34,7 +34,7 @@ from .live_publishers import (
 from .models import PUBLISH_MODES
 from .metadata_refresh import refresh_candidate_metadata
 from .oauth_flow import OAuthFlowError, complete_oauth, start_oauth
-from .post_copy import build_post_caption
+from .post_copy import build_post_caption, sanitize_post_caption
 from .publishers import build_payload, create_dry_run_attempt
 from .rerender import create_rerender_job, list_rerender_jobs
 from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
@@ -423,6 +423,47 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             )
             conn.commit()
             self._send_json({"candidate_id": candidate_id, "status": next_status, "caption_corrections": corrections})
+            return
+
+        if parsed.path == "/api/post-copy":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            post_caption = str(payload.get("post_caption", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            if not post_caption:
+                self._send_json({"error": "post_caption is required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            candidate = conn.execute(
+                "SELECT status, curation_metadata_json FROM clip_candidates WHERE id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if not candidate:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            if candidate["status"] == "published":
+                self._send_json({"error": "published clip post copy is locked"}, status=400)
+                return
+            metadata = _loads(candidate["curation_metadata_json"], {})
+            sanitized = sanitize_post_caption(post_caption)
+            metadata["post_caption_override"] = sanitized
+            metadata["post_caption_source"] = "manual_edit"
+            conn.execute(
+                """
+                UPDATE clip_candidates
+                SET curation_metadata_json = ?
+                WHERE id = ?
+                """,
+                (json.dumps(metadata, ensure_ascii=False), candidate_id),
+            )
+            conn.commit()
+            self._send_json({
+                "candidate_id": candidate_id,
+                "post_caption": sanitized,
+                "char_count": len(sanitized),
+            })
             return
 
         if parsed.path == "/api/rerender":

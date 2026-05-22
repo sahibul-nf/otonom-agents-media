@@ -15,6 +15,7 @@ from media_engine.live_publishers import (
     publish_youtube_short,
 )
 from media_engine.publishers import build_payload, create_dry_run_attempt
+from media_engine.post_copy import build_post_caption, sanitize_post_caption
 
 
 def json_dumps(value):
@@ -40,6 +41,41 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(payload["endpoint"], "telegram-bot-api/sendVideo")
         self.assertTrue(payload["supports_streaming"])
         self.assertLessEqual(len(payload["caption"]), 1024)
+
+    def test_post_caption_is_short_and_has_at_most_five_hashtags(self):
+        candidate = {
+            "id": "clip1",
+            "title_hook": "Hook yang cukup panjang untuk menguji batas caption platform sosial",
+            "hook_subtitle": "Deskripsi yang menjelaskan isi video dengan cukup spesifik dan tetap pendek.",
+            "viral_reason": "Reason",
+        }
+
+        caption = build_post_caption(candidate, {"metadata_json": "{}"})
+
+        self.assertLessEqual(len(caption), 400)
+        self.assertLessEqual(caption.count("#"), 5)
+
+    def test_post_caption_override_is_sanitized(self):
+        candidate = {
+            "id": "clip1",
+            "title_hook": "Hook",
+            "viral_reason": "Reason",
+            "curation_metadata": {
+                "post_caption_override": " ".join(["panjang"] * 90)
+                + " #Satu #Dua #Tiga #Empat #Lima #Enam #Tujuh"
+            },
+        }
+
+        caption = build_post_caption(candidate, {"metadata_json": "{}"})
+
+        self.assertLessEqual(len(caption), 400)
+        self.assertIn("#Satu #Dua #Tiga #Empat #Lima", caption)
+        self.assertNotIn("#Enam", caption)
+
+    def test_sanitize_post_caption_keeps_only_five_unique_hashtags(self):
+        caption = sanitize_post_caption("Isi post #A #B #C #D #E #F #A")
+
+        self.assertEqual(caption.count("#"), 5)
 
     def test_credential_status_marks_ready_without_exposing_values(self):
         with patch.dict(

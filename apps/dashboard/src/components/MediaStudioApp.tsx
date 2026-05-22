@@ -272,6 +272,7 @@ export function MediaStudioApp() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [rerendering, setRerendering] = useState<Record<string, RerenderUiState>>({});
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
+  const [postCopyDrafts, setPostCopyDrafts] = useState<Record<string, string>>({});
   const [publishSelection, setPublishSelection] = useState<string[]>(publishPlatforms);
   const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
     sourceUrl: defaultSourceUrl,
@@ -301,6 +302,7 @@ export function MediaStudioApp() {
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
   const command = productionCommand(generateConfig);
   const selectedCaptionDraft = selected ? captionDrafts[selected.id] ?? (selected.captions || []).map((caption) => caption.text).filter(Boolean).join("\n") : "";
+  const selectedPostCopyDraft = selected ? postCopyDrafts[selected.id] ?? selected.post_caption ?? "" : "";
 
   function pushToast(message: string, tone: ToastMessage["tone"] = "info") {
     const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -694,6 +696,23 @@ export function MediaStudioApp() {
     }
   }
 
+  async function savePostCopy(id: string, draft: string) {
+    const key = `post:${id}:save`;
+    try {
+      const result = await runAction(
+        key,
+        "Saving post copy...",
+        () => apiPost<{post_caption: string}>("post-copy", {candidate_id: id, post_caption: draft}),
+        "Post copy saved",
+      );
+      setPostCopyDrafts((items) => ({...items, [id]: result.post_caption}));
+      setStatus("Post copy saved for scheduled and live publishing.");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Post copy save failed");
+    }
+  }
+
   async function rerenderClip(id: string) {
     const key = `clip:${id}:rerender`;
     setRerendering((items) => ({...items, [id]: {status: "running", message: "Queued for re-render", progress: 2}}));
@@ -780,6 +799,11 @@ export function MediaStudioApp() {
   function setSelectedCaptionDraft(value: string) {
     if (!selected) return;
     setCaptionDrafts((items) => ({...items, [selected.id]: value}));
+  }
+
+  function setSelectedPostCopyDraft(value: string) {
+    if (!selected) return;
+    setPostCopyDrafts((items) => ({...items, [selected.id]: value}));
   }
 
   useEffect(() => {
@@ -930,6 +954,8 @@ export function MediaStudioApp() {
               setSelectedId={setSelectedId}
               captionDraft={selectedCaptionDraft}
               setCaptionDraft={setSelectedCaptionDraft}
+              postCopyDraft={selectedPostCopyDraft}
+              setPostCopyDraft={setSelectedPostCopyDraft}
               statusTone={statusTone}
               formatDeadline={formatDeadline}
               primaryReviewAction={primaryReviewAction}
@@ -939,6 +965,7 @@ export function MediaStudioApp() {
               onDelete={deleteClip}
               onClear={clearQueue}
               onSaveCaptions={saveCaptionCorrections}
+              onSavePostCopy={savePostCopy}
               onRerender={rerenderClip}
               onRefreshMetadata={refreshClipMetadata}
               onSaveBoundary={saveClipBoundary}
