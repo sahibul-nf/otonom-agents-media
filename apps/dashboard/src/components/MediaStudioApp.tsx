@@ -1226,58 +1226,88 @@ function GenerateSection({
     {id: "spiritual_reflection", label: "Spiritual reflection", description: "Heart-softening clips."},
     {id: "advice", label: "Advice", description: "Practical reminders."},
   ];
+  const selectedPreset = presetOptions.find((item) => item.id === config.clipLength) || presetOptions[0];
+  const latestProgress = Math.max(0, Math.min(100, latest?.progress || 0));
+  const selectedGenreCount = genreOptions.filter((genre) => config.genres.includes(genre.id)).length;
   const toggleGenre = (id: string) => {
     const next = config.genres.includes(id) ? config.genres.filter((item) => item !== id) : [...config.genres, id];
     update({genres: next.length ? next : [id]});
   };
   return (
-    <section className="grid gap-5 2xl:grid-cols-[.85fr_1.15fr]">
+    <section className="grid gap-5 2xl:grid-cols-[minmax(460px,.9fr)_minmax(520px,1.1fr)]">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-xl font-semibold text-white">Generate production batch</h3>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">Run a local-first production job from the dashboard, or copy the exact terminal command.</p>
-        <div className="mt-6 grid gap-4">
-          <label className="grid gap-2 text-sm font-medium text-zinc-300">
-            YouTube source
-            <input value={config.sourceUrl} onChange={(event) => update({sourceUrl: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 text-sm text-zinc-300 outline-none focus:border-cyan/[0.30]" />
-          </label>
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="grid gap-2 text-sm font-medium text-zinc-300">
-              Clip count
-              <select value={config.count} onChange={(event) => update({count: Number(event.target.value)})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
-                {[1, 2, 3, 5, 8, 10].map((value) => <option key={value} value={value}>{value} clips</option>)}
-              </select>
-            </label>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <span className="inline-flex rounded-full border border-teal/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-teal">Local-first pipeline</span>
+            <h3 className="mt-3 text-2xl font-semibold text-white">Generate production batch</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Choose the source, curation intent, and render profile. Advanced engine settings stay available without crowding the main flow.</p>
           </div>
-          <div className="grid gap-2">
-            <label className="grid gap-2 text-sm font-medium text-zinc-300">
-              Clip duration
-              <select
-                value={config.clipLength}
-                onChange={(event) => {
-                  const preset = presetOptions.find((item) => item.id === event.target.value);
-                  update({
-                    clipLength: event.target.value,
-                    clipMinSeconds: preset ? Math.round(preset.min_ms / 1000) : config.clipMinSeconds,
-                    clipMaxSeconds: preset ? Math.round(preset.max_ms / 1000) : config.clipMaxSeconds,
-                  });
-                }}
-                className="h-12 rounded-2xl border border-cyan/[0.35] bg-canvas-deep px-4 text-sm font-semibold text-white outline-none shadow-glow"
-              >
-                {presetOptions.map((preset) => (
-                  <option key={preset.id} value={preset.id}>{preset.label}</option>
-                ))}
-              </select>
-            </label>
-            <div className="rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 py-3 text-xs leading-5 text-zinc-500">
-              Engine still trims exact boundaries adaptively. Current window: <span className="font-semibold text-zinc-200">{config.clipMinSeconds}s-{config.clipMaxSeconds}s</span>.
+          <div className="grid min-w-[150px] gap-1 rounded-[20px] border border-white/[0.08] bg-canvas-deep px-4 py-3 text-right">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Batch output</span>
+            <span className="text-lg font-semibold text-white">{config.count} clips</span>
+            <span className="text-xs text-cyan">{config.clipMinSeconds}s-{config.clipMaxSeconds}s window</span>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-5">
+          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal/[0.12] text-cyan">1</span>
+              <div>
+                <h4 className="font-semibold text-white">Source and output</h4>
+                <p className="text-xs text-zinc-500">Start with the long video and expected batch size.</p>
+              </div>
+            </div>
+            <div className="grid gap-4">
+              <label className="grid gap-2 text-sm font-medium text-zinc-300">
+                YouTube source
+                <input value={config.sourceUrl} onChange={(event) => update({sourceUrl: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 text-sm text-zinc-300 outline-none focus:border-cyan/[0.30]" placeholder="Paste long-form YouTube URL" />
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-2 text-sm font-medium text-zinc-300">
+                  Clip count
+                  <select value={config.count} onChange={(event) => update({count: Number(event.target.value)})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 outline-none focus:border-cyan/[0.30]">
+                    {[1, 2, 3, 5, 8, 10].map((value) => <option key={value} value={value}>{value} clips</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm font-medium text-zinc-300">
+                  Clip duration
+                  <select
+                    value={config.clipLength}
+                    onChange={(event) => {
+                      const preset = presetOptions.find((item) => item.id === event.target.value);
+                      update({
+                        clipLength: event.target.value,
+                        clipMinSeconds: preset ? Math.round(preset.min_ms / 1000) : config.clipMinSeconds,
+                        clipMaxSeconds: preset ? Math.round(preset.max_ms / 1000) : config.clipMaxSeconds,
+                      });
+                    }}
+                    className="h-12 rounded-2xl border border-cyan/[0.35] bg-black/24 px-4 text-sm font-semibold text-white outline-none shadow-glow"
+                  >
+                    {presetOptions.map((preset) => (
+                      <option key={preset.id} value={preset.id}>{preset.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="rounded-2xl border border-teal/[0.16] bg-teal/[0.06] px-4 py-3 text-xs leading-5 text-zinc-400">
+                <span className="font-semibold text-cyan">{selectedPreset?.label}</span> lets the engine trim natural starts and endings inside <span className="font-semibold text-zinc-200">{config.clipMinSeconds}s-{config.clipMaxSeconds}s</span>.
+              </div>
             </div>
           </div>
-          <div className="grid gap-2">
-            <div>
-              <p className="text-sm font-medium text-zinc-300">Genres</p>
-              <p className="mt-1 text-xs text-zinc-500">Used by curation and scoring for this batch only.</p>
+
+          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal/[0.12] text-cyan">2</span>
+                <div>
+                  <h4 className="font-semibold text-white">Curation intent</h4>
+                  <p className="text-xs text-zinc-500">{selectedGenreCount} genre signals selected for scoring and hook generation.</p>
+                </div>
+              </div>
+              <span className="rounded-full border border-cyan/[0.24] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{selectedGenreCount}/{genreOptions.length}</span>
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="flex flex-wrap gap-2">
               {genreOptions.map((genre) => {
                 const active = config.genres.includes(genre.id);
                 return (
@@ -1285,70 +1315,108 @@ function GenerateSection({
                     key={genre.id}
                     type="button"
                     onClick={() => toggleGenre(genre.id)}
-                    className={`rounded-[18px] border px-4 py-3 text-left transition ${active ? "border-cyan bg-teal/[0.14] text-white" : "border-white/[0.08] bg-canvas-deep text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
+                    className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition ${active ? "border-cyan bg-teal/[0.16] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
                     aria-pressed={active}
+                    title={genre.description}
                   >
-                    <span className="flex items-center justify-between gap-3 text-sm font-semibold">
-                      {genre.label}
-                      {active ? <BadgeCheck className="h-4 w-4 text-cyan" /> : null}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-zinc-500">{genre.description}</span>
+                    {active ? <BadgeCheck className="h-4 w-4 text-cyan" /> : null}
+                    {genre.label}
                   </button>
                 );
               })}
             </div>
           </div>
-          <label className="grid gap-2 text-sm font-medium text-zinc-300">
-            Brand template
-            <select value={config.brandTemplate} onChange={(event) => update({brandTemplate: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-canvas-deep px-4 outline-none">
-              {(templates.length ? templates : [{id: defaultTemplate, label: "Nourbit Opus Style", path: defaultTemplate}]).map((template) => (
-                <option key={template.id} value={template.path}>{template.label}</option>
-              ))}
-            </select>
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <SelectTile label="Renderer" value={config.renderer} options={["remotion", "ffmpeg"]} onChange={(value) => update({renderer: value})} />
-            <SelectTile label="Caption" value={config.captionSource} options={["whisper", "hybrid", "youtube"]} onChange={(value) => update({captionSource: value})} />
-            <SelectTile label="Speech language" value={config.speechLanguage} options={["id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
-            <SelectTile label="Transcript" value={config.transcriptLanguages} options={["id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
-            <SelectTile label="LLM" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
-            <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
+
+          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="mb-4 flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal/[0.12] text-cyan">3</span>
+              <div>
+                <h4 className="font-semibold text-white">Brand and engine</h4>
+                <p className="text-xs text-zinc-500">Pick the reusable template, then adjust advanced settings only when needed.</p>
+              </div>
+            </div>
+            <label className="grid gap-2 text-sm font-medium text-zinc-300">
+              Brand template
+              <select value={config.brandTemplate} onChange={(event) => update({brandTemplate: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 outline-none focus:border-cyan/[0.30]">
+                {(templates.length ? templates : [{id: defaultTemplate, label: "Nourbit Opus Style", path: defaultTemplate}]).map((template) => (
+                  <option key={template.id} value={template.path}>{template.label}</option>
+                ))}
+              </select>
+            </label>
+            <details className="mt-4 rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
+                Advanced engine settings
+                <span className="ml-2 text-xs font-medium text-zinc-500">{config.renderer} · {config.captionSource} · {config.llmProvider}</span>
+              </summary>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <SelectTile label="Renderer" value={config.renderer} options={["remotion", "ffmpeg"]} onChange={(value) => update({renderer: value})} />
+                <SelectTile label="Caption" value={config.captionSource} options={["whisper", "hybrid", "youtube"]} onChange={(value) => update({captionSource: value})} />
+                <SelectTile label="Speech language" value={config.speechLanguage} options={["id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
+                <SelectTile label="Transcript" value={config.transcriptLanguages} options={["id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
+                <SelectTile label="LLM" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
+                <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
+              </div>
+            </details>
           </div>
-          <button disabled={isStarting || !config.sourceUrl.trim()} onClick={onGenerate} className="mt-2 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
-            {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-            {isStarting ? "Starting batch..." : "Generate batch"}
-          </button>
-          {actionState ? <InlineActionStatus state={actionState} /> : null}
+
+          <div className="grid gap-3">
+            <button disabled={isStarting || !config.sourceUrl.trim()} onClick={onGenerate} className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
+              {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              {isStarting ? "Starting batch..." : "Generate batch"}
+            </button>
+            {actionState ? <InlineActionStatus state={actionState} /> : null}
+          </div>
         </div>
       </div>
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-white">Local run command</h3>
-          <button onClick={onCopy} className="inline-flex rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink"><Copy className="mr-2 h-4 w-4" /> Copy</button>
-        </div>
-        <pre className="max-h-[520px] overflow-auto rounded-[24px] border border-white/[0.08] bg-canvas-deep p-5 text-xs leading-6 text-zinc-300">{command}</pre>
-        <div className="mt-4 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h4 className="font-semibold text-white">Latest job</h4>
+
+      <div className="grid gap-5">
+        <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-semibold text-white">Production monitor</h3>
+              <p className="mt-1 text-sm leading-6 text-zinc-400">Track the current batch without reading terminal logs first.</p>
+            </div>
             <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(latest?.status || "empty")}`}>{latest?.status || "No job"}</span>
           </div>
           {latest ? (
-            <div className="grid gap-3">
-              <div className="h-2 overflow-hidden rounded-full bg-surface-strong">
-                <div className="h-full rounded-full bg-cyan transition-all" style={{width: `${Math.max(4, Math.min(100, latest.progress || 0))}%`}} />
+            <div className="grid gap-4">
+              <div className="grid gap-2 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="font-semibold text-white">{latest.count} clips · {latest.llm_provider}/{latest.caption_source}</span>
+                  <span className="font-semibold text-cyan">{latestProgress}%</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-surface-strong">
+                  <div className="h-full rounded-full bg-cyan transition-all" style={{width: `${Math.max(4, latestProgress)}%`}} />
+                </div>
               </div>
-              <p className="text-xs text-zinc-400">{latest.progress || 0}% · {latest.count} clips · {latest.llm_provider}/{latest.caption_source}</p>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <ReadinessLine ready={(latest.progress || 0) >= 20} label="Curate" detail="Moments" />
-                <ReadinessLine ready={(latest.progress || 0) >= 55} label="Captions" detail="ASR" />
-                <ReadinessLine ready={(latest.progress || 0) >= 90} label="Render" detail="Output" />
+              <div className="grid gap-2 text-xs md:grid-cols-3">
+                <ReadinessLine ready={latestProgress >= 20} label="Curate" detail="Moments" />
+                <ReadinessLine ready={latestProgress >= 55} label="Captions" detail="ASR" />
+                <ReadinessLine ready={latestProgress >= 90} label="Render" detail="Output" />
               </div>
-              <pre className="max-h-40 overflow-auto rounded-2xl bg-black/40 p-3 text-[11px] leading-5 text-zinc-400">{latest.error || latest.log_text || "Waiting for logs..."}</pre>
+              <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Runtime log</span>
+                  <span className="text-xs text-zinc-600">Latest lines</span>
+                </div>
+                <pre className="max-h-52 overflow-auto rounded-2xl bg-black/40 p-3 text-[11px] leading-5 text-zinc-400">{latest.error || latest.log_text || "Waiting for logs..."}</pre>
+              </div>
             </div>
           ) : (
-            <p className="text-sm text-zinc-500">Start a batch to see live progress here.</p>
+            <EmptyState title="No active batch" text="Start a generation run to see progress, logs, and output readiness here." />
           )}
         </div>
+
+        <details className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Terminal fallback command</h3>
+              <p className="mt-1 text-sm text-zinc-500">Use this when you want to run the same job outside the dashboard.</p>
+            </div>
+            <button type="button" onClick={(event) => { event.preventDefault(); onCopy(); }} className="inline-flex rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink"><Copy className="mr-2 h-4 w-4" /> Copy</button>
+          </summary>
+          <pre className="mt-4 max-h-[360px] overflow-auto rounded-[24px] border border-white/[0.08] bg-canvas-deep p-5 text-xs leading-6 text-zinc-300">{command}</pre>
+        </details>
       </div>
     </section>
   );
