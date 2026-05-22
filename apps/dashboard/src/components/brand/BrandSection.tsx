@@ -151,17 +151,12 @@ export function BrandSection({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Brand system</p>
-              <h3 className="mt-1 text-2xl font-semibold text-white">Template setup flow</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Choose a base style, tune the caption identity, then save a reusable template for future batches.</p>
+              <h3 className="mt-1 text-2xl font-semibold text-white">Brand settings</h3>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Set the reusable visual identity for generated clips. The editor below is the source of truth; the preview reflects every change instantly.</p>
             </div>
             <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${saveState.toLowerCase().includes("failed") ? "border-danger/30 bg-danger/10 text-danger" : "border-cyan/[0.22] bg-teal/[0.08] text-cyan"}`}>
               {saveState}
             </span>
-          </div>
-          <div className="mt-4 grid gap-2 md:grid-cols-3">
-            <FlowPill step="1" title="Pick base" detail="Load a saved style" active />
-            <FlowPill step="2" title="Tune look" detail="Caption, colors, overlay" active />
-            <FlowPill step="3" title="Save reuse" detail="Apply in Generate" active={saveState === "Template saved"} />
           </div>
         </div>
 
@@ -244,14 +239,14 @@ export function BrandSection({
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h4 className="font-semibold text-white">Template library</h4>
-                <p className="mt-1 text-sm text-zinc-500">Saved styles available for future batch generation.</p>
-              </div>
+          <details className="group rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <span>
+                <span className="block font-semibold text-white">Saved template library</span>
+                <span className="mt-1 block text-sm text-zinc-500">Open only when you need to inspect or switch saved style files.</span>
+              </span>
               <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{templates.length} saved</span>
-            </div>
+            </summary>
             <div className="mt-3 grid gap-2">
               {templates.length ? templates.map((template) => (
                 <button
@@ -271,7 +266,7 @@ export function BrandSection({
                 </button>
               )) : <EmptyState text="No style templates found." />}
             </div>
-          </div>
+          </details>
 
           <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -346,18 +341,6 @@ export function BrandSection({
         </div>
       </aside>
     </section>
-  );
-}
-
-function FlowPill({step, title, detail, active}: {step: string; title: string; detail: string; active: boolean}) {
-  return (
-    <div className={`flex min-w-0 items-center gap-3 rounded-[20px] border p-3 ${active ? "border-cyan/[0.22] bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep"}`}>
-      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold ${active ? "bg-cyan text-ink" : "bg-white/[0.06] text-zinc-500"}`}>{step}</span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-white">{title}</span>
-        <span className="mt-0.5 block truncate text-xs text-zinc-500">{detail}</span>
-      </span>
-    </div>
   );
 }
 
