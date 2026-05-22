@@ -146,24 +146,32 @@ export function BrandSection({
 
   return (
     <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-      <div className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Brand system</p>
-            <h3 className="mt-1 text-xl font-semibold text-white">Template editor</h3>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Tune reusable caption, overlay, and automation defaults before rendering a production batch.</p>
+      <div className="min-w-0 overflow-hidden rounded-[28px] border border-white/[0.08] bg-surface">
+        <div className="border-b border-white/[0.08] bg-[radial-gradient(circle_at_10%_0%,rgba(108,226,238,.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,.035),transparent)] p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Brand system</p>
+              <h3 className="mt-1 text-2xl font-semibold text-white">Template setup flow</h3>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Choose a base style, tune the caption identity, then save a reusable template for future batches.</p>
+            </div>
+            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${saveState.toLowerCase().includes("failed") ? "border-danger/30 bg-danger/10 text-danger" : "border-cyan/[0.22] bg-teal/[0.08] text-cyan"}`}>
+              {saveState}
+            </span>
           </div>
-          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${saveState.toLowerCase().includes("failed") ? "border-danger/30 bg-danger/10 text-danger" : "border-cyan/[0.22] bg-teal/[0.08] text-cyan"}`}>
-            {saveState}
-          </span>
+          <div className="mt-4 grid gap-2 md:grid-cols-3">
+            <FlowPill step="1" title="Pick base" detail="Load a saved style" active />
+            <FlowPill step="2" title="Tune look" detail="Caption, colors, overlay" active />
+            <FlowPill step="3" title="Save reuse" detail="Apply in Generate" active={saveState === "Template saved"} />
+          </div>
         </div>
 
-        <div className="mt-5 grid gap-4">
+        <div className="grid gap-4 p-4 sm:p-5">
           <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h4 className="font-semibold text-white">Template source</h4>
-                <p className="mt-1 text-sm text-zinc-500">Start from a saved style, then save the edited version as a reusable template.</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Step 1</p>
+                <h4 className="mt-1 font-semibold text-white">Choose template source</h4>
+                <p className="mt-1 text-sm text-zinc-500">Load a known style first so every edit starts from a predictable baseline.</p>
               </div>
               {templateBusy ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan" /> : null}
             </div>
@@ -182,7 +190,7 @@ export function BrandSection({
                 </select>
               </label>
               <label className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
-                New template name
+                Save as
                 <input value={label} onChange={(event) => setLabel(event.target.value)} className="h-12 min-w-0 rounded-2xl border border-white/[0.08] bg-surface px-4 text-sm text-zinc-200 outline-none focus:border-cyan/[0.35]" />
               </label>
             </div>
@@ -191,8 +199,9 @@ export function BrandSection({
           <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h4 className="font-semibold text-white">Caption style</h4>
-                <p className="mt-1 text-sm text-zinc-500">Controls affect the generated caption overlay and the preview on the right.</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Step 2</p>
+                <h4 className="mt-1 font-semibold text-white">Tune visual identity</h4>
+                <p className="mt-1 text-sm text-zinc-500">Caption style and watermark update the preview instantly without a long render.</p>
               </div>
               <span className="rounded-full border border-white/[0.08] bg-surface px-3 py-1 text-xs font-semibold text-zinc-400">{editor.fontSize}px caption</span>
             </div>
@@ -210,92 +219,97 @@ export function BrandSection({
               <ColorField label="Caption background" value={editor.backgroundColor} onChange={(value) => updateEditor({backgroundColor: value})} />
               <NumberField label="Stroke width" value={editor.strokeWidth} min={0} max={16} onChange={(value) => updateEditor({strokeWidth: value})} />
             </div>
-          </div>
-
-          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-            <h4 className="font-semibold text-white">Overlay</h4>
-            <p className="mt-1 text-sm text-zinc-500">Keep the persistent watermark short enough for vertical video safe areas.</p>
-            <div className="mt-4">
+            <div className="mt-4 rounded-[20px] border border-white/[0.08] bg-surface p-3">
               <TextField label="Watermark text" value={editor.watermarkText} onChange={(value) => updateEditor({watermarkText: value})} />
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button type="button" disabled={saveBusy || templateBusy} onClick={saveTemplate} className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
-              {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saveBusy ? "Saving..." : "Save template"}
-            </button>
-            <button type="button" disabled={saveBusy || templateBusy} onClick={() => void loadTemplate(selectedTemplate)} className="inline-flex items-center gap-2 rounded-full border border-white/[0.10] px-5 py-3 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
-              {templateBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {templateBusy ? "Loading..." : "Reset to base"}
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h4 className="font-semibold text-white">Template library</h4>
-              <p className="mt-1 text-sm text-zinc-500">Saved styles available for future batch generation.</p>
+          <div className="rounded-[24px] border border-cyan/[0.18] bg-teal/[0.08] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Step 3</p>
+                <h4 className="mt-1 font-semibold text-white">Save template for production</h4>
+                <p className="mt-1 text-sm text-zinc-400">Saved templates appear in Generate and can be reused across future clips.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button type="button" disabled={saveBusy || templateBusy} onClick={saveTemplate} className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
+                  {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {saveBusy ? "Saving..." : "Save template"}
+                </button>
+                <button type="button" disabled={saveBusy || templateBusy} onClick={() => void loadTemplate(selectedTemplate)} className="inline-flex items-center gap-2 rounded-full border border-white/[0.10] px-5 py-3 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
+                  {templateBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {templateBusy ? "Loading..." : "Reset to base"}
+                </button>
+              </div>
             </div>
-            <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{templates.length} saved</span>
           </div>
-          <div className="mt-3 grid gap-2">
-            {templates.length ? templates.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                onClick={() => void loadTemplate(template.path)}
-                className={`flex min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition ${selectedTemplate === template.path ? "bg-teal/[0.14] text-cyan ring-1 ring-cyan/[0.26]" : "bg-surface text-zinc-200 hover:bg-surface-raised"}`}
-              >
-                <span className="min-w-0">
-                  <span className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-semibold">{template.label}</span>
-                    {selectedTemplate === template.path ? <span className="rounded-full border border-cyan/[0.22] bg-cyan/[0.08] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan">Active base</span> : null}
+
+          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h4 className="font-semibold text-white">Template library</h4>
+                <p className="mt-1 text-sm text-zinc-500">Saved styles available for future batch generation.</p>
+              </div>
+              <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{templates.length} saved</span>
+            </div>
+            <div className="mt-3 grid gap-2">
+              {templates.length ? templates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => void loadTemplate(template.path)}
+                  className={`flex min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition ${selectedTemplate === template.path ? "bg-teal/[0.14] text-cyan ring-1 ring-cyan/[0.26]" : "bg-surface text-zinc-200 hover:bg-surface-raised"}`}
+                >
+                  <span className="min-w-0">
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="truncate text-sm font-semibold">{template.label}</span>
+                      {selectedTemplate === template.path ? <span className="rounded-full border border-cyan/[0.22] bg-cyan/[0.08] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan">Active base</span> : null}
+                    </span>
+                    <span className="mt-1 block truncate text-xs text-zinc-500">{template.path}</span>
                   </span>
-                  <span className="mt-1 block truncate text-xs text-zinc-500">{template.path}</span>
-                </span>
-                {selectedTemplate === template.path ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : null}
-              </button>
-            )) : <EmptyState text="No style templates found." />}
-          </div>
-        </div>
-
-        <div className="mt-5 rounded-[24px] border border-cyan/[0.18] bg-teal/[0.08] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h4 className="font-semibold text-white">Autonomous mode</h4>
-              <p className="mt-1 text-sm leading-6 text-zinc-400">Assisted mode gives you {autonomy?.review_grace_hours || 12}h to approve before high-score clips enter the schedule queue.</p>
+                  {selectedTemplate === template.path ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : null}
+                </button>
+              )) : <EmptyState text="No style templates found." />}
             </div>
-            <span className="rounded-full border border-cyan/[0.18] px-3 py-1 text-xs font-semibold capitalize text-cyan">{autonomy?.autonomy_mode || "off"}</span>
           </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            {["off", "assisted", "full"].map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                disabled={Boolean(autonomyBusy)}
-                onClick={() => onAutonomyMode(mode)}
-                className={`inline-flex items-center justify-center gap-2 rounded-full px-3 py-2 text-sm font-semibold capitalize disabled:cursor-not-allowed disabled:opacity-50 ${autonomy?.autonomy_mode === mode ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
-              >
-                {actionStates[`autonomy:${mode}`]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                {actionStates[`autonomy:${mode}`]?.status === "running" ? "Saving..." : mode}
-              </button>
-            ))}
-          </div>
-          {autonomyBusy ? <p className="mt-3 text-xs font-medium text-cyan">{autonomyBusy.message}</p> : null}
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <ReadinessMini ready={Boolean(autonomy?.review_grace_hours)} label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
-            <ReadinessMini ready={Boolean(autonomy?.auto_schedule_enabled)} label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
-            <ReadinessMini ready label="Overall gate" value={autonomy?.overall_threshold || 82} />
-            <ReadinessMini ready label="Caption gate" value={autonomy?.caption_threshold || 90} />
+
+          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Automation guardrails</p>
+                <h4 className="mt-1 font-semibold text-white">Publishing autonomy</h4>
+                <p className="mt-1 text-sm leading-6 text-zinc-400">Assisted mode gives you {autonomy?.review_grace_hours || 12}h to approve before high-score clips enter the schedule queue.</p>
+              </div>
+              <span className="rounded-full border border-cyan/[0.18] bg-teal/[0.08] px-3 py-1 text-xs font-semibold capitalize text-cyan">{autonomy?.autonomy_mode || "off"}</span>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {["off", "assisted", "full"].map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={Boolean(autonomyBusy)}
+                  onClick={() => onAutonomyMode(mode)}
+                  className={`inline-flex items-center justify-center gap-2 rounded-full px-3 py-2 text-sm font-semibold capitalize disabled:cursor-not-allowed disabled:opacity-50 ${autonomy?.autonomy_mode === mode ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
+                >
+                  {actionStates[`autonomy:${mode}`]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  {actionStates[`autonomy:${mode}`]?.status === "running" ? "Saving..." : mode}
+                </button>
+              ))}
+            </div>
+            {autonomyBusy ? <p className="mt-3 text-xs font-medium text-cyan">{autonomyBusy.message}</p> : null}
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <ReadinessMini ready={Boolean(autonomy?.review_grace_hours)} label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
+              <ReadinessMini ready={Boolean(autonomy?.auto_schedule_enabled)} label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
+              <ReadinessMini ready label="Overall gate" value={autonomy?.overall_threshold || 82} />
+              <ReadinessMini ready label="Caption gate" value={autonomy?.caption_threshold || 90} />
+            </div>
           </div>
         </div>
       </div>
 
       <aside className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 sm:p-5 xl:sticky xl:top-24 xl:self-start">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h3 className="text-xl font-semibold text-white">Live preview</h3>
             <p className="mt-1 text-sm text-zinc-500">Instant browser preview, no render needed.</p>
           </div>
@@ -332,6 +346,18 @@ export function BrandSection({
         </div>
       </aside>
     </section>
+  );
+}
+
+function FlowPill({step, title, detail, active}: {step: string; title: string; detail: string; active: boolean}) {
+  return (
+    <div className={`flex min-w-0 items-center gap-3 rounded-[20px] border p-3 ${active ? "border-cyan/[0.22] bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep"}`}>
+      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold ${active ? "bg-cyan text-ink" : "bg-white/[0.06] text-zinc-500"}`}>{step}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-semibold text-white">{title}</span>
+        <span className="mt-0.5 block truncate text-xs text-zinc-500">{detail}</span>
+      </span>
+    </div>
   );
 }
 
