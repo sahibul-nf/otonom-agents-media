@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .duration_presets import resolve_duration_preset
+from .hyperframes_templates import normalize_hyperframes_template
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "data" / "media_engine.sqlite"
@@ -128,6 +129,9 @@ CREATE TABLE IF NOT EXISTS generation_jobs (
   clip_max_seconds INTEGER NOT NULL DEFAULT 180,
   genres_json TEXT NOT NULL DEFAULT '[]',
   brand_template TEXT NOT NULL,
+  hyperframes_template TEXT NOT NULL DEFAULT 'auto',
+  brand_system_template_id TEXT NOT NULL DEFAULT '',
+  hyperframes_format TEXT NOT NULL DEFAULT 'auto',
   renderer TEXT NOT NULL,
   quality TEXT NOT NULL,
   caption_source TEXT NOT NULL,
@@ -204,6 +208,9 @@ SCHEMA_UPGRADES = {
         "clip_min_seconds": "INTEGER NOT NULL DEFAULT 20",
         "clip_max_seconds": "INTEGER NOT NULL DEFAULT 180",
         "genres_json": "TEXT NOT NULL DEFAULT '[]'",
+        "hyperframes_template": "TEXT NOT NULL DEFAULT 'auto'",
+        "brand_system_template_id": "TEXT NOT NULL DEFAULT ''",
+        "hyperframes_format": "TEXT NOT NULL DEFAULT 'auto'",
         "command": "TEXT NOT NULL DEFAULT ''",
         "speech_language": "TEXT NOT NULL DEFAULT 'id'",
         "transcript_languages": "TEXT NOT NULL DEFAULT 'id,en'",
@@ -256,12 +263,18 @@ def normalize_schema_values(conn: sqlite3.Connection) -> None:
     ).fetchone()
     if not table_exists:
         return
-    for row in conn.execute("SELECT id, clip_length_preset FROM generation_jobs"):
+    for row in conn.execute("SELECT id, clip_length_preset, hyperframes_template FROM generation_jobs"):
         canonical = resolve_duration_preset(row["clip_length_preset"]).id
         if row["clip_length_preset"] != canonical:
             conn.execute(
                 "UPDATE generation_jobs SET clip_length_preset = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (canonical, row["id"]),
+            )
+        template = normalize_hyperframes_template(row["hyperframes_template"])
+        if row["hyperframes_template"] != template:
+            conn.execute(
+                "UPDATE generation_jobs SET hyperframes_template = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (template, row["id"]),
             )
     conn.commit()
 

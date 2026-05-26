@@ -45,7 +45,7 @@ class AutonomyTests(unittest.TestCase):
         self.assertIn("2026-05-15T21:00", gate["review_deadline_at"])
         conn.close()
 
-    def test_quality_gate_sends_low_caption_confidence_to_repair(self):
+    def test_quality_gate_sends_low_caption_confidence_to_held(self):
         conn = self._conn()
         settings = get_autonomy_settings(conn, "nourbit")
         candidate = {
@@ -57,7 +57,7 @@ class AutonomyTests(unittest.TestCase):
         gate = evaluate_quality_gate(candidate, settings)
 
         self.assertFalse(gate["passed"])
-        self.assertEqual(gate["status"], "needs_caption_fix")
+        self.assertEqual(gate["status"], "held")
         conn.close()
 
     def test_due_auto_schedule_only_schedules_after_deadline(self):

@@ -11,7 +11,7 @@ from typing import Any
 from .db import ROOT
 
 
-DEFAULT_STYLE_PATH = ROOT / "profiles" / "nourbit_opus_style.json"
+DEFAULT_STYLE_PATH = ROOT / "profiles" / "default_workspace_style.json"
 PROFILES_DIR = ROOT / "profiles"
 
 
@@ -64,3 +64,13 @@ def save_style_template(label: str, style: dict[str, Any], base_style_path: str 
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     relative = str(path.relative_to(ROOT))
     return {"id": relative, "label": clean_label, "path": relative}
+
+
+def save_brand_system_template(
+    label: str,
+    style: dict[str, Any],
+    brand_system: dict[str, Any],
+    base_style_path: str | Path | None = None,
+) -> dict[str, str]:
+    payload = deep_merge(style, {"brand_system": brand_system})
+    return save_style_template(label, payload, base_style_path)

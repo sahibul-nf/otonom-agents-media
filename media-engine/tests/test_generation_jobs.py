@@ -16,16 +16,17 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(resolve_duration_preset("quick_hit").id, "seconds_30_60")
         self.assertEqual(resolve_duration_preset("unknown").id, "auto")
 
-    def test_normalize_generation_payload_defaults_for_nourbit(self):
+    def test_normalize_generation_payload_defaults_for_primary_hyperframes(self):
         payload = normalize_generation_payload({"source_url": "https://youtube.com/watch?v=test"})
 
-        self.assertEqual(payload["profile_id"], "nourbit")
+        self.assertEqual(payload["profile_id"], "workspace")
         self.assertEqual(payload["count"], 5)
         self.assertEqual(payload["clip_length_preset"], "auto")
         self.assertEqual(payload["clip_min_seconds"], 20)
         self.assertEqual(payload["clip_max_seconds"], 180)
         self.assertEqual(payload["genres"], ["kajian", "spiritual_reflection", "advice"])
-        self.assertEqual(payload["renderer"], "remotion")
+        self.assertEqual(payload["renderer"], "hyperframes")
+        self.assertEqual(payload["hyperframes_format"], "auto")
         self.assertEqual(payload["caption_source"], "whisper")
         self.assertEqual(payload["speech_language"], "id")
         self.assertEqual(payload["transcript_languages"], "id,en")
@@ -66,11 +67,33 @@ class GenerationJobTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["count"], 10)
-        self.assertEqual(payload["renderer"], "remotion")
+        self.assertEqual(payload["renderer"], "hyperframes")
         self.assertEqual(payload["quality"], "production")
         self.assertEqual(payload["llm_provider"], "deepseek")
         self.assertEqual(payload["speech_language"], "id")
         self.assertEqual(payload["transcript_languages"], "ar,id")
+
+    def test_normalize_generation_payload_accepts_hyperframes_renderer(self):
+        payload = normalize_generation_payload(
+            {
+                "source_url": "https://youtube.com/watch?v=test",
+                "renderer": "hyperframes",
+                "hyperframes_template": "data_market_explainer",
+            }
+        )
+
+        self.assertEqual(payload["renderer"], "hyperframes")
+        self.assertEqual(payload["hyperframes_template"], "data_market_explainer")
+
+    def test_normalize_generation_payload_falls_back_to_auto_template(self):
+        payload = normalize_generation_payload(
+            {
+                "source_url": "https://youtube.com/watch?v=test",
+                "hyperframes_template": "unknown_template",
+            }
+        )
+
+        self.assertEqual(payload["hyperframes_template"], "auto")
 
     def test_build_generation_command_uses_premium_batch(self):
         payload = normalize_generation_payload({"source_url": "https://youtube.com/watch?v=test", "count": 2})
@@ -85,12 +108,15 @@ class GenerationJobTests(unittest.TestCase):
         self.assertIn("--clip-min-seconds", command)
         self.assertIn("--clip-max-seconds", command)
         self.assertIn("--genres", command)
+        self.assertIn("--hyperframes-template", command)
+        self.assertIn("auto", command)
         self.assertIn("--speech-language", command)
         self.assertIn("--transcript-languages", command)
 
-    def test_brand_templates_include_nourbit_style(self):
+    def test_brand_templates_include_default_workspace_style(self):
         templates = list_brand_templates()
-        self.assertTrue(any(item["path"] == "profiles/nourbit_opus_style.json" for item in templates))
+        self.assertTrue(any(item["path"] == "profiles/default_workspace_style.json" for item in templates))
+        self.assertFalse(any("nourbit" in item["path"].lower() for item in templates))
 
     def test_reconcile_generation_jobs_marks_stale_running_jobs_failed(self):
         with tempfile.TemporaryDirectory() as tmpdir:

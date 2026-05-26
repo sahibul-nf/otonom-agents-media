@@ -4,6 +4,7 @@ import {AlertTriangle, CheckCircle2, Clock3, ListFilter, Loader2, MessageSquareT
 import {useEffect, useRef, useState} from "react";
 import {ClipCandidate, formatDuration, formatTimestamp, scoreValue} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
+import {FocusModal} from "@/components/FocusModal";
 
 type ReviewFilter = {
   id: string;
@@ -60,7 +61,7 @@ function clipWarnings(clip?: ClipCandidate) {
   const warnings: {label: string; tone: "warning" | "danger" | "info"}[] = [];
   const coverage = clip.render_quality?.caption_coverage;
   const confidence = clip.score?.caption_confidence || clip.score?.asr_confidence;
-  if (clip.status === "needs_caption_fix") warnings.push({label: "Caption repair needed", tone: "warning"});
+  if (clip.status === "held") warnings.push({label: "Caption repair needed", tone: "warning"});
   if (typeof coverage === "number" && coverage < 0.9) warnings.push({label: `Coverage ${Math.round(coverage * 100)}%`, tone: "warning"});
   if ((clip.render_quality?.caption_overlap_count || 0) > 0) warnings.push({label: "Caption overlap", tone: "danger"});
   if (typeof confidence === "number" && confidence < 82) warnings.push({label: `ASR ${Math.round(confidence)}`, tone: "warning"});
@@ -69,7 +70,7 @@ function clipWarnings(clip?: ClipCandidate) {
 }
 
 function canRunPrimaryAction(clip: ClipCandidate) {
-  return ["draft", "rendered", "needs_caption_fix", "held", "pending_auto_schedule", "approved"].includes(clip.status);
+  return ["draft", "rendered", "held", "pending_auto_schedule", "approved"].includes(clip.status);
 }
 
 function clipReadinessItems(clip: ClipCandidate): ReadinessItem[] {
@@ -77,7 +78,7 @@ function clipReadinessItems(clip: ClipCandidate): ReadinessItem[] {
   const coverage = clip.render_quality?.caption_coverage;
   const confidence = clip.score?.caption_confidence || clip.score?.asr_confidence;
   const qualityScore = clip.render_quality?.quality_score;
-  const captionBlocked = clip.status === "needs_caption_fix" || (clip.render_quality?.caption_overlap_count || 0) > 0;
+  const captionBlocked = clip.status === "held" || (clip.render_quality?.caption_overlap_count || 0) > 0;
   return [
     {
       id: "hook",
@@ -154,6 +155,7 @@ export function ReviewStudioSection({
   const [queueMenuOpen, setQueueMenuOpen] = useState(false);
   const [rowMenuId, setRowMenuId] = useState("");
   const [detailTab, setDetailTab] = useState<DetailTab>("metadata");
+  const [clipModalOpen, setClipModalOpen] = useState(false);
   const queueMenuRef = useRef<HTMLDivElement>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
   const activeFilter = reviewFilters.find((item) => item.id === filter) || reviewFilters[0];
@@ -166,7 +168,6 @@ export function ReviewStudioSection({
       draft: "Draft",
       failed: "Failed",
       held: "Held",
-      needs_caption_fix: "Caption fix",
       pending_auto_schedule: "Auto queue",
       published: "Published",
       ready_to_publish: "Ready to publish",
@@ -192,12 +193,12 @@ export function ReviewStudioSection({
   }, []);
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[minmax(520px,1fr)_minmax(560px,0.9fr)] xl:items-start">
+    <section className="grid gap-5">
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h3 className="text-xl font-semibold text-white">Review Studio</h3>
-            <p className="mt-1 text-sm text-zinc-400">Ranked clip candidates with scoring, QA, cost, and destructive controls.</p>
+            <h3 className="text-xl font-semibold text-white">Review queue</h3>
+            <p className="mt-1 text-sm text-zinc-400">Open one clip at a time to approve, fix captions, or send it into Schedule.</p>
           </div>
           <div ref={queueMenuRef} className="relative">
             <button
@@ -276,11 +277,15 @@ export function ReviewStudioSection({
                 key={clip.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => setSelectedId(clip.id)}
+                onClick={() => {
+                  setSelectedId(clip.id);
+                  setClipModalOpen(true);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     setSelectedId(clip.id);
+                    setClipModalOpen(true);
                   }
                 }}
                 className={`relative grid cursor-pointer grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-visible rounded-[22px] border p-4 text-left transition 2xl:grid-cols-[88px_minmax(0,1fr)_minmax(220px,auto)] 2xl:items-center ${selected?.id === clip.id ? "z-10 border-cyan bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"} ${rowMenuId === clip.id ? "z-20" : ""}`}
@@ -341,8 +346,17 @@ export function ReviewStudioSection({
                       onClick={(event) => {
                         event.stopPropagation();
                         if (!canRunPrimaryAction(clip)) return;
-                        if (clip.status === "approved") onSchedule(clip.id);
-                        else onApprove(clip.id);
+                        if (clip.status === "approved") {
+                          onSchedule(clip.id);
+                          return;
+                        }
+                        if (clip.status === "held") {
+                          setSelectedId(clip.id);
+                          setDetailTab("captions");
+                          setClipModalOpen(true);
+                          return;
+                        }
+                        onApprove(clip.id);
                       }}
                       disabled={rowBusy || !canRunPrimaryAction(clip)}
                       className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-40"
@@ -373,10 +387,10 @@ export function ReviewStudioSection({
                           <button type="button" onClick={() => { setRowMenuId(""); onHold(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-warning hover:bg-warning/[0.10]">Hold</button>
                         ) : null}
                         <button type="button" onClick={() => { setRowMenuId(""); onRefreshMetadata(clip.id, "smart"); }} className="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white"><RefreshCcw className="h-3.5 w-3.5" /> Refresh metadata</button>
-                        <button type="button" onClick={() => { setRowMenuId(""); setSelectedId(clip.id); setDetailTab("timing"); }} className="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white"><Clock3 className="h-3.5 w-3.5" /> Edit timing</button>
+                        <button type="button" onClick={() => { setRowMenuId(""); setSelectedId(clip.id); setDetailTab("timing"); setClipModalOpen(true); }} className="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white"><Clock3 className="h-3.5 w-3.5" /> Edit timing</button>
                         <button type="button" onClick={() => { setRowMenuId(""); onRerender(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white">Re-render</button>
                         {clip.status === "scheduled" || clip.status === "ready_to_publish" ? (
-                          <button type="button" disabled className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-500">Managed in Calendar</button>
+                          <button type="button" disabled className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-500">Managed in Schedule</button>
                         ) : null}
                         {clip.status === "published" ? (
                           <button type="button" disabled className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-500">Already published</button>
@@ -396,26 +410,34 @@ export function ReviewStudioSection({
           }) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
         </div>
       </div>
-      <ReviewDetailPane
-        clip={selected}
-        statusTone={statusTone}
-        activeTab={detailTab}
-        setActiveTab={setDetailTab}
-        captionDraft={captionDraft}
-        setCaptionDraft={setCaptionDraft}
-        postCopyDraft={postCopyDraft}
-        setPostCopyDraft={setPostCopyDraft}
-        actionStates={actionStates}
-        onSaveCaptions={onSaveCaptions}
-        onSavePostCopy={onSavePostCopy}
-        onGeneratePostCopy={onGeneratePostCopy}
-        onRerender={onRerender}
-        onRefreshMetadata={onRefreshMetadata}
-        onSaveBoundary={onSaveBoundary}
-        primaryReviewAction={primaryReviewAction}
-        onApprove={onApprove}
-        onSchedule={onSchedule}
-      />
+      <FocusModal
+        open={clipModalOpen && Boolean(selected)}
+        title={selected?.title_hook || "Clip Preview"}
+        subtitle="Preview the clip, approve or schedule it, and open repair tools only when needed."
+        width="max"
+        onClose={() => setClipModalOpen(false)}
+      >
+        <ReviewDetailPane
+          clip={selected}
+          statusTone={statusTone}
+          activeTab={detailTab}
+          setActiveTab={setDetailTab}
+          captionDraft={captionDraft}
+          setCaptionDraft={setCaptionDraft}
+          postCopyDraft={postCopyDraft}
+          setPostCopyDraft={setPostCopyDraft}
+          actionStates={actionStates}
+          onSaveCaptions={onSaveCaptions}
+          onSavePostCopy={onSavePostCopy}
+          onGeneratePostCopy={onGeneratePostCopy}
+          onRerender={onRerender}
+          onRefreshMetadata={onRefreshMetadata}
+          onSaveBoundary={onSaveBoundary}
+          primaryReviewAction={primaryReviewAction}
+          onApprove={onApprove}
+          onSchedule={onSchedule}
+        />
+      </FocusModal>
     </section>
   );
 }
@@ -460,10 +482,10 @@ function ReviewDetailPane({
   onSchedule: (id: string) => void;
 }) {
   return (
-    <aside className="rounded-[28px] border border-white/[0.08] bg-surface p-5 xl:sticky xl:top-5">
+    <div className="rounded-[28px] border border-white/[0.08] bg-surface p-4 sm:p-5">
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-xl font-semibold text-white">Clip Inspector</h3>
+          <h3 className="text-xl font-semibold text-white">Clip workspace</h3>
           <p className="mt-1 text-sm text-zinc-400">Preview first, edit only what matters for this selected clip.</p>
         </div>
         {clip ? <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip.status)}`}>{clip.status.replaceAll("_", " ")}</span> : null}
@@ -507,7 +529,7 @@ function ReviewDetailPane({
           />
         </div>
       ) : <EmptyState text="Select a clip to inspect preview, metadata, timing, captions, and publish copy." />}
-    </aside>
+    </div>
   );
 }
 
@@ -599,6 +621,7 @@ function ClipSummary({
           <p className="mt-1 text-xs leading-5 text-zinc-500">{primaryHint}</p>
         </div>
         <button
+          data-autofocus
           type="button"
           disabled={busy || !canRunPrimaryAction(clip)}
           onClick={() => {
@@ -726,12 +749,15 @@ function InsightPanel({
   const warnings = clipWarnings(clip);
   const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label || "Metadata";
   return (
-    <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-      <div className="mb-4 flex flex-col gap-4">
-        <div>
-          <h3 className="text-lg font-semibold text-white">Editor</h3>
-          <p className="mt-1 text-xs text-zinc-500">Fine-tune the selected clip without leaving review.</p>
-        </div>
+    <details className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+        <span>
+          <span className="block text-lg font-semibold text-white">Clip fixes</span>
+          <span className="mt-1 block text-xs text-zinc-500">Open only when metadata, timing, captions, post copy, or QA need changes.</span>
+        </span>
+        <span className="shrink-0 rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{activeTabLabel}</span>
+      </summary>
+      <div className="mt-4 flex flex-col gap-4">
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Editing {activeTabLabel}</span>
@@ -793,7 +819,7 @@ function InsightPanel({
           ) : null}
         </div>
       ) : <EmptyState text="Select a clip to inspect curation, captions, and publish copy." />}
-    </div>
+    </details>
   );
 }
 

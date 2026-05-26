@@ -1,0 +1,14 @@
+{
+  "name": "media-engine-hyperframes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "doctor": "hyperframes doctor",
+    "lint": "hyperframes lint",
+    "inspect": "hyperframes inspect --json --samples 9",
+    "render": "hyperframes render --quality standard --workers 1"
+  },
+  "devDependencies": {
+    "hyperframes": "0.6.40"
+  }
+}

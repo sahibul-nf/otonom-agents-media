@@ -1,25 +1,26 @@
-# HyperFrames Evaluation
+# HyperFrames Renderer
 
-HyperFrames is not installed in the production path yet. Keep it here as an evaluation lane for HTML/GSAP-first vertical short templates.
+HyperFrames is the primary renderer for HTML/GSAP-first short and landscape templates. It is intentionally gated by `HYPERFRAMES_ENABLED=true` so local runtime readiness is explicit before production jobs run.
 
-## Why evaluate it
+## Why use it
 
 - HTML compositions are easy for agents to author and review.
 - GSAP timelines are a natural fit for kinetic captions, overlays, click/typing effects, and transitions.
-- It can complement the existing FFmpeg and Remotion paths.
+- It powers the public template library and Brand System Template builder.
 
-## Manual scaffold when ready
+## Runtime commands
 
 ```bash
-npx hyperframes init nourbit-hyperframes --non-interactive --example blank
-cd nourbit-hyperframes
-npx hyperframes preview
-npx hyperframes render --output output.mp4
+npm install
+npm run doctor
+npm run lint
+npm run inspect
+npm run render -- --output output.mp4
 ```
 
-## Gate before adoption
+## Production gate
 
-- Create a Nourbit `DESIGN.md`.
-- Build one 9:16 proof composition.
-- Verify render output and text-safe layout.
-- Review licensing and dependency impact before SaaS use.
+- Set `HYPERFRAMES_ENABLED=true`.
+- Keep Node.js 22+ and FFmpeg available.
+- Verify the generated artifact folder contains `*_hyperframes.mp4`, `*_hyperframes.json`, and a `*_hyperframes/index.html` project.
+- Review lint and inspect output in render metadata before using it for publishing.

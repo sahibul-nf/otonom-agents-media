@@ -2,22 +2,22 @@
 
 ## Current Decision
 
-Use a hybrid render strategy:
+Use a HyperFrames-first render strategy:
 
 - FFmpeg for deterministic trimming, encoding, audio normalization, and cheap smoke renders.
-- Remotion for React-based motion templates already scaffolded in `media-engine/render/remotion`.
-- HyperFrames as an evaluation candidate for HTML/GSAP-first templates, especially kinetic captions, overlays, and fast AI-agent-authored compositions.
+- HyperFrames as the primary HTML/GSAP renderer behind `HYPERFRAMES_ENABLED=true`, especially for kinetic captions, overlays, and fast AI-agent-authored compositions.
+- Remotion remains in the repo as hidden legacy fallback for old jobs, not as a user-facing renderer choice.
 
 ## HyperFrames Notes
 
 HyperFrames uses HTML as the composition source and GSAP timelines for animation. Its quickstart requires Node.js 22+ and FFmpeg, and renders with `npx hyperframes render --output output.mp4`.
 
-Do not add HyperFrames to the production path until we have:
+Before enabling HyperFrames for live batches:
 
-- a dedicated `DESIGN.md` or visual style file for Nourbit,
-- a tiny proof composition,
-- lint/render checks in CI or local smoke scripts,
-- a license/dependency review for SaaS use.
+- set `HYPERFRAMES_ENABLED=true`,
+- run `npm exec --yes --package hyperframes@0.6.40 -- hyperframes doctor`,
+- verify `lint`, `inspect`, and render metadata under the clip artifact folder,
+- keep legacy renderer paths available only for compatibility with old jobs.
 
 Source references:
 

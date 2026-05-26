@@ -19,11 +19,12 @@ from .db import DEFAULT_DB, ROOT, connect, fetch_all, fetch_one, initialize, loa
 from .env_loader import load_env_file
 from .live_publishers import LivePublishError, publish_live_payload
 from .genres import normalize_genres
+from .hyperframes_previews import list_hyperframes_preview_status, prewarm_hyperframes_template_previews
 from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
 from .publishers import build_payload
 from .render_quality import build_render_quality_report
-from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_remotion
+from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .rerender import rerender_from_args
 from .schedule_publisher import process_due_publishes
 from .styles import load_style
@@ -61,6 +62,18 @@ def cmd_init(args: argparse.Namespace) -> None:
     seed_profile(conn, load_json(ROOT / "profiles" / "nourbit.json"))
     seed_source(conn, load_json(ROOT / "sources" / "nourbit_nouraniyyahofficial.json"))
     print(f"initialized {args.db}")
+
+
+def cmd_hyperframes_previews(args: argparse.Namespace) -> None:
+    load_env_file(args.env_file)
+    if args.status:
+        result = list_hyperframes_preview_status(include_brand=args.include_brand)
+    else:
+        result = prewarm_hyperframes_template_previews(include_brand=args.include_brand)
+    try:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    except BrokenPipeError:
+        return
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
@@ -245,10 +258,26 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     source_clip = download_youtube_section(args.youtube_url, args.profile, candidate)
     bar.step(f"preparing captions with {args.caption_source}")
     prepare_production_captions(candidate, source_clip, args, style)
-    attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
-    renderer = resolve_renderer(args.renderer, args.quality)
+    attribution = args.source_attribution or "Source: Channel clip"
+    renderer, renderer_note = resolve_renderer(args.renderer, args.quality)
+    if renderer_note:
+        bar.step(renderer_note)
     bar.step(f"rendering with {renderer}")
-    if renderer == "remotion":
+    genre_ids = parse_genres(args.genres)
+    if renderer == "hyperframes":
+        output_path, contract = render_premium_hyperframes(
+            candidate,
+            profile,
+            source_clip,
+            args.youtube_url,
+            attribution,
+            style,
+            hyperframes_template=args.hyperframes_template,
+            hyperframes_format=getattr(args, "hyperframes_format", "auto"),
+            brand_system_template_id=getattr(args, "brand_system_template_id", ""),
+            genres=genre_ids,
+        )
+    elif renderer == "remotion":
         output_path, contract = render_premium_remotion(
             candidate,
             profile,
@@ -323,9 +352,25 @@ def render_premium_candidate(
     source_clip = download_youtube_section(youtube_url, profile["id"], candidate)
     (bar.step if bar else progress)(f"{prefix}preparing captions with {getattr(args, 'caption_source', 'youtube')}")
     prepare_production_captions(candidate, source_clip, args, style)
-    renderer = resolve_renderer(renderer, args.quality)
+    renderer, renderer_note = resolve_renderer(renderer, args.quality)
+    if renderer_note:
+        (bar.step if bar else progress)(f"{prefix}{renderer_note}")
     (bar.step if bar else progress)(f"{prefix}rendering {candidate['id']} with {renderer}")
-    if renderer == "remotion":
+    genre_ids = parse_genres(getattr(args, "genres", ""))
+    if renderer == "hyperframes":
+        output_path, contract = render_premium_hyperframes(
+            candidate,
+            profile,
+            source_clip,
+            youtube_url,
+            source_attribution,
+            style,
+            hyperframes_template=getattr(args, "hyperframes_template", "auto"),
+            hyperframes_format=getattr(args, "hyperframes_format", "auto"),
+            brand_system_template_id=getattr(args, "brand_system_template_id", ""),
+            genres=genre_ids,
+        )
+    elif renderer == "remotion":
         output_path, contract = render_premium_remotion(candidate, profile, source_clip, youtube_url, source_attribution, style)
     else:
         output_path, contract = render_premium_ffmpeg(candidate, profile, source_clip, youtube_url, source_attribution, style)
@@ -368,10 +413,17 @@ def render_premium_candidate(
     }
 
 
-def resolve_renderer(renderer: str, quality: str) -> str:
+def resolve_renderer(renderer: str, quality: str) -> tuple[str, str]:
     if quality == "production" and renderer == "ffmpeg":
-        return "remotion"
-    return renderer
+        return "hyperframes", ""
+    return renderer, ""
+
+
+def _render_not_ready(renderer: str) -> RuntimeError:
+    return RuntimeError(
+        f"{renderer} renderer is not wired for production publish yet. "
+        "Complete HyperFrames runtime setup first, or use a legacy internal fallback."
+    )
 
 
 def prepare_production_captions(candidate: dict[str, Any], source_clip: str, args: argparse.Namespace, style: dict[str, Any]) -> None:
@@ -471,7 +523,7 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         clip_max_seconds=args.clip_max_seconds,
         genres=parse_genres(args.genres),
     )
-    attribution = args.source_attribution or "Source: Ribath Nouraniyyah Hasyimiyyah"
+    attribution = args.source_attribution or "Source: Channel clip"
     renders = []
     for index, candidate in enumerate(candidates, start=1):
         bar.step(f"[{index}/{len(candidates)}] queued {candidate['id']} - {candidate['title_hook']}")
@@ -670,6 +722,12 @@ def build_parser() -> argparse.ArgumentParser:
     init = sub.add_parser("init")
     init.set_defaults(func=cmd_init)
 
+    hyperframes_previews = sub.add_parser("hyperframes-previews")
+    hyperframes_previews.add_argument("--status", action="store_true", help="Print preview readiness without rendering")
+    hyperframes_previews.add_argument("--include-brand", action="store_true", help="Include saved Brand System templates")
+    hyperframes_previews.add_argument("--env-file", default="../.env.local")
+    hyperframes_previews.set_defaults(func=cmd_hyperframes_previews)
+
     ingest = sub.add_parser("ingest")
     ingest.add_argument("--profile", default="nourbit")
     ingest.set_defaults(func=cmd_ingest)
@@ -689,7 +747,10 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--source-id", default="nourbit_nouraniyyahofficial")
     premium_test.add_argument("--youtube-url", required=True)
     premium_test.add_argument("--source-attribution", default="")
-    premium_test.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="ffmpeg")
+    premium_test.add_argument("--renderer", choices=["ffmpeg", "remotion", "hyperframes"], default="hyperframes")
+    premium_test.add_argument("--hyperframes-template", default="auto", help="HyperFrames template id or auto")
+    premium_test.add_argument("--brand-system-template-id", default="", help="Saved Brand System template id")
+    premium_test.add_argument("--hyperframes-format", choices=["auto", "short_9_16", "long_16_9"], default="auto")
     premium_test.add_argument("--quality", choices=["draft", "production"], default="draft")
     premium_test.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
     premium_test.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
@@ -726,7 +787,10 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--youtube-url", required=True)
     premium_batch.add_argument("--source-attribution", default="")
     premium_batch.add_argument("--count", type=int, default=5)
-    premium_batch.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="ffmpeg")
+    premium_batch.add_argument("--renderer", choices=["ffmpeg", "remotion", "hyperframes"], default="hyperframes")
+    premium_batch.add_argument("--hyperframes-template", default="auto", help="HyperFrames template id or auto")
+    premium_batch.add_argument("--brand-system-template-id", default="", help="Saved Brand System template id")
+    premium_batch.add_argument("--hyperframes-format", choices=["auto", "short_9_16", "long_16_9"], default="auto")
     premium_batch.add_argument("--quality", choices=["draft", "production"], default="draft")
     premium_batch.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
     premium_batch.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
@@ -775,7 +839,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     rerender = sub.add_parser("rerender")
     rerender.add_argument("--candidate-id", required=True)
-    rerender.add_argument("--renderer", choices=["ffmpeg", "remotion"], default="remotion")
+    rerender.add_argument("--renderer", choices=["ffmpeg", "remotion", "hyperframes"], default="hyperframes")
     rerender.add_argument("--quality", choices=["draft", "production"], default="production")
     rerender.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     rerender.set_defaults(func=cmd_rerender)

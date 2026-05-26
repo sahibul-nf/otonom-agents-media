@@ -16,6 +16,7 @@ from media_engine.live_publishers import (
 )
 from media_engine.publishers import build_payload, create_dry_run_attempt
 from media_engine.post_copy import build_post_caption, generate_post_caption, sanitize_post_caption
+from media_engine.llm import LLMError
 
 
 def json_dumps(value):
@@ -97,7 +98,7 @@ class PublisherTests(unittest.TestCase):
         self.assertIn("Tenangkan hati", result["post_caption"])
         call.assert_called_once()
 
-    def test_generate_post_caption_falls_back_without_key(self):
+    def test_generate_post_caption_fails_without_key(self):
         candidate = {
             "id": "clip1",
             "title_hook": "Rahasia Hati Tenang",
@@ -106,11 +107,8 @@ class PublisherTests(unittest.TestCase):
             "transcript_span": "Hati yang tenang itu lahir dari ingat kepada Allah dan menjaga arah niat.",
         }
         with patch.dict("os.environ", {}, clear=True):
-            result = generate_post_caption(candidate, preferred_provider="deepseek")
-
-        self.assertEqual(result["source"], "local_transcript")
-        self.assertLessEqual(result["char_count"], 400)
-        self.assertLessEqual(result["hashtag_count"], 5)
+            with self.assertRaises(LLMError):
+                generate_post_caption(candidate, preferred_provider="deepseek")
 
     def test_credential_status_marks_ready_without_exposing_values(self):
         with patch.dict(

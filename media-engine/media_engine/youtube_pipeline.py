@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +15,7 @@ from typing import Any
 
 from .autonomy import is_duplicate_candidate
 from .captions import build_word_timeline, group_word_captions
-from .db import ARTIFACTS_DIR
+from .db import ARTIFACTS_DIR, ROOT
 from .duration_presets import DurationPreset, duration_prompt_phrase, resolve_duration_strategy
 from .genres import genre_prompt_phrase, normalize_genres
 from .llm import LLMError, call_llm_json
@@ -111,30 +113,11 @@ SPECIAL_TITLE_WORDS = {
     "aswad": "Aswad",
 }
 
-TITLE_RULES = (
-    (("mujahadah", "siksa"), "Mujahadah: Siksa Diri Sebelum Disiksa"),
-    (("mujahadah",), "Makna Mujahadah yang Sering Terlupa"),
-    (("dompet", "qalbu"), "Isi Dompet Qalbu dengan Nama Allah"),
-    (("hajar", "aswad"), "Hajar Aswad: Tangan Kanan Allah"),
-    (("takut", "netizen"), "Takut Netizen atau Takut Allah?"),
-    (("kesepian",), "Kenapa Hati Masih Kesepian?"),
-    (("bahagia", "allah"), "Bahagia Hanya dengan Allah"),
-    (("mesra", "galak"), "Allah Itu Mesra, Bukan Galak"),
-    (("hati", "tenang"), "Rahasia Hati yang Tenang"),
-    (("zikir",), "Zikir yang Membuat Hati Tenang"),
-    (("dzikir",), "Dzikir yang Membuat Hati Tenang"),
-    (("ibadah",), "Untuk Siapa Ibadah Kita?"),
-    (("amal",), "Untuk Siapa Amal Kita?"),
-    (("allah", "jauh"), "Saat Allah Terasa Jauh"),
-    (("allah", "dekat"), "Allah Selalu Dekat dengan Kita"),
-)
-
-STATIC_FALLBACK_TITLES = {
-    "allah tidak pernah jauh",
-}
+STATIC_FALLBACK_TITLES = {"allah tidak pernah jauh", "inti nasihat singkat"}
 
 STATIC_FALLBACK_SUBTITLES = {
     "potongan singkat untuk menenangkan hati dan meluruskan arah.",
+    "cuplikan reflektif dengan pesan utama yang perlu ditinjau sebelum publish.",
 }
 
 MIN_PREMIUM_DURATION_MS = 45_000
@@ -265,31 +248,14 @@ def _best_title_phrase(span: str, min_words: int = 4, max_words: int = 7) -> str
 
 
 def title_for_span(span: str) -> str:
-    lowered = span.lower()
-    for required_words, title in TITLE_RULES:
-        if all(word in lowered for word in required_words):
-            return title
     return _best_title_phrase(span)
 
 
 def hook_subtitle_for_span(span: str, title: str) -> str:
-    lowered = f"{title} {span}".lower()
-    if "kesepian" in lowered:
-        return "Saat hati terasa jauh, jawabannya sering lebih dekat dari yang kita kira."
-    if "takut" in lowered and ("netizen" in lowered or "allah" in lowered):
-        return "Tentang arah takut kita: manusia yang menilai, atau Allah yang melihat."
-    if "zikir" in lowered or "dzikir" in lowered:
-        return "Satu kalimat zikir yang mengubah cara kita menutup hari."
-    if "bahagia" in lowered:
-        return "Bahagia yang tidak sibuk mencari validasi dari makhluk."
-    if "mesra" in lowered or "galak" in lowered:
-        return "Cara memandang Allah yang membuat hati lebih pulang."
-    if "ibadah" in lowered or "amal" in lowered:
-        return "Pengingat lembut tentang niat yang sering diam-diam bergeser."
     phrase = _best_title_phrase(span, min_words=3, max_words=5).lower()
     if phrase == "inti nasihat singkat":
-        return "Cuplikan reflektif dengan pesan utama yang perlu ditinjau sebelum publish."
-    return f"Cuplikan reflektif tentang {phrase}, diambil dari inti pembahasan."
+        return "Ringkasan singkat dari isi clip ini. Perlu refresh metadata agar lebih spesifik."
+    return f"Ringkasan isi clip: {phrase}."
 
 
 def _title_is_relevant(title: str, span: str) -> bool:
@@ -309,6 +275,8 @@ def _title_is_relevant(title: str, span: str) -> bool:
 def _subtitle_is_relevant(subtitle: str, span: str) -> bool:
     normalized_subtitle = subtitle.strip().lower()
     if not normalized_subtitle or normalized_subtitle in STATIC_FALLBACK_SUBTITLES:
+        return False
+    if normalized_subtitle.startswith("ringkasan isi clip:"):
         return False
     subtitle_words = [word for word in _span_words(subtitle) if word not in TITLE_STOPWORDS and len(word) > 3]
     if not subtitle_words:
@@ -635,6 +603,9 @@ def choose_nourbit_premium_candidates(
     genres = normalize_genres(genres)
     corrected_entries = correct_transcript_entries(entries)
     llm_suggestions = llm_rank_suggestions(corrected_entries, count, llm_provider, preset, genres)
+    llm_required = (llm_provider or "none").strip().lower() != "none"
+    if llm_required and not llm_suggestions:
+        raise ValueError("curation failed: LLM returned no valid clip suggestions")
     selected: list[dict[str, Any]] = []
 
     for suggestion in llm_suggestions:
@@ -654,6 +625,9 @@ def choose_nourbit_premium_candidates(
         selected.append(candidate)
         if len(selected) >= count:
             return selected
+
+    if llm_required and len(selected) < count:
+        raise ValueError("curation failed: LLM suggestions did not produce enough valid, non-overlapping clips")
 
     windows: list[tuple[int, int, int, str]] = []
     step = max(1, len(corrected_entries) // 80)
@@ -699,10 +673,26 @@ def choose_nourbit_premium_candidate(
 
 
 def find_ytdlp() -> str:
-    preferred = Path("/tmp/media-engine-tools-py313/bin/yt-dlp")
-    if preferred.exists():
-        return str(preferred)
+    runtime_hint = os.environ.get("MEDIA_ENGINE_YTDLP", "").strip()
+    if runtime_hint and Path(runtime_hint).exists() and os.access(runtime_hint, os.X_OK):
+        return runtime_hint
+    preferred_paths = [
+        ROOT / ".venv-tools" / "bin" / "yt-dlp",
+        Path("/tmp/media-engine-tools-py313/bin/yt-dlp"),
+    ]
+    runtime_python_bin = Path(sys.executable).resolve().parent
+    preferred_paths.insert(0, runtime_python_bin / "yt-dlp")
+    preferred_paths.insert(0, runtime_python_bin / "yt_dlp")
+    media_engine_python = os.environ.get("MEDIA_ENGINE_PYTHON")
+    if media_engine_python:
+        preferred_paths.insert(0, Path(media_engine_python).resolve().parent / "yt-dlp")
+        preferred_paths.insert(0, Path(media_engine_python).resolve().parent / "yt_dlp")
+    for preferred in preferred_paths:
+        if preferred.exists() and os.access(preferred, os.X_OK):
+            return str(preferred)
     ytdlp = shutil.which("yt-dlp")
+    if not ytdlp:
+        ytdlp = shutil.which("yt_dlp")
     if not ytdlp:
         raise RuntimeError("yt-dlp is required for YouTube partial downloads")
     return ytdlp

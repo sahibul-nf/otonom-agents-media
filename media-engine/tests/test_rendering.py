@@ -7,6 +7,8 @@ from media_engine.rendering import (
     build_premium_render_contract,
     validate_premium_duration,
 )
+from media_engine.hyperframes_renderer import build_hyperframes_index_html
+from media_engine.hyperframes_templates import list_hyperframes_templates
 from media_engine.captions import group_word_captions, normalize_word_timeline
 from media_engine.youtube_pipeline import TranscriptEntry, choose_nourbit_premium_candidate
 
@@ -20,6 +22,19 @@ class PremiumRenderingTests(unittest.TestCase):
             "title_hook": "Kenapa Hati Masih Kesepian?",
             "viral_reason": "Momen reflektif yang kuat.",
             "transcript_span": "Allah selalu bersama kita maka hati tidak perlu merasa kesepian.",
+            "timed_captions": [
+                {
+                    "text": "Allah selalu bersama kita",
+                    "startMs": 0,
+                    "endMs": 2200,
+                    "words": [
+                        {"text": "Allah", "startMs": 0, "endMs": 500},
+                        {"text": "selalu", "startMs": 500, "endMs": 1100},
+                        {"text": "bersama", "startMs": 1100, "endMs": 1700},
+                        {"text": "kita", "startMs": 1700, "endMs": 2200},
+                    ],
+                }
+            ],
         }
         profile = {
             "id": "nourbit",
@@ -35,7 +50,7 @@ class PremiumRenderingTests(unittest.TestCase):
             "Source: Ribath Nouraniyyah Hasyimiyyah",
         )
 
-        self.assertEqual(contract["composition"], "NourbitPremiumShort")
+        self.assertEqual(contract["composition"], "HyperFramesPremiumClip")
         self.assertEqual(contract["stylePreset"], PREMIUM_PRESET)
         self.assertEqual(contract["width"], 1080)
         self.assertEqual(contract["height"], 1920)
@@ -43,6 +58,102 @@ class PremiumRenderingTests(unittest.TestCase):
         self.assertTrue(contract["publishSafety"]["autoPublishAllowed"])
         self.assertGreater(len(contract["captions"]), 0)
         self.assertEqual(contract["captionDiagnostics"]["maxConcurrentEvents"], 1)
+
+    def test_hyperframes_html_contains_required_runtime_contract(self):
+        candidate = {
+            "id": "clip_hyper",
+            "start_ms": 0,
+            "end_ms": 60_000,
+            "title_hook": "Allah Tidak Pernah Jauh",
+            "viral_reason": "Momen reflektif yang kuat.",
+            "transcript_span": "Allah selalu bersama kita.",
+            "timed_captions": [
+                {
+                    "text": "Allah selalu bersama",
+                    "startMs": 0,
+                    "endMs": 1200,
+                    "words": [
+                        {"text": "Allah", "startMs": 0, "endMs": 400},
+                        {"text": "selalu", "startMs": 400, "endMs": 800},
+                        {"text": "bersama", "startMs": 800, "endMs": 1200},
+                    ],
+                }
+            ],
+        }
+        profile = {
+            "id": "nourbit",
+            "watermark_text": "Nourbit Clips",
+            "cta_text": "Follow Nourbit untuk nasihat singkat lainnya",
+        }
+        contract = build_premium_render_contract(candidate, profile, "source.mp4", "https://youtu.be/test", "Source")
+
+        html = build_hyperframes_index_html(contract)
+
+        self.assertIn('data-composition-id="premium-hyperframes"', html)
+        self.assertIn('data-width="1080"', html)
+        self.assertIn('data-height="1920"', html)
+        self.assertIn("<video", html)
+        self.assertIn("muted playsinline", html)
+        self.assertIn("<audio", html)
+        self.assertIn('window.__timelines["premium-hyperframes"]', html)
+        self.assertIn('data-track-index="2"', html)
+
+    def test_hyperframes_all_templates_emit_required_contract(self):
+        candidate = {
+            "id": "clip_hyper_templates",
+            "start_ms": 0,
+            "end_ms": 60_000,
+            "title_hook": "Template Siap Pakai",
+            "viral_reason": "Momen reflektif yang kuat.",
+            "transcript_span": "Allah selalu bersama kita.",
+            "timed_captions": [
+                {
+                    "text": "Allah selalu bersama",
+                    "startMs": 0,
+                    "endMs": 1500,
+                    "words": [
+                        {"text": "Allah", "startMs": 0, "endMs": 500},
+                        {"text": "selalu", "startMs": 500, "endMs": 1000},
+                        {"text": "bersama", "startMs": 1000, "endMs": 1500},
+                    ],
+                }
+            ],
+        }
+        profile = {"id": "nourbit", "watermark_text": "Nourbit Clips", "cta_text": "Follow Nourbit"}
+        contract = build_premium_render_contract(candidate, profile, "source.mp4", "https://youtu.be/test", "Source")
+
+        for template in list_hyperframes_templates():
+            with self.subTest(template=template["id"]):
+                html = build_hyperframes_index_html(contract, hyperframes_template=template["id"])
+                self.assertIn(f'"hyperframesTemplate": "{template["id"]}"', html)
+                self.assertIn('"templateVersion": "1.1.0"', html)
+                self.assertIn("<video", html)
+                self.assertIn("muted playsinline", html)
+                self.assertIn("<audio", html)
+                self.assertIn('data-track-index="0"', html)
+                self.assertIn('data-track-index="4"', html)
+                self.assertIn('window.__timelines["premium-hyperframes"]', html)
+
+    def test_hyperframes_caption_clips_leave_micro_gap_for_linter(self):
+        candidate = {
+            "id": "clip_hyper_adjacent",
+            "start_ms": 0,
+            "end_ms": 60_000,
+            "title_hook": "Caption Rapat",
+            "viral_reason": "Momen reflektif yang kuat.",
+            "transcript_span": "satu dua tiga empat",
+            "timed_captions": [
+                {"text": "satu dua", "startMs": 0, "endMs": 1000, "words": [{"text": "satu", "startMs": 0, "endMs": 500}, {"text": "dua", "startMs": 500, "endMs": 1000}]},
+                {"text": "tiga empat", "startMs": 1000, "endMs": 2000, "words": [{"text": "tiga", "startMs": 1000, "endMs": 1500}, {"text": "empat", "startMs": 1500, "endMs": 2000}]},
+            ],
+        }
+        profile = {"id": "nourbit", "watermark_text": "Nourbit Clips", "cta_text": "Follow Nourbit"}
+        contract = build_premium_render_contract(candidate, profile, "source.mp4", "https://youtu.be/test", "Source")
+
+        html = build_hyperframes_index_html(contract)
+
+        self.assertIn('data-start="0.000" data-duration="1.498"', html)
+        self.assertIn('data-start="1.500" data-duration="0.498"', html)
 
     def test_premium_duration_bounds(self):
         validate_premium_duration(20_000)
@@ -200,6 +311,19 @@ class PremiumRenderingTests(unittest.TestCase):
             "title_hook": "Kenapa Hati Masih Kesepian?",
             "viral_reason": "Momen reflektif yang kuat.",
             "transcript_span": "Allah selalu bersama kita.",
+            "timed_captions": [
+                {
+                    "text": "Allah selalu bersama kita",
+                    "startMs": 0,
+                    "endMs": 2200,
+                    "words": [
+                        {"text": "Allah", "startMs": 0, "endMs": 500},
+                        {"text": "selalu", "startMs": 500, "endMs": 1100},
+                        {"text": "bersama", "startMs": 1100, "endMs": 1700},
+                        {"text": "kita", "startMs": 1700, "endMs": 2200},
+                    ],
+                }
+            ],
         }
         profile = {
             "id": "nourbit",
@@ -221,6 +345,19 @@ class PremiumRenderingTests(unittest.TestCase):
             "hook_subtitle": "Bahagia yang tidak sibuk mencari validasi dari makhluk.",
             "viral_reason": "Momen reflektif yang kuat.",
             "transcript_span": "Allah selalu bersama kita.",
+            "timed_captions": [
+                {
+                    "text": "Allah selalu bersama kita",
+                    "startMs": 0,
+                    "endMs": 2200,
+                    "words": [
+                        {"text": "Allah", "startMs": 0, "endMs": 500},
+                        {"text": "selalu", "startMs": 500, "endMs": 1100},
+                        {"text": "bersama", "startMs": 1100, "endMs": 1700},
+                        {"text": "kita", "startMs": 1700, "endMs": 2200},
+                    ],
+                }
+            ],
         }
         profile = {
             "id": "nourbit",

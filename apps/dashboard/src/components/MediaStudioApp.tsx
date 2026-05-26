@@ -8,12 +8,9 @@ import {
   Clapperboard,
   Copy,
   Eye,
-  FileVideo,
-  Gauge,
   LayoutDashboard,
   Loader2,
   MoreHorizontal,
-  RadioTower,
   RefreshCcw,
   Send,
   Settings,
@@ -31,10 +28,13 @@ import {
   ClipCandidate,
   CredentialStatus,
   DurationPreset,
+  EngineHealth,
   formatDuration,
   formatTimestamp,
   GenerationJob,
   GenreOption,
+  HyperframesCatalog,
+  HyperframesTemplate,
   platformLabel,
   PublishAttempt,
   PublishTarget,
@@ -43,14 +43,33 @@ import {
   scoreValue,
   StyleProfile,
 } from "@/lib/media-api";
-import {PreviewPanel} from "@/components/review/PreviewPanel";
 import {ReviewStudioSection} from "@/components/review/ReviewStudioSection";
 import {BrandSection} from "@/components/brand/BrandSection";
+import {FocusModal} from "@/components/FocusModal";
+import {DashboardSection} from "@/components/home/DashboardSection";
+import {GenerateSection} from "@/components/generate/GenerateSection";
+import {TemplatesSection} from "@/components/templates/TemplatesSection";
+import {CalendarSection} from "@/components/calendar/CalendarSection";
+import {PublishSection} from "@/components/channels/PublishSection";
+import {EmptyState, InlineActionStatus, SettingTile} from "@/components/shared/StudioPrimitives";
 
-type Section = "dashboard" | "generate" | "review" | "calendar" | "publish" | "brand";
+type Section = "dashboard" | "generate" | "templates" | "review" | "calendar" | "publish" | "brand";
+type NextAction = {
+  label: string;
+  detail: string;
+  section: Section;
+  tone: "primary" | "warning" | "ready";
+};
+type WorkflowStep = {
+  id: string;
+  label: string;
+  status: "ready" | "active" | "blocked" | "idle";
+  detail: string;
+  section: Section;
+};
 
-const defaultSourceUrl = "https://www.youtube.com/live/WSg7MGv4_Fs?si=i0BS4fhJx_WfQW3P";
-const defaultTemplate = "profiles/nourbit_opus_style.json";
+const defaultSourceUrl = "";
+const defaultTemplate = "profiles/default_workspace_style.json";
 type RerenderUiState = {status: "running" | "done" | "failed"; message: string; progress?: number};
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 type ToastMessage = {id: string; tone: "success" | "error" | "info"; message: string};
@@ -100,7 +119,6 @@ function formatClipStatus(status?: string) {
     draft: "Draft",
     failed: "Failed",
     held: "Held",
-    needs_caption_fix: "Caption fix",
     pending_auto_schedule: "Auto queue",
     published: "Published",
     ready: "Ready",
@@ -113,7 +131,7 @@ function formatClipStatus(status?: string) {
 }
 
 function canApproveClip(clip: ClipCandidate) {
-  return ["draft", "rendered", "needs_caption_fix", "held", "pending_auto_schedule"].includes(clip.status);
+  return ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status);
 }
 
 function canScheduleClip(clip: ClipCandidate) {
@@ -124,7 +142,7 @@ function publishActionHint(error?: string) {
   const value = (error || "").toLowerCase();
   if (!value) return "";
   if (value.includes("401") || value.includes("unauthorized") || value.includes("token")) return "Reconnect this platform account.";
-  if (value.includes("unaudited_client_can_only_post_to_private_accounts")) return "TikTok app belum audited. Set akun TikTok private + gunakan visibility SELF_ONLY, atau ajukan audit TikTok untuk publish publik.";
+  if (value.includes("unaudited_client_can_only_post_to_private_accounts")) return "TikTok app is not audited yet. Use a private account with SELF_ONLY visibility, or complete TikTok audit for public publishing.";
   if (value.includes("telegram upload was interrupted") || value.includes("broken pipe") || value.includes("timed out") || value.includes("urlopen")) return "Telegram upload interrupted. The system will prepare a <49MB Telegram copy, then retry this platform.";
   if (value.includes("above") && value.includes("after compression")) return "Telegram copy is still too large. Re-render a shorter clip or lower the render quality.";
   if (value.includes("rendered video file")) return "Re-render the clip before publishing.";
@@ -132,20 +150,60 @@ function publishActionHint(error?: string) {
   return error || "";
 }
 
+function publicAccountLabel(target: PublishTarget) {
+  const raw = String(target.account_label || "").trim();
+  if (!raw || /nourbit|nouraniyyah/i.test(raw)) {
+    return `${platformLabel(target.platform)} workspace`;
+  }
+  return raw;
+}
+
 const nav = [
-  {id: "dashboard", label: "Dashboard", icon: LayoutDashboard},
-  {id: "generate", label: "Generate", icon: Wand2},
-  {id: "review", label: "Review Studio", icon: Clapperboard},
-  {id: "calendar", label: "Calendar", icon: CalendarDays},
+  {id: "dashboard", label: "Home", icon: LayoutDashboard},
+  {id: "generate", label: "Create", icon: Wand2},
+  {id: "templates", label: "Templates", icon: Sparkles},
+  {id: "review", label: "Review", icon: Clapperboard},
+  {id: "calendar", label: "Schedule", icon: CalendarDays},
   {id: "publish", label: "Channels", icon: Send},
-  {id: "brand", label: "Brand Settings", icon: Settings},
+  {id: "brand", label: "Brand", icon: Settings},
 ] as const;
+
+const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
+  dashboard: {
+    title: "Command Center",
+    subtitle: "Start with the one action that moves this production pipeline forward.",
+  },
+  generate: {
+    title: "Create",
+    subtitle: "Choose a template, add a source, and generate a focused production batch.",
+  },
+  templates: {
+    title: "Templates",
+    subtitle: "Browse HyperFrames video flows and pick the visual direction before generating.",
+  },
+  review: {
+    title: "Review",
+    subtitle: "Approve, repair, or schedule clip candidates from a focused queue.",
+  },
+  calendar: {
+    title: "Schedule",
+    subtitle: "Place approved clips into guarded publishing slots.",
+  },
+  publish: {
+    title: "Channels",
+    subtitle: "Connect platforms and choose where scheduled clips can publish.",
+  },
+  brand: {
+    title: "Brand",
+    subtitle: "Build reusable HyperFrames brand systems from production presets.",
+  },
+};
 
 function statusTone(status: string) {
   if (["approved", "published", "ready", "rendered", "scheduled", "ready_to_publish", "completed", "pending_auto_schedule"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
   if (["running", "queued"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
   if (["failed", "rejected"].includes(status)) return "text-danger border-danger/[0.30] bg-danger/[0.10]";
-  if (["held", "needs_caption_fix"].includes(status)) return "text-warning border-warning/[0.30] bg-warning/[0.10]";
+  if (["held"].includes(status)) return "text-warning border-warning/[0.30] bg-warning/[0.10]";
   if (["cooldown"].includes(status)) return "text-zinc-300 border-white/[0.14] bg-white/[0.04]";
   return "text-warning border-warning/[0.30] bg-warning/[0.10]";
 }
@@ -170,12 +228,6 @@ function formatSchedule(value: string) {
   }).format(date);
 }
 
-function metricAverage(clips: ClipCandidate[]) {
-  const scores = clips.map((clip) => clip.score?.overall_score).filter((score): score is number => typeof score === "number");
-  if (!scores.length) return "-";
-  return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
-}
-
 function formatDeadline(value?: string) {
   if (!value) return "";
   const date = new Date(value);
@@ -196,6 +248,9 @@ type GenerateConfig = {
   clipMaxSeconds: number;
   genres: string[];
   brandTemplate: string;
+  hyperframesTemplate: string;
+  brandSystemTemplateId: string;
+  hyperframesFormat: string;
   renderer: string;
   quality: string;
   captionSource: string;
@@ -208,7 +263,7 @@ type GenerateConfig = {
 const reviewFilters = [
   {id: "all", label: "All", hint: "Every clip that is still visible in this workspace.", statuses: []},
   {id: "review", label: "Review", hint: "Clips that need approval, can still be held, or are waiting for assisted auto-queue.", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
-  {id: "repair", label: "Repair", hint: "Clips blocked by caption confidence or quality gates before they can be scheduled.", statuses: ["needs_caption_fix"]},
+  {id: "repair", label: "Repair", hint: "Clips blocked by caption confidence or quality gates before they can be scheduled.", statuses: ["held"]},
   {id: "scheduled", label: "Scheduled", hint: "Approved clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
   {id: "published", label: "Published", hint: "Clips already sent to a live channel.", statuses: ["published"]},
 ] as const;
@@ -221,16 +276,83 @@ function matchesReviewFilter(clip: ClipCandidate, filter: string) {
 
 function primaryReviewAction(clip: ClipCandidate) {
   if (canScheduleClip(clip)) return "Schedule";
-  if (canApproveClip(clip)) return clip.status === "needs_caption_fix" ? "Approve after fix" : "Approve";
+  if (canApproveClip(clip)) return clip.status === "held" ? "Open fix" : "Approve";
   if (clip.status === "published") return "Published";
   if (clip.status === "ready_to_publish") return "Ready";
   if (clip.status === "scheduled") return "Scheduled";
   return formatClipStatus(clip.status);
 }
 
+function getNextAction({
+  clips,
+  approvedCount,
+  scheduledCount,
+  readyPlatforms,
+  targetCount,
+  engineReady,
+  hasTemplate,
+}: {
+  clips: ClipCandidate[];
+  approvedCount: number;
+  scheduledCount: number;
+  readyPlatforms: number;
+  targetCount: number;
+  engineReady: boolean;
+  hasTemplate: boolean;
+}): NextAction {
+  const reviewCount = clips.filter((clip) => ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status)).length;
+  if (!engineReady) {
+    return {label: "Check HyperFrames runtime", detail: "Renderer readiness is the first blocker before production work.", section: "generate", tone: "warning"};
+  }
+  if (!hasTemplate) {
+    return {label: "Choose a video template", detail: "Pick the production visual system before generating clips.", section: "templates", tone: "primary"};
+  }
+  if (!clips.length) {
+    return {label: "Generate first batch", detail: "Start from a long video source and create ranked clip candidates.", section: "generate", tone: "primary"};
+  }
+  if (reviewCount > 0) {
+    return {label: `Review ${reviewCount} clips`, detail: "Approve the strongest candidates or open repair tools for blocked clips.", section: "review", tone: "primary"};
+  }
+  if (approvedCount > 0 && scheduledCount === 0) {
+    return {label: `Schedule ${approvedCount} approved clips`, detail: "Move approved clips into the next guarded publishing slots.", section: "calendar", tone: "ready"};
+  }
+  if (targetCount > 0 && readyPlatforms < targetCount) {
+    return {label: `Connect ${targetCount - readyPlatforms} channels`, detail: "Finish platform readiness so scheduled clips can publish.", section: "publish", tone: "warning"};
+  }
+  return {label: "Generate next batch", detail: "The current pipeline is clear enough to create the next set of candidates.", section: "generate", tone: "primary"};
+}
+
+function buildWorkflowSteps({
+  clips,
+  approvedCount,
+  scheduledCount,
+  readyPlatforms,
+  targetCount,
+  engineReady,
+  hasTemplate,
+}: {
+  clips: ClipCandidate[];
+  approvedCount: number;
+  scheduledCount: number;
+  readyPlatforms: number;
+  targetCount: number;
+  engineReady: boolean;
+  hasTemplate: boolean;
+}): WorkflowStep[] {
+  const reviewCount = clips.filter((clip) => ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status)).length;
+  return [
+    {id: "brand", label: "Brand", status: hasTemplate ? "ready" : "active", detail: hasTemplate ? "Template available" : "Pick a preset", section: "brand"},
+    {id: "template", label: "Template", status: hasTemplate ? "ready" : "blocked", detail: hasTemplate ? "HyperFrames ready" : "Choose first", section: "templates"},
+    {id: "generate", label: "Create", status: clips.length ? "ready" : engineReady && hasTemplate ? "active" : "blocked", detail: clips.length ? `${clips.length} clips` : "No batch yet", section: "generate"},
+    {id: "review", label: "Review", status: reviewCount ? "active" : approvedCount || scheduledCount ? "ready" : "idle", detail: reviewCount ? `${reviewCount} need action` : approvedCount ? `${approvedCount} approved` : "Waiting", section: "review"},
+    {id: "schedule", label: "Schedule", status: scheduledCount ? "ready" : approvedCount ? "active" : "idle", detail: scheduledCount ? `${scheduledCount} queued` : approvedCount ? "Ready to slot" : "Waiting", section: "calendar"},
+    {id: "publish", label: "Publish", status: readyPlatforms ? "ready" : targetCount ? "active" : "idle", detail: targetCount ? `${readyPlatforms}/${targetCount} channels` : "No targets", section: "publish"},
+  ];
+}
+
 function productionCommand(config: GenerateConfig) {
   return `cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
-PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premium-batch \\
+MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPATH=. "\${MEDIA_ENGINE_PYTHON}" -m media_engine.cli premium-batch \\
   --youtube-url "${config.sourceUrl}" \\
   --count ${config.count} \\
   --clip-length-preset ${config.clipLength} \\
@@ -238,6 +360,9 @@ PYTHONPATH=. /tmp/media-engine-tools-py313/bin/python -m media_engine.cli premiu
   --clip-max-seconds ${config.clipMaxSeconds} \\
   --genres ${config.genres.join(",")} \\
   --renderer ${config.renderer} \\
+  --hyperframes-template ${config.hyperframesTemplate} \\
+  --brand-system-template-id "${config.brandSystemTemplateId}" \\
+  --hyperframes-format ${config.hyperframesFormat} \\
   --quality ${config.quality} \\
   --caption-source ${config.captionSource} \\
   --asr-model ${config.asrModel} \\
@@ -255,8 +380,11 @@ export function MediaStudioApp() {
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null);
   const [style, setStyle] = useState<StyleProfile | null>(null);
   const [templates, setTemplates] = useState<BrandTemplate[]>([]);
+  const [hyperframesTemplates, setHyperframesTemplates] = useState<HyperframesTemplate[]>([]);
+  const [hyperframesCatalog, setHyperframesCatalog] = useState<HyperframesCatalog | null>(null);
   const [durationPresets, setDurationPresets] = useState<DurationPreset[]>([]);
   const [genres, setGenres] = useState<GenreOption[]>([]);
+  const [engineHealth, setEngineHealth] = useState<EngineHealth | null>(null);
   const [autonomy, setAutonomy] = useState<AutonomySettings | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [rerenderJobs, setRerenderJobs] = useState<RerenderJob[]>([]);
@@ -282,7 +410,10 @@ export function MediaStudioApp() {
     clipMaxSeconds: 180,
     genres: ["kajian", "spiritual_reflection", "advice"],
     brandTemplate: defaultTemplate,
-    renderer: "remotion",
+    hyperframesTemplate: "auto",
+    brandSystemTemplateId: "",
+    hyperframesFormat: "short_9_16",
+    renderer: "hyperframes",
     quality: "production",
     captionSource: "whisper",
     asrModel: "medium",
@@ -300,6 +431,30 @@ export function MediaStudioApp() {
   const approved = clips.filter((clip) => clip.status === "approved").length;
   const scheduledCount = clips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
+  const hasTemplate = hyperframesTemplates.length > 0 || generateConfig.hyperframesTemplate !== "auto";
+  const engineReady = Boolean(engineHealth?.hyperframes.ready);
+  const nextAction = getNextAction({
+    clips,
+    approvedCount: approved,
+    scheduledCount,
+    readyPlatforms,
+    targetCount: activeTargets.length || publishPlatforms.length,
+    engineReady,
+    hasTemplate,
+  });
+  const isErrorStatus = /failed|error|invalid|offline|unauthorized|blocked/i.test(status);
+  const headerStatus = !busy && !isErrorStatus && !engineReady
+    ? engineHealth?.hyperframes.reason || "HyperFrames runtime check required"
+    : status;
+  const workflowSteps = buildWorkflowSteps({
+    clips,
+    approvedCount: approved,
+    scheduledCount,
+    readyPlatforms,
+    targetCount: activeTargets.length || publishPlatforms.length,
+    engineReady,
+    hasTemplate,
+  });
   const command = productionCommand(generateConfig);
   const selectedCaptionDraft = selected ? captionDrafts[selected.id] ?? (selected.captions || []).map((caption) => caption.text).filter(Boolean).join("\n") : "";
   const selectedPostCopyDraft = selected ? postCopyDrafts[selected.id] ?? selected.post_caption ?? "" : "";
@@ -370,8 +525,11 @@ export function MediaStudioApp() {
         credentialRows,
         styleRows,
         templateRows,
+        hyperframesTemplateRows,
         durationRows,
         genreRows,
+        engineRows,
+        catalogRows,
         jobRows,
         rerenderRows,
         scheduleRows,
@@ -383,8 +541,11 @@ export function MediaStudioApp() {
         apiGet<CredentialStatus>("credentials"),
         apiGet<StyleProfile>("style"),
         apiGet<BrandTemplate[]>("brand-templates"),
+        apiGet<HyperframesTemplate[]>("hyperframes-templates"),
         apiGet<DurationPreset[]>("duration-presets"),
         apiGet<GenreOption[]>("genres"),
+        apiGet<EngineHealth>("engine-health"),
+        apiGet<HyperframesCatalog>("hyperframes-catalog"),
         apiGet<GenerationJob[]>("generation-jobs"),
         apiGet<RerenderJob[]>("rerender-jobs"),
         apiGet<ScheduledPost[]>("schedule"),
@@ -396,8 +557,11 @@ export function MediaStudioApp() {
       setCredentials(credentialRows);
       setStyle(styleRows);
       setTemplates(templateRows);
+      setHyperframesTemplates(hyperframesTemplateRows);
       setDurationPresets(durationRows);
       setGenres(genreRows);
+      setEngineHealth(engineRows);
+      setHyperframesCatalog(catalogRows);
       setJobs(jobRows);
       setRerenderJobs(rerenderRows);
       setSchedule(scheduleRows);
@@ -413,9 +577,9 @@ export function MediaStudioApp() {
       setSelectedId((current) => current || reviewRows[0]?.id || "");
       if (!attemptResult.ok) {
         const message = attemptResult.error instanceof Error ? attemptResult.error.message : "publish history temporarily unavailable";
-        setStatus(`Dashboard synced with warning: ${message}`);
+        setStatus(`Workspace synced with warning: ${message}`);
       } else {
-        setStatus("Dashboard synced");
+        setStatus("Workspace synced");
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to sync");
@@ -478,6 +642,9 @@ export function MediaStudioApp() {
           clip_max_seconds: generateConfig.clipMaxSeconds,
           genres: generateConfig.genres,
           brand_template: generateConfig.brandTemplate,
+          hyperframes_template: generateConfig.hyperframesTemplate,
+          brand_system_template_id: generateConfig.brandSystemTemplateId,
+          hyperframes_format: generateConfig.hyperframesFormat,
           renderer: generateConfig.renderer,
           quality: generateConfig.quality,
           caption_source: generateConfig.captionSource,
@@ -740,7 +907,7 @@ export function MediaStudioApp() {
     try {
       const job = await runAction(key, "Starting re-render job...", () => apiPost<RerenderJob>("rerender", {
         candidate_id: id,
-        renderer: "remotion",
+        renderer: "hyperframes",
         quality: "production",
         style: generateConfig.brandTemplate || defaultTemplate,
       }), "Re-render job started");
@@ -793,7 +960,7 @@ export function MediaStudioApp() {
           start_ms: startMs,
           end_ms: endMs,
           rerender_after: rerenderAfter,
-          renderer: "remotion",
+          renderer: "hyperframes",
           quality: "production",
           style: generateConfig.brandTemplate || defaultTemplate,
         }),
@@ -827,6 +994,12 @@ export function MediaStudioApp() {
   }
 
   useEffect(() => {
+    const savedTemplate = window.localStorage.getItem("otonom.hyperframesTemplateDefault");
+    if (!savedTemplate) return;
+    setGenerateConfig((current) => ({...current, hyperframesTemplate: savedTemplate}));
+  }, []);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshAll();
     }, 0);
@@ -853,95 +1026,91 @@ export function MediaStudioApp() {
 
   return (
     <div className="min-h-screen overflow-x-hidden text-zinc-100">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] border-r border-white/[0.06] bg-canvas-deep/[0.88] px-5 py-5 backdrop-blur-xl lg:block">
-        <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl border border-cyan text-xl font-semibold text-white shadow-glow">N</div>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col border-r border-white/[0.07] bg-[#0c0d10]/[0.92] px-4 py-5 backdrop-blur-xl lg:flex">
+        <div className="flex shrink-0 items-center gap-3 px-1">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl border border-cyan/[0.55] bg-cyan/[0.04] text-lg font-semibold text-white shadow-[0_0_24px_rgba(102,232,249,0.12)]">N</div>
           <div>
-            <h1 className="text-lg font-semibold leading-6">Otonom Media</h1>
-            <p className="text-xs text-zinc-400">Autonomous studio OS</p>
+            <h1 className="text-base font-semibold leading-5">Otonom Media</h1>
+            <p className="text-xs text-zinc-400">Guided production OS</p>
           </div>
         </div>
 
-        <nav className="mt-8 grid gap-2">
-          {nav.map((item) => {
+        <nav className="mt-8 grid min-h-0 flex-1 auto-rows-min content-start gap-3 overflow-y-auto pr-1">
+          {nav.map((item, index) => {
             const Icon = item.icon;
             const active = section === item.id;
+            const step = workflowSteps.find((workflowStep) => workflowStep.section === item.id);
             return (
               <button
                 key={item.id}
                 onClick={() => setSection(item.id)}
-                className={`flex h-12 items-center gap-3 rounded-2xl px-4 text-left text-sm font-medium transition ${
-                  active ? "bg-teal/[0.15] text-cyan ring-1 ring-cyan/[0.30]" : "text-zinc-400 hover:bg-white/[0.05] hover:text-white"
+                className={`group relative flex min-h-[56px] items-center gap-3 overflow-hidden rounded-[18px] border px-3.5 py-2 text-left text-sm font-medium transition ${
+                  active
+                    ? "border-cyan/[0.30] bg-cyan/[0.09] text-cyan shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    : "border-transparent text-zinc-500 hover:bg-white/[0.035] hover:text-zinc-100"
                 }`}
               >
-                <Icon className="h-4 w-4" />
-                {item.label}
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-2xl transition ${active ? "bg-cyan text-ink" : "bg-white/[0.035] text-zinc-500 group-hover:text-zinc-200"}`}>
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold">{item.label}</span>
+                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{step?.detail || `Step ${index + 1}`}</span>
+                </span>
+                {step ? <span className={`h-1.5 w-1.5 rounded-full ${step.status === "ready" ? "bg-teal" : step.status === "active" ? "bg-cyan" : step.status === "blocked" ? "bg-warning" : "bg-white/[0.16]"}`} /> : null}
               </button>
             );
           })}
         </nav>
 
-        <div className="absolute bottom-5 left-5 right-5 grid gap-3">
-          <div className="rounded-[24px] border border-white/[0.08] bg-surface p-4">
+        <div className="mt-4 grid shrink-0 gap-3">
+          <div className="rounded-[22px] border border-white/[0.07] bg-white/[0.035] p-4">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-semibold">Workspace Plan</span>
-              <span className="rounded-full bg-teal/[0.10] px-2.5 py-1 text-xs font-medium text-teal">review</span>
+              <span className="text-sm font-semibold">Next action</span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${nextAction.tone === "warning" ? "bg-warning/[0.10] text-warning" : "bg-teal/[0.10] text-teal"}`}>{nextAction.tone}</span>
             </div>
-            <div className="grid gap-2 text-xs text-zinc-400">
-              <div className="flex justify-between"><span>Daily cap</span><strong className="text-cyan">{credentials?.settings.nourbit_daily_content_cap || 2}</strong></div>
-              <div className="flex justify-between"><span>Platforms</span><strong className="text-cyan">{readyPlatforms}/4</strong></div>
-            </div>
-          </div>
-          <div className="rounded-[24px] border border-white/[0.08] bg-surface p-4 text-xs text-zinc-400">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-white"><RadioTower className="h-4 w-4 text-teal" /> Engine Status</div>
-            <div className="grid gap-2">
-              <div className="flex justify-between"><span>Python API</span><span className="text-teal">Online</span></div>
-              <div className="flex justify-between"><span>Renderer</span><span className="text-teal">Ready</span></div>
-              <div className="flex justify-between"><span>ASR/LLM</span><span className="text-teal">Configured</span></div>
-            </div>
+            <button type="button" onClick={() => setSection(nextAction.section)} className="w-full rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-3 text-left transition hover:border-cyan/[0.20]">
+              <span className="block text-sm font-semibold text-cyan">{nextAction.label}</span>
+              <span className="mt-1 block text-xs leading-5 text-zinc-500">{nextAction.detail}</span>
+            </button>
           </div>
         </div>
       </aside>
 
       <main className="min-w-0 pb-20 lg:pl-[280px] lg:pb-0">
         <header className="sticky top-0 z-20 overflow-hidden border-b border-white/[0.06] bg-canvas-deep/[0.82] px-5 py-4 backdrop-blur-xl lg:px-8">
-          <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="w-fit rounded-[20px] border border-white/[0.10] bg-surface px-5 py-3">
-                <p className="text-xs text-zinc-400">Workspace</p>
-                <p className="text-sm font-semibold text-white">Active Workspace</p>
+          <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">Guided Studio OS</span>
+                <span className="text-xs font-medium text-zinc-500">Active Workspace</span>
               </div>
-              <div className="min-w-0">
-                <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">Media Operations Studio</h2>
-                <p className="mt-1 max-w-[calc(100vw-40px)] break-words text-sm text-zinc-400 md:max-w-2xl">Generate, review, approve, and publish autonomous short-form clips from one production surface.</p>
-              </div>
+              <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">{sectionCopy[section].title}</h2>
+              <p className="mt-1 max-w-[calc(100vw-40px)] break-words text-sm text-zinc-400 md:max-w-2xl">{sectionCopy[section].subtitle}</p>
             </div>
             <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:flex sm:flex-wrap">
+              <button onClick={() => setSection(nextAction.section)} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink">
+                <Wand2 className="h-4 w-4" /> {nextAction.label}
+              </button>
               <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh
               </button>
-              <StatusPill busy={busy} status={status} />
+              <StatusPill busy={busy} status={headerStatus} />
             </div>
           </div>
         </header>
 
         <div className="grid min-w-0 gap-5 px-5 py-5 lg:px-8">
-          <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Total Clips" value={clips.length} detail="Candidates in review queue" icon={FileVideo} />
-            <MetricCard label="Approved" value={approved} detail="Ready for schedule" icon={BadgeCheck} />
-            <MetricCard label="Avg Score" value={metricAverage(clips)} detail="Overall content quality" icon={Gauge} />
-            <MetricCard label="Scheduled" value={scheduledCount} detail="Automated publish slots" icon={CalendarDays} />
-          </section>
-
           {section === "dashboard" && (
             <DashboardSection
               clips={clips}
-              selected={selected}
               schedule={schedule}
-              actionStates={actionStates}
+              nextAction={nextAction}
+              workflowSteps={workflowSteps}
+              readyPlatforms={readyPlatforms}
+              targetCount={activeTargets.length || publishPlatforms.length}
+              activeJobs={jobs.filter((job) => job.status === "queued" || job.status === "running").length}
               onSection={setSection}
-              onApprove={approveClip}
-              onPublish={() => publishDueNow(true)}
             />
           )}
 
@@ -949,14 +1118,56 @@ export function MediaStudioApp() {
             <GenerateSection
               config={generateConfig}
               templates={templates}
+              hyperframesTemplates={hyperframesTemplates}
+              hyperframesCatalog={hyperframesCatalog}
               durationPresets={durationPresets}
               genres={genres}
               jobs={jobs}
+              engineHealth={engineHealth}
               actionState={actionStates["generate:start"]}
               setConfig={setGenerateConfig}
               command={command}
+              defaultTemplatePath={defaultTemplate}
+              statusTone={statusTone}
               onGenerate={startGeneration}
               onCopy={() => copyText(command, "Production command copied")}
+              renderReadinessLine={(props) => <ReadinessLine {...props} />}
+              renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
+              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
+            />
+          )}
+
+          {section === "templates" && (
+            <TemplatesSection
+              templates={hyperframesTemplates}
+              catalog={hyperframesCatalog}
+              engineHealth={engineHealth}
+              currentTemplate={generateConfig.hyperframesTemplate}
+              onUse={(templateId) => {
+                const selectedTemplate = hyperframesTemplates.find((template) => template.id === templateId);
+                setGenerateConfig((current) => ({
+                  ...current,
+                  renderer: "hyperframes",
+                  hyperframesTemplate: templateId,
+                  brandSystemTemplateId: selectedTemplate?.source === "brand_system" ? templateId : "",
+                  brandTemplate: selectedTemplate?.brand_template_path || current.brandTemplate,
+                }));
+                setSection("generate");
+                pushToast("Template selected for HyperFrames", "success");
+              }}
+              onSetDefault={(templateId) => {
+                window.localStorage.setItem("otonom.hyperframesTemplateDefault", templateId);
+                setGenerateConfig((current) => ({...current, hyperframesTemplate: templateId}));
+                pushToast("HyperFrames default saved in this browser", "success");
+              }}
+              onCustomize={(templateId) => {
+                setGenerateConfig((current) => ({...current, hyperframesTemplate: templateId, renderer: "hyperframes"}));
+                setSection("brand");
+                pushToast("Opening Brand System builder from this template", "success");
+              }}
+              renderStatusPill={(busy, status) => <StatusPill busy={busy} status={status} />}
+              renderSettingTile={(label, value) => <SettingTile label={label} value={value} />}
+              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
             />
           )}
 
@@ -1006,6 +1217,13 @@ export function MediaStudioApp() {
               onUpdateSchedulePlatforms={updateSchedulePlatforms}
               onPublishDue={() => publishDueNow(false)}
               onDryRunDue={() => publishDueNow(true)}
+              formatSchedule={formatSchedule}
+              formatClipStatus={formatClipStatus}
+              cleanPublishStatus={cleanPublishStatus}
+              statusTone={statusTone}
+              renderScoreBubble={(value) => <ScoreBubble value={value} />}
+              renderInlineActionStatus={(state) => <InlineActionStatus state={state} />}
+              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
             />
           )}
 
@@ -1020,6 +1238,15 @@ export function MediaStudioApp() {
               onTestConnection={testConnection}
               onStartOauth={startOauthConnect}
               onDisconnect={disconnectPlatform}
+              oauthPlatforms={oauthPlatforms}
+              publicAccountLabel={publicAccountLabel}
+              publishActionHint={publishActionHint}
+              formatPlatformMode={formatPlatformMode}
+              cleanPublishStatus={cleanPublishStatus}
+              statusTone={statusTone}
+              renderSettingTile={(label, value) => <SettingTile label={label} value={value} />}
+              renderReadinessLine={(ready, label, detail) => <ReadinessLine ready={ready} label={label} detail={detail} />}
+              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
             />
           )}
 
@@ -1027,6 +1254,8 @@ export function MediaStudioApp() {
             <BrandSection
               style={style}
               templates={templates}
+              hyperframesTemplates={hyperframesTemplates}
+              hyperframesCatalog={hyperframesCatalog}
               autonomy={autonomy}
               actionStates={actionStates}
               defaultTemplate={defaultTemplate}
@@ -1036,14 +1265,14 @@ export function MediaStudioApp() {
           )}
         </div>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-6 border-t border-white/[0.08] bg-surface/[0.95] backdrop-blur-xl lg:hidden">
+        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-7 border-t border-white/[0.08] bg-surface/[0.95] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
           {nav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
             return (
-              <button key={item.id} onClick={() => setSection(item.id)} className={`grid h-16 min-w-0 place-items-center content-center gap-1 text-[10px] ${active ? "text-cyan" : "text-zinc-500"}`}>
+              <button key={item.id} onClick={() => setSection(item.id)} className={`grid h-16 min-w-0 place-items-center content-center gap-1 px-0.5 text-[9px] ${active ? "text-cyan" : "text-zinc-500"}`}>
                 <Icon className="h-4 w-4" />
-                {item.label.split(" ")[0]}
+                <span className="max-w-full truncate">{item.label.split(" ")[0]}</span>
               </button>
             );
           })}
@@ -1052,17 +1281,6 @@ export function MediaStudioApp() {
         <ActionMonitor actionStates={actionStates} />
         <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
       </main>
-    </div>
-  );
-}
-
-function MetricCard({label, value, detail, icon: Icon}: {label: string; value: string | number; detail: string; icon: typeof Gauge}) {
-  return (
-    <div className="relative overflow-hidden rounded-[24px] border border-white/[0.08] bg-surface p-5 shadow-glow">
-      <div className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-teal/[0.14] text-cyan"><Icon className="h-5 w-5" /></div>
-      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{label}</p>
-      <p className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-white">{value}</p>
-      <p className="mt-2 text-sm text-zinc-500">{detail}</p>
     </div>
   );
 }
@@ -1093,752 +1311,6 @@ function ReadinessLine({ready, label, detail}: {ready: boolean; label: string; d
         <span className="truncate text-sm font-semibold text-zinc-200">{label}</span>
       </span>
       <span className={ready ? "shrink-0 text-xs font-semibold text-cyan" : "shrink-0 text-xs text-zinc-500"}>{detail}</span>
-    </div>
-  );
-}
-
-function DashboardSection({
-  clips,
-  selected,
-  schedule,
-  actionStates,
-  onSection,
-  onApprove,
-  onPublish,
-}: {
-  clips: ClipCandidate[];
-  selected?: ClipCandidate;
-  schedule: ScheduledPost[];
-  actionStates: Record<string, ActionUiState>;
-  onSection: (section: Section) => void;
-  onApprove: (id: string) => void;
-  onPublish: () => void;
-}) {
-  const top = clips.slice(0, 4);
-  const approvedCount = clips.filter((clip) => clip.status === "approved").length;
-  return (
-    <section className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]">
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-xl font-semibold text-white">Today’s production flow</h3>
-            <p className="mt-1 text-sm text-zinc-400">A compact operating room for your next batch.</p>
-          </div>
-          <button onClick={() => onSection("generate")} className="rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink">Generate</button>
-        </div>
-        <div className="mb-4 grid gap-2 rounded-[22px] border border-cyan/[0.16] bg-teal/[0.07] p-3 text-xs text-zinc-400 sm:grid-cols-3">
-          <ReadinessLine ready={clips.length > 0} label="Candidates" detail={clips.length ? `${clips.length} in queue` : "Generate first"} />
-          <ReadinessLine ready={approvedCount > 0} label="Approval" detail={approvedCount ? `${approvedCount} approved` : "Review needed"} />
-          <ReadinessLine ready={schedule.length > 0} label="Calendar" detail={schedule.length ? `${schedule.length} scheduled` : "No slots yet"} />
-        </div>
-        <div className="grid gap-3 md:grid-cols-4">
-          {[
-            ["Generate", "Long video → 5 candidates", Sparkles],
-            ["Curate", "Score, rank, context trim", Eye],
-            ["Review", "Preview, caption, approve", Clapperboard],
-            ["Schedule", "2 guarded slots per day", CalendarDays],
-          ].map(([title, copy, Icon]) => (
-            <div key={title as string} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-              <div className="mb-4 grid h-10 w-10 place-items-center rounded-2xl bg-cyan text-ink"><Icon className="h-5 w-5" /></div>
-              <p className="font-semibold text-white">{title as string}</p>
-              <p className="mt-2 text-xs leading-5 text-zinc-400">{copy as string}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h4 className="font-semibold text-white">Highest-ranked clips</h4>
-            <button onClick={() => onSection("review")} className="text-sm font-medium text-cyan">Open Review Studio</button>
-          </div>
-          <div className="grid gap-2">
-            {top.length ? top.map((clip) => <CompactClip key={clip.id} clip={clip} actionState={actionStates[`clip:${clip.id}:approve`]} onApprove={onApprove} />) : (
-              <EmptyState
-                title="No clips yet"
-                text="Start with Generate to produce a ranked batch."
-                actionLabel="Open Generate"
-                onAction={() => onSection("generate")}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-5">
-        <PreviewPanel clip={selected} statusTone={statusTone} />
-        <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">Next publish queue</h3>
-            <button onClick={() => onSection("calendar")} className="rounded-full border border-cyan/[0.25] bg-teal/[0.10] px-4 py-2 text-sm font-semibold text-cyan">Open Calendar</button>
-          </div>
-          <div className="grid gap-3">
-            {schedule.slice(0, 4).length ? schedule.slice(0, 4).map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl bg-canvas-deep px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-zinc-200">{item.title_hook}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{formatSchedule(item.scheduled_at)}</p>
-                </div>
-                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{formatClipStatus(item.status)}</span>
-              </div>
-            )) : (
-              <EmptyState
-                title="No scheduled clips"
-                text="Approve a clip, then place it into the next publishing slot."
-                actionLabel="Open Review"
-                onAction={() => onSection("review")}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function GenerateSection({
-  config,
-  templates,
-  durationPresets,
-  genres,
-  jobs,
-  actionState,
-  setConfig,
-  command,
-  onGenerate,
-  onCopy,
-}: {
-  config: GenerateConfig;
-  templates: BrandTemplate[];
-  durationPresets: DurationPreset[];
-  genres: GenreOption[];
-  jobs: GenerationJob[];
-  actionState?: ActionUiState;
-  setConfig: (value: GenerateConfig) => void;
-  command: string;
-  onGenerate: () => void;
-  onCopy: () => void;
-}) {
-  const latest = jobs[0];
-  const isStarting = actionState?.status === "running";
-  const update = (patch: Partial<GenerateConfig>) => setConfig({...config, ...patch});
-  const presetOptions = durationPresets.length ? durationPresets : [{id: "auto", label: "Auto (0-3 min)", detail: "20-180s", range_label: "0-3 min", best_for: "General use", min_ms: 20_000, target_ms: 90_000, max_ms: 180_000, intent: "Automatic duration"}];
-  const genreOptions = genres.length ? genres : [
-    {id: "kajian", label: "Kajian", description: "Religious teaching and reflection."},
-    {id: "spiritual_reflection", label: "Spiritual reflection", description: "Heart-softening clips."},
-    {id: "advice", label: "Advice", description: "Practical reminders."},
-  ];
-  const selectedPreset = presetOptions.find((item) => item.id === config.clipLength) || presetOptions[0];
-  const latestProgress = Math.max(0, Math.min(100, latest?.progress || 0));
-  const selectedGenreCount = genreOptions.filter((genre) => config.genres.includes(genre.id)).length;
-  const toggleGenre = (id: string) => {
-    const next = config.genres.includes(id) ? config.genres.filter((item) => item !== id) : [...config.genres, id];
-    update({genres: next.length ? next : [id]});
-  };
-  return (
-    <section className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
-      <div className="min-w-0 rounded-[24px] border border-white/[0.08] bg-surface p-4 sm:rounded-[28px] sm:p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <span className="inline-flex rounded-full border border-teal/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-teal">Local-first pipeline</span>
-            <h3 className="mt-3 text-2xl font-semibold text-white">Generate production batch</h3>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Choose the source, curation intent, and render profile. Advanced engine settings stay available without crowding the main flow.</p>
-          </div>
-          <div className="grid gap-1 rounded-[20px] border border-white/[0.08] bg-canvas-deep px-4 py-3 text-left sm:min-w-[150px] sm:text-right">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Batch output</span>
-            <span className="text-lg font-semibold text-white">{config.count} clips</span>
-            <span className="text-xs text-cyan">{config.clipMinSeconds}s-{config.clipMaxSeconds}s window</span>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-5">
-          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-4 flex items-center gap-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal/[0.12] text-cyan">1</span>
-              <div>
-                <h4 className="font-semibold text-white">Source and output</h4>
-                <p className="text-xs text-zinc-500">Start with the long video and expected batch size.</p>
-              </div>
-            </div>
-            <div className="grid gap-4">
-              <label className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
-                YouTube source
-                <input value={config.sourceUrl} onChange={(event) => update({sourceUrl: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 text-sm text-zinc-300 outline-none focus:border-cyan/[0.30]" placeholder="Paste long-form YouTube URL" />
-              </label>
-              <div className="grid min-w-0 gap-3 md:grid-cols-2">
-                <label className="grid gap-2 text-sm font-medium text-zinc-300">
-                  Clip count
-                  <select value={config.count} onChange={(event) => update({count: Number(event.target.value)})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 outline-none focus:border-cyan/[0.30]">
-                    {[1, 2, 3, 5, 8, 10].map((value) => <option key={value} value={value}>{value} clips</option>)}
-                  </select>
-                </label>
-                <label className="grid gap-2 text-sm font-medium text-zinc-300">
-                  Clip duration
-                  <select
-                    value={config.clipLength}
-                    onChange={(event) => {
-                      const preset = presetOptions.find((item) => item.id === event.target.value);
-                      update({
-                        clipLength: event.target.value,
-                        clipMinSeconds: preset ? Math.round(preset.min_ms / 1000) : config.clipMinSeconds,
-                        clipMaxSeconds: preset ? Math.round(preset.max_ms / 1000) : config.clipMaxSeconds,
-                      });
-                    }}
-                    className="h-12 rounded-2xl border border-cyan/[0.35] bg-black/24 px-4 text-sm font-semibold text-white outline-none shadow-glow"
-                  >
-                    {presetOptions.map((preset) => (
-                      <option key={preset.id} value={preset.id}>{preset.label}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="rounded-2xl border border-teal/[0.16] bg-teal/[0.06] px-4 py-3 text-xs leading-5 text-zinc-400">
-                <span className="font-semibold text-cyan">{selectedPreset?.label}</span> lets the engine trim natural starts and endings inside <span className="font-semibold text-zinc-200">{config.clipMinSeconds}s-{config.clipMaxSeconds}s</span>.
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal/[0.12] text-cyan">2</span>
-                <div>
-                  <h4 className="font-semibold text-white">Curation intent</h4>
-                  <p className="text-xs text-zinc-500">{selectedGenreCount} genre signals selected for scoring and hook generation.</p>
-                </div>
-              </div>
-              <span className="rounded-full border border-cyan/[0.24] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{selectedGenreCount}/{genreOptions.length}</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {genreOptions.map((genre) => {
-                const active = config.genres.includes(genre.id);
-                return (
-                  <button
-                    key={genre.id}
-                    type="button"
-                    onClick={() => toggleGenre(genre.id)}
-                    className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition ${active ? "border-cyan bg-teal/[0.16] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
-                    aria-pressed={active}
-                    title={genre.description}
-                  >
-                    {active ? <BadgeCheck className="h-4 w-4 text-cyan" /> : null}
-                    {genre.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-4 flex items-center gap-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal/[0.12] text-cyan">3</span>
-              <div>
-                <h4 className="font-semibold text-white">Brand and engine</h4>
-                <p className="text-xs text-zinc-500">Pick the reusable template, then adjust advanced settings only when needed.</p>
-              </div>
-            </div>
-            <label className="grid gap-2 text-sm font-medium text-zinc-300">
-              Brand template
-              <select value={config.brandTemplate} onChange={(event) => update({brandTemplate: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 outline-none focus:border-cyan/[0.30]">
-                {(templates.length ? templates : [{id: defaultTemplate, label: "Nourbit Opus Style", path: defaultTemplate}]).map((template) => (
-                  <option key={template.id} value={template.path}>{template.label}</option>
-                ))}
-              </select>
-            </label>
-            <details className="mt-4 rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
-              <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
-                Advanced engine settings
-                <span className="ml-2 text-xs font-medium text-zinc-500">{config.renderer} · {config.captionSource} · {config.llmProvider}</span>
-              </summary>
-              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <SelectTile label="Renderer" value={config.renderer} options={["remotion", "ffmpeg"]} onChange={(value) => update({renderer: value})} />
-                <SelectTile label="Caption" value={config.captionSource} options={["whisper", "hybrid", "youtube"]} onChange={(value) => update({captionSource: value})} />
-                <SelectTile label="Speech language" value={config.speechLanguage} options={["id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
-                <SelectTile label="Transcript" value={config.transcriptLanguages} options={["id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
-                <SelectTile label="LLM" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
-                <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
-              </div>
-            </details>
-          </div>
-
-          <div className="grid gap-3">
-            <button disabled={isStarting || !config.sourceUrl.trim()} onClick={onGenerate} className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
-              {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-              {isStarting ? "Starting batch..." : "Generate batch"}
-            </button>
-            {actionState ? <InlineActionStatus state={actionState} /> : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid min-w-0 gap-5">
-        <div className="min-w-0 rounded-[24px] border border-white/[0.08] bg-surface p-4 sm:rounded-[28px] sm:p-5">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-xl font-semibold text-white">Production monitor</h3>
-              <p className="mt-1 text-sm leading-6 text-zinc-400">Track the current batch without reading terminal logs first.</p>
-            </div>
-            <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(latest?.status || "empty")}`}>{latest?.status || "No job"}</span>
-          </div>
-          {latest ? (
-            <div className="grid gap-4">
-              <div className="grid min-w-0 gap-2 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-                <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
-                  <span className="min-w-0 truncate font-semibold text-white">{latest.count} clips · {latest.llm_provider}/{latest.caption_source}</span>
-                  <span className="font-semibold text-cyan">{latestProgress}%</span>
-                </div>
-                <div className="h-2.5 overflow-hidden rounded-full bg-surface-strong">
-                  <div className="h-full rounded-full bg-cyan transition-all" style={{width: `${Math.max(4, latestProgress)}%`}} />
-                </div>
-              </div>
-              <div className="grid gap-2 text-xs md:grid-cols-3">
-                <ReadinessLine ready={latestProgress >= 20} label="Curate" detail="Moments" />
-                <ReadinessLine ready={latestProgress >= 55} label="Captions" detail="ASR" />
-                <ReadinessLine ready={latestProgress >= 90} label="Render" detail="Output" />
-              </div>
-              <div className="min-w-0 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Runtime log</span>
-                  <span className="text-xs text-zinc-600">Latest lines</span>
-                </div>
-                <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-black/40 p-3 text-[11px] leading-5 text-zinc-400">{latest.error || latest.log_text || "Waiting for logs..."}</pre>
-              </div>
-            </div>
-          ) : (
-            <EmptyState title="No active batch" text="Start a generation run to see progress, logs, and output readiness here." />
-          )}
-        </div>
-
-        <details className="min-w-0 rounded-[24px] border border-white/[0.08] bg-surface p-4 sm:rounded-[28px] sm:p-5">
-          <summary className="flex cursor-pointer list-none flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-lg font-semibold text-white">Terminal fallback command</h3>
-              <p className="mt-1 text-sm text-zinc-500">Use this when you want to run the same job outside the dashboard.</p>
-            </div>
-            <button type="button" onClick={(event) => { event.preventDefault(); onCopy(); }} className="inline-flex w-fit rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink"><Copy className="mr-2 h-4 w-4" /> Copy</button>
-          </summary>
-          <pre className="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4 text-xs leading-6 text-zinc-300 sm:p-5">{command}</pre>
-        </details>
-      </div>
-    </section>
-  );
-}
-
-function SelectTile({label, value, options, onChange}: {label: string; value: string; options: string[]; onChange: (value: string) => void}) {
-  return (
-    <label className="grid gap-2 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-      {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="min-w-0 bg-transparent text-sm font-semibold normal-case tracking-normal text-white outline-none">
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
-    </label>
-  );
-}
-
-function CalendarSection({
-  schedule,
-  approved,
-  targets,
-  selectedPlatforms,
-  actionStates,
-  onToggleDefaultPlatform,
-  onSchedule,
-  onUnschedule,
-  onUpdateSchedulePlatforms,
-  onPublishDue,
-  onDryRunDue,
-}: {
-  schedule: ScheduledPost[];
-  approved: ClipCandidate[];
-  targets: PublishTarget[];
-  selectedPlatforms: string[];
-  actionStates: Record<string, ActionUiState>;
-  onToggleDefaultPlatform: (platform: string) => void;
-  onSchedule: (id: string) => void;
-  onUnschedule: (id: string) => void;
-  onUpdateSchedulePlatforms: (scheduleId: string, platforms: string[]) => void;
-  onPublishDue: () => void;
-  onDryRunDue: () => void;
-}) {
-  function toggleSchedulePlatform(item: ScheduledPost, platform: string) {
-    const current = item.platforms || [];
-    const next = current.includes(platform) ? current.filter((value) => value !== platform) : [...current, platform];
-    if (!next.length) return;
-    onUpdateSchedulePlatforms(item.id, next);
-  }
-  const dryRunState = actionStates["publish:due:dry"];
-  const publishDueState = actionStates["publish:due:live"];
-  const dueBusy = dryRunState?.status === "running" || publishDueState?.status === "running";
-
-  return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-xl font-semibold text-white">Calendar queue</h3>
-            <p className="mt-1 text-sm text-zinc-400">Scheduled publish queue for approved clips. Default cadence is 2 posts per day at 09:00 and 19:30 WIB.</p>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <button disabled={dueBusy} onClick={onDryRunDue} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
-              {dryRunState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Dry-run due
-            </button>
-            <button disabled={dueBusy} onClick={onPublishDue} className="inline-flex items-center justify-center gap-2 rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
-              {publishDueState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {publishDueState?.status === "running" ? "Publishing..." : "Publish due now"}
-            </button>
-          </div>
-        </div>
-        {dryRunState?.status === "running" || publishDueState?.status === "running" ? (
-          <div className="mb-4"><InlineActionStatus state={publishDueState?.status === "running" ? publishDueState : dryRunState} /></div>
-        ) : null}
-        <div className="grid gap-3">
-          {schedule.length ? schedule.map((item) => (
-            <div key={item.id} className="grid gap-3 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4 md:grid-cols-[160px_minmax(0,1fr)_140px] md:items-center">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-zinc-500">Scheduled</p>
-                <p className="mt-1 font-semibold text-cyan">{formatSchedule(item.scheduled_at)}</p>
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="truncate text-base font-semibold text-white">{item.title_hook}</h4>
-                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{formatClipStatus(item.status)}</span>
-                </div>
-                <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{item.viral_reason}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {targets.map((target) => {
-                    const platform = target.platform;
-                    const enabled = item.platforms.includes(platform);
-                    const result = item.platform_results?.[platform];
-                    const platformAction = actionStates[`schedule:${item.id}:platforms`];
-                    const platformStatus = result?.status || (item.status === "published" ? "published" : "pending");
-                    return (
-                      <button
-                        key={platform}
-                        onClick={() => toggleSchedulePlatform(item, platform)}
-                        disabled={platformAction?.status === "running"}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-left text-xs font-semibold transition ${
-                          enabled ? statusTone(platformStatus) : "border-white/[0.08] bg-white/[0.03] text-zinc-500"
-                        } disabled:cursor-not-allowed disabled:opacity-50`}
-                      >
-                        {enabled ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                        {platformAction?.status === "running" ? "Updating..." : `${platformLabel(platform)} · ${enabled ? cleanPublishStatus(platformStatus) : "Off"}`}
-                      </button>
-                    );
-                  })}
-                </div>
-                {item.last_error ? <p className="mt-2 line-clamp-2 text-xs text-danger">{item.last_error}</p> : null}
-              </div>
-              <button
-                disabled={actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running"}
-                onClick={() => onUnschedule(item.candidate_id)}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" ? "Removing..." : "Unschedule"}
-              </button>
-            </div>
-          )) : <EmptyState title="No scheduled posts" text="Approve clips first, then assign the next open slot." />}
-        </div>
-      </div>
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-lg font-semibold text-white">Approved clips</h3>
-        <p className="mt-1 text-sm text-zinc-400">Add approved clips to the next available workspace slot.</p>
-        <div className="mt-5 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-          <p className="text-sm font-semibold text-white">Default publish targets</p>
-          <p className="mt-1 text-xs leading-5 text-zinc-500">Used when you schedule a clip. You can still override each scheduled item.</p>
-          <div className="mt-3 grid gap-2">
-            {targets.map((target) => {
-              const active = selectedPlatforms.includes(target.platform);
-              const targetState = actionStates[`target:${target.platform}`];
-              return (
-                <div
-                  key={target.platform}
-                  className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition ${
-                    active ? "border-cyan/[0.45] bg-teal/[0.14] text-cyan" : "border-white/[0.08] bg-black/20 text-zinc-500"
-                  }`}
-                >
-                  <span>{platformLabel(target.platform)}</span>
-                  <SwitchControl
-                    checked={active}
-                    disabled={targetState?.status === "running"}
-                    label={targetState?.status === "running" ? "Saving" : active ? "On" : "Off"}
-                    onChange={() => onToggleDefaultPlatform(target.platform)}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3">
-          {approved.length ? approved.map((clip) => (
-            <div key={clip.id} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-white">{clip.title_hook}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
-                </div>
-                <ScoreBubble value={clip.score?.overall_score} />
-              </div>
-              <button
-                disabled={actionStates[`clip:${clip.id}:schedule`]?.status === "running" || !selectedPlatforms.length}
-                onClick={() => onSchedule(clip.id)}
-                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-cyan text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? "Scheduling..." : selectedPlatforms.length ? "Schedule next slot" : "Turn on a target first"}
-              </button>
-            </div>
-          )) : <EmptyState title="No approved clips" text="Review and approve a rendered clip before scheduling." />}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PublishSection({
-  targets,
-  credentials,
-  attempts,
-  selectedPlatforms,
-  actionStates,
-  onTogglePlatform,
-  onTestConnection,
-  onStartOauth,
-  onDisconnect,
-}: {
-  targets: PublishTarget[];
-  credentials: CredentialStatus | null;
-  attempts: PublishAttempt[];
-  selectedPlatforms: string[];
-  actionStates: Record<string, ActionUiState>;
-  onTogglePlatform: (platform: string) => void;
-  onTestConnection: (platform: string) => void;
-  onStartOauth: (platform: string) => void;
-  onDisconnect: (platform: string) => void;
-}) {
-  const latestByPlatform = new Map<string, PublishAttempt>();
-  for (const attempt of attempts) {
-    if (!latestByPlatform.has(attempt.platform)) latestByPlatform.set(attempt.platform, attempt);
-  }
-  return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h3 className="text-xl font-semibold text-white">Channels</h3>
-            <p className="mt-1 text-sm text-zinc-400">Connect social accounts and choose default publish targets. Actual publishing happens from Calendar or clip actions.</p>
-          </div>
-          <div className="rounded-full border border-cyan/[0.25] bg-teal/[0.10] px-4 py-2 text-xs font-semibold text-cyan">
-            {targets.filter((target) => credentials?.platforms[target.platform]?.ready).length}/{targets.length} connected
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          {targets.map((target) => {
-            const ready = credentials?.platforms[target.platform]?.ready;
-            const credential = credentials?.platforms[target.platform];
-            const selectedForPublish = selectedPlatforms.includes(target.platform);
-            const latest = latestByPlatform.get(target.platform);
-            const recovery = publishActionHint(latest?.error);
-            const supportsOauth = oauthPlatforms.has(target.platform);
-            const activeAction = [
-              actionStates[`test:${target.platform}`],
-              actionStates[`connect:${target.platform}`],
-              actionStates[`disconnect:${target.platform}`],
-              actionStates[`target:${target.platform}`],
-            ].find((item) => item?.status === "running");
-            const isBusy = Boolean(activeAction);
-            return (
-              <div key={target.platform} className={`rounded-[24px] border p-4 transition ${selectedForPublish ? "border-cyan/[0.30] bg-teal/[0.08]" : "border-white/[0.08] bg-canvas-deep"}`}>
-                <div className="flex items-center justify-between">
-                  <div className="grid h-11 w-11 place-items-center rounded-2xl bg-cyan text-ink"><Send className="h-5 w-5" /></div>
-                  <SwitchControl checked={selectedForPublish} disabled={isBusy} label="Target" onChange={() => onTogglePlatform(target.platform)} />
-                </div>
-                <h4 className="mt-4 font-semibold text-white">{platformLabel(target.platform)}</h4>
-                <p className="mt-1 text-sm text-zinc-400">{target.account_label}</p>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-zinc-400">
-                  <SettingTile label="Connection" value={ready ? "Connected" : "Needs setup"} />
-                  <SettingTile label="Mode" value={formatPlatformMode(target.mode)} />
-                </div>
-                <ChannelReadiness ready={Boolean(ready)} targeted={selectedForPublish} />
-                {!ready ? (
-                  <div className="mt-3 rounded-2xl border border-warning/20 bg-warning/[0.08] p-3 text-xs leading-5 text-warning">
-                    Missing: {(credential?.missing_keys || []).join(", ") || "credential"}. Connect via OAuth/token setup before live publishing.
-                  </div>
-                ) : null}
-                <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/20 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs uppercase tracking-wide text-zinc-500">Current attempt</span>
-                    <span className={`inline-flex max-w-[70%] items-center gap-1 truncate rounded-full border px-2 py-1 text-xs font-semibold ${statusTone(activeAction ? "running" : latest?.status || "pending")}`}>
-                      {activeAction ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : null}
-                      <span className="truncate">{activeAction?.message || cleanPublishStatus(latest?.status)}</span>
-                    </span>
-                  </div>
-                  {recovery ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-danger">{recovery}</p> : null}
-                  {activeAction ? <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.08]"><div className="h-full w-2/3 animate-pulse rounded-full bg-cyan" /></div> : null}
-                </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <button
-                    disabled={isBusy}
-                    onClick={() => onTestConnection(target.platform)}
-                    className="h-10 flex-1 rounded-full border border-cyan/[0.24] bg-teal/[0.08] text-xs font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {actionStates[`test:${target.platform}`]?.status === "running" ? "Testing..." : "Test connection"}
-                  </button>
-                  <PlatformActionMenu
-                    disabled={isBusy}
-                    ready={Boolean(ready)}
-                    supportsOauth={supportsOauth}
-                    platform={target.platform}
-                    onTestConnection={onTestConnection}
-                    onStartOauth={onStartOauth}
-                    onDisconnect={onDisconnect}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-xl font-semibold text-white">Channel readiness</h3>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">Use this page to connect accounts. Schedule and publish controls live next to clips, where the content context is visible.</p>
-        <div className="mt-5 grid gap-3">
-          <div className="rounded-[22px] border border-cyan/[0.18] bg-teal/[0.08] p-4 text-sm leading-6 text-zinc-300">
-            Scheduled items publish through the PM2 worker. For a one-off publish, open Calendar and run the due queue for the selected scheduled clip.
-          </div>
-          <div className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-            <p className="text-xs uppercase tracking-wide text-zinc-500">Default targets</p>
-            <div className="mt-3 grid gap-2">
-              {targets.map((target) => {
-                const ready = credentials?.platforms[target.platform]?.ready;
-                const enabled = selectedPlatforms.includes(target.platform);
-                return (
-                  <ReadinessLine
-                    key={target.platform}
-                    ready={Boolean(ready && enabled)}
-                    label={platformLabel(target.platform)}
-                    detail={!enabled ? "Target off" : ready ? "Ready" : "Reconnect"}
-                  />
-                );
-              })}
-            </div>
-          </div>
-          {Array.from(latestByPlatform.values()).length ? Array.from(latestByPlatform.values()).map((attempt) => (
-            <div key={attempt.id} className="rounded-[18px] border border-white/[0.08] bg-canvas-deep p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-white">{platformLabel(attempt.platform)}</p>
-                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(attempt.status)}`}>{cleanPublishStatus(attempt.status)}</span>
-              </div>
-              {attempt.error ? <p className="mt-2 text-xs leading-5 text-danger">{publishActionHint(attempt.error)}</p> : null}
-            </div>
-          )) : <EmptyState title="No channel activity yet" text="Connection tests and scheduled publishing attempts will appear here." />}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function SwitchControl({checked, disabled, label, onChange}: {checked: boolean; disabled?: boolean; label: string; onChange: () => void}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={onChange}
-      className={`inline-flex h-8 items-center gap-2 rounded-full border px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? "border-cyan/[0.45] bg-cyan text-ink" : "border-white/[0.12] bg-white/[0.04] text-zinc-400"
-      }`}
-    >
-      <span>{label}</span>
-      <span className={`relative h-5 w-9 rounded-full transition ${checked ? "bg-ink/25" : "bg-white/[0.10]"}`}>
-        <span className={`absolute top-1 h-3 w-3 rounded-full bg-current transition ${checked ? "left-5 text-ink" : "left-1 text-zinc-500"}`} />
-      </span>
-    </button>
-  );
-}
-
-function ChannelReadiness({ready, targeted}: {ready: boolean; targeted: boolean}) {
-  return (
-    <div className="mt-3 grid gap-1.5 rounded-2xl border border-white/[0.08] bg-black/15 p-3">
-      <ReadinessLine ready={ready} label="Account" detail={ready ? "Connected" : "Connect"} />
-      <ReadinessLine ready={targeted} label="Default target" detail={targeted ? "On" : "Off"} />
-      <ReadinessLine ready label="Publish controls" detail="Calendar" />
-    </div>
-  );
-}
-
-function PlatformActionMenu({
-  disabled,
-  ready,
-  supportsOauth,
-  platform,
-  onTestConnection,
-  onStartOauth,
-  onDisconnect,
-}: {
-  disabled?: boolean;
-  ready: boolean;
-  supportsOauth: boolean;
-  platform: string;
-  onTestConnection: (platform: string) => void;
-  onStartOauth: (platform: string) => void;
-  onDisconnect: (platform: string) => void;
-}) {
-  return (
-    <details className="group relative">
-      <summary
-        aria-disabled={disabled}
-        className={`grid h-10 w-10 list-none place-items-center rounded-full border border-white/[0.10] bg-white/[0.04] text-zinc-200 marker:hidden ${
-          disabled ? "pointer-events-none opacity-50" : "cursor-pointer hover:border-cyan/[0.35] hover:text-cyan"
-        }`}
-      >
-        <MoreHorizontal className="h-4 w-4" />
-      </summary>
-      <div className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-2xl border border-white/[0.10] bg-canvas-deep p-1 shadow-2xl">
-        <MenuAction onClick={() => onTestConnection(platform)}>Test connection</MenuAction>
-        <MenuAction onClick={() => (supportsOauth ? onStartOauth(platform) : onTestConnection(platform))}>{ready ? "Reconnect" : "Connect"}</MenuAction>
-        <MenuAction danger onClick={() => onDisconnect(platform)}>Disconnect</MenuAction>
-      </div>
-    </details>
-  );
-}
-
-function MenuAction({children, danger, onClick}: {children: ReactNode; danger?: boolean; onClick: () => void}) {
-  return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.currentTarget.closest("details")?.removeAttribute("open");
-        onClick();
-      }}
-      className={`flex h-10 w-full items-center rounded-xl px-3 text-left text-xs font-semibold transition ${
-        danger ? "text-danger hover:bg-danger/[0.10]" : "text-zinc-200 hover:bg-white/[0.06] hover:text-cyan"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function InlineActionStatus({state}: {state?: ActionUiState}) {
-  if (!state) return null;
-  const tone =
-    state.status === "failed"
-      ? "border-danger/[0.26] bg-danger/[0.10] text-danger"
-      : state.status === "done"
-        ? "border-teal/[0.26] bg-teal/[0.10] text-teal"
-        : "border-cyan/[0.26] bg-teal/[0.10] text-cyan";
-  return (
-    <div className={`rounded-2xl border px-3 py-2 text-xs font-medium ${tone}`}>
-      <div className="flex items-center gap-2">
-        {state.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-        <span>{state.message}</span>
-      </div>
-      {state.status === "running" ? (
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-          <div className="h-full w-2/3 animate-pulse rounded-full bg-cyan" />
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -1927,55 +1399,11 @@ function ConfirmDialog({dialog, onClose}: {dialog: ConfirmDialogState | null; on
   );
 }
 
-function CompactClip({clip, actionState, onApprove}: {clip: ClipCandidate; actionState?: ActionUiState; onApprove: (id: string) => void}) {
-  const isApproving = actionState?.status === "running";
-  const canApprove = canApproveClip(clip);
-  return (
-    <div className="grid gap-3 rounded-[18px] border border-white/[0.08] bg-surface-raised px-4 py-3 md:grid-cols-[minmax(0,1fr)_58px_auto] md:items-center">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-white">{clip.title_hook}</p>
-        <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
-      </div>
-      <ScoreBubble value={clip.score?.overall_score} />
-      <button disabled={isApproving || !canApprove} onClick={() => canApprove && onApprove(clip.id)} className="inline-flex items-center justify-center gap-1.5 rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-50">
-        {isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-        {isApproving ? "Approving..." : canApprove ? "Approve" : formatClipStatus(clip.status)}
-      </button>
-    </div>
-  );
-}
-
 function ScoreBubble({value, label}: {value?: number; label?: string}) {
   return (
     <div className="grid justify-items-center gap-1">
       <span className={`grid h-11 w-11 place-items-center rounded-full border text-sm font-semibold ${scoreTone(value)}`}>{scoreValue(value)}</span>
       {label ? <span className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</span> : null}
-    </div>
-  );
-}
-
-function SettingTile({label, value}: {label: string; value: string | number}) {
-  return (
-    <div className="rounded-[18px] border border-white/[0.08] bg-canvas-deep p-4">
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className="mt-1 truncate text-sm font-semibold text-white">{value}</p>
-    </div>
-  );
-}
-
-function EmptyState({title = "Nothing here yet", text, actionLabel, onAction}: {title?: string; text: string; actionLabel?: string; onAction?: () => void}) {
-  return (
-    <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center">
-      <div>
-        <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-zinc-600" />
-        <p className="text-sm font-semibold text-zinc-300">{title}</p>
-        <p className="mt-1 max-w-sm text-sm leading-6 text-zinc-500">{text}</p>
-        {actionLabel && onAction ? (
-          <button type="button" onClick={onAction} className="mt-4 rounded-full border border-cyan/[0.28] bg-teal/[0.10] px-4 py-2 text-xs font-semibold text-cyan">
-            {actionLabel}
-          </button>
-        ) : null}
-      </div>
     </div>
   );
 }

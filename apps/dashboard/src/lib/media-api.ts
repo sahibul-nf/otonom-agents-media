@@ -108,6 +108,44 @@ export type BrandTemplate = {
   path: string;
 };
 
+export type HyperframesTemplate = {
+  id: string;
+  label: string;
+  category: string;
+  best_for: string;
+  effects: string[];
+  caption_style: string;
+  default_genres: string[];
+  status: string;
+  tone: string;
+  source?: string;
+  formats?: string[];
+  components_used?: string[];
+  blocks_used?: string[];
+  brand_template_path?: string;
+  preview_seconds?: number;
+  preview_status?: string;
+  preview_urls?: Record<string, string>;
+  preview_video_urls?: Record<string, string>;
+  production_checks?: Record<string, string>;
+};
+
+export type HyperframesCatalogItem = {
+  id: string;
+  label: string;
+  kind: "example" | "block" | "component" | string;
+  category: string;
+  status: "production-ready" | "beta" | "experimental" | string;
+  best_for: string;
+};
+
+export type HyperframesCatalog = {
+  version: string;
+  items: HyperframesCatalogItem[];
+  groups: Record<string, HyperframesCatalogItem[]>;
+  status_policy: Record<string, string>;
+};
+
 export type DurationPreset = {
   id: string;
   label: string;
@@ -136,6 +174,9 @@ export type GenerationJob = {
   clip_max_seconds?: number;
   genres?: string[];
   brand_template: string;
+  hyperframes_template?: string;
+  brand_system_template_id?: string;
+  hyperframes_format?: string;
   renderer: string;
   quality: string;
   caption_source: string;
@@ -166,6 +207,18 @@ export type RerenderJob = {
   result?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+};
+
+export type EngineHealth = {
+  hyperframes: {
+    enabled: boolean;
+    ready: boolean;
+    reason?: string;
+    package?: string;
+    node?: {ok: boolean; version: string; minimum: string};
+    ffmpeg?: {ok: boolean; path: string};
+    hyperframes?: {ok: boolean; version: string; doctor_ok?: boolean | null; doctor_output?: string};
+  };
 };
 
 export type ScheduledPost = {

@@ -17,6 +17,10 @@ pick_python() {
     echo "${MEDIA_ENGINE_PYTHON}"
     return
   fi
+  if [[ -x "${ROOT_DIR}/media-engine/.venv-tools/bin/python" ]]; then
+    echo "${ROOT_DIR}/media-engine/.venv-tools/bin/python"
+    return
+  fi
   if [[ -x "/tmp/media-engine-tools-py313/bin/python" ]]; then
     echo "/tmp/media-engine-tools-py313/bin/python"
     return

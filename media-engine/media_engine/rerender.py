@@ -15,7 +15,7 @@ from .caption_composer import compose_caption_groups
 from .costs import estimate_clip_cost
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_one, initialize, load_json, seed_profile
 from .render_quality import build_render_quality_report
-from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_remotion
+from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .styles import load_style
 from .transcript_quality import correct_asr_words
 from .youtube_pipeline import download_youtube_section
@@ -149,7 +149,7 @@ def _regenerate_captions(candidate: dict[str, Any], source_clip: str, style: dic
 
 def rerender_candidate(
     candidate_id: str,
-    renderer: str = "remotion",
+    renderer: str = "hyperframes",
     quality: str = "production",
     style_path: str | None = None,
     db_path: str | Path = DEFAULT_DB,
@@ -195,10 +195,13 @@ def rerender_candidate(
         candidate["timed_captions"] = edited
         candidate["caption_source"] = "manual_edit"
 
-    source_attribution = str(render_metadata.get("sourceAttribution") or "Source: Ribath Nouraniyyah Hasyimiyyah")
-    resolved_renderer = "remotion" if quality == "production" and renderer == "ffmpeg" else renderer
+    source_attribution = str(render_metadata.get("sourceAttribution") or "Source: Channel clip")
+    resolved_renderer = "hyperframes" if quality == "production" and renderer == "ffmpeg" else renderer
     report(34, "Preparing render contract")
-    if resolved_renderer == "remotion":
+    if resolved_renderer == "hyperframes":
+        report(52, "Rendering video with HyperFrames")
+        output_path, contract = render_premium_hyperframes(candidate, profile, source_clip, source_url, source_attribution, style)
+    elif resolved_renderer == "remotion":
         report(52, "Rendering video with Remotion")
         output_path, contract = render_premium_remotion(candidate, profile, source_clip, source_url, source_attribution, style)
     else:
@@ -354,7 +357,7 @@ def list_rerender_jobs(
 
 def create_rerender_job(
     candidate_id: str,
-    renderer: str = "remotion",
+    renderer: str = "hyperframes",
     quality: str = "production",
     style_path: str | None = None,
     force_source_refresh: bool = False,

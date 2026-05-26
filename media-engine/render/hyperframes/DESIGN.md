@@ -1,8 +1,8 @@
-# Nourbit HyperFrames Visual Direction
+# HyperFrames Production Template Direction
 
 ## Style Prompt
 
-Calm, respectful, reflective Islamic short-form video. Use dark neutral backgrounds, warm gold highlights, clean caption rhythm, and subtle motion. Avoid loud gimmicks, overactive transitions, and aggressive meme-style SFX.
+Public, multi-brand short-form video system. Use controlled contrast, clear caption rhythm, template-specific accents, and purposeful motion. Avoid loud gimmicks, overactive transitions, and effects that reduce readability.
 
 ## Colors
 
@@ -10,7 +10,7 @@ Calm, respectful, reflective Islamic short-form video. Use dark neutral backgrou
 - Surface: `#1b1b1b`
 - Text: `#f7f3ea`
 - Muted text: `#b8afa1`
-- Accent: `#d8b45f`
+- Accent: template-defined
 
 ## Typography
 
@@ -19,13 +19,13 @@ Calm, respectful, reflective Islamic short-form video. Use dark neutral backgrou
 
 ## Motion
 
-- Gentle push-in, fade, and slide transitions.
-- Word highlight can use warm accent color.
-- SFX should be quiet and sparse: soft whoosh, light click, no comedic stingers.
+- Template-specific push-in, fade, slide, grid, chart, or CTA transitions.
+- Word highlight must remain readable over real source video.
+- SFX should be sparse and domain-appropriate.
 
 ## What NOT To Do
 
-- Do not use chaotic glitch/cyberpunk motion.
-- Do not cover the speaker's face with captions.
-- Do not use bright neon palettes.
-- Do not add sound effects to serious emotional lines.
+- Do not cover important faces or product details with captions.
+- Do not use effects that fail lint, inspect, or preview render checks.
+- Do not expose private brand/persona naming in public template labels.
+- Do not add arbitrary catalog components to production renders without quality status.

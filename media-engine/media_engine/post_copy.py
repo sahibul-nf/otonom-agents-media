@@ -13,9 +13,9 @@ from .llm import LLMError, call_llm_json
 MAX_POST_COPY_CHARS = 400
 MAX_POST_COPY_HASHTAGS = 5
 
-NOURBIT_HASHTAGS = [
-    "#Nourbit",
-    "#NourbitClips",
+DEFAULT_HASHTAGS = [
+    "#ShortClips",
+    "#DailyReminder",
     "#KajianIslam",
     "#NasihatHati",
     "#Dzikir",
@@ -114,7 +114,7 @@ def build_post_caption(
     candidate: dict[str, Any],
     render_job: dict[str, Any] | None = None,
     platform: str = "",
-    source_attribution: str = "Source: Ribath Nouraniyyah Hasyimiyyah",
+    source_attribution: str = "Source: Channel clip",
 ) -> str:
     metadata = _candidate_metadata(candidate)
     override = str(metadata.get("post_caption_override") or "").strip()
@@ -127,7 +127,7 @@ def build_post_caption(
         or _render_subtitle(render_job)
         or str(candidate.get("viral_reason") or "").strip()
     )
-    hashtags = " ".join(NOURBIT_HASHTAGS[:MAX_POST_COPY_HASHTAGS])
+    hashtags = " ".join(DEFAULT_HASHTAGS[:MAX_POST_COPY_HASHTAGS])
     lines = [
         title,
         subtitle,
@@ -152,7 +152,7 @@ def _local_generated_post_caption(candidate: dict[str, Any], render_job: dict[st
         body = f"{title}\n\n{subtitle}"
     if excerpt and excerpt.lower() not in body.lower():
         body = f"{body}\n\n{excerpt}..."
-    return sanitize_post_caption(f"{body}\n\n{' '.join(NOURBIT_HASHTAGS[:MAX_POST_COPY_HASHTAGS])}")
+    return sanitize_post_caption(f"{body}\n\n{' '.join(DEFAULT_HASHTAGS[:MAX_POST_COPY_HASHTAGS])}")
 
 
 def generate_post_caption(
@@ -160,47 +160,42 @@ def generate_post_caption(
     render_job: dict[str, Any] | None = None,
     preferred_provider: str = "",
 ) -> dict[str, str | int]:
-    """Generate short social post copy with an optional LLM and safe local fallback."""
+    """Generate short social post copy with LLM-only output."""
     metadata = _candidate_metadata(candidate)
     provider = _available_provider(preferred_provider or str(metadata.get("llm_provider") or ""))
-    fallback = _local_generated_post_caption(candidate, render_job)
-    source = "local_transcript"
-    caption = fallback
+    if provider == "none":
+        raise LLMError("post copy generation failed: no LLM provider key available")
 
-    if provider != "none":
-        system_prompt = (
-            "You are a social video copywriter for short Islamic reminder clips. "
-            "Return strict JSON only. Do not invent claims outside the transcript."
-        )
-        user_prompt = json.dumps(
-            {
-                "task": "Write a warm Indonesian post caption for this short-form video.",
-                "rules": [
-                    "post_caption must be under 400 characters after hashtags.",
-                    "Use at most 5 hashtags.",
-                    "Do not mention platform mechanics, AI, or automation.",
-                    "Use the title/subtitle as context, but match the transcript content.",
-                    "Keep it sincere, not salesy.",
-                ],
-                "title_hook": str(candidate.get("title_hook") or "").strip(),
-                "hook_subtitle": str(candidate.get("hook_subtitle") or "").strip(),
-                "viral_reason": str(candidate.get("viral_reason") or "").strip(),
-                "transcript_span": str(candidate.get("transcript_span") or "")[:2400],
-                "suggested_hashtags": NOURBIT_HASHTAGS[:MAX_POST_COPY_HASHTAGS],
-                "required_json_shape": {"post_caption": "string"},
-            },
-            ensure_ascii=False,
-        )
-        try:
-            result = call_llm_json(provider, system_prompt, user_prompt, timeout_seconds=35)
-            if isinstance(result, dict):
-                generated = sanitize_post_caption(str(result.get("post_caption") or ""))
-                if generated:
-                    caption = generated
-                    source = f"llm_{provider}"
-        except (LLMError, ValueError, TypeError):
-            caption = fallback
-            source = "local_transcript_fallback"
+    system_prompt = (
+        "You are a social video copywriter for short Islamic reminder clips. "
+        "Return strict JSON only. Do not invent claims outside the transcript."
+    )
+    user_prompt = json.dumps(
+        {
+            "task": "Write a warm Indonesian post caption for this short-form video.",
+            "rules": [
+                "post_caption must be under 400 characters after hashtags.",
+                "Use at most 5 hashtags.",
+                "Do not mention platform mechanics, AI, or automation.",
+                "Use the title/subtitle as context, but match the transcript content.",
+                "Keep it sincere, not salesy.",
+            ],
+            "title_hook": str(candidate.get("title_hook") or "").strip(),
+            "hook_subtitle": str(candidate.get("hook_subtitle") or "").strip(),
+            "viral_reason": str(candidate.get("viral_reason") or "").strip(),
+            "transcript_span": str(candidate.get("transcript_span") or "")[:2400],
+            "suggested_hashtags": DEFAULT_HASHTAGS[:MAX_POST_COPY_HASHTAGS],
+            "required_json_shape": {"post_caption": "string"},
+        },
+        ensure_ascii=False,
+    )
+    result = call_llm_json(provider, system_prompt, user_prompt, timeout_seconds=35)
+    if not isinstance(result, dict):
+        raise LLMError("post copy generation failed: LLM response is not JSON object")
+    caption = sanitize_post_caption(str(result.get("post_caption") or ""))
+    if not caption:
+        raise LLMError("post copy generation failed: empty post_caption")
+    source = f"llm_{provider}"
 
     return {
         "post_caption": caption,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -14,9 +15,12 @@ from typing import Any
 from .db import DEFAULT_DB, ROOT, connect, initialize
 from .duration_presets import resolve_duration_strategy
 from .genres import normalize_genres
+from .hyperframes_renderer import check_hyperframes_runtime
+from .hyperframes_templates import normalize_hyperframes_template
 
 
-VALID_RENDERERS = {"ffmpeg", "remotion"}
+VALID_RENDERERS = {"ffmpeg", "remotion", "hyperframes"}
+VALID_HYPERFRAMES_FORMATS = {"auto", "short_9_16", "long_16_9"}
 VALID_QUALITIES = {"draft", "production"}
 VALID_CAPTION_SOURCES = {"youtube", "whisper", "hybrid"}
 VALID_ASR_MODELS = {"small", "medium", "large-v3-turbo"}
@@ -24,6 +28,10 @@ VALID_LLM_PROVIDERS = {"none", "openai", "deepseek", "groq"}
 VALID_LANGUAGES = {"id", "en", "ar", "ms", "auto"}
 GENERATION_JOB_HEARTBEAT_SECONDS = max(5, int(os.environ.get("GENERATION_JOB_HEARTBEAT_SECONDS", "10")))
 GENERATION_JOB_STALE_MINUTES = max(2, int(os.environ.get("GENERATION_JOB_STALE_MINUTES", "15")))
+MODULE_TO_PIP_PACKAGE = {
+    "youtube_transcript_api": "youtube-transcript-api",
+    "faster_whisper": "faster-whisper",
+}
 
 
 def _runtime_requirements(config: dict[str, Any]) -> list[str]:
@@ -31,6 +39,15 @@ def _runtime_requirements(config: dict[str, Any]) -> list[str]:
     if config.get("caption_source") in {"whisper", "hybrid"}:
         modules.append("faster_whisper")
     return modules
+
+
+def _runtime_tools(config: dict[str, Any]) -> list[str]:
+    # All generation paths require section download from YouTube.
+    tools = ["yt-dlp"]
+    # Whisper + yt-dlp merge path both rely on ffmpeg being present.
+    if config.get("caption_source") in {"whisper", "hybrid"}:
+        tools.append("ffmpeg")
+    return tools
 
 
 def _python_has_modules(python_bin: str, modules: list[str]) -> bool:
@@ -41,12 +58,46 @@ def _python_has_modules(python_bin: str, modules: list[str]) -> bool:
     return result.returncode == 0
 
 
+def _resolve_tool_for_python(python_bin: str, tool: str) -> str | None:
+    # Keep virtualenv bin path (do not resolve symlink to global python),
+    # so sibling scripts like `yt-dlp` in the same venv are discoverable.
+    python_dir = Path(python_bin).parent
+    sibling = python_dir / tool
+    if sibling.exists() and os.access(sibling, os.X_OK):
+        return str(sibling)
+    system_tool = shutil.which(tool)
+    if system_tool:
+        return system_tool
+    return None
+
+
+def _bootstrap_tools_env(required_modules: list[str], required_tools: list[str]) -> None:
+    if os.environ.get("MEDIA_ENGINE_SKIP_RUNTIME_BOOTSTRAP") == "1":
+        return
+    tools_dir = ROOT / ".venv-tools"
+    tools_python = tools_dir / "bin" / "python"
+    if not tools_python.exists():
+        creator = shutil.which("python3.13") or shutil.which("python3") or sys.executable
+        subprocess.run([creator, "-m", "venv", str(tools_dir)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not tools_python.exists():
+        return
+    missing_modules = [module for module in required_modules if not _python_has_modules(str(tools_python), [module])]
+    missing_tools = [tool for tool in required_tools if not _resolve_tool_for_python(str(tools_python), tool)]
+    pip_packages = {MODULE_TO_PIP_PACKAGE.get(module, module) for module in missing_modules}
+    if "yt-dlp" in missing_tools:
+        pip_packages.add("yt-dlp")
+    if not pip_packages:
+        return
+    subprocess.run([str(tools_python), "-m", "pip", "install", "-U", *sorted(pip_packages)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def _candidate_python_bins() -> list[Path]:
     candidates = []
     if os.environ.get("MEDIA_ENGINE_PYTHON"):
         candidates.append(Path(os.environ["MEDIA_ENGINE_PYTHON"]))
     candidates.extend(
         [
+            ROOT / ".venv-tools" / "bin" / "python",
             Path("/tmp/media-engine-tools-py313/bin/python"),
             ROOT / ".venv" / "bin" / "python",
             ROOT / "venv" / "bin" / "python",
@@ -65,35 +116,65 @@ def _candidate_python_bins() -> list[Path]:
 
 
 def resolve_generation_python(config: dict[str, Any]) -> str:
-    required = _runtime_requirements(config)
+    if config.get("renderer") == "hyperframes":
+        hyperframes = check_hyperframes_runtime(run_doctor=False)
+        if not hyperframes["ready"]:
+            raise RuntimeError(f"HyperFrames runtime is not ready: {hyperframes['reason']}")
+    required_modules = _runtime_requirements(config)
+    required_tools = _runtime_tools(config)
+    _bootstrap_tools_env(required_modules, required_tools)
     existing = [path for path in _candidate_python_bins() if path.exists()]
+    diagnostics: list[str] = []
     for path in existing:
-        if _python_has_modules(str(path), required):
+        python_bin = str(path)
+        missing_modules = [module for module in required_modules if not _python_has_modules(python_bin, [module])]
+        missing_tools = [tool for tool in required_tools if not _resolve_tool_for_python(python_bin, tool)]
+        if not missing_modules and not missing_tools:
             return str(path)
+        details: list[str] = []
+        if missing_modules:
+            details.append(f"modules: {', '.join(missing_modules)}")
+        if missing_tools:
+            details.append(f"tools: {', '.join(missing_tools)}")
+        diagnostics.append(f"{path} -> {', '.join(details)}")
     checked = ", ".join(str(path) for path in existing) or "none"
-    missing = ", ".join(required)
+    missing_modules = ", ".join(required_modules) if required_modules else "-"
+    missing_tools = ", ".join(required_tools) if required_tools else "-"
+    diagnostic_text = " | ".join(diagnostics) if diagnostics else "none"
     raise RuntimeError(
-        f"Generation runtime is missing required Python modules: {missing}. "
-        "Create the local tools environment with `python3.13 -m venv /tmp/media-engine-tools-py313` "
-        "and install the media engine dependencies, or set MEDIA_ENGINE_PYTHON to a compatible interpreter. "
-        f"Checked: {checked}"
+        f"Generation runtime is missing dependencies. Required modules: {missing_modules}. Required tools: {missing_tools}. "
+        "Create a persistent tools env with "
+        "`python3.13 -m venv media-engine/.venv-tools && media-engine/.venv-tools/bin/python -m pip install -U youtube-transcript-api faster-whisper yt-dlp`, "
+        "and make sure `ffmpeg` is installed (`brew install ffmpeg` on macOS), "
+        "or set MEDIA_ENGINE_PYTHON to a compatible interpreter. "
+        "Note: `/tmp/media-engine-tools-py313` can disappear after reboot/cleanup. "
+        f"Checked: {checked}. Details: {diagnostic_text}"
     )
+
+
+def _preferred_python_for_command() -> str:
+    for path in _candidate_python_bins():
+        if path.exists():
+            return str(path)
+    return "python3"
 
 
 def list_brand_templates() -> list[dict[str, str]]:
     profiles = ROOT / "profiles"
     templates = []
     for path in sorted(profiles.glob("*.json")):
-        if path.name == "nourbit.json":
+        if "nourbit" in path.name.lower():
             continue
         label = path.stem.replace("_", " ").replace("-", " ").title()
         try:
             label = str(json.loads(path.read_text(encoding="utf-8")).get("label") or label)
         except (OSError, json.JSONDecodeError):
             pass
+        if path.name == "default_workspace_style.json":
+            label = "Default Workspace Style"
         templates.append({"id": str(path.relative_to(ROOT)), "label": label, "path": str(path.relative_to(ROOT))})
     if not templates:
-        templates.append({"id": "profiles/nourbit_opus_style.json", "label": "Nourbit Opus Style", "path": "profiles/nourbit_opus_style.json"})
+        templates.append({"id": "profiles/default_workspace_style.json", "label": "Default Workspace Style", "path": "profiles/default_workspace_style.json"})
     return templates
 
 
@@ -135,15 +216,15 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     source_url = str(payload.get("source_url") or "").strip()
     if not source_url:
         raise ValueError("source_url is required")
-    brand_template = str(payload.get("brand_template") or "profiles/nourbit_opus_style.json").strip()
+    brand_template = str(payload.get("brand_template") or "profiles/default_workspace_style.json").strip()
     template_path = (ROOT / brand_template).resolve()
     if ROOT.resolve() not in template_path.parents or not template_path.exists():
         raise ValueError("brand_template not found")
     min_seconds, max_seconds, preset_id = _duration_seconds(payload)
     genres = normalize_genres(payload.get("genres"))
     return {
-        "profile_id": str(payload.get("profile_id") or "nourbit").strip(),
-        "source_id": str(payload.get("source_id") or "nourbit_nouraniyyahofficial").strip(),
+        "profile_id": str(payload.get("profile_id") or "workspace").strip(),
+        "source_id": str(payload.get("source_id") or "workspace_source").strip(),
         "source_url": source_url,
         "count": _int_range(payload.get("count"), 5, 1, 10),
         "clip_length_preset": preset_id,
@@ -151,7 +232,10 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "clip_max_seconds": max_seconds,
         "genres": genres,
         "brand_template": brand_template,
-        "renderer": _choice(payload.get("renderer"), VALID_RENDERERS, "remotion"),
+        "hyperframes_template": normalize_hyperframes_template(payload.get("hyperframes_template")),
+        "brand_system_template_id": str(payload.get("brand_system_template_id") or "").strip(),
+        "hyperframes_format": _choice(payload.get("hyperframes_format"), VALID_HYPERFRAMES_FORMATS, "auto"),
+        "renderer": _choice(payload.get("renderer"), VALID_RENDERERS, "hyperframes"),
         "quality": _choice(payload.get("quality"), VALID_QUALITIES, "production"),
         "caption_source": _choice(payload.get("caption_source"), VALID_CAPTION_SOURCES, "whisper"),
         "asr_model": _choice(payload.get("asr_model"), VALID_ASR_MODELS, "medium"),
@@ -163,7 +247,7 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_generation_command(config: dict[str, Any], validate_runtime: bool = False) -> list[str]:
-    python_bin = resolve_generation_python(config) if validate_runtime else str(_candidate_python_bins()[0])
+    python_bin = resolve_generation_python(config) if validate_runtime else _preferred_python_for_command()
     return [
         python_bin,
         "-m",
@@ -187,6 +271,12 @@ def build_generation_command(config: dict[str, Any], validate_runtime: bool = Fa
         ",".join(config["genres"]),
         "--renderer",
         config["renderer"],
+        "--hyperframes-template",
+        config["hyperframes_template"],
+        "--brand-system-template-id",
+        config["brand_system_template_id"],
+        "--hyperframes-format",
+        config["hyperframes_format"],
         "--quality",
         config["quality"],
         "--caption-source",
@@ -231,10 +321,10 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
         """
         INSERT INTO generation_jobs
           (id, profile_id, source_id, source_url, count, clip_length_preset, clip_min_seconds,
-           clip_max_seconds, genres_json, brand_template,
-           renderer, quality, caption_source, asr_model, speech_language, transcript_languages,
+           clip_max_seconds, genres_json, brand_template, hyperframes_template,
+           brand_system_template_id, hyperframes_format, renderer, quality, caption_source, asr_model, speech_language, transcript_languages,
            llm_provider, status, progress, command)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             job_id,
@@ -247,6 +337,9 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
             config["clip_max_seconds"],
             json.dumps(config["genres"], ensure_ascii=False),
             config["brand_template"],
+            config["hyperframes_template"],
+            config["brand_system_template_id"],
+            config["hyperframes_format"],
             config["renderer"],
             config["quality"],
             config["caption_source"],
@@ -341,6 +434,13 @@ def run_generation_job(job_id: str, command: list[str]) -> None:
     heartbeat_thread = threading.Thread(target=_heartbeat_generation_job, args=(job_id, heartbeat_stop), daemon=True)
     heartbeat_thread.start()
     try:
+        python_bin = command[0]
+        python_dir = str(Path(python_bin).parent)
+        resolved_ytdlp = _resolve_tool_for_python(python_bin, "yt-dlp") or _resolve_tool_for_python(python_bin, "yt_dlp") or ""
+        runtime_env = {**os.environ, "PYTHONPATH": str(ROOT), "MEDIA_ENGINE_PYTHON": python_bin}
+        if resolved_ytdlp:
+            runtime_env["MEDIA_ENGINE_YTDLP"] = resolved_ytdlp
+        runtime_env["PATH"] = f"{python_dir}:{os.environ.get('PATH', '')}"
         process = subprocess.Popen(
             command,
             cwd=str(ROOT),
@@ -348,7 +448,7 @@ def run_generation_job(job_id: str, command: list[str]) -> None:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            env={**os.environ, "PYTHONPATH": str(ROOT)},
+            env=runtime_env,
         )
         assert process.stdout is not None
         for line in process.stdout:

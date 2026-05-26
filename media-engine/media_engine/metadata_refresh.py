@@ -100,13 +100,17 @@ def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> 
 
     curation = _loads(candidate.get("curation_metadata_json"))
     preferred_provider = str(curation.get("llm_provider") or "")
-    metadata = _local_metadata(span)
+    metadata: dict[str, str] | None = None
     if mode == "smart":
         provider = _available_provider(preferred_provider)
-        if provider != "none":
-            llm_result = _llm_metadata(span, candidate.get("title_hook", ""), candidate.get("hook_subtitle", ""), provider)
-            if llm_result:
-                metadata = llm_result
+        if provider == "none":
+            raise ValueError("metadata refresh failed: no LLM provider key available (set OPENAI_API_KEY or DEEPSEEK_API_KEY)")
+        llm_result = _llm_metadata(span, candidate.get("title_hook", ""), candidate.get("hook_subtitle", ""), provider)
+        if not llm_result:
+            raise ValueError("metadata refresh failed: LLM output is invalid or not relevant to transcript")
+        metadata = llm_result
+    else:
+        metadata = _local_metadata(span)
 
     duration_ms = int(candidate["end_ms"]) - int(candidate["start_ms"])
     existing_score = _loads(candidate.get("score_json"))

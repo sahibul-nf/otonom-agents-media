@@ -18,7 +18,6 @@ AUTONOMY_FULL = "full"
 AUTONOMY_MODES = {AUTONOMY_OFF, AUTONOMY_ASSISTED, AUTONOMY_FULL}
 
 STATUS_PENDING_AUTO_SCHEDULE = "pending_auto_schedule"
-STATUS_NEEDS_CAPTION_FIX = "needs_caption_fix"
 STATUS_REJECTED = "rejected"
 
 DEFAULT_SETTINGS = {
@@ -189,7 +188,7 @@ def evaluate_quality_gate(
     if mode == AUTONOMY_OFF:
         status = "rendered"
     elif not checks["caption"] or not checks["low_confidence_words"]:
-        status = STATUS_NEEDS_CAPTION_FIX
+        status = "held"
     elif passed:
         status = STATUS_PENDING_AUTO_SCHEDULE
     return {

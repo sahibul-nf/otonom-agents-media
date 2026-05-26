@@ -10,6 +10,10 @@ pick_python() {
     echo "${MEDIA_ENGINE_PYTHON}"
     return
   fi
+  if [[ -x "${ROOT_DIR}/media-engine/.venv-tools/bin/python" ]]; then
+    echo "${ROOT_DIR}/media-engine/.venv-tools/bin/python"
+    return
+  fi
   if [[ -x "/tmp/media-engine-tools-py313/bin/python" ]]; then
     echo "/tmp/media-engine-tools-py313/bin/python"
     return
@@ -84,7 +88,7 @@ PY
 start_backend() {
   (
     cd "${ROOT_DIR}"
-    MEDIA_ENGINE_PORT="${BACKEND_PORT}" PYTHONPATH=media-engine "${PYTHON_BIN}" -m media_engine.review_server
+    MEDIA_ENGINE_PORT="${BACKEND_PORT}" MEDIA_ENGINE_PYTHON="${PYTHON_BIN}" PYTHONPATH=media-engine "${PYTHON_BIN}" -m media_engine.review_server
   ) &
   BACKEND_PID=$!
 }

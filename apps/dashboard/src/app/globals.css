@@ -45,3 +45,119 @@ video {
 ::selection {
   background: rgba(98, 238, 248, 0.3);
 }
+
+@keyframes template-preview-camera {
+  0%, 100% { transform: scale(1); filter: saturate(0.95) brightness(0.9); }
+  45% { transform: scale(1.045); filter: saturate(1.08) brightness(1); }
+}
+
+@keyframes template-preview-enter {
+  0%, 8% { opacity: 0; transform: translateY(18px) scale(0.97); }
+  14%, 32% { opacity: 1; transform: translateY(0) scale(1); }
+  42%, 100% { opacity: 0; transform: translateY(-10px) scale(0.99); }
+}
+
+@keyframes template-preview-caption {
+  0%, 34% { opacity: 0; transform: translateY(18px) scale(0.96); }
+  43%, 78% { opacity: 1; transform: translateY(0) scale(1); }
+  90%, 100% { opacity: 0; transform: translateY(-10px) scale(0.98); }
+}
+
+@keyframes template-preview-overlay {
+  0%, 24% { opacity: 0; transform: translateY(14px) scale(0.98); }
+  34%, 68% { opacity: 1; transform: translateY(0) scale(1); }
+  78%, 100% { opacity: 0; transform: translateY(-8px) scale(0.99); }
+}
+
+@keyframes template-preview-cta {
+  0%, 70% { opacity: 0; transform: translateY(16px) scale(0.97); }
+  80%, 96% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-6px) scale(0.99); }
+}
+
+@keyframes template-preview-word {
+  0%, 34%, 100% { color: #fff; transform: translateY(0) scale(1); }
+  48%, 64% { color: var(--preview-accent); transform: translateY(-2px) scale(1.08); }
+}
+
+@keyframes template-preview-pulse {
+  0%, 100% { opacity: 0.46; transform: scaleY(0.72); }
+  50% { opacity: 1; transform: scaleY(1); }
+}
+
+@keyframes template-preview-shimmer {
+  0% { transform: translateX(-140%) rotate(12deg); }
+  58%, 100% { transform: translateX(360%) rotate(12deg); }
+}
+
+@keyframes template-preview-progress {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+.template-preview-bg {
+  animation: template-preview-camera var(--preview-duration, 20s) ease-in-out infinite;
+}
+
+.template-preview-wash,
+.template-preview-enter {
+  animation: template-preview-enter var(--preview-duration, 20s) ease-in-out infinite;
+}
+
+.template-preview-caption {
+  animation: template-preview-caption var(--preview-duration, 20s) ease-in-out infinite;
+}
+
+.template-preview-overlay {
+  animation: template-preview-overlay var(--preview-duration, 20s) ease-in-out infinite;
+}
+
+.template-preview-cta {
+  animation: template-preview-cta var(--preview-duration, 20s) ease-in-out infinite;
+}
+
+.template-preview-word {
+  animation: template-preview-word var(--preview-word-duration, 2.6s) ease-in-out infinite;
+}
+
+.template-preview-pulse {
+  animation: template-preview-pulse 1.7s ease-in-out infinite;
+}
+
+.template-preview-shimmer {
+  animation: template-preview-shimmer var(--preview-duration, 20s) ease-in-out infinite;
+}
+
+.template-preview-progress {
+  animation: template-preview-progress var(--preview-duration, 20s) linear infinite;
+}
+
+.template-card .template-preview-hover *,
+.template-card .template-preview-hover::before,
+.template-card .template-preview-hover::after {
+  animation-play-state: paused;
+}
+
+.template-card:hover .template-preview-hover *,
+.template-card:hover .template-preview-hover::before,
+.template-card:hover .template-preview-hover::after,
+.template-card:focus-visible .template-preview-hover *,
+.template-card:focus-visible .template-preview-hover::before,
+.template-card:focus-visible .template-preview-hover::after {
+  animation-play-state: running;
+}
+
+.template-card:hover .template-preview-play-hint,
+.template-card:focus-visible .template-preview-play-hint {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .template-preview-motion,
+  .template-preview-motion * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

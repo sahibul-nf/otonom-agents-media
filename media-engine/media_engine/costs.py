@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-def estimate_clip_cost(duration_ms: int, llm_provider: str = "none", caption_source: str = "whisper", renderer: str = "remotion") -> dict[str, float | str]:
+def estimate_clip_cost(duration_ms: int, llm_provider: str = "none", caption_source: str = "whisper", renderer: str = "hyperframes") -> dict[str, float | str]:
     minutes = max(0.01, duration_ms / 60_000)
     llm_cost = {
         "none": 0.0,
@@ -13,7 +13,8 @@ def estimate_clip_cost(duration_ms: int, llm_provider: str = "none", caption_sou
     }.get(llm_provider, 0.0)
     local_compute = round(minutes * 0.003, 4)
     cloud_asr = 0.0 if caption_source in {"whisper", "hybrid", "youtube"} else round(minutes * 0.006, 4)
-    render_compute = round(minutes * (0.004 if renderer == "remotion" else 0.002), 4)
+    render_rate = {"remotion": 0.004, "hyperframes": 0.0045, "ffmpeg": 0.002}.get(renderer, 0.002)
+    render_compute = round(minutes * render_rate, 4)
     total = round(llm_cost + local_compute + cloud_asr + render_compute, 4)
     return {
         "currency": "USD",

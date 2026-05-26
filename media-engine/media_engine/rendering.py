@@ -11,11 +11,21 @@ from typing import Any
 
 from .captions import build_fallback_caption_segments, normalize_caption_groups
 from .db import ARTIFACTS_DIR, ROOT
+from .hyperframes_renderer import check_hyperframes_runtime, render_premium_hyperframes as _render_hyperframes_contract
 from .styles import load_style
 
 PREMIUM_PRESET = "nourbit_premium_v1"
 PREMIUM_MIN_DURATION_MS = 20_000
 PREMIUM_MAX_DURATION_MS = 180_000
+
+
+def build_caption_segments(transcript_span: str, duration_ms: int, max_words_per_caption: int = 3) -> list[dict[str, Any]]:
+    """Compatibility helper for tests and diagnostics."""
+    return build_fallback_caption_segments(
+        transcript_span,
+        duration_ms,
+        max_words_per_caption=max_words_per_caption,
+    )
 
 
 def ms_to_timecode(ms: int) -> str:
@@ -24,14 +34,6 @@ def ms_to_timecode(ms: int) -> str:
     minutes = (total % 3600) // 60
     seconds = total % 60
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-
-def build_caption_segments(transcript_span: str, duration_ms: int, max_words_per_caption: int = 3) -> list[dict[str, Any]]:
-    return build_fallback_caption_segments(
-        transcript_span,
-        duration_ms,
-        max_words_per_caption=max_words_per_caption,
-    )
 
 
 def validate_premium_duration(duration_ms: int) -> None:
@@ -150,16 +152,18 @@ def build_premium_render_contract(
     source_url: str,
     source_attribution: str,
     style: dict[str, Any] | None = None,
+    genres: list[str] | None = None,
 ) -> dict[str, Any]:
     duration_ms = candidate["end_ms"] - candidate["start_ms"]
     validate_premium_duration(duration_ms)
     style = style or load_style()
     caption_style = style["caption"]
-    raw_captions = candidate.get("timed_captions") or build_caption_segments(
-        candidate["transcript_span"],
-        duration_ms,
-        max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),
-    )
+    raw_captions = candidate.get("timed_captions") or []
+    if not raw_captions:
+        raise ValueError(
+            "timed captions are required for premium render. "
+            "Re-run with --caption-source whisper or hybrid and verify ASR output."
+        )
     captions = normalize_caption_groups(
         raw_captions,
         max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),
@@ -170,7 +174,7 @@ def build_premium_render_contract(
     if caption_diagnostics["maxConcurrentEvents"] > 1:
         raise ValueError("caption events must not overlap")
     return {
-        "composition": "NourbitPremiumShort",
+        "composition": "HyperFramesPremiumClip",
         "width": 1080,
         "height": 1920,
         "fps": 30,
@@ -200,6 +204,7 @@ def build_premium_render_contract(
         "style": style,
         "cropStrategy": "speaker_aware_or_center_crop",
         "captionStyle": caption_style["preset"],
+        "genres": genres or [],
         "sfxPack": ["whoosh", "switch", "mouse-click"],
         "publishSafety": {
             "reviewRequired": True,
@@ -297,6 +302,35 @@ def render_premium_remotion(
     if result.returncode != 0:
         raise RuntimeError(f"remotion render failed: {result.stderr[-1600:] or result.stdout[-1600:]}")
     return str(output), contract
+
+
+def render_premium_hyperframes(
+    candidate: dict[str, Any],
+    profile: dict[str, Any],
+    source_video_path: str,
+    source_url: str,
+    source_attribution: str,
+    style: dict[str, Any] | None = None,
+    hyperframes_template: str = "auto",
+    hyperframes_format: str = "auto",
+    brand_system_template_id: str = "",
+    genres: list[str] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    job_id = f"render_{uuid.uuid4().hex[:12]}"
+    contract = build_premium_render_contract(candidate, profile, source_video_path, source_url, source_attribution, style, genres=genres)
+    output_path, contract = _render_hyperframes_contract(
+        contract,
+        source_video_path,
+        profile["id"],
+        candidate["id"],
+        job_id,
+        quality="standard",
+        hyperframes_template=hyperframes_template,
+        hyperframes_format=hyperframes_format,
+        brand_system_template_id=brand_system_template_id,
+        genres=genres,
+    )
+    return output_path, contract
 
 
 def _load_font(size: int):

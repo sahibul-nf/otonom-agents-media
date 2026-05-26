@@ -8,6 +8,7 @@ import mimetypes
 import os
 import re
 import shutil
+import sqlite3
 from html import escape
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +24,10 @@ from .env_loader import load_env_file
 from .env_store import unset_env_keys
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .genres import genre_options
+from .hyperframes_catalog import list_hyperframes_catalog
+from .hyperframes_previews import ensure_hyperframes_template_preview, list_hyperframes_preview_status, prewarm_hyperframes_template_previews
+from .hyperframes_renderer import check_hyperframes_runtime
+from .hyperframes_templates import list_hyperframes_templates
 from .live_publishers import (
     LivePublishError,
     publish_live_payload,
@@ -31,6 +36,7 @@ from .live_publishers import (
     validate_tiktok_connection,
     validate_youtube_connection,
 )
+from .llm import LLMError
 from .models import PUBLISH_MODES
 from .metadata_refresh import refresh_candidate_metadata
 from .oauth_flow import OAuthFlowError, complete_oauth, start_oauth
@@ -39,7 +45,7 @@ from .publishers import build_payload, create_dry_run_attempt
 from .rerender import create_rerender_job, list_rerender_jobs
 from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
 from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule, update_schedule_platforms
-from .styles import load_style, save_style_template
+from .styles import load_style, save_brand_system_template, save_style_template
 
 
 ENV_FILE = ROOT.parent / ".env.local"
@@ -90,6 +96,16 @@ def _loads(value: str | None, fallback):
         return fallback
 
 
+def _normalize_clip_status(row: dict) -> dict:
+    status = str(row.get("status") or "")
+    if status == "needs_caption_fix":
+        row["status"] = "held"
+        metadata = _loads(row.get("curation_metadata_json"), {})
+        metadata["hold_reason"] = metadata.get("hold_reason") or "caption_fix_required"
+        row["curation_metadata_json"] = json.dumps(metadata, ensure_ascii=False)
+    return row
+
+
 def _parse_range_header(value: str, size: int) -> tuple[int, int] | None:
     match = re.fullmatch(r"bytes=(\d*)-(\d*)", value.strip())
     if not match or size <= 0:
@@ -129,13 +145,13 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 result = complete_oauth(platform, query, server_base, ENV_FILE)
             except OAuthFlowError as exc:
                 self._send_html(
-                    f"<h2>Connect failed</h2><p>{escape(str(exc))}</p><p>You can close this tab and retry from Publish Center.</p>",
+                    f"<h2>Connect failed</h2><p>{escape(str(exc))}</p><p>You can close this tab and retry from Channels.</p>",
                     status=400,
                 )
                 return
             except Exception as exc:  # noqa: BLE001
                 self._send_html(
-                    f"<h2>Connect failed</h2><p>{escape(str(exc))}</p><p>You can close this tab and retry from Publish Center.</p>",
+                    f"<h2>Connect failed</h2><p>{escape(str(exc))}</p><p>You can close this tab and retry from Channels.</p>",
                     status=500,
                 )
                 return
@@ -165,6 +181,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 """,
             )
             for row in rows:
+                _normalize_clip_status(row)
                 row["score"] = _loads(row.get("score_json"), {})
                 row["curation_metadata"] = _loads(row.get("curation_metadata_json"), {})
                 row["asr_metadata"] = _loads(row.get("asr_metadata_json"), {})
@@ -198,11 +215,37 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/brand-templates":
             self._send_json(list_brand_templates())
             return
+        if parsed.path == "/api/hyperframes-templates":
+            self._send_json(list_hyperframes_templates())
+            return
+        if parsed.path == "/api/hyperframes-catalog":
+            self._send_json(list_hyperframes_catalog())
+            return
+        if parsed.path == "/api/hyperframes-template-preview":
+            query = parse_qs(parsed.query)
+            template_id = (query.get("template", ["auto"])[0] or "auto").strip()
+            hyperframes_format = (query.get("format", ["short_9_16"])[0] or "short_9_16").strip()
+            try:
+                preview = ensure_hyperframes_template_preview(template_id, hyperframes_format)
+            except (RuntimeError, ValueError, OSError) as exc:
+                self._send_json({"error": str(exc)}, status=503)
+                return
+            self._send_media_file(preview)
+            return
+        if parsed.path == "/api/hyperframes-template-preview-status":
+            query = parse_qs(parsed.query)
+            include_brand = (query.get("include_brand", ["1"])[0] or "1") not in {"0", "false", "False"}
+            self._send_json(list_hyperframes_preview_status(include_brand=include_brand))
+            return
         if parsed.path == "/api/genres":
             self._send_json(genre_options())
             return
         if parsed.path == "/api/duration-presets":
             self._send_json(duration_preset_options())
+            return
+        if parsed.path == "/api/engine-health":
+            load_env_file(ENV_FILE)
+            self._send_json({"hyperframes": check_hyperframes_runtime(run_doctor=False)})
             return
         if parsed.path == "/api/generation-jobs":
             self._send_json(list_generation_jobs())
@@ -364,6 +407,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/generation-jobs":
+            load_env_file(ENV_FILE)
             try:
                 job = create_generation_job(payload, start=True)
             except (ValueError, RuntimeError) as exc:
@@ -384,6 +428,34 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(template, status=201)
+            return
+
+        if parsed.path == "/api/brand-system-templates":
+            label = str(payload.get("label") or "").strip()
+            style = payload.get("style")
+            brand_system = payload.get("brand_system")
+            if not isinstance(style, dict):
+                self._send_json({"error": "style is required"}, status=400)
+                return
+            if not isinstance(brand_system, dict):
+                self._send_json({"error": "brand_system is required"}, status=400)
+                return
+            try:
+                template = save_brand_system_template(label, style, brand_system, str(payload.get("base_template") or "") or None)
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(template, status=201)
+            return
+
+        if parsed.path == "/api/hyperframes-template-preview-prewarm":
+            include_brand = bool(payload.get("include_brand", False))
+            try:
+                result = prewarm_hyperframes_template_previews(include_brand=include_brand)
+            except RuntimeError as exc:
+                self._send_json({"error": str(exc)}, status=503)
+                return
+            self._send_json(result)
             return
 
         if parsed.path == "/api/caption-corrections":
@@ -494,11 +566,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             candidate = dict(row)
             metadata = _loads(candidate.get("curation_metadata_json"), {})
-            generated = generate_post_caption(
-                candidate,
-                {"metadata_json": candidate.get("render_metadata_json") or "{}"},
-                preferred_provider=preferred_provider,
-            )
+            try:
+                generated = generate_post_caption(
+                    candidate,
+                    {"metadata_json": candidate.get("render_metadata_json") or "{}"},
+                    preferred_provider=preferred_provider,
+                )
+            except LLMError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
             metadata["post_caption_override"] = generated["post_caption"]
             metadata["post_caption_source"] = generated["source"]
             conn.execute(
@@ -521,10 +597,11 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             if not candidate_id:
                 self._send_json({"error": "candidate_id is required"}, status=400)
                 return
+            load_env_file(ENV_FILE)
             try:
                 result = create_rerender_job(
                     candidate_id,
-                    renderer=str(payload.get("renderer") or "remotion"),
+                    renderer=str(payload.get("renderer") or "hyperframes"),
                     quality=str(payload.get("quality") or "production"),
                     style_path=str(payload.get("style") or "") or None,
                     force_source_refresh=bool(payload.get("force_source_refresh", False)),
@@ -550,7 +627,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 if bool(payload.get("rerender_after", False)):
                     result["rerender_job"] = create_rerender_job(
                         candidate_id,
-                        renderer=str(payload.get("renderer") or "remotion"),
+                        renderer=str(payload.get("renderer") or "hyperframes"),
                         quality=str(payload.get("quality") or "production"),
                         style_path=str(payload.get("style") or "") or None,
                     )
@@ -578,7 +655,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 if bool(payload.get("rerender_after", False)):
                     result["rerender_job"] = create_rerender_job(
                         candidate_id,
-                        renderer=str(payload.get("renderer") or "remotion"),
+                        renderer=str(payload.get("renderer") or "hyperframes"),
                         quality=str(payload.get("quality") or "production"),
                         style_path=str(payload.get("style") or "") or None,
                         force_source_refresh=True,
@@ -778,10 +855,17 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 for row in conn.execute("SELECT output_path FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
                 if row["output_path"]
             ]
-            conn.execute("DELETE FROM publish_attempts WHERE candidate_id = ?", (candidate_id,))
-            conn.execute("DELETE FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
-            conn.execute("DELETE FROM clip_candidates WHERE id = ?", (candidate_id,))
-            conn.commit()
+            try:
+                conn.execute("DELETE FROM scheduled_posts WHERE candidate_id = ?", (candidate_id,))
+                conn.execute("DELETE FROM rerender_jobs WHERE candidate_id = ?", (candidate_id,))
+                conn.execute("DELETE FROM publish_attempts WHERE candidate_id = ?", (candidate_id,))
+                conn.execute("DELETE FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
+                conn.execute("DELETE FROM clip_candidates WHERE id = ?", (candidate_id,))
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                self._send_json({"error": f"failed to delete candidate: {exc}"}, status=409)
+                return
             removed = _delete_candidate_artifacts(paths) if delete_artifacts else []
             self._send_json({"candidate_id": candidate_id, "deleted": True, "artifacts_removed": removed})
             return
@@ -794,6 +878,22 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             conn = connect(DEFAULT_DB)
             initialize(conn)
+            active_generation = conn.execute(
+                "SELECT count(*) FROM generation_jobs WHERE status IN ('queued','running')"
+            ).fetchone()[0]
+            active_rerender = conn.execute(
+                "SELECT count(*) FROM rerender_jobs WHERE status IN ('queued','running')"
+            ).fetchone()[0]
+            if active_generation or active_rerender:
+                self._send_json(
+                    {
+                        "error": "cannot clear while jobs are running",
+                        "active_generation_jobs": active_generation,
+                        "active_rerender_jobs": active_rerender,
+                    },
+                    status=409,
+                )
+                return
             paths = [
                 row["output_path"]
                 for row in conn.execute("SELECT output_path FROM render_jobs WHERE output_path != ''")
@@ -802,12 +902,25 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             counts = {
                 "clip_candidates": conn.execute("SELECT count(*) FROM clip_candidates").fetchone()[0],
                 "render_jobs": conn.execute("SELECT count(*) FROM render_jobs").fetchone()[0],
+                "rerender_jobs": conn.execute("SELECT count(*) FROM rerender_jobs").fetchone()[0],
                 "publish_attempts": conn.execute("SELECT count(*) FROM publish_attempts").fetchone()[0],
+                "scheduled_posts": conn.execute("SELECT count(*) FROM scheduled_posts").fetchone()[0],
             }
-            conn.execute("DELETE FROM publish_attempts")
-            conn.execute("DELETE FROM render_jobs")
-            conn.execute("DELETE FROM clip_candidates")
-            conn.commit()
+            try:
+                conn.execute("BEGIN")
+                conn.execute("PRAGMA foreign_keys = OFF")
+                conn.execute("DELETE FROM scheduled_posts")
+                conn.execute("DELETE FROM rerender_jobs")
+                conn.execute("DELETE FROM publish_attempts")
+                conn.execute("DELETE FROM render_jobs")
+                conn.execute("DELETE FROM clip_candidates")
+                conn.execute("PRAGMA foreign_keys = ON")
+                conn.commit()
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                conn.execute("PRAGMA foreign_keys = ON")
+                self._send_json({"error": f"failed to clear review data: {exc}"}, status=409)
+                return
             removed = _delete_candidate_artifacts(paths) if delete_artifacts else []
             self._send_json({"deleted": counts, "artifacts_removed": removed})
             return
@@ -907,6 +1020,33 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
+
+    def _send_media_file(self, path: Path) -> None:
+        content_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        file_size = path.stat().st_size
+        range_header = self.headers.get("Range", "").strip()
+        byte_range = _parse_range_header(range_header, file_size) if range_header else None
+        status = 206 if byte_range else 200
+        start = byte_range[0] if byte_range else 0
+        end = byte_range[1] if byte_range else file_size - 1
+        length = max(0, end - start + 1)
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Content-Disposition", f'inline; filename="{path.name}"')
+        if byte_range:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.end_headers()
+        with path.open("rb") as handle:
+            handle.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = handle.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     def _send_html(self, html: str, status: int = 200) -> None:
         payload = f"<!doctype html><html><body style='font-family:system-ui;background:#0b0d12;color:#e6e8ef;padding:24px'>{html}</body></html>".encode("utf-8")

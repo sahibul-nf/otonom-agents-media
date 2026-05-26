@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/pm2_common.sh"
+load_local_env
+PYTHON_BIN="$(pick_python)"
+cd "${ROOT_DIR}/media-engine"
 
 INTERVAL="${PUBLISH_WORKER_INTERVAL_SECONDS:-60}"
-PYTHON_BIN="${MEDIA_ENGINE_PYTHON:-/tmp/media-engine-tools-py313/bin/python}"
-if [ ! -x "$PYTHON_BIN" ]; then
-  PYTHON_BIN="python3"
-fi
 
 while true; do
   PYTHONPATH=. "$PYTHON_BIN" -m media_engine.cli publish-due \

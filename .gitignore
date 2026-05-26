@@ -57,8 +57,11 @@ __pycache__/
 .specstory/
 media-engine/.specstory/
 .runtime/
+.playwright-cli/
+media-engine/profiles/custom_*.json
 
 # Generated media
+output/
 *.mp4
 *.mov
 *.m4v

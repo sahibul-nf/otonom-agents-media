@@ -64,7 +64,7 @@ class ReviewMetadataBoundaryTests(unittest.TestCase):
         self.assertIn("overall_score", json.loads(conn.execute("SELECT score_json FROM clip_candidates WHERE id = 'clip'").fetchone()[0]))
         conn.close()
 
-    def test_smart_metadata_rejects_generic_llm_and_falls_back_local(self):
+    def test_smart_metadata_rejects_generic_llm(self):
         conn = make_conn()
         with patch("media_engine.metadata_refresh._available_provider", return_value="deepseek"), patch(
             "media_engine.metadata_refresh.call_llm_json",
@@ -74,10 +74,8 @@ class ReviewMetadataBoundaryTests(unittest.TestCase):
                 "viral_reason": "Potongan singkat untuk menenangkan hati dan meluruskan arah.",
             },
         ):
-            result = refresh_candidate_metadata(conn, "clip", mode="smart")
-
-        self.assertNotEqual(result["hook_subtitle"], "Potongan singkat untuk menenangkan hati dan meluruskan arah.")
-        self.assertEqual(result["curation_metadata"]["title_source"], "heuristic_span")
+            with self.assertRaises(ValueError):
+                refresh_candidate_metadata(conn, "clip", mode="smart")
         conn.close()
 
     def test_boundary_update_rejects_published_and_invalid_duration(self):
