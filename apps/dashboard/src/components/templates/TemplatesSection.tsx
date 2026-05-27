@@ -1,6 +1,6 @@
 "use client";
 
-import {Monitor, Settings, Smartphone, Sparkles, Wand2} from "lucide-react";
+import {BadgeCheck, Layers3, Monitor, Settings, Smartphone, Sparkles, Wand2} from "lucide-react";
 import {useEffect, useState, type ReactNode} from "react";
 import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
@@ -54,9 +54,20 @@ export function TemplatesSection({
   const ready = Boolean(engineHealth?.hyperframes.ready);
   const catalogReady = catalog?.items.filter((item) => item.status === "production-ready").length || 0;
   const framePreviewKey = frame === "long" ? "long_16_9" : "short_9_16";
+  const detailFrameLabel = frame === "long" ? "Long/Landscape 16:9" : "Short/Reels 9:16";
+  const customizationGroups = [
+    {label: "Captions", items: catalog?.groups["Captions"] || []},
+    {label: "Texture/effects", items: catalog?.groups["Texture/effects"] || []},
+    {label: "Social overlays", items: catalog?.groups["Social overlays"] || []},
+    {label: "Data", items: catalog?.groups["Data"] || []},
+    {label: "Maps", items: catalog?.groups["Maps"] || []},
+    {label: "Product", items: catalog?.groups["Product"] || []},
+    {label: "Transitions", items: catalog?.groups["Transitions"] || []},
+    {label: "Shader transitions", items: catalog?.groups["Shader transitions"] || []},
+  ].filter((group) => group.items.length);
   const gridClass =
     frame === "long"
-      ? "grid-cols-1 xl:grid-cols-2"
+      ? "grid-cols-[repeat(auto-fit,minmax(360px,1fr))]"
       : "grid-cols-[repeat(auto-fit,minmax(320px,1fr))]";
 
   useEffect(() => {
@@ -168,46 +179,108 @@ export function TemplatesSection({
         </div>
       </div>
 
-      <FocusModal open={detailOpen && Boolean(selected)} title={selected?.label || "Template"} subtitle="Preview the real-usecase flow, then use it in Generate or customize it as a Brand System Template." width="wide" onClose={() => setDetailOpen(false)}>
+      <FocusModal open={detailOpen && Boolean(selected)} title={selected?.label || "Template"} subtitle="Preview the real-usecase flow, then use it in Generate or customize it as a Brand System Template." width="max" onClose={() => setDetailOpen(false)}>
         {selected ? (
           <div className="grid gap-5">
-            <div className="grid gap-4 lg:grid-cols-[minmax(240px,360px)_minmax(280px,1fr)] lg:items-start">
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Short/Reels output</p>
-                <TemplatePreview template={selected} frame="short" />
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+              <div className="min-w-0 rounded-[26px] border border-white/[0.08] bg-canvas-deep p-4">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-cyan">{selected.category}</p>
+                    <h3 className="mt-1 text-2xl font-semibold text-white">{selected.label}</h3>
+                  </div>
+                  <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${selected.status === "ready" ? "border-teal/[0.25] bg-teal/[0.10] text-teal" : "border-warning/[0.25] bg-warning/[0.10] text-warning"}`}>
+                    <BadgeCheck className="h-3.5 w-3.5" />
+                    {selected.status === "ready" ? "Production ready" : selected.status}
+                  </span>
+                </div>
+                <div>
+                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                    {frame === "long" ? <Monitor className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
+                    {detailFrameLabel}
+                  </div>
+                  <TemplatePreview template={selected} frame={frame} />
+                </div>
               </div>
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Long output</p>
-                <TemplatePreview template={selected} compact frame="long" />
+
+              <aside className="grid gap-4 rounded-[26px] border border-white/[0.08] bg-canvas-deep p-4 xl:sticky xl:top-0">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Best for</p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">{selected.best_for}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Tone</p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-300">{selected.tone}</p>
+                </div>
+                <div className="rounded-[20px] border border-cyan/[0.14] bg-teal/[0.06] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Customize in Brand Builder</p>
+                  <p className="mt-2 text-sm leading-6 text-zinc-400">Start from this template, then choose HyperFrames captions, overlays, effects, transitions, data/map/product blocks, typography, colors, and watermark slots.</p>
+                </div>
+                <div className="grid gap-2">
+                  <button data-autofocus type="button" onClick={() => onUse(selected.id)} className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink shadow-[0_12px_28px_rgba(102,232,249,0.18)]">
+                    <Wand2 className="h-4 w-4" />
+                    Use in Generate
+                  </button>
+                  <button type="button" onClick={() => onCustomize(selected.id)} className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-4 text-sm font-semibold text-cyan">
+                    <Settings className="h-4 w-4" />
+                    Customize Brand
+                  </button>
+                  <button type="button" onClick={() => onSetDefault(selected.id)} className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-black/20 px-4 text-sm font-semibold text-zinc-200 transition hover:border-cyan/[0.20] hover:text-white">
+                    <Sparkles className="h-4 w-4" />
+                    Set default
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {renderSettingTile("Caption", selected.caption_style)}
+                  {renderSettingTile("Runtime", ready ? "Ready" : "Check")}
+                  {renderSettingTile("Catalog", `${catalogReady} ready`)}
+                  {renderSettingTile("Preview", frame === "long" ? "16:9" : "9:16")}
+                </div>
+              </aside>
+            </div>
+
+            <section className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-cyan">HyperFrames customization library</p>
+                  <h3 className="mt-1 text-lg font-semibold text-white">Choose supported slots in Brand Builder</h3>
+                </div>
+                <span className="rounded-full border border-teal/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-teal">{catalogReady} production-ready</span>
               </div>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Selected template</p>
-              <h3 className="mt-2 text-2xl font-semibold text-white">{selected.label}</h3>
-              <p className="mt-2 text-sm leading-6 text-zinc-400">{selected.tone}</p>
-            </div>
-            <div className="grid gap-2">
-              <button data-autofocus type="button" onClick={() => onUse(selected.id)} className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink">
-                <Wand2 className="h-4 w-4" />
-                Use in Generate
-              </button>
-              <button type="button" onClick={() => onCustomize(selected.id)} className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-4 text-sm font-semibold text-cyan">
-                <Settings className="h-4 w-4" />
-                Customize as Brand Template
-              </button>
-            </div>
-            <div className="grid gap-3">
-              {renderSettingTile("Niche", selected.category)}
-              {renderSettingTile("Caption", selected.caption_style)}
-              {renderSettingTile("Runtime", ready ? "lint + inspect ready" : "runtime check required")}
-              {renderSettingTile("Catalog", `${catalogReady} production-ready items`)}
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Best for</p>
-              <p className="mt-2 text-sm leading-6 text-zinc-300">{selected.best_for}</p>
-            </div>
-            <details className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-              <summary className="cursor-pointer list-none font-semibold text-white">Technical ingredients</summary>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {customizationGroups.map((group) => (
+                  <div key={group.label} className="rounded-[18px] border border-white/[0.08] bg-black/20 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{group.label}</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {group.items.slice(0, 4).map((item) => (
+                        <span
+                          key={item.id}
+                          className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${
+                            item.status === "production-ready"
+                              ? "border-teal/[0.22] bg-teal/[0.08] text-teal"
+                              : item.status === "beta"
+                                ? "border-warning/[0.22] bg-warning/[0.08] text-warning"
+                                : "border-white/[0.10] bg-white/[0.04] text-zinc-500"
+                          }`}
+                        >
+                          {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <details className="group rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-white">
+                <span className="inline-flex items-center gap-2">
+                  <Layers3 className="h-4 w-4 text-cyan" />
+                  Technical ingredients
+                </span>
+                <span className="text-xs font-medium text-zinc-500 group-open:hidden">Show components, effects, and genres</span>
+                <span className="hidden text-xs font-medium text-zinc-500 group-open:inline">Hide details</span>
+              </summary>
               <div className="mt-4 grid gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Effects used</p>
@@ -235,12 +308,6 @@ export function TemplatesSection({
                 </div>
               </div>
             </details>
-            <div className="grid gap-2">
-              <button type="button" onClick={() => onSetDefault(selected.id)} className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-canvas-deep px-4 text-sm font-semibold text-zinc-200">
-                <Sparkles className="h-4 w-4" />
-                Set as HyperFrames default
-              </button>
-            </div>
           </div>
         ) : (
           renderEmptyState("No templates loaded", "Refresh after restarting the media engine backend.")

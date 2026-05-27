@@ -1161,6 +1161,7 @@ export function MediaStudioApp() {
                 pushToast("HyperFrames default saved in this browser", "success");
               }}
               onCustomize={(templateId) => {
+                window.localStorage.setItem("otonom.brandBuilderStarterTemplate", templateId);
                 setGenerateConfig((current) => ({...current, hyperframesTemplate: templateId, renderer: "hyperframes"}));
                 setSection("brand");
                 pushToast("Opening Brand System builder from this template", "success");

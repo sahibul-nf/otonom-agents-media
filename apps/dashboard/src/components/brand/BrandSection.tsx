@@ -116,6 +116,9 @@ export function BrandSection({
   const editorFromStyle = (source?: StyleProfile | null) => {
     const caption = source?.caption || {};
     const brand = source?.brand || {};
+    const starterTemplateRequest = window.localStorage.getItem("otonom.brandBuilderStarterTemplate");
+    const starterTemplate = starterTemplateRequest || "spiritual_reflective";
+    window.localStorage.removeItem("otonom.brandBuilderStarterTemplate");
     return {
       fontFamily: String(caption.font_family || "Sora"),
       fontSize: Number(caption.font_size || 54),
@@ -124,22 +127,24 @@ export function BrandSection({
       backgroundColor: hexFromColor(caption.background_color, "#000000"),
       strokeWidth: Number(caption.stroke_width || 10),
       watermarkText: publicBrandText(brand.watermark_text, "Brand Clips"),
-      starterTemplate: "spiritual_reflective",
+      starterTemplate,
       captionStyle: "caption-editorial-emphasis",
       introLayout: "editorial-hook",
       ctaOverlay: "yt-lower-third",
       textureEffect: "vignette",
       transitionFamily: "dissolve",
       motionIntensity: "balanced",
+      openBuilder: Boolean(starterTemplateRequest),
     };
   };
   const [selectedTemplate, setSelectedTemplate] = useState(defaultTemplate);
-  const [label, setLabel] = useState("Custom Workspace Template");
   const [editor, setEditor] = useState(editorFromStyle(style));
+  const initialStarter = hyperframesTemplates.find((template) => template.id === editor.starterTemplate);
+  const [label, setLabel] = useState(initialStarter ? `${initialStarter.label} Brand Template` : "Custom Workspace Template");
   const [saveState, setSaveState] = useState("Ready");
   const [templateBusy, setTemplateBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
-  const [builderOpen, setBuilderOpen] = useState(false);
+  const [builderOpen, setBuilderOpen] = useState(Boolean(editor.openBuilder));
   const [fontAvailability, setFontAvailability] = useState<"checking" | "available" | "fallback">("checking");
   const selectedFontOption = useMemo(() => fontOptions.some((font) => font.value === editor.fontFamily) ? editor.fontFamily : "__custom", [editor.fontFamily]);
   const selectedStarter = hyperframesTemplates.find((template) => template.id === editor.starterTemplate);
