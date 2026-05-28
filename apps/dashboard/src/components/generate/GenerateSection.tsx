@@ -1,9 +1,10 @@
 "use client";
 
-import {BadgeCheck, CheckCircle2, Copy, Loader2, Sparkles, Wand2} from "lucide-react";
+import {BadgeCheck, CheckCircle2, ChevronDown, Clapperboard, Copy, Link, Loader2, Sparkles, Wand2, Youtube} from "lucide-react";
 import {useState, type Dispatch, type ReactNode, type SetStateAction} from "react";
 import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
+import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
 import {
   type ActionUiState,
   type BrandTemplate,
@@ -123,7 +124,9 @@ export function GenerateSection<T extends GenerateConfigLike>({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <span className="inline-flex rounded-full border border-teal/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-teal">Template-first flow</span>
-            <h3 className="mt-3 text-2xl font-semibold text-white">Create clips</h3>
+            <h3 className="mt-3 text-2xl font-semibold text-white">
+              Create <span className="font-editorial italic font-normal text-cyan">clips</span>
+            </h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Choose a production template first, then add the source, niche, and output settings for a HyperFrames render.</p>
           </div>
           <div className="grid gap-1 rounded-[20px] border border-white/[0.08] bg-canvas-deep px-4 py-3 text-left sm:min-w-[150px] sm:text-right">
@@ -208,36 +211,72 @@ export function GenerateSection<T extends GenerateConfigLike>({
                 </div>
               </div>
               <div className="grid gap-4">
-                <label className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
-                  YouTube source
-                  <input value={config.sourceUrl} onChange={(event) => update({sourceUrl: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 text-sm text-zinc-300 outline-none focus:border-cyan/[0.30]" placeholder="Paste long-form YouTube URL" />
-                </label>
-                <div className="grid min-w-0 gap-3 md:grid-cols-2">
-                  <label className="grid gap-2 text-sm font-medium text-zinc-300">
-                    Clip count
-                    <select value={config.count} onChange={(event) => update({count: Number(event.target.value)})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 outline-none focus:border-cyan/[0.30]">
-                      {[1, 2, 3, 5, 8, 10].map((value) => <option key={value} value={value}>{value} clips</option>)}
-                    </select>
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium text-zinc-300">
-                    Clip duration
-                    <select
-                      value={config.clipLength}
-                      onChange={(event) => {
-                        const preset = presetOptions.find((item) => item.id === event.target.value);
-                        update({
-                          clipLength: event.target.value,
-                          clipMinSeconds: preset ? Math.round(preset.min_ms / 1000) : config.clipMinSeconds,
-                          clipMaxSeconds: preset ? Math.round(preset.max_ms / 1000) : config.clipMaxSeconds,
-                        });
-                      }}
-                      className="h-12 rounded-2xl border border-cyan/[0.35] bg-black/24 px-4 text-sm font-semibold text-white outline-none shadow-glow"
-                    >
-                      {presetOptions.map((preset) => (
-                        <option key={preset.id} value={preset.id}>{preset.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                <div className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
+                  <span>YouTube source</span>
+                  <div className="relative flex items-center">
+                    <input
+                      value={config.sourceUrl}
+                      onChange={(event) => update({sourceUrl: event.target.value})}
+                      className="h-12 w-full rounded-full border border-white/[0.08] bg-black/24 pl-11 pr-4 text-sm text-zinc-200 outline-none transition focus:border-cyan/[0.30] focus:ring-1 focus:ring-cyan/[0.30]"
+                      placeholder="Paste long-form YouTube URL (https://...)"
+                    />
+                    <span className="absolute left-4 text-zinc-500">
+                      <Youtube className="h-4 w-4" />
+                    </span>
+                  </div>
+                </div>
+                <div className="grid min-w-0 gap-4">
+                  <div className="grid gap-2 text-sm font-medium text-zinc-300">
+                    <span>Clip count</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[1, 2, 3, 5, 8, 10].map((val) => {
+                        const active = config.count === val;
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => update({count: val})}
+                            className={`h-9 rounded-full px-3.5 text-xs font-semibold transition ${
+                              active
+                                ? "bg-cyan text-ink shadow-[0_4px_12px_rgba(102,232,249,0.2)]"
+                                : "border border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
+                            }`}
+                          >
+                            {val} clip{val > 1 ? "s" : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="grid gap-2 text-sm font-medium text-zinc-300">
+                    <span>Clip duration preset</span>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {presetOptions.map((preset) => {
+                        const active = config.clipLength === preset.id;
+                        return (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => {
+                              update({
+                                clipLength: preset.id,
+                                clipMinSeconds: Math.round(preset.min_ms / 1000),
+                                clipMaxSeconds: Math.round(preset.max_ms / 1000),
+                              });
+                            }}
+                            className={`flex flex-col rounded-2xl border p-3 text-left transition ${
+                              active
+                                ? "border-cyan/[0.50] bg-cyan/[0.05] shadow-[0_4px_12px_rgba(102,232,249,0.06)]"
+                                : "border-white/[0.08] bg-black/24 hover:border-white/[0.16]"
+                            }`}
+                          >
+                            <span className={`text-xs font-semibold ${active ? "text-cyan" : "text-white"}`}>{preset.label}</span>
+                            <span className="text-[11px] text-zinc-500 mt-1 leading-4">{preset.detail} · {preset.best_for}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
                 <div className="rounded-2xl border border-teal/[0.16] bg-teal/[0.06] px-4 py-3 text-xs leading-5 text-zinc-400">
                   <span className="font-semibold text-cyan">{selectedPreset?.label}</span> lets the engine trim natural starts and endings inside <span className="font-semibold text-zinc-200">{config.clipMinSeconds}s-{config.clipMaxSeconds}s</span>.
@@ -298,14 +337,31 @@ export function GenerateSection<T extends GenerateConfigLike>({
                   <p className="text-xs text-zinc-500">Brand system and low-level engine settings stay compact.</p>
                 </div>
               </div>
-              <label className="grid gap-2 text-sm font-medium text-zinc-300">
-                Brand template
-                <select value={config.brandTemplate} onChange={(event) => update({brandTemplate: event.target.value})} className="h-12 rounded-2xl border border-white/[0.08] bg-black/24 px-4 outline-none focus:border-cyan/[0.30]">
-                  {(templates.length ? templates : [{id: defaultTemplatePath, label: "Default Workspace Style", path: defaultTemplatePath}]).map((template) => (
-                    <option key={template.id} value={template.path}>{template.label}</option>
-                  ))}
-                </select>
-              </label>
+              <div className="grid gap-2 text-sm font-medium text-zinc-300">
+                <span>Brand template</span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(templates.length ? templates : [{id: "default", label: "Default Workspace Style", path: defaultTemplatePath}]).map((template) => {
+                    const active = config.brandTemplate === template.path;
+                    return (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => update({brandTemplate: template.path})}
+                        className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
+                          active
+                            ? "border-cyan bg-cyan/[0.05] text-white shadow-[0_4px_12px_rgba(102,232,249,0.06)]"
+                            : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
+                        }`}
+                      >
+                        <span className="text-xs font-semibold">{template.label}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${active ? "bg-cyan text-ink" : "bg-white/[0.08] text-zinc-500"}`}>
+                          {active ? "Active" : "Select"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <details className="mt-4 rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
                 <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
                   Advanced engine settings
@@ -329,10 +385,13 @@ export function GenerateSection<T extends GenerateConfigLike>({
 
           {createStep >= 3 ? (
             <div className="grid gap-3">
-              <button disabled={isStarting || !config.sourceUrl.trim()} onClick={onGenerate} className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
-                {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                {isStarting ? "Starting batch..." : "Generate batch"}
-              </button>
+              <SlideToConfirm
+                label="Slide to generate batch"
+                activeLabel="Starting batch..."
+                onConfirm={onGenerate}
+                isLoading={isStarting}
+                disabled={!config.sourceUrl.trim()}
+              />
               {renderActionStatus(actionState)}
             </div>
           ) : null}
@@ -446,14 +505,27 @@ function StepChip({step, label, active, done, enabled, onClick}: {step: number; 
 
 function SelectTile({label, value, options, onChange}: {label: string; value: string; options: SelectTileOption[]; onChange: (value: string) => void}) {
   return (
-    <label className="grid gap-2 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <label className="relative grid gap-1.5 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 transition-all focus-within:border-cyan/[0.30] hover:border-white/[0.14]">
       {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="min-w-0 bg-transparent text-sm font-semibold normal-case tracking-normal text-white outline-none">
-        {options.map((option) => {
-          const item = typeof option === "string" ? {value: option, label: option, disabled: false} : option;
-          return <option key={item.value} value={item.value} disabled={item.disabled}>{item.label}</option>;
-        })}
-      </select>
+      <div className="relative flex items-center">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full appearance-none cursor-pointer bg-transparent text-sm font-semibold normal-case tracking-normal text-white outline-none pr-8"
+        >
+          {options.map((option) => {
+            const item = typeof option === "string" ? {value: option, label: option, disabled: false} : option;
+            return (
+              <option key={item.value} value={item.value} disabled={item.disabled} className="bg-[#17171a] text-white">
+                {item.label}
+              </option>
+            );
+          })}
+        </select>
+        <span className="absolute right-1 pointer-events-none text-zinc-500">
+          <ChevronDown className="h-4 w-4" />
+        </span>
+      </div>
     </label>
   );
 }

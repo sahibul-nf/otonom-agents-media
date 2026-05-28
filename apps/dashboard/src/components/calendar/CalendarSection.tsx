@@ -1,6 +1,6 @@
 "use client";
 
-import {CheckCircle2, Loader2, XCircle} from "lucide-react";
+import {CheckCircle2, Loader2, XCircle, Calendar, Sparkles, Clock, Zap, Flame, Settings2} from "lucide-react";
 import type {ReactNode} from "react";
 import {platformLabel, formatTimestamp, type ClipCandidate, type PublishTarget, type ScheduledPost} from "@/lib/media-api";
 
@@ -14,13 +14,15 @@ function SwitchControl({checked, disabled, label, onChange}: {checked: boolean; 
       aria-checked={checked}
       disabled={disabled}
       onClick={onChange}
-      className={`inline-flex h-8 items-center gap-2 rounded-full border px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? "border-cyan/[0.45] bg-cyan text-ink" : "border-white/[0.12] bg-white/[0.04] text-zinc-400"
+      className={`inline-flex h-8 items-center gap-2.5 rounded-full border px-3 text-xs font-semibold transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked 
+          ? "border-cyan/[0.45] bg-cyan text-ink shadow-[0_4px_12px_rgba(102,232,249,0.15)]" 
+          : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.14]"
       }`}
     >
       <span>{label}</span>
-      <span className={`relative h-5 w-9 rounded-full transition ${checked ? "bg-ink/25" : "bg-white/[0.10]"}`}>
-        <span className={`absolute top-1 h-3 w-3 rounded-full bg-current transition ${checked ? "left-5 text-ink" : "left-1 text-zinc-500"}`} />
+      <span className={`relative h-4 w-7 rounded-full transition-colors ${checked ? "bg-ink/20" : "bg-white/[0.10]"}`}>
+        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-current transition-all ${checked ? "left-3.5 text-ink" : "left-0.5 text-zinc-500"}`} />
       </span>
     </button>
   );
@@ -76,41 +78,81 @@ export function CalendarSection({
   const dueBusy = dryRunState?.status === "running" || publishDueState?.status === "running";
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <div className="mb-5 flex items-center justify-between gap-3">
+    <section className="grid gap-6 xl:grid-cols-[1fr_420px]">
+      {/* Schedule Queue Section */}
+      <div className="rounded-[32px] border border-white/[0.08] bg-surface/30 p-6 backdrop-blur-md">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-6">
           <div>
-            <h3 className="text-xl font-semibold text-white">Schedule queue</h3>
-            <p className="mt-1 text-sm text-zinc-400">Approved clips waiting for guarded publish slots. Default cadence is 2 posts per day at 09:00 and 19:30 WIB.</p>
+            <h3 className="text-2xl font-semibold tracking-[-0.03em] text-white">
+              Schedule <span className="font-editorial italic font-normal text-cyan">queue</span>
+            </h3>
+            <p className="mt-1.5 text-sm text-zinc-400 max-w-xl leading-relaxed">
+              Approved production-ready clips waiting for queued publication slots. Cadence is locked to twice daily (09:00 & 19:30 WIB).
+            </p>
           </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <button disabled={dueBusy} onClick={onDryRunDue} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
-              {dryRunState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Dry-run due
+          
+          <div className="flex flex-wrap gap-2 self-start sm:self-center">
+            <button 
+              disabled={dueBusy} 
+              onClick={onDryRunDue} 
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full border border-white/[0.10] bg-black/24 px-5 text-xs font-bold uppercase tracking-wider text-zinc-300 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {dryRunState?.status === "running" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span>Dry-Run Due</span>
             </button>
-            <button disabled={dueBusy} onClick={onPublishDue} className="inline-flex items-center justify-center gap-2 rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
-              {publishDueState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {publishDueState?.status === "running" ? "Publishing..." : "Publish due now"}
+            <button 
+              disabled={dueBusy} 
+              onClick={onPublishDue} 
+              className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-cyan px-5 text-xs font-bold uppercase tracking-wider text-ink transition-all hover:scale-[1.02] hover:shadow-[0_8px_20px_-4px_rgba(102,232,249,0.3)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {publishDueState?.status === "running" ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Publishing...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="h-3.5 w-3.5 fill-current" />
+                  <span>Publish Due Now</span>
+                </>
+              )}
             </button>
           </div>
         </div>
+
         {dryRunState?.status === "running" || publishDueState?.status === "running" ? (
-          <div className="mb-4">{renderInlineActionStatus(publishDueState?.status === "running" ? publishDueState : dryRunState)}</div>
+          <div className="mb-5">{renderInlineActionStatus(publishDueState?.status === "running" ? publishDueState : dryRunState)}</div>
         ) : null}
-        <div className="grid gap-3">
+
+        <div className="grid gap-4">
           {schedule.length ? schedule.map((item) => (
-            <div key={item.id} className="grid gap-3 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4 md:grid-cols-[160px_minmax(0,1fr)_140px] md:items-center">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-zinc-500">Scheduled</p>
-                <p className="mt-1 font-semibold text-cyan">{formatSchedule(item.scheduled_at)}</p>
+            <div 
+              key={item.id} 
+              className="relative group overflow-hidden grid gap-4 rounded-[26px] border border-white/[0.06] bg-black/15 p-5 md:grid-cols-[180px_minmax(0,1fr)_140px] md:items-center transition-all duration-300 hover:border-white/[0.12] hover:bg-black/25"
+            >
+              {/* Dynamic top edge glow indicator */}
+              <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-cyan/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              
+              <div className="flex items-start gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan/[0.04] border border-cyan/10 text-cyan">
+                  <Clock className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">Scheduled Time</p>
+                  <p className="mt-1 font-bold text-sm text-cyan tracking-tight">{formatSchedule(item.scheduled_at)}</p>
+                </div>
               </div>
+
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="truncate text-base font-semibold text-white">{item.title_hook}</h4>
-                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{formatClipStatus(item.status)}</span>
+                  <h4 className="truncate text-base font-semibold text-white tracking-tight leading-tight">{item.title_hook}</h4>
+                  <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusTone(item.status)}`}>
+                    {formatClipStatus(item.status)}
+                  </span>
                 </div>
-                <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{item.viral_reason}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-zinc-400">{item.viral_reason}</p>
+                
+                <div className="mt-4 flex flex-wrap gap-2">
                   {targets.map((target) => {
                     const platform = target.platform;
                     const enabled = item.platforms.includes(platform);
@@ -122,48 +164,76 @@ export function CalendarSection({
                         key={platform}
                         onClick={() => toggleSchedulePlatform(item, platform)}
                         disabled={platformAction?.status === "running"}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-left text-xs font-semibold transition ${
-                          enabled ? statusTone(platformStatus) : "border-white/[0.08] bg-white/[0.03] text-zinc-500"
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-left text-[11px] font-bold uppercase tracking-wider transition-all duration-200 ${
+                          enabled 
+                            ? statusTone(platformStatus) 
+                            : "border-white/[0.04] bg-white/[0.02] text-zinc-600 hover:border-white/[0.08] hover:text-zinc-500"
                         } disabled:cursor-not-allowed disabled:opacity-50`}
                       >
                         {enabled ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                        {platformAction?.status === "running" ? "Updating..." : `${platformLabel(platform)} · ${enabled ? cleanPublishStatus(platformStatus) : "Off"}`}
+                        <span>
+                          {platformAction?.status === "running" ? "Syncing..." : `${platformLabel(platform)} · ${enabled ? cleanPublishStatus(platformStatus) : "Off"}`}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
-                {item.last_error ? <p className="mt-2 line-clamp-2 text-xs text-danger">{item.last_error}</p> : null}
+                {item.last_error ? (
+                  <p className="mt-3.5 text-xs leading-relaxed text-danger border-t border-danger/10 pt-2 flex items-start gap-1.5">
+                    <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>{item.last_error}</span>
+                  </p>
+                ) : null}
               </div>
-              <button
-                disabled={actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running"}
-                onClick={() => onUnschedule(item.candidate_id)}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/[0.10] px-4 py-2 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" ? "Removing..." : "Unschedule"}
-              </button>
+
+              <div className="flex justify-end md:justify-center">
+                <button
+                  type="button"
+                  disabled={actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running"}
+                  onClick={() => onUnschedule(item.candidate_id)}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/[0.10] bg-black/10 px-4 text-xs font-bold uppercase tracking-wider text-zinc-300 hover:bg-white/[0.05] hover:text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" && <Loader2 className="h-3 w-3 animate-spin" />}
+                  <span>{actionStates[`clip:${item.candidate_id}:unschedule`]?.status === "running" ? "Removing..." : "Unschedule"}</span>
+                </button>
+              </div>
             </div>
-          )) : renderEmptyState("No scheduled posts", "Approve clips first, then assign the next open slot.")}
+          )) : (
+            renderEmptyState("No scheduled posts found", "Approve pending clips inside the Workspace deck first, then assign them a release slot.")
+          )}
         </div>
       </div>
-      <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
-        <h3 className="text-lg font-semibold text-white">Approved clips</h3>
-        <p className="mt-1 text-sm text-zinc-400">Add approved clips to the next available workspace slot.</p>
-        <div className="mt-5 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-          <p className="text-sm font-semibold text-white">Default publish targets</p>
-          <p className="mt-1 text-xs leading-5 text-zinc-500">Used when you schedule a clip. You can still override each scheduled item.</p>
-          <div className="mt-3 grid gap-2">
+
+      {/* Sidebar Approved Clips Area */}
+      <div className="rounded-[32px] border border-white/[0.08] bg-surface/30 p-6 backdrop-blur-md xl:self-start">
+        <h3 className="text-lg font-semibold text-white tracking-[-0.02em] mb-1.5">
+          Approved <span className="font-editorial italic font-normal text-cyan">clips</span>
+        </h3>
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          These clips have been signed off. Slot them directly into the automated schedule timeline.
+        </p>
+
+        {/* Targets Switch Control Box */}
+        <div className="mt-6 rounded-[22px] border border-white/[0.06] bg-black/20 p-4">
+          <div className="flex items-center gap-1.5 mb-3">
+            <Settings2 className="h-4 w-4 text-cyan" />
+            <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Default Release Targets</p>
+          </div>
+          <p className="text-[11px] leading-relaxed text-zinc-500 mb-4">
+            New additions automatically inherit active targets.
+          </p>
+          <div className="grid gap-2">
             {targets.map((target) => {
               const active = selectedPlatforms.includes(target.platform);
               const targetState = actionStates[`target:${target.platform}`];
               return (
                 <div
                   key={target.platform}
-                  className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition ${
-                    active ? "border-cyan/[0.45] bg-teal/[0.14] text-cyan" : "border-white/[0.08] bg-black/20 text-zinc-500"
+                  className={`flex items-center justify-between rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition-all duration-300 ${
+                    active ? "border-cyan/[0.45] bg-cyan/[0.04] text-white" : "border-white/[0.04] bg-black/20 text-zinc-500"
                   }`}
                 >
-                  <span>{platformLabel(target.platform)}</span>
+                  <span className="text-xs tracking-tight">{platformLabel(target.platform)}</span>
                   <SwitchControl
                     checked={active}
                     disabled={targetState?.status === "running"}
@@ -175,26 +245,46 @@ export function CalendarSection({
             })}
           </div>
         </div>
-        <div className="mt-5 grid gap-3">
+
+        {/* Ready to Schedule Clips List */}
+        <div className="mt-6 grid gap-3">
+          <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 px-1">Waiting Pool</p>
           {approved.length ? approved.map((clip) => (
-            <div key={clip.id} className="rounded-[22px] border border-white/[0.08] bg-canvas-deep p-4">
-              <div className="flex items-start justify-between gap-3">
+            <div key={clip.id} className="group relative overflow-hidden rounded-[22px] border border-white/[0.05] bg-black/15 p-5 transition-all hover:border-white/[0.12] hover:bg-black/24">
+              <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-white">{clip.title_hook}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</p>
+                  <p className="truncate font-semibold text-sm text-white group-hover:text-cyan transition-colors">{clip.title_hook}</p>
+                  <p className="mt-1 text-xs text-zinc-500 tabular-nums">
+                    {formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}
+                  </p>
                 </div>
-                {renderScoreBubble(clip.score?.overall_score)}
+                <div className="shrink-0">
+                  {renderScoreBubble(clip.score?.overall_score)}
+                </div>
               </div>
+              
               <button
+                type="button"
                 disabled={actionStates[`clip:${clip.id}:schedule`]?.status === "running" || !selectedPlatforms.length}
                 onClick={() => onSchedule(clip.id)}
-                className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-cyan text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink transition-all hover:scale-[1.01] hover:shadow-[0_4px_12px_rgba(102,232,249,0.15)] disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? "Scheduling..." : selectedPlatforms.length ? "Schedule next slot" : "Turn on a target first"}
+                {actionStates[`clip:${clip.id}:schedule`]?.status === "running" ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>Scheduling...</span>
+                  </>
+                ) : (
+                  <>
+                    <Calendar className="h-3.5 w-3.5" />
+                    <span>{selectedPlatforms.length ? "Schedule Next Slot" : "Enable a target platform"}</span>
+                  </>
+                )}
               </button>
             </div>
-          )) : renderEmptyState("No approved clips", "Review and approve a rendered clip before scheduling.")}
+          )) : (
+            renderEmptyState("No approved clips ready", "Proceed to Review Workspace to sign off active clips.")
+          )}
         </div>
       </div>
     </section>

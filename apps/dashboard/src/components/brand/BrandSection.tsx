@@ -1,7 +1,7 @@
 "use client";
 
 import {useEffect, useMemo, useState} from "react";
-import {BadgeCheck, CheckCircle2, Layers3, Loader2, Palette, Sparkles} from "lucide-react";
+import {BadgeCheck, CheckCircle2, ChevronDown, Layers3, Loader2, Palette, Sparkles, Sliders, Settings2, Info} from "lucide-react";
 import {apiGet, apiPost, AutonomySettings, BrandTemplate, HyperframesCatalog, HyperframesTemplate, StyleProfile} from "@/lib/media-api";
 import {FocusModal} from "@/components/FocusModal";
 
@@ -116,9 +116,11 @@ export function BrandSection({
   const editorFromStyle = (source?: StyleProfile | null) => {
     const caption = source?.caption || {};
     const brand = source?.brand || {};
-    const starterTemplateRequest = window.localStorage.getItem("otonom.brandBuilderStarterTemplate");
+    const starterTemplateRequest = typeof window !== "undefined" ? window.localStorage.getItem("otonom.brandBuilderStarterTemplate") : null;
     const starterTemplate = starterTemplateRequest || "spiritual_reflective";
-    window.localStorage.removeItem("otonom.brandBuilderStarterTemplate");
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("otonom.brandBuilderStarterTemplate");
+    }
     return {
       fontFamily: String(caption.font_family || "Sora"),
       fontSize: Number(caption.font_size || 54),
@@ -145,7 +147,7 @@ export function BrandSection({
   const [templateBusy, setTemplateBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(Boolean(editor.openBuilder));
-  const [fontAvailability, setFontAvailability] = useState<"checking" | "available" | "fallback">("checking");
+  const [fontAvailability, setFontAvailability] = useState<"checking" | "available" | "fallback" >("checking");
   const selectedFontOption = useMemo(() => fontOptions.some((font) => font.value === editor.fontFamily) ? editor.fontFamily : "__custom", [editor.fontFamily]);
   const selectedStarter = hyperframesTemplates.find((template) => template.id === editor.starterTemplate);
   const productionReadyCount = hyperframesCatalog?.items.filter((item) => item.status === "production-ready").length || 0;
@@ -254,22 +256,29 @@ export function BrandSection({
 
   return (
     <>
-    <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-      <div className="min-w-0 overflow-hidden rounded-[28px] border border-white/[0.08] bg-surface">
-        <div className="border-b border-white/[0.08] bg-[radial-gradient(circle_at_10%_0%,rgba(108,226,238,.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,.035),transparent)] p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      {/* Brand Main Panel */}
+      <div className="min-w-0 overflow-hidden rounded-[32px] border border-white/[0.08] bg-surface/30 backdrop-blur-md">
+        <div className="border-b border-white/[0.08] bg-gradient-to-b from-cyan/[0.03] to-transparent p-6 sm:p-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-cyan">HyperFrames brand system</p>
-              <h3 className="mt-1 text-2xl font-semibold text-white">Brand System</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Choose a production brand direction. Open the builder only when customization is needed.</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">HyperFrames Brand System</p>
+              <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">
+                Brand <span className="font-editorial italic font-normal text-cyan">customizer</span>
+              </h3>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
+                Choose a production style direction. Tap any direction to apply its presets and load the visual brand builder workspace.
+              </p>
             </div>
-            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${saveState.toLowerCase().includes("failed") ? "border-danger/30 bg-danger/10 text-danger" : "border-cyan/[0.22] bg-teal/[0.08] text-cyan"}`}>
+            <span className={`rounded-full border px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider ${saveState.toLowerCase().includes("failed") ? "border-danger/30 bg-danger/10 text-danger" : "border-cyan/[0.25] bg-teal/[0.08] text-cyan"}`}>
               {saveState}
             </span>
           </div>
         </div>
-        <div className="grid gap-4 p-4 sm:p-5">
-          <div className="grid gap-3 md:grid-cols-3">
+
+        <div className="grid gap-6 p-6 sm:p-8">
+          {/* Custom Paint-Swatch Preset Selection */}
+          <div className="grid gap-4 md:grid-cols-3">
             {brandPresets.map((preset) => {
               const active = editor.starterTemplate === preset.starterTemplate && editor.motionIntensity === preset.motionIntensity;
               return (
@@ -277,31 +286,52 @@ export function BrandSection({
                   key={preset.id}
                   type="button"
                   onClick={() => applyPreset(preset)}
-                  className={`min-w-0 rounded-[24px] border p-5 text-left transition ${active ? "border-cyan/[0.45] bg-cyan/[0.10] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}
+                  className={`group relative flex flex-col justify-between min-h-[220px] rounded-[28px] border p-5 text-left transition-all duration-300 ${
+                    active 
+                      ? "border-cyan bg-cyan/[0.03] shadow-[0_12px_24px_rgba(98,238,248,0.06)]" 
+                      : "border-white/[0.06] bg-black/15 hover:border-white/[0.14] hover:bg-black/24"
+                  }`}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="grid h-11 w-11 place-items-center rounded-2xl bg-surface text-cyan">
-                      {preset.id === "editorial" ? <Sparkles className="h-5 w-5" /> : preset.id === "social" ? <Palette className="h-5 w-5" /> : <Layers3 className="h-5 w-5" />}
-                    </span>
-                    {active ? <CheckCircle2 className="h-4 w-4 text-cyan" /> : null}
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="grid h-10 w-10 place-items-center rounded-2xl bg-black/30 border border-white/5 text-cyan group-hover:scale-110 transition-transform">
+                        {preset.id === "editorial" ? <Sparkles className="h-5 w-5" /> : preset.id === "social" ? <Palette className="h-5 w-5" /> : <Layers3 className="h-5 w-5" />}
+                      </span>
+                      {active && (
+                        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-cyan shadow-[0_0_8px_rgba(98,238,248,0.5)]" />
+                      )}
+                    </div>
+                    <p className="mt-5 text-base font-bold text-white tracking-tight">{preset.label}</p>
+                    <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 group-hover:text-zinc-400 transition-colors line-clamp-2">{preset.note}</p>
                   </div>
-                  <p className="mt-5 text-lg font-semibold text-white">{preset.label}</p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-400">{preset.note}</p>
-                  <span className="mt-4 inline-flex rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">Open builder</span>
+
+                  {/* Brand Swatch/Paint-chip block */}
+                  <div className="mt-4 flex items-center justify-between pt-4 border-t border-white/[0.04]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-4 w-4 rounded-full border border-white/10" style={{backgroundColor: preset.backgroundColor}} title="Background color" />
+                      <span className="h-4 w-4 rounded-full border border-white/10" style={{backgroundColor: preset.highlightColor}} title="Highlight color" />
+                      <span className="text-[10px] font-semibold text-zinc-500 font-mono tracking-tight">{preset.fontFamily}</span>
+                    </div>
+                    <span className="text-[9px] uppercase font-bold tracking-wider text-cyan group-hover:translate-x-0.5 transition-transform">Customize →</span>
+                  </div>
                 </button>
               );
             })}
           </div>
 
-          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
+          {/* Saved Brand Templates */}
+          <div className="rounded-[28px] border border-white/[0.06] bg-black/15 p-5">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h4 className="font-semibold text-white">Saved brand templates</h4>
-                <p className="mt-1 text-sm text-zinc-500">Open a saved template only when you need to inspect or customize it.</p>
+                <h4 className="font-semibold text-white tracking-tight">Saved Brand System Templates</h4>
+                <p className="text-xs text-zinc-500 mt-0.5">Deploy or fine-tune historical customized layouts stored inside your local workspace.</p>
               </div>
-              <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{templates.length} saved</span>
+              <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-cyan self-start">
+                {templates.length} Saved Templates
+              </span>
             </div>
-            <div className="grid gap-2 md:grid-cols-2">
+            
+            <div className="grid gap-3 md:grid-cols-2">
               {templates.length ? templates.map((template) => (
                 <button
                   key={template.id}
@@ -310,87 +340,114 @@ export function BrandSection({
                     void loadTemplate(template.path);
                     setBuilderOpen(true);
                   }}
-                  className="flex min-w-0 items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3 text-left text-zinc-200 transition hover:bg-surface-raised"
+                  className="group flex min-w-0 items-center justify-between gap-4 rounded-2xl border border-white/[0.05] bg-surface/30 p-4 text-left text-zinc-200 transition-all duration-200 hover:border-cyan/[0.20] hover:bg-surface/50 hover:-translate-y-0.5"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">{template.label}</span>
-                    <span className="mt-1 block truncate text-xs text-zinc-500">Saved Brand System Template</span>
+                    <span className="block truncate text-sm font-semibold text-white group-hover:text-cyan transition-colors">{template.label}</span>
+                    <span className="mt-1 block truncate text-[11px] text-zinc-500 uppercase tracking-wider font-bold">Workspace Style</span>
                   </span>
-                  <Sparkles className="h-4 w-4 shrink-0 text-cyan" />
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-black/20 text-zinc-500 group-hover:text-cyan group-hover:bg-cyan/10 transition-colors">
+                    <Sparkles className="h-4 w-4" />
+                  </span>
                 </button>
-              )) : <EmptyState text="No style templates found." />}
+              )) : <div className="col-span-2"><EmptyState text="No customized style files stored in library yet." /></div>}
             </div>
           </div>
         </div>
       </div>
 
-      <aside className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 sm:p-5 xl:self-start">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Automation guardrails</p>
-            <h4 className="mt-1 text-xl font-semibold text-white">Publishing autonomy</h4>
-            <p className="mt-1 text-sm leading-6 text-zinc-400">Assisted mode gives you {autonomy?.review_grace_hours || 12}h to approve before high-score clips enter the schedule queue.</p>
+      {/* Sidebar Automation Panel */}
+      <aside className="min-w-0 rounded-[32px] border border-white/[0.08] bg-surface/30 p-6 backdrop-blur-md xl:self-start">
+        <div className="flex flex-col gap-3 pb-5 border-b border-white/[0.06]">
+          <div className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-cyan" />
+            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Automation Guardrails</p>
           </div>
-          <span className="rounded-full border border-cyan/[0.18] bg-teal/[0.08] px-3 py-1 text-xs font-semibold capitalize text-cyan">{autonomy?.autonomy_mode || "off"}</span>
+          <h4 className="text-lg font-semibold text-white tracking-[-0.02em]">
+            Publishing <span className="font-editorial italic font-normal text-cyan">autonomy</span>
+          </h4>
+          <p className="text-xs text-zinc-400 leading-relaxed">
+            Configure how aggressively autonomy routines schedule your content pipeline. Assisted mode waits {autonomy?.review_grace_hours || 12}h for manual confirmation before publishing.
+          </p>
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
-          {["off", "assisted", "full"].map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              disabled={Boolean(autonomyBusy)}
-              onClick={() => onAutonomyMode(mode)}
-              className={`inline-flex items-center justify-center gap-2 rounded-full px-3 py-2 text-sm font-semibold capitalize disabled:cursor-not-allowed disabled:opacity-50 ${autonomy?.autonomy_mode === mode ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
-            >
-              {actionStates[`autonomy:${mode}`]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              {actionStates[`autonomy:${mode}`]?.status === "running" ? "Saving..." : mode}
-            </button>
-          ))}
+
+        {/* Satisfying capsule pills choice */}
+        <div className="mt-5 p-1 rounded-full border border-white/[0.08] bg-black/32 grid grid-cols-3">
+          {["off", "assisted", "full"].map((mode) => {
+            const active = autonomy?.autonomy_mode === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                disabled={Boolean(autonomyBusy)}
+                onClick={() => onAutonomyMode(mode)}
+                className={`relative py-2.5 text-xs font-bold uppercase tracking-wider rounded-full transition-all ${
+                  active 
+                    ? "bg-cyan text-ink shadow-[0_4px_12px_rgba(102,232,249,0.2)]" 
+                    : "text-zinc-500 hover:text-zinc-200"
+                }`}
+              >
+                {actionStates[`autonomy:${mode}`]?.status === "running" && (
+                  <span className="absolute inset-0 flex items-center justify-center bg-cyan rounded-full">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-ink" />
+                  </span>
+                )}
+                {mode}
+              </button>
+            );
+          })}
         </div>
-        {autonomyBusy ? <p className="mt-3 text-xs font-medium text-cyan">{autonomyBusy.message}</p> : null}
-        <div className="mt-4 grid gap-2">
-          <ReadinessMini ready={Boolean(selectedStarter)} label="Starter" value={selectedStarter?.label || editor.starterTemplate} />
-          <ReadinessMini ready={productionReadyCount > 0} label="Catalog" value={`${productionReadyCount} production-ready`} />
-          <ReadinessMini ready={fontAvailability === "available"} label="Font" value={fontAvailability === "available" ? "Available" : "Fallback ready"} />
-          <ReadinessMini ready={Boolean(autonomy?.auto_schedule_enabled)} label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
+        
+        {autonomyBusy && (
+          <p className="mt-3.5 text-xs font-medium text-cyan flex items-center gap-1.5 justify-center">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>{autonomyBusy.message}</span>
+          </p>
+        )}
+
+        <div className="mt-5 grid gap-2">
+          <ReadinessMini ready={Boolean(selectedStarter)} label="Starter Template" value={selectedStarter?.label || editor.starterTemplate} />
+          <ReadinessMini ready={productionReadyCount > 0} label="Catalog Assets" value={`${productionReadyCount} active slots`} />
+          <ReadinessMini ready={fontAvailability === "available"} label="Device Font Status" value={fontAvailability === "available" ? "Font fully loaded" : "Fallback active"} />
+          <ReadinessMini ready={Boolean(autonomy?.auto_schedule_enabled)} label="Scheduled Pipelines" value={autonomy?.auto_schedule_enabled ? "Auto Schedule On" : "Auto Schedule Off"} />
         </div>
       </aside>
     </section>
 
+    {/* Custom Brand Builder Modal Redesign with physical mockup */}
     <FocusModal
       open={builderOpen}
       title="Brand Builder"
-      subtitle="Customize the selected brand direction, preview it, then save it as a reusable HyperFrames Brand System Template."
+      subtitle="Refine aesthetic typography, custom colors, watermarks, and components in real time."
       width="max"
       onClose={() => setBuilderOpen(false)}
     >
-    <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-      <div className="min-w-0 overflow-hidden rounded-[28px] border border-white/[0.08] bg-surface">
-        <div className="border-b border-white/[0.08] bg-[radial-gradient(circle_at_10%_0%,rgba(108,226,238,.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,.035),transparent)] p-4 sm:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-cyan">HyperFrames brand system</p>
-              <h3 className="mt-1 text-2xl font-semibold text-white">Brand System</h3>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Create reusable brand templates from HyperFrames-ready slots instead of raw renderer configuration.</p>
+    <section className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="min-w-0 overflow-hidden rounded-[32px] border border-white/[0.08] bg-surface/30 backdrop-blur-md">
+        <div className="border-b border-white/[0.08] bg-gradient-to-b from-cyan/[0.03] to-transparent p-5 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Interactive Sandbox</p>
+              <h3 className="mt-1.5 text-2xl font-semibold text-white tracking-tight">Style Customizer</h3>
             </div>
-            <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${saveState.toLowerCase().includes("failed") ? "border-danger/30 bg-danger/10 text-danger" : "border-cyan/[0.22] bg-teal/[0.08] text-cyan"}`}>
+            <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-cyan">
               {saveState}
             </span>
           </div>
         </div>
 
-        <div className="grid gap-4 p-4 sm:p-5">
-          <div className="rounded-[24px] border border-cyan/[0.18] bg-teal/[0.07] p-4">
+        <div className="grid gap-5 p-5 sm:p-6">
+          <div className="rounded-[26px] border border-cyan/[0.14] bg-cyan/[0.02] p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Production setup</p>
-                <h4 className="mt-1 text-xl font-semibold text-white">Choose the brand direction</h4>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">Pick an intent preset, name it, then save. Detailed HyperFrames slots stay available when the brand needs precision.</p>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Direction settings</p>
+                <h4 className="mt-1 text-lg font-semibold text-white">Preset Reference</h4>
+                <p className="text-xs text-zinc-500 mt-1 leading-relaxed">Customize starting point vectors. Your specific overrides take priority on template save.</p>
               </div>
               {templateBusy ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan" /> : <BadgeCheck className="h-5 w-5 shrink-0 text-cyan" />}
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
               {brandPresets.map((preset) => {
                 const active = editor.starterTemplate === preset.starterTemplate && editor.motionIntensity === preset.motionIntensity;
                 return (
@@ -398,65 +455,61 @@ export function BrandSection({
                     key={preset.id}
                     type="button"
                     onClick={() => applyPreset(preset)}
-                    className={`min-w-0 rounded-[22px] border p-4 text-left transition ${active ? "border-cyan/[0.45] bg-cyan/[0.10] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}
+                    className={`min-w-0 rounded-[22px] border p-4 text-left transition ${active ? "border-cyan/[0.45] bg-cyan/[0.10]" : "border-white/[0.06] bg-black/15 hover:border-white/[0.12]"}`}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="grid h-10 w-10 place-items-center rounded-2xl bg-surface text-cyan">
-                        {preset.id === "editorial" ? <Sparkles className="h-5 w-5" /> : preset.id === "social" ? <Palette className="h-5 w-5" /> : <Layers3 className="h-5 w-5" />}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="grid h-8 w-8 place-items-center rounded-xl bg-black/20 text-cyan">
+                        {preset.id === "editorial" ? <Sparkles className="h-3.5 w-3.5" /> : preset.id === "social" ? <Palette className="h-3.5 w-3.5" /> : <Layers3 className="h-3.5 w-3.5" />}
                       </span>
-                      {active ? <CheckCircle2 className="h-4 w-4 text-cyan" /> : null}
+                      {active ? <CheckCircle2 className="h-3.5 w-3.5 text-cyan" /> : null}
                     </div>
-                    <p className="mt-4 font-semibold text-white">{preset.label}</p>
-                    <p className="mt-2 text-xs leading-5 text-zinc-400">{preset.note}</p>
+                    <p className="mt-4 text-sm font-bold text-white truncate">{preset.label}</p>
                   </button>
                 );
               })}
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <label className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
-                Template name
-                <input value={label} onChange={(event) => setLabel(event.target.value)} className="h-12 min-w-0 rounded-2xl border border-white/[0.08] bg-surface px-4 text-sm text-zinc-200 outline-none focus:border-cyan/[0.35]" />
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="grid min-w-0 gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Template Label
+                <input value={label} onChange={(event) => setLabel(event.target.value)} className="h-11 min-w-0 rounded-2xl border border-white/[0.08] bg-black/20 px-3.5 text-sm text-zinc-200 outline-none focus:border-cyan/[0.35]" />
               </label>
-              <label className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
-                Base style file
-                <select
-                  value={selectedTemplate}
-                  disabled={templateBusy}
-                  onChange={(event) => void loadTemplate(event.target.value)}
-                  className="h-12 min-w-0 rounded-2xl border border-white/[0.08] bg-surface px-4 text-sm font-semibold text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {(templates.length ? templates : [{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}]).map((template) => (
-                    <option key={template.id} value={template.path}>{template.label}</option>
-                  ))}
-                </select>
+              <label className="grid min-w-0 gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                Baseline Style File
+                <div className="relative flex items-center">
+                  <select
+                    value={selectedTemplate}
+                    disabled={templateBusy}
+                    onChange={(event) => void loadTemplate(event.target.value)}
+                    className="h-11 w-full appearance-none cursor-pointer rounded-2xl border border-white/[0.08] bg-black/20 pl-3.5 pr-10 text-sm font-semibold text-white outline-none focus:border-cyan/[0.35] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {(templates.length ? templates : [{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}]).map((template) => (
+                      <option key={template.id} value={template.path} className="bg-[#17171a] text-white">{template.label}</option>
+                    ))}
+                  </select>
+                  <span className="absolute right-3.5 pointer-events-none text-zinc-500">
+                    <ChevronDown className="h-4 w-4" />
+                  </span>
+                </div>
               </label>
-            </div>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              <ReadinessMini ready={Boolean(selectedStarter)} label="Starter" value={selectedStarter?.label || editor.starterTemplate} />
-              <ReadinessMini ready={productionReadyCount > 0} label="Catalog" value={`${productionReadyCount} production-ready`} />
-              <ReadinessMini ready={fontAvailability === "available"} label="Font" value={fontAvailability === "available" ? "Available" : "Fallback ready"} />
             </div>
           </div>
 
-          <details className="group rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+          <details className="group rounded-[26px] border border-white/[0.06] bg-black/15 p-5">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
               <span>
-                <span className="block font-semibold text-white">Advanced slot customization</span>
-                <span className="mt-1 block text-sm text-zinc-500">Use only when the preset needs typography, caption, CTA, or transition changes.</span>
+                <span className="block font-semibold text-white">Fine-tune individual slots</span>
+                <span className="mt-1 block text-xs text-zinc-500">Control typography, Karaoke overlays, transitions, and lower thirds directly.</span>
               </span>
-              <span className="rounded-full border border-white/[0.08] bg-surface px-3 py-1 text-xs font-semibold text-zinc-400">{editor.fontSize}px · {editor.motionIntensity}</span>
+              <span className="rounded-full border border-white/[0.08] bg-surface px-3 py-1.5 text-xs font-semibold text-zinc-400">{editor.fontSize}px · {editor.motionIntensity}</span>
             </summary>
-            <div className="mt-4 grid gap-5">
+            <div className="mt-5 grid gap-6">
               <div>
-                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Visual identity</p>
-                    <h4 className="mt-1 font-semibold text-white">Caption and watermark</h4>
-                  </div>
+                <div className="mb-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Aesthetic specs</p>
+                  <h4 className="font-semibold text-white mt-1">Watermark & Caption overlay</h4>
                 </div>
-                <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+                <div className="grid min-w-0 gap-4 lg:grid-cols-2">
                   <FontField
                     value={editor.fontFamily}
                     selectedOption={selectedFontOption}
@@ -470,28 +523,28 @@ export function BrandSection({
                   <ColorField label="Caption background" value={editor.backgroundColor} onChange={(value) => updateEditor({backgroundColor: value})} />
                   <NumberField label="Stroke width" value={editor.strokeWidth} min={0} max={16} onChange={(value) => updateEditor({strokeWidth: value})} />
                 </div>
-                <div className="mt-3 rounded-[20px] border border-white/[0.08] bg-surface p-3">
-                  <TextField label="Watermark text" value={editor.watermarkText} onChange={(value) => updateEditor({watermarkText: value})} />
+                <div className="mt-4 rounded-[20px] border border-white/[0.04] bg-black/20 p-3.5">
+                  <TextField label="Watermark Text" value={editor.watermarkText} onChange={(value) => updateEditor({watermarkText: value})} />
                 </div>
               </div>
 
-              <div>
+              <div className="border-t border-white/[0.04] pt-5">
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-cyan">HyperFrames slots</p>
-                    <h4 className="mt-1 font-semibold text-white">Components and motion</h4>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Engine instructions</p>
+                    <h4 className="font-semibold text-white mt-1">Component Layout Slots</h4>
                   </div>
-                  <span className="rounded-full border border-teal/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-teal">{productionReadyCount} production-ready</span>
+                  <span className="rounded-full border border-teal/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-bold uppercase tracking-wider text-teal">{productionReadyCount} slots active</span>
                 </div>
-                <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+                <div className="grid min-w-0 gap-4 lg:grid-cols-2">
                   <SelectField
-                    label="HyperFrames starter"
+                    label="Starter template"
                     value={editor.starterTemplate}
                     options={(hyperframesTemplates.length ? hyperframesTemplates : [{id: "spiritual_reflective", label: "Spiritual Reflective"} as HyperframesTemplate]).map((template) => ({value: template.id, label: template.label}))}
                     onChange={(value) => updateEditor({starterTemplate: value})}
                   />
                   <SelectField
-                    label="Motion intensity"
+                    label="Motion Intensity"
                     value={editor.motionIntensity}
                     options={[
                       {value: "calm", label: "Calm"},
@@ -500,135 +553,93 @@ export function BrandSection({
                     ]}
                     onChange={(value) => updateEditor({motionIntensity: value})}
                   />
-                  <SelectField label="Caption style" value={editor.captionStyle} options={catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"])} onChange={(value) => updateEditor({captionStyle: value})} />
-                  <SelectField label="Texture/effect" value={editor.textureEffect} options={catalogOptions(hyperframesCatalog, "Texture/effects", ["vignette", "grain-overlay", "shimmer-sweep"])} onChange={(value) => updateEditor({textureEffect: value})} />
-                  <SelectField label="CTA/social overlay" value={editor.ctaOverlay} options={catalogOptions(hyperframesCatalog, "Social overlays", ["yt-lower-third", "instagram-follow", "tiktok-follow"])} onChange={(value) => updateEditor({ctaOverlay: value})} />
-                  <SelectField label="Transition family" value={editor.transitionFamily} options={[{value: "dissolve", label: "Dissolve"}, {value: "push", label: "Push"}, {value: "zoom", label: "Zoom"}, {value: "whip-pan", label: "Whip Pan"}]} onChange={(value) => updateEditor({transitionFamily: value})} />
-                  <SelectField label="Intro/hook layout" value={editor.introLayout} options={[{value: "editorial-hook", label: "Editorial hook"}, {value: "lower-third-hook", label: "Lower-third hook"}, {value: "data-callout", label: "Data callout"}, {value: "headline-slam", label: "Headline slam"}]} onChange={(value) => updateEditor({introLayout: value})} />
+                  <SelectField label="Caption Overlays" value={editor.captionStyle} options={catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"])} onChange={(value) => updateEditor({captionStyle: value})} />
+                  <SelectField label="Texture overlays" value={editor.textureEffect} options={catalogOptions(hyperframesCatalog, "Texture/effects", ["vignette", "grain-overlay", "shimmer-sweep"])} onChange={(value) => updateEditor({textureEffect: value})} />
+                  <SelectField label="Social callouts" value={editor.ctaOverlay} options={catalogOptions(hyperframesCatalog, "Social overlays", ["yt-lower-third", "instagram-follow", "tiktok-follow"])} onChange={(value) => updateEditor({ctaOverlay: value})} />
+                  <SelectField label="Transitions" value={editor.transitionFamily} options={[{value: "dissolve", label: "Dissolve"}, {value: "push", label: "Push"}, {value: "zoom", label: "Zoom"}, {value: "whip-pan", label: "Whip Pan"}]} onChange={(value) => updateEditor({transitionFamily: value})} />
+                  <SelectField label="Hooks & intro" value={editor.introLayout} options={[{value: "editorial-hook", label: "Editorial hook"}, {value: "lower-third-hook", label: "Lower-third hook"}, {value: "data-callout", label: "Data callout"}, {value: "headline-slam", label: "Headline slam"}]} onChange={(value) => updateEditor({introLayout: value})} />
                 </div>
               </div>
             </div>
           </details>
 
-          <div className="rounded-[24px] border border-cyan/[0.18] bg-teal/[0.08] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="rounded-[26px] border border-cyan/[0.18] bg-teal/[0.08] p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-cyan">Step 4</p>
-                <h4 className="mt-1 font-semibold text-white">Save template for production</h4>
-                <p className="mt-1 text-sm text-zinc-400">Saved Brand System Templates appear in Templates and Generate.</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Aesthetic Release</p>
+                <h4 className="font-semibold text-white mt-1">Deploy changes</h4>
+                <p className="text-xs text-zinc-500 mt-1 max-w-sm leading-relaxed">Save customized variables as a workspace template, making them immediately available in Creation.</p>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <button data-autofocus type="button" disabled={saveBusy || templateBusy} onClick={saveTemplate} className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-3 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-50">
+              <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-center">
+                <button data-autofocus type="button" disabled={saveBusy || templateBusy} onClick={saveTemplate} className="inline-flex h-11 items-center gap-1.5 rounded-full bg-cyan px-5 text-xs font-bold uppercase tracking-wider text-ink disabled:cursor-not-allowed disabled:opacity-50 shadow-[0_8px_16px_rgba(102,232,249,0.15)]">
                   {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {saveBusy ? "Saving..." : "Save template"}
+                  {saveBusy ? "Saving..." : "Save Template"}
                 </button>
-                <button type="button" disabled={saveBusy || templateBusy} onClick={() => void loadTemplate(selectedTemplate)} className="inline-flex items-center gap-2 rounded-full border border-white/[0.10] px-5 py-3 text-sm font-semibold text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="button" disabled={saveBusy || templateBusy} onClick={() => void loadTemplate(selectedTemplate)} className="inline-flex h-11 items-center gap-1.5 rounded-full border border-white/[0.10] px-5 text-xs font-bold uppercase tracking-wider text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">
                   {templateBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {templateBusy ? "Loading..." : "Reset to base"}
+                  {templateBusy ? "Reset" : "Reset Base"}
                 </button>
               </div>
-            </div>
-          </div>
-
-          <details className="group rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-              <span>
-                <span className="block font-semibold text-white">Saved template library</span>
-                <span className="mt-1 block text-sm text-zinc-500">Open only when you need to inspect or switch saved style files.</span>
-              </span>
-              <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{templates.length} saved</span>
-            </summary>
-            <div className="mt-3 grid gap-2">
-              {templates.length ? templates.map((template) => (
-                <button
-                  key={template.id}
-                  type="button"
-                  onClick={() => void loadTemplate(template.path)}
-                  className={`flex min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition ${selectedTemplate === template.path ? "bg-teal/[0.14] text-cyan ring-1 ring-cyan/[0.26]" : "bg-surface text-zinc-200 hover:bg-surface-raised"}`}
-                >
-                  <span className="min-w-0">
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="truncate text-sm font-semibold">{template.label}</span>
-                      {selectedTemplate === template.path ? <span className="rounded-full border border-cyan/[0.22] bg-cyan/[0.08] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan">Active base</span> : null}
-                    </span>
-                    <span className="mt-1 block truncate text-xs text-zinc-500">Saved Brand System Template</span>
-                  </span>
-                  {selectedTemplate === template.path ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : null}
-                </button>
-              )) : <EmptyState text="No style templates found." />}
-            </div>
-          </details>
-
-          <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Automation guardrails</p>
-                <h4 className="mt-1 font-semibold text-white">Publishing autonomy</h4>
-                <p className="mt-1 text-sm leading-6 text-zinc-400">Assisted mode gives you {autonomy?.review_grace_hours || 12}h to approve before high-score clips enter the schedule queue.</p>
-              </div>
-              <span className="rounded-full border border-cyan/[0.18] bg-teal/[0.08] px-3 py-1 text-xs font-semibold capitalize text-cyan">{autonomy?.autonomy_mode || "off"}</span>
-            </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              {["off", "assisted", "full"].map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  disabled={Boolean(autonomyBusy)}
-                  onClick={() => onAutonomyMode(mode)}
-                  className={`inline-flex items-center justify-center gap-2 rounded-full px-3 py-2 text-sm font-semibold capitalize disabled:cursor-not-allowed disabled:opacity-50 ${autonomy?.autonomy_mode === mode ? "bg-cyan text-ink" : "border border-white/[0.10] text-zinc-300"}`}
-                >
-                  {actionStates[`autonomy:${mode}`]?.status === "running" ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-                  {actionStates[`autonomy:${mode}`]?.status === "running" ? "Saving..." : mode}
-                </button>
-              ))}
-            </div>
-            {autonomyBusy ? <p className="mt-3 text-xs font-medium text-cyan">{autonomyBusy.message}</p> : null}
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <ReadinessMini ready={Boolean(autonomy?.review_grace_hours)} label="Review window" value={`${autonomy?.review_grace_hours || 12}h`} />
-              <ReadinessMini ready={Boolean(autonomy?.auto_schedule_enabled)} label="Auto schedule" value={autonomy?.auto_schedule_enabled ? "On" : "Off"} />
-              <ReadinessMini ready label="Overall gate" value={autonomy?.overall_threshold || 82} />
-              <ReadinessMini ready label="Caption gate" value={autonomy?.caption_threshold || 90} />
             </div>
           </div>
         </div>
       </div>
 
-      <aside className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 sm:p-5 xl:sticky xl:top-24 xl:self-start">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      {/* Live Preview Modal aside with high-fidelity physical phone mockup */}
+      <aside className="min-w-0 rounded-[32px] border border-white/[0.08] bg-surface/30 p-5 sm:p-6 xl:sticky xl:top-0 xl:self-start">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
           <div className="min-w-0">
-            <h3 className="text-xl font-semibold text-white">Live preview</h3>
-            <p className="mt-1 text-sm text-zinc-500">Instant browser preview, no render needed.</p>
+            <h3 className="text-lg font-semibold text-white tracking-tight">Interactive sandbox</h3>
+            <p className="text-xs text-zinc-500 mt-0.5">Real-time local CSS canvas preview</p>
           </div>
           <span className="rounded-full border border-cyan/[0.18] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">9:16</span>
         </div>
-        <div className="mt-4 mx-auto flex aspect-[9/16] max-h-[620px] w-full max-w-[350px] flex-col justify-between overflow-hidden rounded-[28px] border border-white/[0.10] bg-[radial-gradient(circle_at_50%_20%,rgba(108,226,238,.18),transparent_34%),linear-gradient(180deg,#31343a,#111214_68%)] p-7 shadow-glow">
-          <div>
-            <p className="text-center text-3xl font-black leading-tight text-white drop-shadow-lg">Your strongest hook goes here</p>
-            <p className="mx-auto mt-3 max-w-[260px] text-center text-sm font-semibold leading-5 text-zinc-200">A reusable brand system for clips, explainers, promos, and social highlights.</p>
-          </div>
-          <div className="grid gap-5">
-            <div
-              className="mx-auto max-w-full rounded-xl px-5 py-3 text-center font-black leading-none shadow-lg"
-              style={{
-                background: editor.backgroundColor,
-                color: editor.textColor,
-                fontFamily: editor.fontFamily,
-                fontSize: `${Math.min(editor.fontSize, 46)}px`,
-                WebkitTextStroke: `${editor.strokeWidth / 2}px #000`,
-              }}
-            >
-              <span style={{color: editor.highlightColor}}>Sharp</span> key moment
+
+        {/* Premium Hardware-inspired Physical Phone Mockup */}
+        <div className="relative mx-auto max-w-[320px] w-full bg-[#0a0a0c] rounded-[44px] p-2.5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),_inset_0_1px_2px_rgba(255,255,255,0.1),_inset_0_-1px_2px_rgba(0,0,0,0.8)] border border-white/[0.04]">
+          {/* Hardware buttons */}
+          <div className="absolute left-[-2px] top-18 h-8 w-[2px] bg-zinc-800 rounded-l-sm" />
+          <div className="absolute left-[-2px] top-28 h-6 w-[2px] bg-zinc-800 rounded-l-sm" />
+          <div className="absolute right-[-2px] top-22 h-11 w-[2px] bg-zinc-800 rounded-r-sm" />
+
+          {/* Curved bezel container */}
+          <div className="relative flex aspect-[9/16] max-h-[520px] w-full flex-col justify-between overflow-hidden rounded-[34px] bg-[radial-gradient(circle_at_50%_20%,rgba(108,226,238,.18),transparent_34%),linear-gradient(180deg,#24262c,#0a0a0c_68%)] p-6 shadow-inner ring-1 ring-white/[0.06]">
+            
+            {/* Camera island */}
+            <div className="absolute top-2 left-1/2 z-20 h-5 w-20 -translate-x-1/2 rounded-full bg-black/90 border border-white/5 flex items-center justify-center gap-1 px-2.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-[#0d1020] ring-[0.5px] ring-white/10" />
+              <div className="h-0.5 flex-1 rounded-full bg-zinc-800" />
             </div>
-            <div className="flex items-center justify-between text-xs font-semibold">
-              <span className="text-white">{editor.watermarkText}</span>
-              <span style={{color: editor.highlightColor}}>Source: Brand channel</span>
+
+            <div className="mt-3">
+              <p className="text-center text-2xl font-black leading-tight text-white drop-shadow-lg tracking-tight">Your strongest hook goes here</p>
+              <p className="mx-auto mt-2 max-w-[200px] text-center text-[10px] font-semibold leading-relaxed text-zinc-300">A reusable brand system for clips, explainers, and socials.</p>
+            </div>
+            <div className="grid gap-4">
+              <div
+                className="mx-auto max-w-full rounded-xl px-4 py-2.5 text-center font-black leading-none shadow-lg"
+                style={{
+                  background: editor.backgroundColor,
+                  color: editor.textColor,
+                  fontFamily: editor.fontFamily,
+                  fontSize: `${Math.min(editor.fontSize - 12, 36)}px`,
+                  WebkitTextStroke: `${editor.strokeWidth / 2.5}px #000`,
+                }}
+              >
+                <span style={{color: editor.highlightColor}}>Sharp</span> key moment
+              </div>
+              <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
+                <span>{editor.watermarkText}</span>
+                <span style={{color: editor.highlightColor}}>Active: Brand preset</span>
+              </div>
             </div>
           </div>
         </div>
-        <div className="mt-4 grid gap-2 rounded-[22px] border border-white/[0.08] bg-canvas-deep p-3 text-xs">
-          <PreviewSpec label="Font" value={editor.fontFamily} />
-          <PreviewSpec label="Caption" value={`${editor.fontSize}px / stroke ${editor.strokeWidth}px`} />
-          <PreviewSpec label="Watermark" value={editor.watermarkText || "None"} />
+
+        <div className="mt-5 grid gap-2 rounded-[22px] border border-white/[0.06] bg-black/20 p-3.5 text-xs">
+          <PreviewSpec label="Font Family" value={editor.fontFamily} />
+          <PreviewSpec label="Caption Preset" value={`${editor.fontSize}px / stroke ${editor.strokeWidth}px`} />
+          <PreviewSpec label="Channel Label" value={editor.watermarkText || "None"} />
         </div>
       </aside>
     </section>
@@ -639,7 +650,7 @@ export function BrandSection({
 
 function PreviewSpec({label, value}: {label: string; value: string}) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl bg-surface px-3 py-2">
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-surface/50 px-3 py-2">
       <span className="text-zinc-500">{label}</span>
       <span className="min-w-0 truncate font-semibold text-zinc-200">{value}</span>
     </div>
@@ -654,34 +665,43 @@ function catalogOptions(catalog: HyperframesCatalog | null, category: string, fa
 
 function SelectField({label, value, options, onChange}: {label: string; value: string; options: {value: string; label: string}[]; onChange: (value: string) => void}) {
   return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <label className="grid gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
       {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]">
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
+      <div className="relative flex items-center">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 w-full appearance-none cursor-pointer rounded-2xl border border-white/[0.08] bg-black/20 pl-3 pr-10 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value} className="bg-[#17171a] text-white">{option.label}</option>
+          ))}
+        </select>
+        <span className="absolute right-3.5 pointer-events-none text-zinc-500">
+          <ChevronDown className="h-4 w-4" />
+        </span>
+      </div>
     </label>
   );
 }
 
 function ReadinessMini({ready, label, value}: {ready: boolean; label: string; value: string | number}) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-[18px] border border-white/[0.08] bg-canvas-deep p-4">
+    <div className="flex items-center justify-between gap-3 rounded-[20px] border border-white/[0.06] bg-black/15 p-3.5">
       <div className="min-w-0">
-        <p className="text-xs text-zinc-500">{label}</p>
-        <p className="mt-1 truncate text-sm font-semibold text-white">{value}</p>
+        <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">{label}</p>
+        <p className="mt-1 truncate text-xs font-semibold text-white">{value}</p>
       </div>
-      <CheckCircle2 className={ready ? "h-4 w-4 shrink-0 text-cyan" : "h-4 w-4 shrink-0 text-zinc-600"} />
+      <CheckCircle2 className={ready ? "h-4 w-4 shrink-0 text-cyan" : "h-4 w-4 shrink-0 text-zinc-700"} />
     </div>
   );
 }
 
 function TextField({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
   return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <label className="grid gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
       {label}
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
+      <input value={value} onChange={(event) => onChange(event.target.value)} className="h-11 rounded-2xl border border-white/[0.08] bg-black/20 px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
     </label>
   );
 }
@@ -700,28 +720,33 @@ function FontField({
   onCustom: (value: string) => void;
 }) {
   const availabilityLabel =
-    availability === "checking" ? "Checking font..." : availability === "available" ? "Available on this device" : "Will use renderer/browser fallback";
+    availability === "checking" ? "Checking..." : availability === "available" ? "Fully loaded" : "Fallback active";
   return (
-    <div className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-      Font family
-      <select
-        value={selectedOption}
-        onChange={(event) => onSelect(event.target.value)}
-        className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
-      >
-        {fontOptions.map((font) => (
-          <option key={font.value} value={font.value}>{font.label} - {font.note}</option>
-        ))}
-      </select>
+    <div className="grid gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+      Font Family
+      <div className="relative flex items-center">
+        <select
+          value={selectedOption}
+          onChange={(event) => onSelect(event.target.value)}
+          className="h-11 w-full appearance-none cursor-pointer rounded-2xl border border-white/[0.08] bg-black/20 pl-3 pr-10 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
+        >
+          {fontOptions.map((font) => (
+            <option key={font.value} value={font.value} className="bg-[#17171a] text-white">{font.label} - {font.note}</option>
+          ))}
+        </select>
+        <span className="absolute right-3.5 pointer-events-none text-zinc-500">
+          <ChevronDown className="h-4 w-4" />
+        </span>
+      </div>
       {selectedOption === "__custom" ? (
         <input
           value={value}
           onChange={(event) => onCustom(event.target.value)}
           placeholder="Exact installed font name"
-          className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
+          className="h-11 rounded-2xl border border-white/[0.08] bg-black/20 px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
         />
       ) : null}
-      <span className={availability === "available" ? "text-cyan" : availability === "checking" ? "text-zinc-500" : "text-warning"}>
+      <span className={`text-[10px] font-bold uppercase mt-1 ${availability === "available" ? "text-cyan" : availability === "checking" ? "text-zinc-500" : "text-warning"}`}>
         {availabilityLabel}
       </span>
     </div>
@@ -730,19 +755,19 @@ function FontField({
 
 function NumberField({label, value, min, max, onChange}: {label: string; value: number; min: number; max: number; onChange: (value: number) => void}) {
   return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <label className="grid gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
       {label}
-      <input type="number" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} className="h-11 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
+      <input type="number" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} className="h-11 rounded-2xl border border-white/[0.08] bg-black/20 px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]" />
     </label>
   );
 }
 
 function ColorField({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
   return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <label className="grid gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
       {label}
-      <div className="flex h-11 items-center gap-2 rounded-2xl border border-white/[0.08] bg-canvas-deep px-3 focus-within:border-cyan/[0.35]">
-        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-7 w-8 rounded border-0 bg-transparent p-0" />
+      <div className="flex h-11 items-center gap-2.5 rounded-2xl border border-white/[0.08] bg-black/20 px-3 focus-within:border-cyan/[0.35] transition-colors">
+        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-6 w-8 rounded border-0 bg-transparent p-0 cursor-pointer" />
         <input value={value} onChange={(event) => onChange(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold normal-case tracking-normal text-white outline-none" />
       </div>
     </label>
@@ -751,7 +776,7 @@ function ColorField({label, value, onChange}: {label: string; value: string; onC
 
 function EmptyState({text}: {text: string}) {
   return (
-    <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center text-sm text-zinc-500">
+    <div className="grid min-h-[140px] place-items-center rounded-[24px] border border-dashed border-white/[0.08] bg-black/15 p-6 text-center text-sm text-zinc-500 leading-relaxed">
       {text}
     </div>
   );

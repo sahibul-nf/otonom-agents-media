@@ -199,6 +199,59 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
 };
 
+function renderEditorialTitle(title: string) {
+  if (title === "Command Center") {
+    return (
+      <>
+        <span className="font-editorial italic font-normal text-cyan">Command</span> Center
+      </>
+    );
+  }
+  if (title === "Create") {
+    return (
+      <>
+        <span className="font-editorial italic font-normal text-cyan">Create</span> clips
+      </>
+    );
+  }
+  if (title === "Templates") {
+    return (
+      <>
+        <span className="font-editorial italic font-normal text-cyan">Templates</span> library
+      </>
+    );
+  }
+  if (title === "Review") {
+    return (
+      <>
+        Clip <span className="font-editorial italic font-normal text-cyan">workspace</span>
+      </>
+    );
+  }
+  if (title === "Schedule") {
+    return (
+      <>
+        Publishing <span className="font-editorial italic font-normal text-cyan">schedule</span>
+      </>
+    );
+  }
+  if (title === "Channels") {
+    return (
+      <>
+        Connect <span className="font-editorial italic font-normal text-cyan">channels</span>
+      </>
+    );
+  }
+  if (title === "Brand") {
+    return (
+      <>
+        <span className="font-editorial italic font-normal text-cyan">Brand</span> customizer
+      </>
+    );
+  }
+  return title;
+}
+
 function statusTone(status: string) {
   if (["approved", "published", "ready", "rendered", "scheduled", "ready_to_publish", "completed", "pending_auto_schedule"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
   if (["running", "queued"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
@@ -1030,7 +1083,9 @@ export function MediaStudioApp() {
         <div className="flex shrink-0 items-center gap-3 px-1">
           <div className="grid h-11 w-11 place-items-center rounded-2xl border border-cyan/[0.55] bg-cyan/[0.04] text-lg font-semibold text-white shadow-[0_0_24px_rgba(102,232,249,0.12)]">N</div>
           <div>
-            <h1 className="text-base font-semibold leading-5">Otonom Media</h1>
+            <h1 className="text-base font-semibold leading-5 font-sans">
+              <span className="font-editorial italic font-normal text-cyan">Otonom</span> Media
+            </h1>
             <p className="text-xs text-zinc-400">Guided production OS</p>
           </div>
         </div>
@@ -1085,7 +1140,9 @@ export function MediaStudioApp() {
                 <span className="rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">Guided Studio OS</span>
                 <span className="text-xs font-medium text-zinc-500">Active Workspace</span>
               </div>
-              <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">{sectionCopy[section].title}</h2>
+              <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">
+                {renderEditorialTitle(sectionCopy[section].title)}
+              </h2>
               <p className="mt-1 max-w-[calc(100vw-40px)] break-words text-sm text-zinc-400 md:max-w-2xl">{sectionCopy[section].subtitle}</p>
             </div>
             <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:flex sm:flex-wrap">

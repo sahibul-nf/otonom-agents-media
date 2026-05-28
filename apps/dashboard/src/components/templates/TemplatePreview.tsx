@@ -41,12 +41,18 @@ const templatePreviewVideoFallbacks: Record<string, {short_9_16?: string; long_1
 export function TemplatePreview({
   template,
   compact = false,
+  gridCard = false,
+  hideFooterLabel = false,
   durationSeconds = TEMPLATE_PREVIEW_SECONDS,
   frame = "short",
   hoverToPlay = false,
 }: {
   template: HyperframesTemplate;
   compact?: boolean;
+  /** Denser 9:16 frame for template grid cards — keeps aspect ratio, smaller footprint */
+  gridCard?: boolean;
+  /** Hide title overlay on compact grid previews (title lives in card meta) */
+  hideFooterLabel?: boolean;
   durationSeconds?: number;
   frame?: TemplatePreviewFrame;
   hoverToPlay?: boolean;
@@ -59,10 +65,24 @@ export function TemplatePreview({
   const [shouldLoadPreview, setShouldLoadPreview] = useState(!hoverToPlay);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
-  const previewSize = compact ? (isLong ? "aspect-video" : "aspect-[9/16]") : (isLong ? "aspect-video max-h-[360px]" : "aspect-[9/16] max-h-[560px] max-w-[315px]");
+  const previewSize = compact
+    ? isLong
+      ? gridCard
+        ? "aspect-video max-h-[14rem] w-full"
+        : "aspect-video"
+      : gridCard
+        ? "aspect-[9/16] w-full max-w-full"
+        : "aspect-[9/16]"
+    : isLong
+      ? "aspect-video max-h-[360px]"
+      : "aspect-[9/16] max-h-[560px] max-w-[315px]";
+  const previewSpacing = gridCard ? "mb-2.5" : compact ? "mb-4" : "mb-4";
+  const previewChrome = gridCard ? "rounded-[16px]" : "rounded-[22px]";
+  const badgeInset = gridCard ? "left-2 right-2 top-2" : "left-3 right-3 top-3";
+  const footerInset = gridCard ? "bottom-2 left-2 right-2" : "bottom-3 left-3 right-3";
   const frameLabel = compact ? (isLong ? "15s · 16:9" : "15s · 9:16") : `${durationSeconds}s · ${isLong ? "Long 16:9" : "Short/Reels 9:16"}`;
   const renderLabel = compact ? "HF render" : "HyperFrames render";
-  const hoverLabel = compact && !isLong ? "Hover preview" : "Hover to play real preview";
+  const hoverLabel = gridCard ? "Hover" : compact && !isLong ? "Hover preview" : "Hover to play real preview";
   const previewStyle = {
     "--preview-accent": theme.accent,
     "--preview-secondary": theme.secondary,
@@ -89,7 +109,7 @@ export function TemplatePreview({
 
   return (
     <div
-      className={`template-card-preview relative mx-auto mb-4 w-full overflow-hidden rounded-[22px] border border-white/[0.08] bg-black shadow-inner ${previewSize}`}
+      className={`template-card-preview relative mx-auto w-full overflow-hidden border border-white/[0.08] bg-black shadow-inner ${previewSpacing} ${previewChrome} ${previewSize}`}
       style={previewStyle}
       onMouseEnter={playPreview}
       onMouseLeave={pausePreview}
@@ -126,14 +146,16 @@ export function TemplatePreview({
       ) : null}
       <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/70 via-black/20 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/82 via-black/24 to-transparent" />
-      <div className="absolute left-3 right-3 top-3 z-10 flex items-center justify-between gap-2">
-        <div className="rounded-full border border-white/[0.12] bg-black/62 px-2.5 py-1 text-[10px] font-bold text-zinc-200">{frameLabel}</div>
-        <div className="rounded-full border border-[var(--preview-accent)]/30 bg-black/62 px-2.5 py-1 text-[10px] font-bold text-[var(--preview-accent)]">{renderLabel}</div>
+      <div className={`absolute ${badgeInset} z-10 flex items-center justify-between gap-1.5`}>
+        <div className={`rounded-full border border-white/[0.12] bg-black/62 font-bold text-zinc-200 ${gridCard ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"}`}>{frameLabel}</div>
+        <div className={`rounded-full border border-[var(--preview-accent)]/30 bg-black/62 font-bold text-[var(--preview-accent)] ${gridCard ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"}`}>{renderLabel}</div>
       </div>
-      <div className="absolute bottom-3 left-3 right-3 z-10 min-w-0">
-        <p className="truncate text-sm font-black text-white drop-shadow-[0_3px_12px_rgba(0,0,0,.9)]">{template.label}</p>
-        {!compact ? <p className="mt-1 line-clamp-2 text-xs leading-4 text-zinc-300">{template.best_for}</p> : null}
-      </div>
+      {!hideFooterLabel ? (
+        <div className={`absolute ${footerInset} z-10 min-w-0`}>
+          <p className={`truncate font-black text-white drop-shadow-[0_3px_12px_rgba(0,0,0,.9)] ${gridCard ? "text-xs" : "text-sm"}`}>{template.label}</p>
+          {!compact ? <p className="mt-1 line-clamp-2 text-xs leading-4 text-zinc-300">{template.best_for}</p> : null}
+        </div>
+      ) : null}
       {hoverToPlay && previewUrl && !shouldLoadPreview ? (
         <div className="template-preview-play-hint absolute inset-0 z-20 grid place-items-center bg-black/20 transition duration-200">
           <span className="whitespace-nowrap rounded-full border border-white/[0.16] bg-black/72 px-4 py-2 text-xs font-black leading-4 text-white shadow-2xl">{hoverLabel}</span>

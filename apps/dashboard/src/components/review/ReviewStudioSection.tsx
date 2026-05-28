@@ -5,6 +5,7 @@ import {useEffect, useRef, useState} from "react";
 import {ClipCandidate, formatDuration, formatTimestamp, scoreValue} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
 import {FocusModal} from "@/components/FocusModal";
+import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
 
 type ReviewFilter = {
   id: string;
@@ -54,7 +55,7 @@ type Props = {
   onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
 };
 
-type DetailTab = "metadata" | "timing" | "captions" | "post" | "quality";
+type DetailTab = "summary" | "metadata" | "timing" | "captions" | "post" | "quality";
 
 function clipWarnings(clip?: ClipCandidate) {
   if (!clip) return [];
@@ -154,7 +155,7 @@ export function ReviewStudioSection({
 }: Props) {
   const [queueMenuOpen, setQueueMenuOpen] = useState(false);
   const [rowMenuId, setRowMenuId] = useState("");
-  const [detailTab, setDetailTab] = useState<DetailTab>("metadata");
+  const [detailTab, setDetailTab] = useState<DetailTab>("summary");
   const [clipModalOpen, setClipModalOpen] = useState(false);
   const queueMenuRef = useRef<HTMLDivElement>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
@@ -197,7 +198,9 @@ export function ReviewStudioSection({
       <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5">
         <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h3 className="text-xl font-semibold text-white">Review queue</h3>
+            <h3 className="text-xl font-semibold text-white">
+              Review <span className="font-editorial italic font-normal text-cyan">queue</span>
+            </h3>
             <p className="mt-1 text-sm text-zinc-400">Open one clip at a time to approve, fix captions, or send it into Schedule.</p>
           </div>
           <div ref={queueMenuRef} className="relative">
@@ -413,7 +416,7 @@ export function ReviewStudioSection({
       <FocusModal
         open={clipModalOpen && Boolean(selected)}
         title={selected?.title_hook || "Clip Preview"}
-        subtitle="Preview the clip, approve or schedule it, and open repair tools only when needed."
+        subtitle={selected?.hook_subtitle || selected?.viral_reason || "Refine this clip's metadata, captions, and publishing details."}
         width="max"
         onClose={() => setClipModalOpen(false)}
       >
@@ -481,54 +484,115 @@ function ReviewDetailPane({
   onApprove: (id: string) => void;
   onSchedule: (id: string) => void;
 }) {
+  const saveState = clip ? actionStates[`caption:${clip.id}:save`] : undefined;
+  const rerenderState = clip ? actionStates[`clip:${clip.id}:rerender`] : undefined;
+  const metadataState = clip ? actionStates[`clip:${clip.id}:metadata`] : undefined;
+  const boundaryState = clip ? actionStates[`clip:${clip.id}:boundary`] : undefined;
+  const actionBusy = saveState?.status === "running" || rerenderState?.status === "running" || metadataState?.status === "running" || boundaryState?.status === "running";
+  const captionCount = clip?.captions?.length || 0;
+  const warnings = clip ? clipWarnings(clip) : [];
+
+  const tabs: {id: DetailTab; label: string}[] = [
+    {id: "summary", label: "Summary"},
+    {id: "captions", label: "Captions"},
+    {id: "timing", label: "Timing"},
+    {id: "post", label: "Post Copy"},
+    {id: "metadata", label: "Metadata"},
+    {id: "quality", label: "QA Checks"},
+  ];
+
   return (
-    <div className="rounded-[28px] border border-white/[0.08] bg-surface p-4 sm:p-5">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="text-xl font-semibold text-white">Clip workspace</h3>
-          <p className="mt-1 text-sm text-zinc-400">Preview first, edit only what matters for this selected clip.</p>
-        </div>
-        {clip ? <span className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip.status)}`}>{clip.status.replaceAll("_", " ")}</span> : null}
-      </div>
+    <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
       {clip ? (
-        <div className="grid gap-5">
-          <div className="grid gap-5 2xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)] 2xl:items-start">
-            <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Preview</span>
-                <span className="text-xs font-medium tabular-nums text-cyan">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</span>
-              </div>
-              <PreviewPanel clip={clip} statusTone={statusTone} embedded hideHeader />
-            </div>
-            <ClipSummary
-              clip={clip}
-              setActiveTab={setActiveTab}
-              actionStates={actionStates}
-              primaryReviewAction={primaryReviewAction}
-              onApprove={onApprove}
-              onSchedule={onSchedule}
-              onRefreshMetadata={onRefreshMetadata}
-              onRerender={onRerender}
-            />
+        <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Preview</span>
+            <span className="text-xs font-medium tabular-nums text-cyan">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</span>
           </div>
-          <InsightPanel
-            clip={clip}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            captionDraft={captionDraft}
-            setCaptionDraft={setCaptionDraft}
-            postCopyDraft={postCopyDraft}
-            setPostCopyDraft={setPostCopyDraft}
-            actionStates={actionStates}
-            onSaveCaptions={onSaveCaptions}
-            onSavePostCopy={onSavePostCopy}
-            onGeneratePostCopy={onGeneratePostCopy}
-            onRerender={onRerender}
-            onRefreshMetadata={onRefreshMetadata}
-            onSaveBoundary={onSaveBoundary}
-          />
+          <PreviewPanel clip={clip} statusTone={statusTone} embedded hideHeader />
         </div>
-      ) : <EmptyState text="Select a clip to inspect preview, metadata, timing, captions, and publish copy." />}
+      ) : null}
+
+      {clip ? (
+        <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-5 flex flex-col min-h-[460px]">
+          {/* Tab Switcher */}
+          <div className="flex flex-wrap gap-1.5 border-b border-white/[0.06] pb-4 mb-4">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`h-9 rounded-full px-4 text-xs font-semibold transition ${
+                  activeTab === tab.id
+                    ? "bg-cyan text-ink shadow-[0_0_12px_rgba(98,238,248,0.18)]"
+                    : "text-zinc-400 hover:bg-white/[0.04] hover:text-white"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Active Tab Content */}
+          <div className="flex-1 min-h-0">
+            {activeTab === "summary" && (
+              <ClipSummary
+                clip={clip}
+                setActiveTab={setActiveTab}
+                actionStates={actionStates}
+                primaryReviewAction={primaryReviewAction}
+                onApprove={onApprove}
+                onSchedule={onSchedule}
+                onRefreshMetadata={onRefreshMetadata}
+                onRerender={onRerender}
+              />
+            )}
+            {activeTab === "metadata" && (
+              <div className="grid gap-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Hook Title</p>
+                  <p className="mt-1 text-lg font-semibold text-white leading-relaxed">{clip.title_hook}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Viral Reason / Subtitle</p>
+                  <p className="mt-1 text-sm leading-6 text-zinc-300">{clip.hook_subtitle || clip.viral_reason || "No reason recorded."}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={() => onRefreshMetadata(clip.id, "smart")}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-4 text-sm font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-50 w-fit"
+                >
+                  {metadataState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                  {metadataState?.status === "running" ? "Refreshing..." : "Refresh metadata"}
+                </button>
+              </div>
+            )}
+            {activeTab === "timing" && (
+              <TimingEditor key={clip.id} clip={clip} actionBusy={actionBusy} boundaryState={boundaryState} onSaveBoundary={onSaveBoundary} />
+            )}
+            {activeTab === "captions" && (
+              <CaptionEditor clip={clip} captionDraft={captionDraft} setCaptionDraft={setCaptionDraft} actionBusy={actionBusy} captionCount={captionCount} saveState={saveState} rerenderState={rerenderState} onSaveCaptions={onSaveCaptions} onRerender={onRerender} />
+            )}
+            {activeTab === "post" && (
+              <PostCopyEditor clip={clip} draft={postCopyDraft} setDraft={setPostCopyDraft} actionBusy={actionBusy} saveState={actionStates[`post:${clip.id}:save`]} generateState={actionStates[`post:${clip.id}:generate`]} onSavePostCopy={onSavePostCopy} onGeneratePostCopy={onGeneratePostCopy} />
+            )}
+            {activeTab === "quality" && (
+              <QualityPanel clip={clip} warnings={warnings} />
+            )}
+          </div>
+
+          {(metadataState || boundaryState) && (
+            <p className={`text-xs font-medium mt-4 ${metadataState?.status === "failed" || boundaryState?.status === "failed" ? "text-danger" : "text-cyan"}`}>
+              {(metadataState || boundaryState)?.message}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="lg:col-span-2">
+          <EmptyState text="Select a clip to inspect preview, metadata, timing, captions, and publish copy." />
+        </div>
+      )}
     </div>
   );
 }
@@ -574,16 +638,15 @@ function ClipSummary({
       : "This clip is already managed by schedule or publish state.";
 
   return (
-    <div className="grid gap-4 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <h4 className="text-xl font-semibold leading-tight text-white">{clip.title_hook}</h4>
-          {clip.caption_corrections?.manual_edit ? <span className="rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-2.5 py-1 text-xs font-semibold text-cyan">Manual edit</span> : null}
+    <div className="grid gap-4">
+      {clip.caption_corrections?.manual_edit ? (
+        <div className="flex items-center gap-2.5 rounded-2xl border border-cyan/15 bg-cyan/[0.04] p-3 text-xs text-cyan">
+          <span className="h-1.5 w-1.5 rounded-full bg-cyan animate-pulse shrink-0" />
+          <span>Manual corrections are currently applied to this clip's subtitles.</span>
         </div>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">{clip.hook_subtitle || clip.viral_reason || "No clip description yet."}</p>
-      </div>
+      ) : null}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 2xl:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SettingTile label="Score" value={scoreValue(clip.score?.overall_score)} />
         <SettingTile label="QA" value={scoreValue(clip.render_quality?.quality_score)} />
         <SettingTile label="Duration" value={formatDuration(clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms)} />
@@ -593,7 +656,7 @@ function ClipSummary({
       <div className="grid gap-3 rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
         <div>
           <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Readiness</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Readiness Check</div>
             <div className="text-xs font-medium text-zinc-500">{readiness.filter((item) => item.status === "ready").length}/{readiness.length} ready</div>
           </div>
           <div className="grid grid-cols-5 gap-1.5">
@@ -620,11 +683,10 @@ function ClipSummary({
           <div className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Review decision</div>
           <p className="mt-1 text-xs leading-5 text-zinc-500">{primaryHint}</p>
         </div>
-        <button
-          data-autofocus
-          type="button"
-          disabled={busy || !canRunPrimaryAction(clip)}
-          onClick={() => {
+        <SlideToConfirm
+          label={`Slide to ${primaryLabel.toLowerCase()}`}
+          activeLabel="Processing decision..."
+          onConfirm={() => {
             if (!canRunPrimaryAction(clip)) return;
             if (shouldRepairBeforeApprove) {
               setActiveTab(nextIssue.tab);
@@ -633,41 +695,40 @@ function ClipSummary({
             if (clip.status === "approved") onSchedule(clip.id);
             else onApprove(clip.id);
           }}
-          className="inline-flex h-11 items-center justify-center rounded-[16px] bg-cyan px-3 text-sm font-semibold text-ink transition hover:bg-cyan/90 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {primaryLabel}
-        </button>
+          isLoading={busy}
+          disabled={!canRunPrimaryAction(clip)}
+        />
         <div className="border-t border-white/[0.07] pt-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Repair tools</div>
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Quick Repair tools</div>
           <div className="grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onRefreshMetadata(clip.id, "smart")}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.30] hover:text-cyan disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {metadataState?.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
-            Metadata
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setActiveTab("timing");
-            }}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Clock3 className="h-3.5 w-3.5" />
-            Timing
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onRerender(clip.id)}
-            className="h-10 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.30] hover:text-cyan disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {rerenderState?.status === "running" ? "Rendering..." : "Re-render"}
-          </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onRefreshMetadata(clip.id, "smart")}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.30] hover:text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {metadataState?.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+              Metadata
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setActiveTab("timing");
+              }}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Clock3 className="h-3.5 w-3.5" />
+              Timing
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onRerender(clip.id)}
+              className="h-10 rounded-[16px] border border-white/[0.10] px-3 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.30] hover:text-cyan disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {rerenderState?.status === "running" ? "Rendering..." : "Re-render"}
+            </button>
           </div>
         </div>
       </div>
@@ -697,131 +758,6 @@ function boundaryValidation(startText: string, endText: string) {
   return {valid: true, message: `${formatDuration(duration)} duration`, startMs, endMs};
 }
 
-function InsightPanel({
-  clip,
-  activeTab,
-  setActiveTab,
-  captionDraft,
-  setCaptionDraft,
-  postCopyDraft,
-  setPostCopyDraft,
-  actionStates,
-  onSaveCaptions,
-  onSavePostCopy,
-  onGeneratePostCopy,
-  onRerender,
-  onRefreshMetadata,
-  onSaveBoundary,
-}: {
-  clip?: ClipCandidate;
-  activeTab: DetailTab;
-  setActiveTab: (tab: DetailTab) => void;
-  captionDraft: string;
-  setCaptionDraft: (value: string) => void;
-  postCopyDraft: string;
-  setPostCopyDraft: (value: string) => void;
-  actionStates: Record<string, ActionUiState>;
-  onSaveCaptions: (id: string, draft: string) => void;
-  onSavePostCopy: (id: string, draft: string) => void;
-  onGeneratePostCopy: (id: string) => void;
-  onRerender: (id: string) => void;
-  onRefreshMetadata: (id: string, mode?: "smart" | "local") => void;
-  onSaveBoundary: (id: string, startMs: number, endMs: number, rerenderAfter: boolean) => void;
-}) {
-  const tabs: {id: DetailTab; label: string}[] = [
-    {id: "metadata", label: "Metadata"},
-    {id: "timing", label: "Timing"},
-    {id: "captions", label: "Captions"},
-    {id: "post", label: "Post"},
-    {id: "quality", label: "QA"},
-  ];
-  const tabGroups: {label: string; tabs: {id: DetailTab; label: string}[]}[] = [
-    {label: "Content", tabs: tabs.filter((tab) => tab.id === "metadata" || tab.id === "post")},
-    {label: "Edit", tabs: tabs.filter((tab) => tab.id === "timing" || tab.id === "captions")},
-    {label: "Checks", tabs: tabs.filter((tab) => tab.id === "quality")},
-  ];
-  const captionCount = clip?.captions?.length || 0;
-  const saveState = clip ? actionStates[`caption:${clip.id}:save`] : undefined;
-  const rerenderState = clip ? actionStates[`clip:${clip.id}:rerender`] : undefined;
-  const metadataState = clip ? actionStates[`clip:${clip.id}:metadata`] : undefined;
-  const boundaryState = clip ? actionStates[`clip:${clip.id}:boundary`] : undefined;
-  const actionBusy = saveState?.status === "running" || rerenderState?.status === "running" || metadataState?.status === "running" || boundaryState?.status === "running";
-  const warnings = clipWarnings(clip);
-  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label || "Metadata";
-  return (
-    <details className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-        <span>
-          <span className="block text-lg font-semibold text-white">Clip fixes</span>
-          <span className="mt-1 block text-xs text-zinc-500">Open only when metadata, timing, captions, post copy, or QA need changes.</span>
-        </span>
-        <span className="shrink-0 rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">{activeTabLabel}</span>
-      </summary>
-      <div className="mt-4 flex flex-col gap-4">
-        <div>
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Editing {activeTabLabel}</span>
-            <span className="hidden text-xs text-zinc-600 sm:inline">Switch only when you need a different repair surface.</span>
-          </div>
-          <div className="grid gap-2 rounded-[18px] border border-white/[0.08] bg-black/24 p-2 lg:grid-cols-[1fr_1fr_auto]">
-            {tabGroups.map((group) => (
-              <div key={group.label} className="grid gap-1">
-                <div className="px-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-600">{group.label}</div>
-                <div className="flex gap-1">
-                  {group.tabs.map((tab) => (
-                    <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition ${activeTab === tab.id ? "bg-cyan text-ink shadow-[0_0_18px_rgba(108,226,238,0.18)]" : "text-zinc-400 hover:bg-white/[0.04] hover:text-white"}`}>
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      {clip ? (
-        <div className="grid gap-4">
-          {activeTab === "metadata" ? (
-            <div className="grid gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-zinc-500">Hook</p>
-                <p className="mt-1 text-lg font-semibold text-white">{clip.title_hook}</p>
-              </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-zinc-500">Description</p>
-                <p className="mt-1 text-sm leading-6 text-zinc-300">{clip.hook_subtitle || clip.viral_reason || "No reason recorded."}</p>
-              </div>
-              <button
-                type="button"
-                disabled={actionBusy}
-                onClick={() => onRefreshMetadata(clip.id, "smart")}
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-cyan/[0.30] bg-teal/[0.10] px-4 text-sm font-semibold text-cyan disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {metadataState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-                {metadataState?.status === "running" ? "Refreshing..." : "Refresh metadata"}
-              </button>
-            </div>
-          ) : null}
-          {activeTab === "timing" ? (
-            <TimingEditor key={clip.id} clip={clip} actionBusy={actionBusy} boundaryState={boundaryState} onSaveBoundary={onSaveBoundary} />
-          ) : null}
-          {activeTab === "captions" ? (
-            <CaptionEditor clip={clip} captionDraft={captionDraft} setCaptionDraft={setCaptionDraft} actionBusy={actionBusy} captionCount={captionCount} saveState={saveState} rerenderState={rerenderState} onSaveCaptions={onSaveCaptions} onRerender={onRerender} />
-          ) : null}
-          {activeTab === "post" ? (
-            <PostCopyEditor clip={clip} draft={postCopyDraft} setDraft={setPostCopyDraft} actionBusy={actionBusy} saveState={actionStates[`post:${clip.id}:save`]} generateState={actionStates[`post:${clip.id}:generate`]} onSavePostCopy={onSavePostCopy} onGeneratePostCopy={onGeneratePostCopy} />
-          ) : null}
-          {activeTab === "quality" ? (
-            <QualityPanel clip={clip} warnings={warnings} />
-          ) : null}
-          {metadataState || boundaryState ? (
-            <p className={`text-xs font-medium ${metadataState?.status === "failed" || boundaryState?.status === "failed" ? "text-danger" : "text-cyan"}`}>{(metadataState || boundaryState)?.message}</p>
-          ) : null}
-        </div>
-      ) : <EmptyState text="Select a clip to inspect curation, captions, and publish copy." />}
-    </details>
-  );
-}
 
 function PostCopyEditor({clip, draft, setDraft, actionBusy, saveState, generateState, onSavePostCopy, onGeneratePostCopy}: {
   clip: ClipCandidate;
