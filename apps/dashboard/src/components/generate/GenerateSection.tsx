@@ -465,9 +465,16 @@ export function GenerateSection<T extends GenerateConfigLike>({
                   });
                   setTemplatePickerOpen(false);
                 }}
-                className={`min-w-0 rounded-[24px] border p-4 text-left transition ${active ? "border-cyan/[0.45] bg-teal/[0.12] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"}`}
+                className={`template-card min-w-0 rounded-[20px] border p-2.5 text-left transition sm:p-3 ${active ? "border-cyan/[0.45] bg-teal/[0.12] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-cyan/[0.22] hover:bg-teal/[0.05]"}`}
               >
-                <TemplatePreview template={template} compact frame={(config.hyperframesFormat === "long_16_9" ? "long" : "short")} hoverToPlay />
+                <TemplatePreview
+                  template={template}
+                  compact
+                  gridCard
+                  hideFooterLabel
+                  frame={config.hyperframesFormat === "long_16_9" ? "long" : "short"}
+                  hoverToPlay
+                />
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-wide text-cyan">{template.category}</p>

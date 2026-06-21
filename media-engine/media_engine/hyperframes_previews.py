@@ -16,6 +16,7 @@ from .hyperframes_templates import (
     list_hyperframes_templates,
     normalize_hyperframes_format,
     normalize_hyperframes_template,
+    preview_stock_path,
     resolve_hyperframes_template,
 )
 
@@ -101,7 +102,7 @@ def ensure_hyperframes_template_preview(template_id: str, hyperframes_format: st
     media_dir.mkdir(parents=True, exist_ok=True)
     source = media_dir / "source.mp4"
     if not source.exists():
-        _write_preview_source(source, width, height)
+        _write_preview_source(source, width, height, template_id.replace("__", ":"))
 
     contract = _preview_contract(template_id.replace("__", ":"), resolved_format, width, height)
     (project_dir / "index.html").write_text(
@@ -116,7 +117,12 @@ def ensure_hyperframes_template_preview(template_id: str, hyperframes_format: st
     return output
 
 
-def _write_preview_source(path: Path, width: int, height: int) -> None:
+def _write_preview_source(path: Path, width: int, height: int, template_id: str) -> None:
+    stock = preview_stock_path(template_id)
+    if stock and stock.exists():
+        shutil.copy2(stock, path)
+        return
+
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("ffmpeg is required to create HyperFrames template previews")

@@ -128,6 +128,11 @@ export type HyperframesTemplate = {
   preview_urls?: Record<string, string>;
   preview_video_urls?: Record<string, string>;
   production_checks?: Record<string, string>;
+  recipe_module?: string;
+  preview_source_video?: string;
+  font_family?: string;
+  motion_preset?: string;
+  color_grade?: string;
 };
 
 export type HyperframesCatalogItem = {

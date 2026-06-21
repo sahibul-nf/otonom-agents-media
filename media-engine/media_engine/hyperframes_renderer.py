@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .db import ARTIFACTS_DIR, ROOT
+from .hyperframes_recipes import LayoutContext, get_recipe
 from .hyperframes_templates import TEMPLATE_VERSION, dimensions_for_format, resolve_hyperframes_template
 
 HYPERFRAMES_PACKAGE = "hyperframes@0.6.40"
@@ -28,6 +29,9 @@ def _node_major(version: str) -> int:
 
 
 def hyperframes_command(*args: str) -> list[str]:
+    local_cli = HYPERFRAMES_DIR / "node_modules" / ".bin" / "hyperframes"
+    if local_cli.exists():
+        return [str(local_cli), *args]
     return ["npm", "exec", "--yes", "--package", HYPERFRAMES_PACKAGE, "--", "hyperframes", *args]
 
 
@@ -122,120 +126,8 @@ def _style_hex(value: Any, fallback: str) -> str:
     return text if re.fullmatch(r"#[0-9a-fA-F]{6}", text) else fallback
 
 
-def _caption_html(caption: dict[str, Any], index: int, highlight_color: str) -> str:
-    start_ms = int(caption.get("startMs", 0))
-    end_ms = int(caption.get("endMs", start_ms + 1000))
-    duration_ms = max(1, end_ms - start_ms - 2)
-    words = caption.get("words") or [{"text": word, "startMs": start_ms, "endMs": end_ms} for word in str(caption.get("text", "")).split()]
-    spans = []
-    for word_index, word in enumerate(words):
-        spans.append(
-            '<span '
-            f'id="cap-{index}-word-{word_index}" '
-            f'data-word-start="{_attr(_seconds(int(word.get("startMs", start_ms))))}" '
-            f'data-word-end="{_attr(_seconds(int(word.get("endMs", end_ms))))}">'
-            f'{html.escape(str(word.get("text", "")))}'
-            "</span>"
-        )
-    return (
-        f'<div id="cap-{index}" class="clip caption-clip" '
-        f'data-start="{_attr(_seconds(start_ms))}" '
-        f'data-duration="{_attr(_seconds(duration_ms))}" '
-        'data-track-index="2">'
-        '<div class="caption-card">'
-        f'<div class="caption-text" style="--highlight-color:{_attr(highlight_color)}">'
-        + "\n".join(spans)
-        + "</div></div></div>"
-    )
-
-
-def _template_overlay_html(template: dict[str, Any], contract: dict[str, Any]) -> str:
-    template_id = template["id"]
-    source = html.escape(str(contract.get("sourceAttribution", "")))
-    watermark = html.escape(str(contract.get("watermarkText", "")))
-    title = html.escape(str(contract.get("titleHook", "")))
-    cta = html.escape(str(contract.get("ctaText", "")))
-    if template_id == "podcast_talking_head":
-        return f"""
-    <div id="template-lower-third" class="template-layer lower-third">
-      <span class="micro-label">Guest highlight</span>
-      <strong>{title}</strong>
-      <small>{watermark}</small>
-    </div>
-    <div id="template-social" class="template-layer social-pill">Follow for the next clip</div>"""
-    if template_id == "data_market_explainer":
-        return f"""
-    <div id="template-metrics" class="template-layer metrics-panel">
-      <div><span>Signal</span><strong>74</strong></div>
-      <div><span>Window</span><strong>Short</strong></div>
-      <div><span>Action</span><strong>Watch</strong></div>
-    </div>
-    <div id="template-bars" class="template-layer chart-bars"><span></span><span></span><span></span><span></span></div>"""
-    if template_id == "news_geo_brief":
-        return f"""
-    <div id="template-map" class="template-layer map-card">
-      <span class="micro-label">Regional brief</span>
-      <strong>{source or "Verified source"}</strong>
-      <div class="map-grid"><i></i><i></i><i></i><i></i></div>
-    </div>
-    <div id="template-ticker" class="template-layer ticker">Source checked · Context preserved · Review required</div>"""
-    if template_id == "product_brand_promo":
-        return f"""
-    <div id="template-logo" class="template-layer logo-badge">{watermark or "Brand"}</div>
-    <div id="template-offer" class="template-layer promo-card">
-      <span class="micro-label">Creator promo</span>
-      <strong>{cta}</strong>
-      <small>Save, follow, and share</small>
-    </div>"""
+def _shell_css(width: int, height: int, is_landscape: bool, text_color: str, accent: str, secondary_accent: str, caption_font_size: int, video_filter: str) -> str:
     return f"""
-    <div id="template-grain" class="template-layer grain"></div>
-    <div id="template-reflection" class="template-layer reflection-note">
-      <span class="micro-label">Reflective clip</span>
-      <strong>{watermark}</strong>
-    </div>"""
-
-
-def build_hyperframes_index_html(
-    contract: dict[str, Any],
-    hyperframes_template: str = "auto",
-    hyperframes_format: str = "auto",
-    genres: list[str] | None = None,
-) -> str:
-    duration_ms = int(contract["durationMs"])
-    duration_s = _seconds(duration_ms)
-    width, height, resolved_format = dimensions_for_format(hyperframes_format or contract.get("hyperframesFormat") or "auto")
-    is_landscape = width > height
-    style = contract.get("style") or {}
-    caption_style = style.get("caption") or {}
-    template = resolve_hyperframes_template(hyperframes_template, genres or contract.get("genres") or [], str(style.get("template") or ""))
-    contract = {
-        **contract,
-        "hyperframesTemplate": template["id"],
-        "hyperframesFormat": resolved_format,
-        "templateVersion": TEMPLATE_VERSION,
-        "effectsUsed": template["effects"],
-        "componentsUsed": template.get("components_used", []),
-        "blocksUsed": template.get("blocks_used", []),
-    }
-    text_color = _style_hex(caption_style.get("text_color"), "#ffffff")
-    highlight_color = _style_hex(caption_style.get("highlight_word_color"), template["accent"])
-    accent = _style_hex(template.get("accent"), "#d8b45f")
-    secondary_accent = _style_hex(template.get("secondary_accent"), "#8ee6c8")
-    caption_font_size = int(caption_style.get("font_size") or 54)
-    captions = contract.get("captions") or []
-    caption_nodes = "\n".join(_caption_html(caption, index, highlight_color) for index, caption in enumerate(captions))
-    template_overlay = _template_overlay_html(template, contract)
-    cta_start_ms = max(0, duration_ms - 6500)
-    hook_exit_s = max(0.2, min(4.5, (duration_ms / 1000) - 0.5))
-    cta_start_s = max(0, (duration_ms / 1000) - 6.5)
-    contract_json = json.dumps(contract, ensure_ascii=False).replace("</", "<\\/")
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{html.escape(str(contract.get("candidateId", "hyperframes-render")))}</title>
-  <style>
     * {{ box-sizing: border-box; }}
     body {{ margin: 0; background: #111111; font-family: Arial, sans-serif; }}
     #root {{
@@ -248,26 +140,12 @@ def build_hyperframes_index_html(
       --template-accent: {accent};
       --template-secondary: {secondary_accent};
     }}
-    video {{ width: 100%; height: 100%; object-fit: cover; filter: contrast(1.06) saturate(0.96) brightness(0.92); }}
+    video {{ width: 100%; height: 100%; object-fit: cover; filter: {video_filter}; }}
     .shade {{
       position: absolute;
       inset: 0;
       background: linear-gradient(180deg, rgba(0,0,0,0.58) 0%, rgba(0,0,0,0.12) 28%, rgba(0,0,0,0.18) 55%, rgba(0,0,0,0.76) 100%);
       pointer-events: none;
-    }}
-    .template-layer {{ position: absolute; z-index: 5; pointer-events: none; }}
-    .grain {{
-      inset: 0;
-      opacity: 0.16;
-      background-image: radial-gradient(rgba(255,255,255,0.20) 1px, transparent 1px);
-      background-size: 7px 7px;
-      mix-blend-mode: overlay;
-    }}
-    .reflection-note, .lower-third, .map-card, .promo-card, .metrics-panel {{
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(4,7,8,0.68);
-      box-shadow: 0 18px 48px rgba(0,0,0,0.36);
-      backdrop-filter: blur(12px);
     }}
     .micro-label {{
       display: block;
@@ -278,112 +156,6 @@ def build_hyperframes_index_html(
       text-transform: uppercase;
       letter-spacing: 0;
     }}
-    .reflection-note {{
-      left: 56px;
-      top: 58px;
-      max-width: 390px;
-      border-radius: 18px;
-      padding: 16px 20px;
-      color: rgba(255,255,255,0.86);
-      font-size: 23px;
-      line-height: 1.16;
-    }}
-    .lower-third {{
-      left: {72 if is_landscape else 58}px;
-      right: {72 if is_landscape else 58}px;
-      top: {690 if is_landscape else 1180}px;
-      border-radius: 22px;
-      padding: 18px 22px;
-    }}
-    .lower-third strong, .map-card strong, .promo-card strong {{ display: block; color: #fff; font-size: 30px; line-height: 1.08; }}
-    .lower-third small, .promo-card small {{ display: block; margin-top: 8px; color: rgba(255,255,255,0.66); font-size: 21px; }}
-    .social-pill {{
-      right: 58px;
-      bottom: 210px;
-      border-radius: 999px;
-      padding: 16px 22px;
-      background: var(--template-accent);
-      color: #061114;
-      font-size: 23px;
-      font-weight: 900;
-    }}
-    .metrics-panel {{
-      left: {72 if is_landscape else 50}px;
-      right: {72 if is_landscape else 50}px;
-      top: 86px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      border-radius: 20px;
-      padding: 14px;
-    }}
-    .metrics-panel div {{ border-radius: 14px; background: rgba(255,255,255,0.07); padding: 13px; }}
-    .metrics-panel span {{ display: block; color: rgba(255,255,255,0.62); font-size: 17px; font-weight: 800; }}
-    .metrics-panel strong {{ display: block; margin-top: 3px; color: var(--template-accent); font-size: 30px; }}
-    .chart-bars {{
-      right: {86 if is_landscape else 60}px;
-      top: {230 if is_landscape else 290}px;
-      display: flex;
-      align-items: end;
-      gap: 8px;
-      height: 92px;
-    }}
-    .chart-bars span {{ width: 24px; border-radius: 999px; background: linear-gradient(180deg, var(--template-accent), var(--template-secondary)); }}
-    .chart-bars span:nth-child(1) {{ height: 44px; }}
-    .chart-bars span:nth-child(2) {{ height: 72px; }}
-    .chart-bars span:nth-child(3) {{ height: 56px; }}
-    .chart-bars span:nth-child(4) {{ height: 90px; }}
-    .map-card {{
-      left: {72 if is_landscape else 58}px;
-      right: {72 if is_landscape else 58}px;
-      top: 68px;
-      border-radius: 22px;
-      padding: 18px;
-    }}
-    .map-grid {{ margin-top: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }}
-    .map-grid i {{ height: 34px; border-radius: 10px; background: rgba(125,211,252,0.18); border: 1px solid rgba(125,211,252,0.24); }}
-    .ticker {{
-      left: 0;
-      right: 0;
-      bottom: 0;
-      padding: 16px 24px;
-      background: rgba(0,0,0,0.76);
-      border-top: 2px solid var(--template-accent);
-      color: rgba(255,255,255,0.82);
-      text-align: center;
-      font-size: 21px;
-      font-weight: 800;
-    }}
-    .logo-badge {{
-      top: 62px;
-      right: 54px;
-      border-radius: 999px;
-      padding: 15px 20px;
-      background: rgba(0,0,0,0.62);
-      border: 1px solid rgba(255,255,255,0.16);
-      color: var(--template-accent);
-      font-size: 24px;
-      font-weight: 950;
-    }}
-    .promo-card {{
-      left: {72 if is_landscape else 56}px;
-      right: {72 if is_landscape else 56}px;
-      bottom: {142 if is_landscape else 220}px;
-      overflow: hidden;
-      border-radius: 24px;
-      padding: 20px 24px;
-    }}
-    .promo-card::after {{
-      content: "";
-      position: absolute;
-      inset: 0;
-      transform: translateX(-120%);
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
-    }}
-    .template-podcast .caption-card {{ border-radius: 999px; border-color: color-mix(in srgb, var(--template-accent) 45%, transparent); }}
-    .template-data .caption-card, .template-promo .caption-card {{ border-color: color-mix(in srgb, var(--template-accent) 42%, transparent); }}
-    .template-news .hook {{ text-align: left; }}
-    .template-news .hook h1 {{ font-size: 64px; }}
     .hook {{
       position: absolute;
       top: {110 if is_landscape else 170}px;
@@ -458,23 +230,100 @@ def build_hyperframes_index_html(
       font-weight: 900;
       box-shadow: 0 16px 44px rgba(0,0,0,0.38);
     }}
-  </style>
-</head>
-<body>
-  <div id="root" class="{_attr(template["overlay_class"])}" data-composition-id="premium-hyperframes" data-start="0" data-duration="{duration_s}" data-width="{width}" data-height="{height}">
+    """
+
+
+def _render_shell(contract: dict[str, Any], template: dict[str, Any], layout: LayoutContext, duration_s: str) -> str:
+    return f"""
     <video id="source-video" class="clip" data-start="0" data-duration="{duration_s}" data-track-index="0" src="media/source.mp4" muted playsinline></video>
     <audio id="source-audio" class="clip" data-start="0" data-duration="{duration_s}" data-track-index="4" src="media/source.mp4" data-volume="1"></audio>
     <div class="shade"></div>
-    {template_overlay}
-    <div id="hook" class="clip hook" data-start="0" data-duration="{_attr(_seconds(min(4800, duration_ms)))}" data-track-index="1">
+    <div id="hook" class="clip hook" data-start="0" data-duration="{_attr(_seconds(min(4800, int(contract['durationMs']))))}" data-track-index="1">
       <h1>{html.escape(str(contract.get("titleHook", "")))}</h1>
       <p>{html.escape(str(contract.get("subtitle", "")))}</p>
     </div>
-    {caption_nodes}
     <div class="brand-row">
       <span>{html.escape(str(contract.get("watermarkText", "")))}</span>
       <span class="source">{html.escape(str(contract.get("sourceAttribution", "")))}</span>
-    </div>
+    </div>"""
+
+
+def _render_captions(contract: dict[str, Any], recipe, layout: LayoutContext) -> str:
+    captions = contract.get("captions") or []
+    return "\n".join(
+        recipe.render_caption_html(caption, index, layout, _seconds, _attr)
+        for index, caption in enumerate(captions)
+    )
+
+
+def _render_template_overlay(recipe, contract: dict[str, Any], template: dict[str, Any], layout: LayoutContext) -> str:
+    return recipe.render_overlay(contract, template, layout)
+
+
+def build_hyperframes_index_html(
+    contract: dict[str, Any],
+    hyperframes_template: str = "auto",
+    hyperframes_format: str = "auto",
+    genres: list[str] | None = None,
+) -> str:
+    duration_ms = int(contract["durationMs"])
+    duration_s = _seconds(duration_ms)
+    width, height, resolved_format = dimensions_for_format(hyperframes_format or contract.get("hyperframesFormat") or "auto")
+    is_landscape = width > height
+    style = contract.get("style") or {}
+    caption_style = style.get("caption") or {}
+    template = resolve_hyperframes_template(hyperframes_template, genres or contract.get("genres") or [], str(style.get("template") or ""))
+    contract = {
+        **contract,
+        "hyperframesTemplate": template["id"],
+        "hyperframesFormat": resolved_format,
+        "templateVersion": TEMPLATE_VERSION,
+        "effectsUsed": template["effects"],
+        "componentsUsed": template.get("components_used", []),
+        "blocksUsed": template.get("blocks_used", []),
+    }
+    text_color = _style_hex(caption_style.get("text_color"), "#ffffff")
+    highlight_color = _style_hex(caption_style.get("highlight_word_color"), template["accent"])
+    accent = _style_hex(template.get("accent"), "#d8b45f")
+    secondary_accent = _style_hex(template.get("secondary_accent"), "#8ee6c8")
+    caption_font_size = int(caption_style.get("font_size") or 54)
+    recipe = get_recipe(str(template.get("recipe_module") or template["id"]))
+    layout = LayoutContext(
+        width=width,
+        height=height,
+        is_landscape=is_landscape,
+        caption_font_size=caption_font_size,
+        text_color=text_color,
+        highlight_color=highlight_color,
+        accent=accent,
+        secondary_accent=secondary_accent,
+    )
+    caption_nodes = _render_captions(contract, recipe, layout)
+    template_overlay = _render_template_overlay(recipe, contract, template, layout)
+    shell_body = _render_shell(contract, template, layout, duration_s)
+    recipe_css = recipe.css_block(layout)
+    cta_start_ms = max(0, duration_ms - 6500)
+    hook_exit_s = max(0.2, min(4.5, (duration_ms / 1000) - 0.5))
+    cta_start_s = max(0, (duration_ms / 1000) - 6.5)
+    motion_extra = recipe.motion_block(contract, layout, hook_exit_s, cta_start_s)
+    root_class = f"{_attr(template['overlay_class'])} {_attr(recipe.overlay_class())}"
+    contract_json = json.dumps(contract, ensure_ascii=False).replace("</", "<\\/")
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{html.escape(str(contract.get("candidateId", "hyperframes-render")))}</title>
+{recipe.shell_extras_head()}  <style>
+{_shell_css(width, height, is_landscape, text_color, accent, secondary_accent, caption_font_size, recipe.video_filter())}
+{recipe_css}
+  </style>
+</head>
+<body>
+  <div id="root" class="{root_class}" data-composition-id="premium-hyperframes" data-start="0" data-duration="{duration_s}" data-width="{width}" data-height="{height}">
+{shell_body}
+    {template_overlay}
+    {caption_nodes}
     <div id="cta" class="clip cta" data-start="{_attr(_seconds(cta_start_ms))}" data-duration="{_attr(_seconds(duration_ms - cta_start_ms))}" data-track-index="3">
       {html.escape(str(contract.get("ctaText", "")))}
     </div>
@@ -506,6 +355,7 @@ def build_hyperframes_index_html(
       }}
     }}
     tl.from("#cta", {{ y: 28, opacity: 0, scale: 0.97, duration: 0.35, ease: "power3.out" }}, {cta_start_s:.3f});
+    {motion_extra}
     window.__timelines["premium-hyperframes"] = tl;
   </script>
 </body>

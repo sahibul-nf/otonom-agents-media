@@ -183,9 +183,14 @@ CREATE TABLE IF NOT EXISTS autonomy_settings (
 def connect(db_path: Path | str = DEFAULT_DB) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.Error:
+        pass
     return conn
 
 
@@ -327,6 +332,71 @@ def seed_profile(conn: sqlite3.Connection, profile: dict[str, Any]) -> None:
             ),
         )
     conn.commit()
+
+
+DEFAULT_WORKSPACE_PROFILE_ID = "workspace"
+DEFAULT_WORKSPACE_SOURCE_ID = "workspace_source"
+
+
+def workspace_profile() -> dict[str, Any]:
+    path = ROOT / "profiles" / "workspace.json"
+    if path.exists():
+        return load_json(path)
+    return {
+        "id": DEFAULT_WORKSPACE_PROFILE_ID,
+        "name": "Workspace",
+        "niche": "General short-form clips",
+        "languages": ["id", "en"],
+        "default_render_preset": "short_clean",
+        "cta_text": "",
+        "watermark_text": "",
+        "publish_targets": [],
+    }
+
+
+def ensure_media_profile(conn: sqlite3.Connection, profile_id: str) -> None:
+    if conn.execute("SELECT 1 FROM media_profiles WHERE id = ?", (profile_id,)).fetchone():
+        return
+    if profile_id == DEFAULT_WORKSPACE_PROFILE_ID:
+        seed_profile(conn, workspace_profile())
+        return
+    nourbit_path = ROOT / "profiles" / "nourbit.json"
+    if profile_id == "nourbit" and nourbit_path.exists():
+        seed_profile(conn, load_json(nourbit_path))
+        return
+    raise ValueError(f"Unknown profile_id '{profile_id}'. Seed a profile before starting generation.")
+
+
+def ensure_source_manifest(
+    conn: sqlite3.Connection,
+    *,
+    profile_id: str,
+    source_id: str,
+    source_url: str,
+) -> None:
+    existing = conn.execute("SELECT 1 FROM source_manifests WHERE id = ?", (source_id,)).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE source_manifests SET profile_id = ?, source_url = ? WHERE id = ?",
+            (profile_id, source_url, source_id),
+        )
+        conn.commit()
+        return
+    seed_source(
+        conn,
+        {
+            "id": source_id,
+            "profile_id": profile_id,
+            "source_url": source_url,
+            "owner_type": "user_submitted",
+            "permission_status": "user_attested",
+            "permission_evidence": "Submitted via dashboard generate flow.",
+            "allowed_use": ["draft_clip_generation", "manual_review"],
+            "monetization_allowed": False,
+            "attribution_rule": "Credit the original YouTube source when publishing.",
+            "publish_restrictions": ["manual_review_required"],
+        },
+    )
 
 
 def seed_source(conn: sqlite3.Connection, manifest: dict[str, Any]) -> None:

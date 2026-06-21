@@ -7,27 +7,29 @@ from media_engine.hyperframes_templates import (
     normalize_hyperframes_format,
     normalize_hyperframes_template,
     resolve_hyperframes_template,
+    hyperframes_template_ids,
 )
 
 
 class HyperframesTemplateTests(unittest.TestCase):
     def test_lists_curated_template_pack(self):
         templates = list_hyperframes_templates()
+        builtin = [template for template in templates if not str(template["id"]).startswith("brand:")]
 
-        self.assertGreaterEqual(len(templates), 13)
-        self.assertEqual({template["status"] for template in templates}, {"ready"})
-        self.assertTrue(any(template["id"] == "data_market_explainer" for template in templates))
-        self.assertTrue(any(template["id"] == "warm_grain_editorial" for template in templates))
+        self.assertEqual(len(builtin), 19)
+        self.assertEqual({template["status"] for template in builtin}, {"ready"})
+        self.assertTrue(any(template["id"] == "energy_warm_question" for template in builtin))
+        self.assertTrue(any(template["id"] == "spiritual_reflective" for template in builtin))
 
     def test_explicit_override_wins(self):
-        template = resolve_hyperframes_template("product_brand_promo", genres=["kajian"])
+        template = resolve_hyperframes_template("prism_pro_pricing", genres=["kajian"])
 
-        self.assertEqual(template["id"], "product_brand_promo")
+        self.assertEqual(template["id"], "prism_pro_pricing")
 
     def test_auto_selects_by_genre(self):
-        self.assertEqual(resolve_hyperframes_template("auto", genres=["crypto"])["id"], "data_market_explainer")
-        self.assertEqual(resolve_hyperframes_template("auto", genres=["interview"])["id"], "podcast_talking_head")
-        self.assertEqual(resolve_hyperframes_template("auto", genres=["geopolitics"])["id"], "news_geo_brief")
+        self.assertEqual(resolve_hyperframes_template("auto", genres=["crypto"])["id"], "velocity_business_promo")
+        self.assertEqual(resolve_hyperframes_template("auto", genres=["podcast"])["id"], "grit_training_stamp")
+        self.assertEqual(resolve_hyperframes_template("auto", genres=["geopolitics"])["id"], "byline_trust_quote")
 
     def test_unknown_values_fall_back_to_auto_then_default(self):
         self.assertEqual(normalize_hyperframes_template("missing"), "auto")
@@ -35,6 +37,11 @@ class HyperframesTemplateTests(unittest.TestCase):
 
     def test_legacy_specific_template_aliases_to_public_template(self):
         self.assertEqual(normalize_hyperframes_template("nourbit_reflective"), "spiritual_reflective")
+        self.assertEqual(normalize_hyperframes_template("podcast_talking_head"), "grit_training_stamp")
+
+    def test_removed_template_ids_alias_to_replacement(self):
+        self.assertEqual(resolve_hyperframes_template("podcast_talking_head")["id"], "grit_training_stamp")
+        self.assertEqual(resolve_hyperframes_template("data_market_explainer")["id"], "velocity_business_promo")
 
     def test_templates_expose_preview_contract(self):
         template = list_hyperframes_templates()[0]
@@ -49,6 +56,9 @@ class HyperframesTemplateTests(unittest.TestCase):
         self.assertEqual(dimensions_for_format("short_9_16"), (1080, 1920, "short_9_16"))
         self.assertEqual(dimensions_for_format("long_16_9"), (1920, 1080, "long_16_9"))
         self.assertEqual(dimensions_for_format("auto"), (1080, 1920, "short_9_16"))
+
+    def test_builtin_template_count(self):
+        self.assertEqual(len(hyperframes_template_ids()), 19)
 
 
 if __name__ == "__main__":

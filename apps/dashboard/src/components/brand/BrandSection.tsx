@@ -4,6 +4,7 @@ import {useEffect, useMemo, useState} from "react";
 import {BadgeCheck, CheckCircle2, ChevronDown, Layers3, Loader2, Palette, Sparkles, Sliders, Settings2, Info} from "lucide-react";
 import {apiGet, apiPost, AutonomySettings, BrandTemplate, HyperframesCatalog, HyperframesTemplate, StyleProfile} from "@/lib/media-api";
 import {FocusModal} from "@/components/FocusModal";
+import {TemplatePreview} from "@/components/templates/TemplatePreview";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 
@@ -69,7 +70,7 @@ const brandPresets = [
     id: "analyst",
     label: "Analyst Clean",
     note: "Best for data, market, business, and technical explainers.",
-    starterTemplate: "data_market_explainer",
+    starterTemplate: "spiritual_reflective",
     fontFamily: "Inter",
     fontSize: 48,
     highlightColor: "#74f2ce",
@@ -80,6 +81,74 @@ const brandPresets = [
     ctaOverlay: "yt-lower-third",
     textureEffect: "vignette",
     transitionFamily: "zoom",
+    motionIntensity: "balanced",
+  },
+  {
+    id: "eva_cyber",
+    label: "Eva Neon Cyber",
+    note: "Vibrant neon overlays, glowing captions, and futuristic accents.",
+    starterTemplate: "eva_neon_cyber",
+    fontFamily: "Poppins",
+    fontSize: 54,
+    highlightColor: "#ff2a85",
+    backgroundColor: "#030305",
+    strokeWidth: 8,
+    captionStyle: "caption-neon-glow",
+    introLayout: "headline-slam",
+    ctaOverlay: "instagram-follow",
+    textureEffect: "shimmer-sweep",
+    transitionFamily: "whip-pan",
+    motionIntensity: "energetic",
+  },
+  {
+    id: "volt_kinetic",
+    label: "Volt Lime Kinetic",
+    note: "High-contrast bold bounce, electric lime highlights, and title drops.",
+    starterTemplate: "volt_lime_kinetic",
+    fontFamily: "Montserrat",
+    fontSize: 58,
+    highlightColor: "#a7f36b",
+    backgroundColor: "#040507",
+    strokeWidth: 10,
+    captionStyle: "caption-kinetic-slam",
+    introLayout: "headline-slam",
+    ctaOverlay: "tiktok-follow",
+    textureEffect: "shimmer-sweep",
+    transitionFamily: "zoom",
+    motionIntensity: "energetic",
+  },
+  {
+    id: "ember_sunset",
+    label: "Ember Sunset",
+    note: "High-aesthetic sunset gradient text with soft warm ambient glows.",
+    starterTemplate: "ember_sunset_gradient",
+    fontFamily: "Sora",
+    fontSize: 52,
+    highlightColor: "#ff5e36",
+    backgroundColor: "#120a06",
+    strokeWidth: 6,
+    captionStyle: "caption-gradient-fill",
+    introLayout: "editorial-hook",
+    ctaOverlay: "yt-lower-third",
+    textureEffect: "vignette",
+    transitionFamily: "dissolve",
+    motionIntensity: "calm",
+  },
+  {
+    id: "align_minimal",
+    label: "Align Minimal Box",
+    note: "Sleek monochrome active word bounding boxes and clean snap reveals.",
+    starterTemplate: "align_minimal_box",
+    fontFamily: "Inter",
+    fontSize: 48,
+    highlightColor: "#f8fafc",
+    backgroundColor: "#09090b",
+    strokeWidth: 4,
+    captionStyle: "caption-clip-wipe",
+    introLayout: "lower-third-hook",
+    ctaOverlay: "x-post",
+    textureEffect: "vignette",
+    transitionFamily: "dissolve",
     motionIntensity: "balanced",
   },
 ] as const;
@@ -590,32 +659,34 @@ export function BrandSection({
         <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
           <div className="min-w-0">
             <h3 className="text-lg font-semibold text-white tracking-tight">Interactive sandbox</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">Real-time local CSS canvas preview</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Template preview with live brand overlay · hover to play</p>
           </div>
           <span className="rounded-full border border-cyan/[0.18] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">9:16</span>
         </div>
 
-        {/* Premium Hardware-inspired Physical Phone Mockup */}
-        <div className="relative mx-auto max-w-[320px] w-full bg-[#0a0a0c] rounded-[44px] p-2.5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),_inset_0_1px_2px_rgba(255,255,255,0.1),_inset_0_-1px_2px_rgba(0,0,0,0.8)] border border-white/[0.04]">
-          {/* Hardware buttons */}
-          <div className="absolute left-[-2px] top-18 h-8 w-[2px] bg-zinc-800 rounded-l-sm" />
-          <div className="absolute left-[-2px] top-28 h-6 w-[2px] bg-zinc-800 rounded-l-sm" />
-          <div className="absolute right-[-2px] top-22 h-11 w-[2px] bg-zinc-800 rounded-r-sm" />
+        {/* Clean 9:16 Sandbox preview container matching the grid cards precisely */}
+        <div className="relative mx-auto w-full max-w-[17.5rem] aspect-[9/16] overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#050507] shadow-inner transition-[border-color,box-shadow] duration-200">
+          {selectedStarter ? (
+            <TemplatePreview template={selectedStarter} compact gridCard hideFooterLabel hoverToPlay flush />
+          ) : (
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(108,226,238,.18),transparent_34%),linear-gradient(180deg,#24262c,#0a0a0c_68%)]" />
+          )}
 
-          {/* Curved bezel container */}
-          <div className="relative flex aspect-[9/16] max-h-[520px] w-full flex-col justify-between overflow-hidden rounded-[34px] bg-[radial-gradient(circle_at_50%_20%,rgba(108,226,238,.18),transparent_34%),linear-gradient(180deg,#24262c,#0a0a0c_68%)] p-6 shadow-inner ring-1 ring-white/[0.06]">
-            
-            {/* Camera island */}
-            <div className="absolute top-2 left-1/2 z-20 h-5 w-20 -translate-x-1/2 rounded-full bg-black/90 border border-white/5 flex items-center justify-center gap-1 px-2.5">
-              <div className="h-1.5 w-1.5 rounded-full bg-[#0d1020] ring-[0.5px] ring-white/10" />
-              <div className="h-0.5 flex-1 rounded-full bg-zinc-800" />
-            </div>
+          <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-b from-black/55 via-black/20 to-black/70" />
 
-            <div className="mt-3">
-              <p className="text-center text-2xl font-black leading-tight text-white drop-shadow-lg tracking-tight">Your strongest hook goes here</p>
-              <p className="mx-auto mt-2 max-w-[200px] text-center text-[10px] font-semibold leading-relaxed text-zinc-300">A reusable brand system for clips, explainers, and socials.</p>
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-5">
+            <div>
+              <p
+                className="text-center text-xl font-black leading-tight tracking-tight text-white drop-shadow-lg sm:text-2xl"
+                style={{fontFamily: editor.fontFamily}}
+              >
+                Your strongest hook goes here
+              </p>
+              <p className="mx-auto mt-2 max-w-[200px] text-center text-[10px] font-semibold leading-relaxed text-zinc-300">
+                {selectedStarter?.best_for || "A reusable brand system for clips, explainers, and socials."}
+              </p>
             </div>
-            <div className="grid gap-4">
+            <div className="grid gap-3">
               <div
                 className="mx-auto max-w-full rounded-xl px-4 py-2.5 text-center font-black leading-none shadow-lg"
                 style={{
@@ -630,7 +701,7 @@ export function BrandSection({
               </div>
               <div className="flex items-center justify-between text-[10px] font-semibold text-zinc-400">
                 <span>{editor.watermarkText}</span>
-                <span style={{color: editor.highlightColor}}>Active: Brand preset</span>
+                <span style={{color: editor.highlightColor}}>{selectedStarter?.label || "Brand preset"}</span>
               </div>
             </div>
           </div>

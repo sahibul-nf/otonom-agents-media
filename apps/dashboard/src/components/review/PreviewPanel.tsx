@@ -19,32 +19,17 @@ export function PreviewPanel({clip, statusTone, embedded = false, hideHeader = f
         <h3 className="text-lg font-semibold text-white">9:16 Preview</h3>
         <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip?.status || "empty")}`}>{clip?.status || "No clip"}</span>
       </div> : null}
-      {/* Premium hardware-inspired phone mockup */}
-      <div className="relative mx-auto max-w-[350px] w-full bg-[#0a0a0c] rounded-[48px] p-3 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8),_inset_0_1px_2px_rgba(255,255,255,0.1),_inset_0_-1px_2px_rgba(0,0,0,0.8)] border border-white/[0.04]">
-        {/* Physical volume and power button indicators */}
-        <div className="absolute left-[-2px] top-20 h-10 w-[2px] bg-zinc-800 rounded-l-sm shadow-md" />
-        <div className="absolute left-[-2px] top-32 h-8 w-[2px] bg-zinc-800 rounded-l-sm shadow-md" />
-        <div className="absolute right-[-2px] top-24 h-14 w-[2px] bg-zinc-800 rounded-r-sm shadow-md" />
-
-        {/* Screen bezel */}
-        <div className="relative grid aspect-[9/16] max-h-[580px] w-full place-items-center overflow-hidden rounded-[38px] bg-black ring-1 ring-white/[0.06] shadow-inner">
-          {/* Dynamic Island / notch camera component */}
-          <div className="absolute top-2.5 left-1/2 z-20 h-5 w-20 -translate-x-1/2 rounded-full bg-black/90 backdrop-blur-sm border border-white/5 shadow-inner flex items-center justify-center gap-1 px-2.5">
-            {/* Camera lens */}
-            <div className="h-1.5 w-1.5 rounded-full bg-[#0d1020] ring-[0.5px] ring-white/10 flex items-center justify-center">
-              <div className="h-0.5 w-0.5 rounded-full bg-[#1b2b4d]" />
-            </div>
-            {/* Speaker line */}
-            <div className="h-0.5 flex-1 rounded-full bg-zinc-800" />
-          </div>
-
-          {output ? <VideoPreviewPlayer key={output} output={output} /> : (
+      
+      {/* Clean rounded 9:16 preview container matching the grid cards precisely */}
+      <div className="relative mx-auto w-full max-w-[17.5rem] aspect-[9/16] overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#050507] shadow-inner">
+        {output ? <VideoPreviewPlayer key={output} output={output} /> : (
+          <div className="absolute inset-0 grid place-items-center bg-black/40">
             <div className="grid place-items-center gap-3 px-8 text-center text-sm text-zinc-500">
               <Play className="h-10 w-10 text-zinc-700" />
               No rendered clip selected.
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

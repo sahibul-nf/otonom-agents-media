@@ -1,0 +1,195 @@
+{
+  "source": "pexels",
+  "templates": {
+    "spiritual_reflective": {
+      "query": "man talking calm portrait",
+      "orientation": "portrait",
+      "video_id": 18503899,
+      "width": 1080,
+      "height": 1920,
+      "pexels_url": "https://www.pexels.com/video/a-man-in-a-blue-shirt-making-a-gesture-18503899/",
+      "photographer": "Denjel Labooum",
+      "photographer_url": "https://www.pexels.com/@denjel-labooum-485467375"
+    },
+    "energy_warm_question": {
+      "query": "woman recording vertical video phone",
+      "orientation": "portrait",
+      "video_id": 7234088,
+      "width": 2160,
+      "height": 3840,
+      "pexels_url": "https://www.pexels.com/video/a-woman-recording-herself-in-a-video-using-a-smartphone-7234088/",
+      "photographer": "Blue Bird",
+      "photographer_url": "https://www.pexels.com/@blue-bird"
+    },
+    "arion_pink_callout": {
+      "query": "woman smiling street fashion portrait",
+      "orientation": "portrait",
+      "video_id": 6033644,
+      "width": 2160,
+      "height": 4096,
+      "pexels_url": "https://www.pexels.com/video/a-woman-wearing-a-polka-dot-dress-6033644/",
+      "photographer": "ROMAN ODINTSOV",
+      "photographer_url": "https://www.pexels.com/@roman-odintsov"
+    },
+    "quintessence_serif": {
+      "query": "elegant woman portrait beach",
+      "orientation": "portrait",
+      "video_id": 24879055,
+      "width": 2160,
+      "height": 3840,
+      "pexels_url": "https://www.pexels.com/video/a-woman-in-a-red-dress-standing-on-the-beach-24879055/",
+      "photographer": "Ahmed ؜",
+      "photographer_url": "https://www.pexels.com/@mutecevvil"
+    },
+    "archive_magazine": {
+      "query": "reading book editorial portrait",
+      "orientation": "portrait",
+      "video_id": 36597637,
+      "width": 1080,
+      "height": 1920,
+      "pexels_url": "https://www.pexels.com/video/black-and-white-speed-reading-book-video-36597637/",
+      "photographer": "Santiago Peña Bossano",
+      "photographer_url": "https://www.pexels.com/@santiago-pena-bossano-2159998940"
+    },
+    "story_handwritten": {
+      "query": "woman writing journal creative",
+      "orientation": "portrait",
+      "video_id": 6948580,
+      "width": 2160,
+      "height": 3840,
+      "pexels_url": "https://www.pexels.com/video/woman-writing-on-a-notebook-6948580/",
+      "photographer": "George Milton",
+      "photographer_url": "https://www.pexels.com/@george-milton"
+    },
+    "kai_mustard_uppercase": {
+      "query": "businessman presenting confident",
+      "orientation": "landscape",
+      "video_id": 8731561,
+      "width": 1920,
+      "height": 1080,
+      "pexels_url": "https://www.pexels.com/video/man-in-the-podium-talking-8731561/",
+      "photographer": "Mikhail Nilov",
+      "photographer_url": "https://www.pexels.com/@mikhail-nilov"
+    },
+    "byline_trust_quote": {
+      "query": "woman professional interview talking",
+      "orientation": "portrait",
+      "video_id": 8558460,
+      "width": 2160,
+      "height": 3840,
+      "pexels_url": "https://www.pexels.com/video/an-interviewer-asking-questions-then-writing-notes-on-the-resume-8558460/",
+      "photographer": "Timur Weber",
+      "photographer_url": "https://www.pexels.com/@timur-weber"
+    },
+    "sonnet_botanical": {
+      "query": "botanical plants soft light",
+      "orientation": "portrait",
+      "video_id": 12240162,
+      "width": 1080,
+      "height": 1920,
+      "pexels_url": "https://www.pexels.com/video/green-leaves-against-wall-12240162/",
+      "photographer": "Deeana Arts 🇵🇷",
+      "photographer_url": "https://www.pexels.com/@deeanacreates"
+    },
+    "rocket_glitch": {
+      "query": "gaming neon lights cyber",
+      "orientation": "landscape",
+      "video_id": 7849771,
+      "width": 4096,
+      "height": 2160,
+      "pexels_url": "https://www.pexels.com/video/the-gaming-room-7849771/",
+      "photographer": "Ron Lach",
+      "photographer_url": "https://www.pexels.com/@ron-lach"
+    },
+    "grit_training_stamp": {
+      "query": "gym workout dark mood",
+      "orientation": "portrait",
+      "video_id": 35830795,
+      "width": 2160,
+      "height": 3840,
+      "pexels_url": "https://www.pexels.com/video/cinematic-gym-workout-on-outdoor-bench-35830795/",
+      "photographer": "JULLIAN PRODUCTION",
+      "photographer_url": "https://www.pexels.com/@jullianworkout"
+    },
+    "cove_callout_pill": {
+      "query": "smartphone social media vertical",
+      "orientation": "portrait",
+      "video_id": 7308301,
+      "width": 1080,
+      "height": 1920,
+      "pexels_url": "https://www.pexels.com/video/a-woman-taking-pictures-7308301/",
+      "photographer": "RDNE Stock project",
+      "photographer_url": "https://www.pexels.com/@rdne"
+    },
+    "pulse_remember_overlay": {
+      "query": "man speaking microphone podcast",
+      "orientation": "portrait",
+      "video_id": 6878205,
+      "width": 2160,
+      "height": 4096,
+      "pexels_url": "https://www.pexels.com/video/a-man-talking-in-microphone-6878205/",
+      "photographer": "cottonbro studio",
+      "photographer_url": "https://www.pexels.com/@cottonbro"
+    },
+    "neon_seize_future": {
+      "query": "neon lights futuristic city",
+      "orientation": "portrait",
+      "video_id": 34729856,
+      "width": 1080,
+      "height": 1920,
+      "pexels_url": "https://www.pexels.com/video/futuristic-cityscape-at-sunset-34729856/",
+      "photographer": "Nicola Narracci",
+      "photographer_url": "https://www.pexels.com/@nicola-narracci-157460431"
+    },
+    "velocity_business_promo": {
+      "query": "business team office dynamic",
+      "orientation": "landscape",
+      "video_id": 853822,
+      "width": 1920,
+      "height": 1080,
+      "pexels_url": "https://www.pexels.com/video/people-having-a-meeting-853822/",
+      "photographer": "Coverr",
+      "photographer_url": "https://www.pexels.com/@coverr"
+    },
+    "blueprint_grid_paper": {
+      "query": "architecture blueprint technical",
+      "orientation": "landscape",
+      "video_id": 6615508,
+      "width": 3840,
+      "height": 2160,
+      "pexels_url": "https://www.pexels.com/video/person-using-compass-to-measure-6615508/",
+      "photographer": "Tima Miroshnichenko",
+      "photographer_url": "https://www.pexels.com/@tima-miroshnichenko"
+    },
+    "sketch_post_it": {
+      "query": "creative team brainstorming office",
+      "orientation": "landscape",
+      "video_id": 3205674,
+      "width": 1920,
+      "height": 1080,
+      "pexels_url": "https://www.pexels.com/video/people-discussing-about-their-work-as-a-team-3205674/",
+      "photographer": "cottonbro studio",
+      "photographer_url": "https://www.pexels.com/@cottonbro"
+    },
+    "prism_pro_pricing": {
+      "query": "laptop saas product demo",
+      "orientation": "landscape",
+      "video_id": 9559153,
+      "width": 4096,
+      "height": 2160,
+      "pexels_url": "https://www.pexels.com/video/a-young-man-in-a-white-hat-holding-up-a-laptop-with-a-green-screen-9559153/",
+      "photographer": "MART  PRODUCTION",
+      "photographer_url": "https://www.pexels.com/@mart-production"
+    },
+    "chalk_word_emphasis": {
+      "query": "teacher classroom talking",
+      "orientation": "portrait",
+      "video_id": 6502776,
+      "width": 1080,
+      "height": 1920,
+      "pexels_url": "https://www.pexels.com/video/a-teacher-speaking-during-class-6502776/",
+      "photographer": "Thirdman",
+      "photographer_url": "https://www.pexels.com/@thirdman"
+    }
+  }
+}

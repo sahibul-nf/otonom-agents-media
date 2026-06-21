@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -12,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .db import DEFAULT_DB, ROOT, connect, initialize
+from .db import DEFAULT_DB, ROOT, connect, ensure_media_profile, ensure_source_manifest, initialize
 from .duration_presets import resolve_duration_strategy
 from .genres import normalize_genres
 from .hyperframes_renderer import check_hyperframes_runtime
@@ -316,44 +317,57 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
     job_id = f"gen_{uuid.uuid4().hex[:12]}"
     command = build_generation_command(config, validate_runtime=True)
     conn = connect(DEFAULT_DB)
-    initialize(conn)
-    conn.execute(
-        """
-        INSERT INTO generation_jobs
-          (id, profile_id, source_id, source_url, count, clip_length_preset, clip_min_seconds,
-           clip_max_seconds, genres_json, brand_template, hyperframes_template,
-           brand_system_template_id, hyperframes_format, renderer, quality, caption_source, asr_model, speech_language, transcript_languages,
-           llm_provider, status, progress, command)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            job_id,
-            config["profile_id"],
-            config["source_id"],
-            config["source_url"],
-            config["count"],
-            config["clip_length_preset"],
-            config["clip_min_seconds"],
-            config["clip_max_seconds"],
-            json.dumps(config["genres"], ensure_ascii=False),
-            config["brand_template"],
-            config["hyperframes_template"],
-            config["brand_system_template_id"],
-            config["hyperframes_format"],
-            config["renderer"],
-            config["quality"],
-            config["caption_source"],
-            config["asr_model"],
-            config["speech_language"],
-            config["transcript_languages"],
-            config["llm_provider"],
-            "queued",
-            0,
-            _shell_command(command),
-        ),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        initialize(conn)
+        ensure_media_profile(conn, config["profile_id"])
+        ensure_source_manifest(
+            conn,
+            profile_id=config["profile_id"],
+            source_id=config["source_id"],
+            source_url=config["source_url"],
+        )
+        conn.execute(
+            """
+            INSERT INTO generation_jobs
+              (id, profile_id, source_id, source_url, count, clip_length_preset, clip_min_seconds,
+               clip_max_seconds, genres_json, brand_template, hyperframes_template,
+               brand_system_template_id, hyperframes_format, renderer, quality, caption_source, asr_model, speech_language, transcript_languages,
+               llm_provider, status, progress, command)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                config["profile_id"],
+                config["source_id"],
+                config["source_url"],
+                config["count"],
+                config["clip_length_preset"],
+                config["clip_min_seconds"],
+                config["clip_max_seconds"],
+                json.dumps(config["genres"], ensure_ascii=False),
+                config["brand_template"],
+                config["hyperframes_template"],
+                config["brand_system_template_id"],
+                config["hyperframes_format"],
+                config["renderer"],
+                config["quality"],
+                config["caption_source"],
+                config["asr_model"],
+                config["speech_language"],
+                config["transcript_languages"],
+                config["llm_provider"],
+                "queued",
+                0,
+                _shell_command(command),
+            ),
+        )
+        conn.commit()
+    except sqlite3.OperationalError as exc:
+        if "locked" in str(exc).lower():
+            raise RuntimeError("Database is busy. Wait a moment and try again.") from exc
+        raise
+    finally:
+        conn.close()
     if start:
         thread = threading.Thread(target=run_generation_job, args=(job_id, command), daemon=True)
         thread.start()

@@ -1,9 +1,19 @@
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+from media_engine import db as db_module
+from media_engine import generation_jobs as generation_jobs_module
 from media_engine.duration_presets import duration_preset_options, resolve_duration_preset
 from media_engine.db import connect, initialize
-from media_engine.generation_jobs import build_generation_command, list_brand_templates, normalize_generation_payload, reconcile_generation_jobs
+from media_engine.generation_jobs import (
+    build_generation_command,
+    create_generation_job,
+    list_brand_templates,
+    normalize_generation_payload,
+    reconcile_generation_jobs,
+)
 
 
 class GenerationJobTests(unittest.TestCase):
@@ -78,12 +88,12 @@ class GenerationJobTests(unittest.TestCase):
             {
                 "source_url": "https://youtube.com/watch?v=test",
                 "renderer": "hyperframes",
-                "hyperframes_template": "data_market_explainer",
+                "hyperframes_template": "velocity_business_promo",
             }
         )
 
         self.assertEqual(payload["renderer"], "hyperframes")
-        self.assertEqual(payload["hyperframes_template"], "data_market_explainer")
+        self.assertEqual(payload["hyperframes_template"], "velocity_business_promo")
 
     def test_normalize_generation_payload_falls_back_to_auto_template(self):
         payload = normalize_generation_payload(
@@ -117,6 +127,32 @@ class GenerationJobTests(unittest.TestCase):
         templates = list_brand_templates()
         self.assertTrue(any(item["path"] == "profiles/default_workspace_style.json" for item in templates))
         self.assertFalse(any("nourbit" in item["path"].lower() for item in templates))
+
+    @patch("media_engine.generation_jobs.build_generation_command", return_value=["python3", "-c", "print('{}')"])
+    def test_create_generation_job_seeds_workspace_profile_and_source(self, _mock_command):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "media_engine.sqlite"
+            previous_db = db_module.DEFAULT_DB
+            previous_jobs_db = generation_jobs_module.DEFAULT_DB
+            db_module.DEFAULT_DB = db_path
+            generation_jobs_module.DEFAULT_DB = db_path
+            try:
+                job = create_generation_job(
+                    {"source_url": "https://youtube.com/watch?v=test", "count": 2},
+                    start=False,
+                )
+                conn = connect(db_path)
+                profile = conn.execute("SELECT id FROM media_profiles WHERE id = ?", ("workspace",)).fetchone()
+                source = conn.execute("SELECT source_url FROM source_manifests WHERE id = ?", ("workspace_source",)).fetchone()
+                conn.close()
+            finally:
+                db_module.DEFAULT_DB = previous_db
+                generation_jobs_module.DEFAULT_DB = previous_jobs_db
+
+        self.assertEqual(job["profile_id"], "workspace")
+        self.assertEqual(job["source_id"], "workspace_source")
+        self.assertIsNotNone(profile)
+        self.assertEqual(source["source_url"], "https://youtube.com/watch?v=test")
 
     def test_reconcile_generation_jobs_marks_stale_running_jobs_failed(self):
         with tempfile.TemporaryDirectory() as tmpdir:

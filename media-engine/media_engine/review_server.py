@@ -413,6 +413,9 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             except (ValueError, RuntimeError) as exc:
                 self._send_json({"error": str(exc)}, status=400)
                 return
+            except sqlite3.Error as exc:
+                self._send_json({"error": str(exc)}, status=503)
+                return
             self._send_json(job, status=202)
             return
 

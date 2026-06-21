@@ -1,0 +1,10 @@
+{
+  "id": "workspace",
+  "name": "Workspace",
+  "niche": "General short-form clips from user-provided YouTube sources",
+  "languages": ["id", "en"],
+  "default_render_preset": "short_clean",
+  "cta_text": "",
+  "watermark_text": "",
+  "publish_targets": []
+}

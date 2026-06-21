@@ -15,7 +15,7 @@ from .caption_composer import compose_caption_groups
 from .costs import estimate_clip_cost
 from .credentials import credential_status
 from .curation import SAMPLE_NOURBIT_TRANSCRIPT, curate_dry_run
-from .db import DEFAULT_DB, ROOT, connect, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
+from .db import DEFAULT_DB, ROOT, connect, ensure_media_profile, ensure_source_manifest, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
 from .env_loader import load_env_file
 from .live_publishers import LivePublishError, publish_live_payload
 from .genres import normalize_genres
@@ -215,16 +215,22 @@ def update_candidate_metadata(conn, candidate: dict[str, Any]) -> None:
     conn.commit()
 
 
-def load_profile_and_source(conn, profile_id: str, source_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def load_profile_and_source(conn, profile_id: str, source_id: str, source_url: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
     initialize(conn)
-    profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (profile_id,))
-    if not profile:
-        seed_profile(conn, load_json(ROOT / "profiles" / "nourbit.json"))
-        profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (profile_id,))
-    source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (source_id,))
-    if not source:
-        seed_source(conn, load_json(ROOT / "sources" / "nourbit_nouraniyyahofficial.json"))
+    try:
+        ensure_media_profile(conn, profile_id)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if source_url.strip():
+        ensure_source_manifest(conn, profile_id=profile_id, source_id=source_id, source_url=source_url.strip())
+    else:
         source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (source_id,))
+        if not source:
+            nourbit_source = ROOT / "sources" / "nourbit_nouraniyyahofficial.json"
+            if nourbit_source.exists():
+                seed_source(conn, load_json(nourbit_source))
+    profile = fetch_one(conn, "SELECT * FROM media_profiles WHERE id = ?", (profile_id,))
+    source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (source_id,))
     if not profile or not source:
         raise SystemExit("profile/source seed failed")
     return profile, source
@@ -235,7 +241,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     bar.step("loading environment and profile")
     load_env_file(args.env_file)
     conn = connect(args.db)
-    profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
+    profile, _source = load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
 
     bar.step("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
@@ -478,7 +484,7 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
     bar.step("loading environment and profile")
     load_env_file(args.env_file)
     conn = connect(args.db)
-    load_profile_and_source(conn, args.profile, args.source_id)
+    load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
     bar.step("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
     style = load_style(args.style)
@@ -506,7 +512,7 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
     bar.step("loading environment and profile")
     load_env_file(args.env_file)
     conn = connect(args.db)
-    profile, _source = load_profile_and_source(conn, args.profile, args.source_id)
+    profile, _source = load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
     bar.step("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
     style = load_style(args.style)

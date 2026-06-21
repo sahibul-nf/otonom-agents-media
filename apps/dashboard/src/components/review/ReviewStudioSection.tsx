@@ -1,9 +1,10 @@
 "use client";
 
-import {AlertTriangle, CheckCircle2, Clock3, ListFilter, Loader2, MessageSquareText, MoreHorizontal, RefreshCcw, Scissors, Sparkles, Trash2} from "lucide-react";
+import {AlertTriangle, CheckCircle2, ChevronRight, Clock3, ListFilter, Loader2, MessageSquareText, MoreHorizontal, RefreshCcw, Scissors, Sparkles, Trash2, LayoutGrid, List, Play} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
-import {ClipCandidate, formatDuration, formatTimestamp, scoreValue} from "@/lib/media-api";
+import {ClipCandidate, formatDuration, formatTimestamp, scoreValue, apiPath} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
+import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {FocusModal} from "@/components/FocusModal";
 import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
 
@@ -157,6 +158,7 @@ export function ReviewStudioSection({
   const [rowMenuId, setRowMenuId] = useState("");
   const [detailTab, setDetailTab] = useState<DetailTab>("summary");
   const [clipModalOpen, setClipModalOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const queueMenuRef = useRef<HTMLDivElement>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
   const activeFilter = reviewFilters.find((item) => item.id === filter) || reviewFilters[0];
@@ -203,7 +205,37 @@ export function ReviewStudioSection({
             </h3>
             <p className="mt-1 text-sm text-zinc-400">Open one clip at a time to approve, fix captions, or send it into Schedule.</p>
           </div>
-          <div ref={queueMenuRef} className="relative">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center rounded-full border border-white/[0.08] bg-black/30 p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition ${
+                  viewMode === "list"
+                    ? "bg-cyan text-ink shadow-[0_4px_12px_rgba(98,238,248,0.15)]"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+                aria-label="List view"
+              >
+                <List className="h-3.5 w-3.5" />
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition ${
+                  viewMode === "grid"
+                    ? "bg-cyan text-ink shadow-[0_4px_12px_rgba(98,238,248,0.15)]"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+                aria-label="Grid view with preview frames"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Grid
+              </button>
+            </div>
+
+            <div ref={queueMenuRef} className="relative">
             <button
               type="button"
               onClick={() => setQueueMenuOpen((open) => !open)}
@@ -265,16 +297,31 @@ export function ReviewStudioSection({
               </div>
             ) : null}
           </div>
+          </div>
         </div>
 
-        <div className="grid gap-2">
+        {viewMode === "grid" && clips.length ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-4">
+            <p className="text-xs text-zinc-500">
+              <span className="font-semibold text-zinc-300">{clips.length}</span> clip{clips.length === 1 ? "" : "s"}
+              <span className="text-zinc-600"> · </span>
+              Hover to preview
+              <span className="text-zinc-600"> · </span>
+              Click to review
+            </p>
+          </div>
+        ) : (
+          <div className="border-t border-white/[0.06]" />
+        )}
+
+      {viewMode === "list" ? (
+        <div className="mt-4 grid gap-2">
           {clips.length ? clips.map((clip) => {
             const renderState = rerendering[clip.id];
             const primaryKey = clip.status === "approved" ? `clip:${clip.id}:schedule` : `clip:${clip.id}:approve`;
             const primaryState = actionStates[primaryKey];
             const rowAction = primaryState || actionStates[`clip:${clip.id}:hold`] || actionStates[`clip:${clip.id}:delete`] || actionStates[`clip:${clip.id}:rerender`];
             const rowBusy = rowAction?.status === "running" || renderState?.status === "running";
-            const warnings = clipWarnings(clip);
             return (
               <article
                 key={clip.id}
@@ -291,42 +338,24 @@ export function ReviewStudioSection({
                     setClipModalOpen(true);
                   }
                 }}
-                className={`relative grid cursor-pointer grid-cols-[88px_minmax(0,1fr)] gap-3 overflow-visible rounded-[22px] border p-4 text-left transition 2xl:grid-cols-[88px_minmax(0,1fr)_minmax(220px,auto)] 2xl:items-center ${selected?.id === clip.id ? "z-10 border-cyan bg-teal/[0.10]" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.16]"} ${rowMenuId === clip.id ? "z-20" : ""}`}
+                className={`relative grid cursor-pointer grid-cols-[64px_minmax(0,1fr)] gap-3.5 overflow-visible rounded-[18px] border p-3 text-left transition 2xl:grid-cols-[64px_minmax(0,1fr)_minmax(180px,auto)] 2xl:items-center ${selected?.id === clip.id ? "z-10 border-cyan bg-teal/[0.04] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-white/[0.14]"} ${rowMenuId === clip.id ? "z-20" : ""}`}
               >
-                <div className="grid h-14 place-items-center rounded-2xl bg-surface-raised text-sm font-semibold text-cyan">{formatDuration(clip.render_quality?.duration_ms)}</div>
+                <div className="grid h-11 place-items-center rounded-xl bg-surface-raised text-xs font-semibold text-cyan">{formatDuration(clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms)}</div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="truncate text-base font-semibold text-white">{clip.title_hook}</h4>
-                    {clip.status !== "draft" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(clip.status)}`}>{formatStatus(clip.status)}</span> : null}
-                    {renderState ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(renderState.status === "running" ? "running" : renderState.status === "failed" ? "failed" : "completed")}`}>{renderState.status === "running" ? "Rendering" : formatStatus(renderState.status)}</span> : null}
-                    {rowAction && renderState?.status !== "running" ? <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${statusTone(rowAction.status === "running" ? "running" : rowAction.status)}`}>{rowAction.message}</span> : null}
+                    <h4 className="truncate text-sm font-semibold text-white">{clip.title_hook}</h4>
+                    {clip.status !== "draft" ? <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusTone(clip.status)}`}>{formatStatus(clip.status)}</span> : null}
+                    {renderState ? <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusTone(renderState.status === "running" ? "running" : renderState.status === "failed" ? "failed" : "completed")}`}>{renderState.status === "running" ? "Rendering" : formatStatus(renderState.status)}</span> : null}
+                    {rowAction && renderState?.status !== "running" ? <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusTone(rowAction.status === "running" ? "running" : rowAction.status)}`}>{rowAction.message}</span> : null}
                   </div>
-                  <p className="mt-1 line-clamp-2 text-sm leading-5 text-zinc-400">{rowAction?.status === "running" ? rowAction.message : renderState?.message || clip.viral_reason || "No curation reason yet."}</p>
-                  {warnings.length ? (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {warnings.slice(0, 3).map((warning) => (
-                        <span
-                          key={warning.label}
-                          className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-                            warning.tone === "danger"
-                              ? "border-danger/[0.24] bg-danger/[0.08] text-danger"
-                              : warning.tone === "warning"
-                                ? "border-warning/[0.24] bg-warning/[0.08] text-warning"
-                                : "border-cyan/[0.22] bg-teal/[0.08] text-cyan"
-                          }`}
-                        >
-                          {warning.label}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
+                  <p className="mt-0.5 line-clamp-1 text-xs text-zinc-500">{rowAction?.status === "running" ? rowAction.message : renderState?.message || clip.viral_reason || "No curation reason yet."}</p>
                   {renderState?.status === "running" ? (
-                    <div className="mt-3 rounded-[18px] border border-cyan/[0.18] bg-teal/[0.08] px-3 py-2.5">
-                      <div className="mb-2 flex items-center justify-between gap-3">
-                        <p className="truncate text-xs font-medium text-cyan">{renderState.message}</p>
-                        <p className="shrink-0 text-xs font-semibold text-white">{Math.max(0, Math.min(100, renderState.progress ?? 0))}%</p>
+                    <div className="mt-2 rounded-[12px] border border-cyan/[0.14] bg-teal/[0.04] px-2.5 py-1.5">
+                      <div className="mb-1 flex items-center justify-between gap-3">
+                        <p className="truncate text-[10px] font-medium text-cyan">{renderState.message}</p>
+                        <p className="shrink-0 text-[10px] font-semibold text-white">{Math.max(0, Math.min(100, renderState.progress ?? 0))}%</p>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
                         <div
                           className="h-full rounded-full bg-cyan transition-all duration-500"
                           style={{width: `${Math.max(6, Math.min(100, renderState.progress ?? 0))}%`}}
@@ -335,15 +364,21 @@ export function ReviewStudioSection({
                     </div>
                   ) : null}
                   {renderState?.status === "failed" ? (
-                    <p className="mt-3 text-xs font-medium text-danger">Re-render stopped before completion. You can retry from the row menu.</p>
+                    <p className="mt-1 text-[10px] font-medium text-danger">Re-render stopped. You can retry from the menu.</p>
                   ) : null}
                 </div>
-                <div className="col-span-2 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center 2xl:col-span-1 2xl:min-w-[220px] 2xl:grid-cols-[1fr_auto]">
-                  <div className="grid w-fit grid-cols-2 gap-2">
-                    <ScoreBubble label="Score" value={clip.score?.overall_score} />
-                    <ScoreBubble label="QA" value={clip.render_quality?.quality_score} />
+                <div className="col-span-2 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center 2xl:col-span-1 2xl:min-w-[180px] 2xl:grid-cols-[1fr_auto]">
+                  <div className="flex items-center gap-3 text-xs">
+                    <div className="flex items-center gap-1">
+                      <span className="text-zinc-500">Score:</span>
+                      <span className={`font-semibold ${scoreTone(clip.score?.overall_score)}`}>{clip.score?.overall_score ?? "—"}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-zinc-500">QA:</span>
+                      <span className={`font-semibold ${scoreTone(clip.render_quality?.quality_score)}`}>{clip.render_quality?.quality_score ?? "—"}</span>
+                    </div>
                   </div>
-                  <div className="relative flex justify-start gap-2 overflow-visible sm:justify-end">
+                  <div className="relative flex justify-start gap-1.5 overflow-visible sm:justify-end">
                     <button
                       type="button"
                       onClick={(event) => {
@@ -362,10 +397,10 @@ export function ReviewStudioSection({
                         onApprove(clip.id);
                       }}
                       disabled={rowBusy || !canRunPrimaryAction(clip)}
-                      className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-2 text-xs font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-40"
+                      className="rounded-full border border-teal/[0.30] bg-teal/[0.10] px-3 py-1 text-[11px] font-semibold text-teal disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {primaryState?.status === "running" ? (
-                        <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3 w-3 animate-spin" /> {clip.status === "approved" ? "Scheduling..." : "Approving..."}</span>
+                        <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> ...</span>
                       ) : primaryReviewAction(clip)}
                     </button>
                     <button
@@ -375,7 +410,7 @@ export function ReviewStudioSection({
                         setRowMenuId(rowMenuId === clip.id ? "" : clip.id);
                       }}
                       disabled={rowBusy}
-                      className="rounded-full border border-white/[0.10] bg-surface px-3 py-2 text-zinc-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      className="rounded-full border border-white/[0.10] bg-surface px-2.5 py-1 text-zinc-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                       aria-label={`More actions for ${clip.title_hook}`}
                     >
                       <MoreHorizontal className="h-4 w-4" />
@@ -384,7 +419,7 @@ export function ReviewStudioSection({
                       <div
                         ref={rowMenuRef}
                         onClick={(event) => event.stopPropagation()}
-                        className="absolute right-0 top-11 z-20 w-44 overflow-hidden rounded-[18px] border border-white/[0.10] bg-canvas-deep p-1 shadow-glow"
+                        className="absolute right-0 top-8 z-20 w-44 overflow-hidden rounded-[18px] border border-white/[0.10] bg-canvas-deep p-1 shadow-glow"
                       >
                         {clip.status === "pending_auto_schedule" ? (
                           <button type="button" onClick={() => { setRowMenuId(""); onHold(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-warning hover:bg-warning/[0.10]">Hold</button>
@@ -404,7 +439,7 @@ export function ReviewStudioSection({
                   </div>
                 </div>
                 {clip.status === "pending_auto_schedule" && clip.review_deadline_at ? (
-                  <div className="2xl:col-start-2 2xl:col-span-2 rounded-2xl border border-teal/[0.20] bg-teal/[0.08] px-3 py-2 text-xs font-medium text-teal">
+                  <div className="2xl:col-start-2 2xl:col-span-2 rounded-2xl border border-teal/[0.20] bg-teal/[0.08] px-3 py-1.5 text-[10px] font-medium text-teal">
                     {formatDeadline(clip.review_deadline_at)}
                   </div>
                 ) : null}
@@ -412,6 +447,35 @@ export function ReviewStudioSection({
             );
           }) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
         </div>
+      ) : (
+        <div className="mt-4 grid gap-4 sm:gap-5 grid-cols-[repeat(auto-fill,14.5rem)] sm:grid-cols-[repeat(auto-fill,15.5rem)] lg:grid-cols-[repeat(auto-fill,16.5rem)] xl:grid-cols-[repeat(auto-fill,17.5rem)] justify-start">
+          {clips.length ? clips.map((clip) => (
+            <ClipGridCard
+              key={clip.id}
+              clip={clip}
+              selected={selected}
+              setSelectedId={setSelectedId}
+              setClipModalOpen={setClipModalOpen}
+              setDetailTab={setDetailTab}
+              statusTone={statusTone}
+              formatStatus={formatStatus}
+              rerendering={rerendering}
+              actionStates={actionStates}
+              onSchedule={onSchedule}
+              onApprove={onApprove}
+              onHold={onHold}
+              onDelete={onDelete}
+              onRerender={onRerender}
+              onRefreshMetadata={onRefreshMetadata}
+              primaryReviewAction={primaryReviewAction}
+              rowMenuId={rowMenuId}
+              setRowMenuId={setRowMenuId}
+              rowMenuRef={rowMenuRef}
+              formatDeadline={formatDeadline}
+            />
+          )) : <EmptyState text="No clips in this queue. Generate a new batch or refresh the media engine." />}
+        </div>
+      )}
       </div>
       <FocusModal
         open={clipModalOpen && Boolean(selected)}
@@ -502,9 +566,9 @@ function ReviewDetailPane({
   ];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)] lg:items-start">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,19.5rem)_minmax(0,1fr)] lg:items-start">
       {clip ? (
-        <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+        <div className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4 lg:max-w-[19.5rem]">
           <div className="mb-3 flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Preview</span>
             <span className="text-xs font-medium tabular-nums text-cyan">{formatTimestamp(clip.start_ms)} → {formatTimestamp(clip.end_ms)}</span>
@@ -1052,5 +1116,257 @@ function EmptyState({text}: {text: string}) {
         {text}
       </div>
     </div>
+  );
+}
+
+function scoreTone(score?: number) {
+  if (typeof score !== "number") return "text-zinc-500";
+  if (score >= 90) return "text-emerald-400";
+  if (score >= 75) return "text-cyan";
+  if (score >= 60) return "text-warning";
+  return "text-danger";
+}
+
+interface ClipGridCardProps {
+  clip: ClipCandidate;
+  selected?: ClipCandidate | null;
+  setSelectedId: (id: string) => void;
+  setClipModalOpen: (open: boolean) => void;
+  setDetailTab: (tab: DetailTab) => void;
+  statusTone: (status: string) => string;
+  formatStatus: (status?: string) => string;
+  rerendering: Record<string, RerenderState | undefined>;
+  actionStates: Record<string, ActionUiState | undefined>;
+  onSchedule: (id: string) => void;
+  onApprove: (id: string) => void;
+  onHold: (id: string) => void;
+  onDelete: (id: string) => void;
+  onRerender: (id: string) => void;
+  onRefreshMetadata: (id: string, mode: "smart") => void;
+  primaryReviewAction: (clip: ClipCandidate) => string;
+  rowMenuId: string;
+  setRowMenuId: (id: string) => void;
+  rowMenuRef: React.RefObject<HTMLDivElement | null>;
+  formatDeadline: (deadline: string) => string;
+}
+
+function ClipGridCard({
+  clip,
+  selected,
+  setSelectedId,
+  setClipModalOpen,
+  setDetailTab,
+  statusTone,
+  formatStatus,
+  rerendering,
+  actionStates,
+  onSchedule,
+  onApprove,
+  onHold,
+  onDelete,
+  onRerender,
+  onRefreshMetadata,
+  primaryReviewAction,
+  rowMenuId,
+  setRowMenuId,
+  rowMenuRef,
+  formatDeadline,
+}: ClipGridCardProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  
+  const isSelected = selected?.id === clip.id;
+  const renderState = rerendering[clip.id];
+  const primaryKey = clip.status === "approved" ? `clip:${clip.id}:schedule` : `clip:${clip.id}:approve`;
+  const primaryState = actionStates[primaryKey];
+  const rowAction = primaryState || actionStates[`clip:${clip.id}:hold`] || actionStates[`clip:${clip.id}:delete`] || actionStates[`clip:${clip.id}:rerender`];
+  const rowBusy = rowAction?.status === "running" || renderState?.status === "running";
+  
+  const output = clip.output_path || clip.render_quality?.output_path;
+  const hasVideo = !!output;
+  const videoUrl = hasVideo ? apiPath(`artifact?path=${encodeURIComponent(output!)}`) : "";
+
+  const handleMouseEnter = () => {
+    setIsHovered(true);
+    if (videoRef.current && hasVideo) {
+      videoRef.current.play().catch(() => {});
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovered(false);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+  };
+
+  const durationLabel = formatDuration(clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms);
+  const score = clip.score?.overall_score;
+  const qa = clip.render_quality?.quality_score;
+
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => {
+        setSelectedId(clip.id);
+        setClipModalOpen(true);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setSelectedId(clip.id);
+          setClipModalOpen(true);
+        }
+      }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={`review-clip-card group relative flex min-w-0 cursor-pointer flex-col rounded-[20px] border p-2.5 text-left sm:p-3 ${
+        isSelected
+          ? "z-10 border-cyan/[0.45] bg-teal/[0.06] shadow-glow"
+          : "border-white/[0.08] bg-canvas-deep hover:border-cyan/[0.20] hover:bg-teal/[0.03]"
+      } ${rowMenuId === clip.id ? "z-20" : ""}`}
+    >
+      <MediaPreviewFrame
+        aspect="portrait"
+        src={hasVideo ? videoUrl : null}
+        videoRef={videoRef}
+        className="review-clip-card-preview"
+        showPlayHint={hasVideo}
+        emptyState={
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-zinc-900/80 to-black p-4 text-center">
+            <div className="mb-2 rounded-full border border-white/[0.08] bg-white/[0.04] p-2.5 text-zinc-500">
+              <Play className="h-4 w-4 opacity-40" />
+            </div>
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Draft</span>
+          </div>
+        }
+      >
+        <div className="absolute left-2 top-2 z-[4] flex flex-wrap gap-1">
+          {renderState?.status === "running" ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-cyan/[0.28] bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-cyan backdrop-blur-md">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              {renderState.progress ?? 0}%
+            </span>
+          ) : (
+            <span className="rounded-full border border-white/[0.10] bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-white/90 backdrop-blur-md">
+              {durationLabel}
+            </span>
+          )}
+          {clip.status !== "draft" ? (
+            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide backdrop-blur-md ${statusTone(clip.status)}`}>
+              {formatStatus(clip.status)}
+            </span>
+          ) : null}
+        </div>
+
+        {renderState?.status === "running" ? (
+          <div className="absolute bottom-0 left-0 right-0 z-[4] px-2 pb-2 pt-6">
+            <div className="h-1 overflow-hidden rounded-full bg-white/[0.12]">
+              <div
+                className="h-full rounded-full bg-cyan transition-all duration-300"
+                style={{ width: `${renderState.progress ?? 0}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div
+          className="review-clip-card-actions absolute inset-x-0 bottom-0 z-[5] flex gap-1.5 p-2"
+          data-open={rowMenuId === clip.id ? "true" : undefined}
+        >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (!canRunPrimaryAction(clip)) return;
+              if (clip.status === "approved") {
+                onSchedule(clip.id);
+                return;
+              }
+              if (clip.status === "held") {
+                setSelectedId(clip.id);
+                setDetailTab("captions");
+                setClipModalOpen(true);
+                return;
+              }
+              onApprove(clip.id);
+            }}
+            disabled={rowBusy || !canRunPrimaryAction(clip)}
+            className="flex-1 rounded-full border border-white/[0.14] bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-md transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {primaryState?.status === "running" ? (
+              <span className="inline-flex items-center justify-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Working...</span>
+            ) : (
+              primaryReviewAction(clip)
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setRowMenuId(rowMenuId === clip.id ? "" : clip.id);
+            }}
+            disabled={rowBusy}
+            className="rounded-full border border-white/[0.14] bg-black/70 p-1.5 text-zinc-200 backdrop-blur-md transition hover:bg-black/85 disabled:opacity-40"
+            aria-label={`More actions for ${clip.title_hook}`}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </div>
+      </MediaPreviewFrame>
+
+      <div className="space-y-2 px-0.5">
+        <h4 className="line-clamp-2 text-sm font-semibold leading-5 text-white transition-colors group-hover:text-cyan">
+          {clip.title_hook}
+        </h4>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {typeof score === "number" ? (
+              <span className={`rounded-full border border-white/[0.08] bg-black/25 px-2 py-0.5 text-[10px] font-semibold ${scoreTone(score)}`}>
+                {Math.round(score)}
+              </span>
+            ) : null}
+            {typeof qa === "number" ? (
+              <span className={`rounded-full border border-white/[0.08] bg-black/25 px-2 py-0.5 text-[10px] font-semibold ${scoreTone(qa)}`}>
+                QA {Math.round(qa)}
+              </span>
+            ) : null}
+          </div>
+          <span className="review-clip-card-open-hint inline-flex shrink-0 items-center gap-0.5 text-[10px] font-semibold text-cyan">
+            Review
+            <ChevronRight className="h-3 w-3" />
+          </span>
+        </div>
+
+        {clip.status === "pending_auto_schedule" && clip.review_deadline_at ? (
+          <p className="text-[10px] font-medium text-teal/90">{formatDeadline(clip.review_deadline_at)}</p>
+        ) : null}
+      </div>
+
+      {rowMenuId === clip.id ? (
+        <div
+          ref={rowMenuRef}
+          onClick={(event) => event.stopPropagation()}
+          className="absolute bottom-12 right-2 z-30 w-44 overflow-hidden rounded-[18px] border border-white/[0.10] bg-canvas-deep p-1 shadow-glow"
+        >
+          {clip.status === "pending_auto_schedule" ? (
+            <button type="button" onClick={() => { setRowMenuId(""); onHold(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-warning hover:bg-warning/[0.10]">Hold</button>
+          ) : null}
+          <button type="button" onClick={() => { setRowMenuId(""); onRefreshMetadata(clip.id, "smart"); }} className="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white"><RefreshCcw className="h-3.5 w-3.5" /> Refresh metadata</button>
+          <button type="button" onClick={() => { setRowMenuId(""); setSelectedId(clip.id); setDetailTab("timing"); setClipModalOpen(true); }} className="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white"><Clock3 className="h-3.5 w-3.5" /> Edit timing</button>
+          <button type="button" onClick={() => { setRowMenuId(""); onRerender(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-white/[0.05] hover:text-white">Re-render</button>
+          {clip.status === "scheduled" || clip.status === "ready_to_publish" ? (
+            <button type="button" disabled className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-500">Managed in Schedule</button>
+          ) : null}
+          {clip.status === "published" ? (
+            <button type="button" disabled className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-zinc-500">Already published</button>
+          ) : null}
+          <button type="button" onClick={() => { setRowMenuId(""); onDelete(clip.id); }} className="w-full rounded-2xl px-3 py-2 text-left text-sm font-medium text-danger hover:bg-danger/[0.10]">Delete</button>
+        </div>
+      ) : null}
+    </article>
   );
 }

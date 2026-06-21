@@ -4,6 +4,7 @@ import {BadgeCheck, ChevronRight, Layers3, Monitor, Settings, Smartphone, Sparkl
 import {useEffect, useMemo, useState, type ReactNode} from "react";
 import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
+import {getRecipeTheme} from "@/components/templates/recipes";
 import type {EngineHealth, HyperframesCatalog, HyperframesTemplate} from "@/lib/media-api";
 
 const templateFilters = ["All", "Spiritual", "Podcast", "Data", "News", "Promo", "Official", "Brand"] as const;
@@ -51,6 +52,7 @@ export function TemplatesSection({
   const [detailOpen, setDetailOpen] = useState(false);
   const visible = fallback.filter((template) => filter === "All" || template.category === filter);
   const selected = fallback.find((template) => template.id === selectedId) || visible[0] || fallback[0];
+  const selectedRecipe = selected ? getRecipeTheme(selected.id) : null;
   const ready = Boolean(engineHealth?.hyperframes.ready);
   const catalogReady = catalog?.items.filter((item) => item.status === "production-ready").length || 0;
   const readyTemplateCount = fallback.filter((template) => template.status === "ready").length;
@@ -303,7 +305,7 @@ export function TemplatesSection({
       >
         {selected ? (
           <div className="grid gap-5">
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,19.5rem)] xl:items-start">
               <div className="min-w-0 rounded-[26px] border border-white/[0.08] bg-canvas-deep p-4">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
@@ -343,7 +345,9 @@ export function TemplatesSection({
                       </button>
                     </div>
                   </div>
-                  <TemplatePreview template={selected} frame={frame} />
+                  <div className="relative flex h-[460px] w-full items-center justify-center rounded-[24px] border border-white/[0.04] bg-[#030304] p-3 overflow-hidden shadow-inner">
+                    <TemplatePreview template={selected} frame={frame} spacing="none" />
+                  </div>
                 </div>
               </div>
 
@@ -380,6 +384,29 @@ export function TemplatesSection({
                   {renderSettingTile("Catalog", `${catalogReady} ready`)}
                   {renderSettingTile("Preview", frame === "long" ? "16:9" : "9:16")}
                 </div>
+                {selectedRecipe ? (
+                  <div className="rounded-[18px] border border-white/[0.08] bg-black/20 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Typography & recipe</p>
+                    <dl className="mt-2 grid gap-2 text-xs text-zinc-300">
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-zinc-500">Font</dt>
+                        <dd className="text-right font-semibold text-white">{selected.font_family || selectedRecipe.fontFamily}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-zinc-500">Caption style</dt>
+                        <dd className="text-right font-semibold text-white">{selected.caption_style || selectedRecipe.captionStyle}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-zinc-500">Motion</dt>
+                        <dd className="text-right font-semibold text-white">{selected.motion_preset || selectedRecipe.motionPreset}</dd>
+                      </div>
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-zinc-500">Color grade</dt>
+                        <dd className="text-right font-semibold text-white">{selected.color_grade || selectedRecipe.colorGrade}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ) : null}
               </aside>
             </div>
 
