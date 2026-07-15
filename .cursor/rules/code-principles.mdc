@@ -1,0 +1,21 @@
+---
+alwaysApply: true
+description: Core code principles and best practices
+---
+
+# Code Principles & Best Practices
+
+## Core Principles
+- **Keep It Simple**: Avoid over-engineering
+- **DRY & SOLID**: Extract common code; single responsibility
+- **Readability First**: Self-documenting code; clear names over comments
+
+## Anti-Patterns
+- Unnecessary abstraction layers or "manager" classes
+- Deep inheritance; premature optimization
+
+## Preferred Patterns
+- Composition over inheritance
+- Small focused functions (aim ~20–30 lines)
+- Immutable data where possible
+- Fail fast with meaningful errors

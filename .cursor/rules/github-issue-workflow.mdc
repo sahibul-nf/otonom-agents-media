@@ -1,0 +1,65 @@
+---
+description: Default triage — investigate, file GitHub issues, add to board; implement only when approved.
+alwaysApply: true
+---
+
+# GitHub issue triage & delivery
+
+Canonical: `AGENTS.md`, `docs/github-workflow.md`
+
+## When this applies
+
+Any **feature**, **bug**, **improvement**, or stakeholder request — even without "create an issue".
+
+**Exceptions (implement directly):**
+- User names an issue: *Implement #5*, *Fix #12*, *work on #N*
+- User says *skip issue*, *just fix*, *no issue* (trivial only)
+- Pure questions
+
+## Phase 1 — Triage (default; do not implement)
+
+1. **Understand** — restate outcome in one line.
+2. **Codebase** — search/read; note gaps and files.
+3. **Duplicates** — `gh issue list --repo sahibul-nf/otonom-agents-media --state open --search "…"`
+4. **Create issue** via `./scripts/gh-triage-issue.sh`:
+   - Title: `[Bug]:` / `[Feature]:`
+   - Body: follow `docs/issue-body.example.md` — must include `## Acceptance criteria` with `- [ ]`
+   - Labels: `bug` or `enhancement`; `priority:…`; `client-facing` if user would notice
+5. **Board** — script adds to project; sync Priority/Focus.
+6. **Reply** — issue URL, summary, priority; **do not code**.
+
+End with: *"Review the issue; tell me which # to implement first."*
+
+## Phase 2 — Implement (only after user picks)
+
+Triggers: *Implement #N*, *kerjakan #N*, *LGTM on #N*, *approved #N*.
+
+1. Read acceptance criteria.
+2. Focused diff; tests when non-trivial.
+3. PR: `Fixes #N`; changelog if user-facing.
+4. Commits only when user asks.
+
+## Phase 3 — Close-out after QA
+
+Triggers: user says fix **works** / **ok** / **sudah work** for **#N**.
+
+1. Verify AC in codebase + commits.
+2. `./scripts/gh-close-verified-issue.sh N --comment-file …`
+3. Do not ask user to checklist manually.
+
+## Merge & push (when user asks)
+
+Merge to **`main`** → **`git push origin main`**. No separate integration branch in this repo.
+
+## Branch check (AI)
+
+Before any merge/push instructions, run **`git branch -a`**. Use `.workflow-kit.env` (`SINGLE_BRANCH`, `INTEGRATION_BRANCH`, `PRODUCTION_BRANCH`). If docs mention `dev` but the branch does not exist, follow **single-branch** rules in `AGENTS.md` — never invent branches.
+
+## Constants
+
+| Key | Value |
+|-----|--------|
+| Repo | `sahibul-nf/otonom-agents-media` |
+| Project | https://github.com/users/sahibul-nf/projects/7 |
+
+Requires `gh` with `repo` + `project` scopes.
