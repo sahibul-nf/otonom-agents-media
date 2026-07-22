@@ -15,8 +15,10 @@ from .caption_composer import compose_caption_groups
 from .costs import estimate_clip_cost
 from .credentials import credential_status
 from .curation import SAMPLE_NOURBIT_TRANSCRIPT, curate_dry_run
-from .db import DEFAULT_DB, ROOT, connect, ensure_media_profile, ensure_source_manifest, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
+from .db import DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, ensure_media_profile, ensure_source_manifest, fetch_all, fetch_one, initialize, load_json, seed_profile, seed_source
 from .env_loader import load_env_file
+from .explainer_pipeline import create_explainer_job, run_explainer
+from .explainer_planner import plan_explainer
 from .live_publishers import LivePublishError, publish_live_payload
 from .genres import normalize_genres
 from .hyperframes_previews import list_hyperframes_preview_status, prewarm_hyperframes_template_previews
@@ -115,6 +117,52 @@ def cmd_curate(args: argparse.Namespace) -> None:
     )
     conn.commit()
     print(json.dumps(candidate, indent=2, ensure_ascii=False))
+
+
+def cmd_explainer_plan(args: argparse.Namespace) -> None:
+    sources = [s.strip() for s in (args.sources or "").split("|") if s.strip()]
+    plan = plan_explainer(
+        args.topic,
+        sources=sources,
+        llm_provider=args.llm_provider,
+        language=args.language,
+    )
+    if args.output:
+        Path(args.output).write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps(plan, indent=2, ensure_ascii=False))
+
+
+def cmd_explainer_create(args: argparse.Namespace) -> None:
+    sources = [s.strip() for s in (args.sources or "").split("|") if s.strip()]
+    result = create_explainer_job(
+        topic=args.topic,
+        sources=sources,
+        profile_id=args.profile,
+        llm_provider=args.llm_provider,
+        language=args.language,
+        scenes_path=args.scenes,
+        db_path=args.db,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def cmd_explainer_run(args: argparse.Namespace) -> None:
+    sources = [s.strip() for s in (args.sources or "").split("|") if s.strip()]
+    prefer_hf = not args.ffmpeg_only
+    result = run_explainer(
+        topic=args.topic or "",
+        scenes_path=args.scenes,
+        clips_dir=args.clips_dir,
+        job_id=args.job_id,
+        profile_id=args.profile,
+        llm_provider=args.llm_provider,
+        language=args.language,
+        sources=sources,
+        prefer_hyperframes=prefer_hf,
+        register_review=not args.skip_review,
+        db_path=args.db,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
 def cmd_render(args: argparse.Namespace) -> None:
@@ -862,6 +910,37 @@ def build_parser() -> argparse.ArgumentParser:
     authorize.add_argument("--permission-evidence", required=True)
     authorize.add_argument("--monetization-allowed", action="store_true")
     authorize.set_defaults(func=cmd_authorize_source)
+
+    explainer_plan = sub.add_parser("explainer-plan", help="Plan hybrid explainer scenes from a topic")
+    explainer_plan.add_argument("--topic", required=True)
+    explainer_plan.add_argument("--sources", default="", help="Pipe-separated source notes")
+    explainer_plan.add_argument("--language", default="id")
+    explainer_plan.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    explainer_plan.add_argument("--output", help="Write plan JSON to this path")
+    explainer_plan.set_defaults(func=cmd_explainer_plan)
+
+    explainer_create = sub.add_parser("explainer-create", help="Create explainer job + fixtures folder (no stitch)")
+    explainer_create.add_argument("--topic", required=True)
+    explainer_create.add_argument("--sources", default="")
+    explainer_create.add_argument("--language", default="id")
+    explainer_create.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    explainer_create.add_argument("--scenes", help="Optional existing scenes JSON")
+    explainer_create.add_argument("--profile", default=DEFAULT_WORKSPACE_PROFILE_ID)
+    explainer_create.set_defaults(func=cmd_explainer_create)
+
+    explainer_run = sub.add_parser("explainer-run", help="Stitch explainer from fixtures / scenes into review queue")
+    explainer_run.add_argument("--topic", default="", help="Topic when creating a new job inline")
+    explainer_run.add_argument("--job-id", help="Existing explainer job id")
+    explainer_run.add_argument("--scenes", help="Path to scenes.json")
+    explainer_run.add_argument("--clips-dir", help="Directory of avatar fixture MP4s")
+    explainer_run.add_argument("--sources", default="")
+    explainer_run.add_argument("--language", default="id")
+    explainer_run.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    explainer_run.add_argument("--profile", default=DEFAULT_WORKSPACE_PROFILE_ID)
+    explainer_run.add_argument("--ffmpeg-only", action="store_true", help="Skip HyperFrames; use FFmpeg title cards")
+    explainer_run.add_argument("--skip-review", action="store_true", help="Do not register in dashboard review queue")
+    explainer_run.set_defaults(func=cmd_explainer_run)
+
     return parser
 
 
