@@ -193,7 +193,7 @@ Build Explainer Mode **around local assets**:
 
 1. `explainer_planner.py` — topic → scene JSON (`avatar` | `text` | `broll`)
 2. `explainer_stitch.py` — FFmpeg concat + audio bed
-3. HyperFrames recipes for text/b-roll scenes (reuse `data_market_explainer` / brand templates)
+3. HyperFrames recipes for text/b-roll scenes (default `techtalk_explainer` → `techtalk_intel_brief`; legacy alias `data_market_explainer` remains for short-form velocity packs)
 4. CLI: `explainer run --scenes scenes.json --clips-dir ./fixtures/`
 5. Drop avatar MP4s from Cursor+MCP / web download into `fixtures/` (manual import step)
 

@@ -1,0 +1,55 @@
+{
+  "id": "techtalk_style",
+  "label": "TechTalk Style",
+  "layout": {
+    "aspect_ratio": "16:9",
+    "layout_mode": "fill",
+    "fit_crop_aspect_ratio": "16:9",
+    "safe_zone_top": 120,
+    "safe_zone_bottom": 200
+  },
+  "caption": {
+    "preset": "techtalk",
+    "font_family": "Space Grotesk",
+    "fallback_font_family": "Arial",
+    "font_size": 48,
+    "font_weight": "bold",
+    "uppercase": false,
+    "position": "bottom",
+    "lines": 2,
+    "max_words_per_caption": 5,
+    "text_color": "#f8fafc",
+    "stroke_color": "#0f172a",
+    "stroke_width": 6,
+    "shadow": {
+      "enabled": true,
+      "x": 0,
+      "y": 2,
+      "blur": 8,
+      "color": "#020617"
+    },
+    "highlight_word_color": "#2dd4bf",
+    "animation": "fade",
+    "background_color": "rgba(8,15,28,0.72)",
+    "background_radius": 12
+  },
+  "brand": {
+    "watermark_text": "TechTalk",
+    "source_attribution_prefix": "Source:",
+    "cta_enabled": false,
+    "intro_enabled": false,
+    "outro_enabled": false
+  },
+  "ai": {
+    "remove_filler_words": true,
+    "remove_pauses": true,
+    "ai_keywords_highlighter": true,
+    "ai_emojis": false,
+    "auto_generate_stock_broll": false,
+    "auto_transitions": true
+  },
+  "hyperframes": {
+    "default_template": "techtalk_intel_brief",
+    "default_format": "long_16_9"
+  }
+}

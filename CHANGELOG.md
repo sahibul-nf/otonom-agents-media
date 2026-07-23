@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Added TechTalk HyperFrames brand pack (`techtalk_intel_brief` / `techtalk_explainer`) as the Explainer Mode default for text/b-roll scenes, plus `profiles/techtalk_style.json`.
+
 ## 2026-05-18
 
 - Removed the remaining publish permission blocker from the auto-publish guard and hid legacy blocked attempts from current dashboard state.
