@@ -3,7 +3,7 @@
 import {Sparkles, Wand2, ArrowUpRight, Zap, RefreshCcw, Calendar, Share2, Palette} from "lucide-react";
 import {ClipCandidate, ScheduledPost} from "@/lib/media-api";
 
-type Section = "dashboard" | "generate" | "templates" | "review" | "calendar" | "publish" | "brand";
+type Section = "dashboard" | "generate" | "explainer" | "templates" | "review" | "calendar" | "publish" | "brand";
 type NextAction = {
   label: string;
   detail: string;

@@ -265,6 +265,22 @@ export type AutonomySettings = {
   boundary_threshold: number;
 };
 
+export type ExplainerJob = {
+  job_id: string;
+  profile_id?: string;
+  topic?: string;
+  status: string;
+  plan_path?: string;
+  fixtures_dir?: string;
+  hyperframes_template?: string;
+  candidate_id?: string | null;
+  output_path?: string | null;
+  error?: string;
+  scene_count?: number;
+  avatar_scene_count?: number;
+  duration_seconds?: number;
+};
+
 export function apiPath(path: string) {
   return `/api/media/${path.replace(/^\//, "")}`;
 }

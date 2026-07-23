@@ -54,6 +54,40 @@ python3 -m media_engine.cli explainer-run \
 
 ---
 
+## Dashboard (Explainer tab)
+
+1. Open dashboard → **Explainer**.
+2. Enter topic (+ optional sources) → **Create job**.
+3. Cursor/HeyGen MCP imports avatar MP4s into `fixtures_dir` (shown in job status / MCP).
+4. **Stitch now** (default FFmpeg-only) → candidate appears in **Review**.
+5. Approve → Schedule / Channels (existing publishers; no silent auto-publish).
+
+API (via Next proxy → review server):
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/explainers` | List jobs |
+| GET | `/api/explainer-status?job_id=` | Job status |
+| POST | `/api/explainers` | Create plan |
+| POST | `/api/explainer-run` | Async stitch |
+
+---
+
+## Own-channel shorts flywheel
+
+Target cadence: **≤ 4 long-form / month** → N shorts.
+
+```text
+Explainer long-form (16:9)
+  → Review approve → publish to your YouTube channel
+  → paste that YouTube URL in Create (shorts pipeline)
+  → curate / render / Review / schedule multi-platform
+```
+
+No separate publish stack for Explainers — reuse Review + Schedule + Channels.
+
+---
+
 ## Fixture naming
 
 For each `avatar` scene in `scenes.json`:

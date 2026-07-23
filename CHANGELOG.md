@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Added TechTalk HyperFrames brand pack (`techtalk_intel_brief` / `techtalk_explainer`) as the Explainer Mode default for text/b-roll scenes, plus `profiles/techtalk_style.json`.
+- Added dashboard **Explainer** tab plus `/api/explainers` and `/api/explainer-run` for plan → stitch → Review, with documented own-channel long-form → shorts flywheel.
 
 ## 2026-05-18
 

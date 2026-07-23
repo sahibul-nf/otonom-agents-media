@@ -17,11 +17,17 @@ from urllib.parse import parse_qs, urlparse
 from .autonomy import get_autonomy_settings, update_autonomy_settings
 from .caption_edits import merge_caption_corrections
 from .clip_boundaries import update_clip_boundary
-from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_all, initialize
+from .db import ARTIFACTS_DIR, DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, fetch_all, initialize
 from .credentials import credential_status
 from .duration_presets import duration_preset_options
 from .env_loader import load_env_file
 from .env_store import unset_env_keys
+from .explainer_pipeline import (
+    create_explainer_job,
+    list_explainer_jobs,
+    read_explainer_status,
+    start_explainer_run,
+)
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .genres import genre_options
 from .hyperframes_catalog import list_hyperframes_catalog
@@ -263,6 +269,27 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 )
             )
             return
+        if parsed.path == "/api/explainers":
+            query = parse_qs(parsed.query)
+            profile_id = query.get("profile_id", [DEFAULT_WORKSPACE_PROFILE_ID])[0] or DEFAULT_WORKSPACE_PROFILE_ID
+            try:
+                limit = int(query.get("limit", ["20"])[0] or 20)
+            except ValueError:
+                limit = 20
+            self._send_json({"jobs": list_explainer_jobs(profile_id=profile_id, limit=max(1, min(limit, 100)))})
+            return
+        if parsed.path == "/api/explainer-status":
+            query = parse_qs(parsed.query)
+            job_id = (query.get("job_id", [""])[0] or "").strip()
+            profile_id = query.get("profile_id", [DEFAULT_WORKSPACE_PROFILE_ID])[0] or DEFAULT_WORKSPACE_PROFILE_ID
+            if not job_id:
+                self._send_json({"error": "job_id is required"}, status=400)
+                return
+            try:
+                self._send_json(read_explainer_status(job_id, profile_id=profile_id))
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+            return
         if parsed.path == "/api/autonomy-settings":
             conn = connect(DEFAULT_DB)
             initialize(conn)
@@ -417,6 +444,58 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=503)
                 return
             self._send_json(job, status=202)
+            return
+
+        if parsed.path == "/api/explainers":
+            topic = str(payload.get("topic") or "").strip()
+            if not topic:
+                self._send_json({"error": "topic is required"}, status=400)
+                return
+            sources_raw = payload.get("sources") or []
+            if isinstance(sources_raw, str):
+                sources = [line.strip() for line in sources_raw.splitlines() if line.strip()]
+            elif isinstance(sources_raw, list):
+                sources = [str(item).strip() for item in sources_raw if str(item).strip()]
+            else:
+                sources = []
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            try:
+                created = create_explainer_job(
+                    topic=topic,
+                    sources=sources or None,
+                    profile_id=profile_id,
+                    llm_provider=str(payload.get("llm_provider") or "none"),
+                    language=str(payload.get("language") or "id"),
+                    hyperframes_template=str(payload.get("hyperframes_template") or "techtalk_explainer"),
+                )
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(created, status=201)
+            return
+
+        if parsed.path == "/api/explainer-run":
+            job_id = str(payload.get("job_id") or "").strip()
+            if not job_id:
+                self._send_json({"error": "job_id is required"}, status=400)
+                return
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            prefer_hyperframes = not bool(payload.get("ffmpeg_only", True))
+            if "prefer_hyperframes" in payload:
+                prefer_hyperframes = bool(payload.get("prefer_hyperframes"))
+            try:
+                status = start_explainer_run(
+                    job_id=job_id,
+                    profile_id=profile_id,
+                    prefer_hyperframes=prefer_hyperframes,
+                )
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+                return
+            except (OSError, ValueError, RuntimeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(status, status=202)
             return
 
         if parsed.path == "/api/brand-template":
