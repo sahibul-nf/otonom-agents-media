@@ -259,7 +259,7 @@ def render_hyperframes_card(
     headline: str,
     narration: str,
     duration: float,
-    template: str = "data_market_explainer",
+    template: str = "techtalk_explainer",
 ) -> Path:
     """Render a text/broll card via HyperFrames when runtime is ready."""
     status = check_hyperframes_runtime(run_doctor=False)
@@ -294,9 +294,9 @@ def render_hyperframes_card(
         "id": profile_id,
         "default_render_preset": "explainer_long_16_9",
         "cta_text": "",
-        "watermark_text": "",
+        "watermark_text": "TechTalk",
     }
-    template_id = normalize_hyperframes_template(template or "data_market_explainer")
+    template_id = normalize_hyperframes_template(template or "techtalk_explainer")
     output_path, _contract = render_premium_hyperframes(
         candidate,
         profile,
@@ -305,7 +305,7 @@ def render_hyperframes_card(
         source_attribution="Explainer Mode",
         hyperframes_template=template_id,
         hyperframes_format="long_16_9",
-        genres=["crypto", "tech"],
+        genres=["explainer", "techtalk", "tech"],
     )
     # render_premium_hyperframes writes under ARTIFACTS_DIR; copy into work_dir for stitch locality
     dest = work_dir / f"{job_id}.mp4"
@@ -337,7 +337,7 @@ def render_text_or_broll_scene(
                 headline=headline,
                 narration=narration,
                 duration=duration,
-                template=str(scene.get("template") or "data_market_explainer"),
+                template=str(scene.get("template") or "techtalk_explainer"),
             )
         except Exception:
             pass

@@ -5,7 +5,7 @@ Agent-driven hybrid long-form: **avatar fixtures** (from HeyGen MCP / web) + **H
 No HeyGen Direct API required for this phase.
 
 Canonical architecture: [`explainer-saas-architecture.md`](./explainer-saas-architecture.md)  
-Issues: [#5](https://github.com/sahibul-nf/otonom-agents-media/issues/5), [#6](https://github.com/sahibul-nf/otonom-agents-media/issues/6)
+Issues: [#5](https://github.com/sahibul-nf/otonom-agents-media/issues/5), [#6](https://github.com/sahibul-nf/otonom-agents-media/issues/6), brand pack [#10](https://github.com/sahibul-nf/otonom-agents-media/issues/10)
 
 ---
 
@@ -116,6 +116,14 @@ Checked-in example: [`docs/otonom-mcp.cursor.example.json`](./otonom-mcp.cursor.
 - Avatar look: `0f4dca86e0bd42d8a8afdae9948338ce`
 - Voice: `LXpG1p9h8viifHEGQiFJ`
 - Direct API (later #7): engine `avatar_iii`
+- HyperFrames default for text/broll: `techtalk_explainer` → `techtalk_intel_brief`
+- Style profile: `media-engine/profiles/techtalk_style.json`
+
+Vibe references (edu-finance hybrid, not hour-long podcasts):
+
+- https://www.youtube.com/@RaymondChins/videos
+- https://www.youtube.com/@TimothyRonald/videos
+- https://www.youtube.com/@Theresalearns/videos
 
 ---
 

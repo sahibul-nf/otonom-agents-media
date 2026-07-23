@@ -9,7 +9,7 @@ from typing import Any
 
 AUTO_TEMPLATE_ID = "auto"
 DEFAULT_TEMPLATE_ID = "spiritual_reflective"
-TEMPLATE_VERSION = "1.3.0"
+TEMPLATE_VERSION = "1.4.0"
 ROOT = Path(__file__).resolve().parents[1]
 STOCK_DIR = ROOT / "render" / "hyperframes" / "stock"
 PREVIEW_SECONDS = 15
@@ -18,6 +18,8 @@ ALIASES = {
     "nourbit_reflective": "spiritual_reflective",
     "podcast_talking_head": "grit_training_stamp",
     "data_market_explainer": "velocity_business_promo",
+    "techtalk_explainer": "techtalk_intel_brief",
+    "techtalk": "techtalk_intel_brief",
     "news_geo_brief": "byline_trust_quote",
     "product_brand_promo": "prism_pro_pricing",
     "warm_grain_editorial": "archive_magazine",
@@ -396,6 +398,21 @@ TEMPLATES: tuple[HyperframesTemplate, ...] = (
         secondary_accent="#94a3b8",
         overlay_class="template-news",
         preview_source_video="chalk_word_emphasis.mp4",
+    ),
+    HyperframesTemplate(
+        id="techtalk_intel_brief",
+        label="TechTalk Intel Brief",
+        category="Data",
+        best_for="Edu-finance explainers: clean key takeaways, bilingual tech/finance talking-head hybrids.",
+        effects=("intel lower-third", "teal keyline", "takeaway card", "brand chip"),
+        caption_style="TechTalk weighted captions",
+        default_genres=("explainer", "techtalk", "tech_edu"),
+        status="ready",
+        tone="Clean, confident, edu-finance",
+        accent="#2dd4bf",
+        secondary_accent="#e2e8f0",
+        overlay_class="template-data",
+        preview_source_video="velocity_business_promo.mp4",
     ),
 )
 

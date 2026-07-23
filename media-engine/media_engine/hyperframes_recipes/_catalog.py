@@ -24,6 +24,7 @@ _FONTS = {
     "outfit": "https://fonts.googleapis.com/css2?family=Outfit:wght@500;800&display=swap",
     "libre": "https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap",
     "rubik": "https://fonts.googleapis.com/css2?family=Rubik:wght@500;800&display=swap",
+    "space_grotesk": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap",
 }
 
 _LAYER = ".template-layer{position:absolute;z-index:5;pointer-events:none}"
@@ -207,6 +208,19 @@ def _chalk_overlay(_c, _t, _l):
     return '<div class="template-layer chalk-board"><span>emphasis</span></div>'
 
 
+def _techtalk_overlay(c, _t, _l):
+    hook = _e(c.get("titleHook") or c.get("title_hook") or "Key takeaway")
+    subtitle = _e(c.get("hookSubtitle") or c.get("hook_subtitle") or c.get("subtitle") or "")
+    brand = _e(c.get("watermarkText") or "TechTalk")
+    subtitle_html = f"<small>{subtitle}</small>" if subtitle else ""
+    return (
+        f'<div class="template-layer techtalk-brand">{brand}</div>'
+        '<div class="template-layer techtalk-keyline"></div>'
+        f'<div class="template-layer techtalk-brief"><span class="micro-label">Key takeaway</span>'
+        f"<strong>{hook}</strong>{subtitle_html}</div>"
+    )
+
+
 _RECIPE_SPECS: list[dict[str, Any]] = [
 
     _spec(
@@ -256,6 +270,38 @@ _RECIPE_SPECS: list[dict[str, Any]] = [
     _spec("prism_pro_pricing", font="outfit", font_family='"Outfit", sans-serif', caption_style="Highlighted price label", motion="price-pop", grade="prism clean", video_filter="contrast(1.1) saturate(1.08) brightness(.94)", overlay_fn=_prism_overlay, css=".price-tag{right:48px;top:160px;padding:16px 20px;border-radius:16px;background:rgba(0,0,0,.72);border:2px solid var(--template-accent);font-family:Outfit,sans-serif}.price-tag span{display:block;font-size:14px;color:rgba(255,255,255,.7)}.price-tag strong{font-size:40px;color:var(--template-accent)}"),
 
     _spec("chalk_word_emphasis", font="permanent", font_family='"Permanent Marker", cursive', caption_style="Chalk handwriting dark", motion="chalk-scribble", grade="chalk dark board", video_filter="contrast(1.12) saturate(.65) brightness(.78)", overlay_fn=_chalk_overlay, css="#root.recipe-chalk-word-emphasis .caption-text{font-family:'Permanent Marker',cursive;color:#f8fafc}#root.recipe-chalk-word-emphasis .caption-card{background:rgba(15,23,42,.85);border:2px dashed rgba(248,250,252,.35)}.chalk-board{left:48px;right:48px;bottom:240px;padding:20px;border-radius:8px;background:rgba(2,6,23,.75);font-family:'Permanent Marker',cursive;font-size:36px;color:#e2e8f0}"),
+
+    _spec(
+        "techtalk_intel_brief",
+        font="space_grotesk",
+        font_family='"Space Grotesk", system-ui, sans-serif',
+        caption_style="TechTalk teal takeaway",
+        motion="brief-slide",
+        grade="intel cool slate",
+        video_filter="contrast(1.08) saturate(0.92) brightness(0.88)",
+        overlay_fn=_techtalk_overlay,
+        css=(
+            "#root.recipe-techtalk-intel-brief .caption-text{font-family:'Space Grotesk',sans-serif;font-weight:600}"
+            "#root.recipe-techtalk-intel-brief .caption-card{border:none;border-left:4px solid var(--template-accent);"
+            "background:rgba(8,15,28,.72);border-radius:0 14px 14px 0}"
+            ".techtalk-brand{left:48px;top:48px;padding:8px 14px;border-radius:999px;letter-spacing:.14em;"
+            "font-size:13px;font-weight:700;text-transform:uppercase;color:#0f172a;background:var(--template-accent);"
+            "font-family:'Space Grotesk',sans-serif}"
+            ".techtalk-keyline{left:48px;top:108px;width:72px;height:3px;background:var(--template-accent);"
+            "box-shadow:0 0 18px rgba(45,212,191,.45)}"
+            ".techtalk-brief{left:48px;right:48px;bottom:240px;padding:22px 26px;border-radius:18px;"
+            "background:linear-gradient(135deg,rgba(8,15,28,.88),rgba(15,23,42,.72));"
+            "border:1px solid rgba(45,212,191,.35);font-family:'Space Grotesk',sans-serif;color:#f8fafc}"
+            ".techtalk-brief .micro-label{display:block;margin-bottom:8px;font-size:12px;letter-spacing:.16em;"
+            "text-transform:uppercase;color:var(--template-accent);font-weight:700}"
+            ".techtalk-brief strong{display:block;font-size:36px;line-height:1.15;font-weight:700}"
+            ".techtalk-brief small{display:block;margin-top:10px;font-size:18px;line-height:1.35;color:#cbd5e1}"
+        ),
+        motion_extra=(
+            ".techtalk-brief{animation:techtalkBriefIn .55s ease-out both}"
+            "@keyframes techtalkBriefIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}"
+        ),
+    ),
 ]
 
 _BUILTIN_BY_ID = {spec["id"]: recipe_from_spec(spec) for spec in _RECIPE_SPECS}
