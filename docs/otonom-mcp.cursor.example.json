@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "otonom-media": {
+      "command": "python3",
+      "args": ["-m", "media_engine.otonom_mcp"],
+      "cwd": "/ABS/PATH/TO/otonom-agents-media/media-engine",
+      "env": {
+        "PYTHONPATH": "/ABS/PATH/TO/otonom-agents-media/media-engine"
+      }
+    }
+  }
+}

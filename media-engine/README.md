@@ -28,6 +28,12 @@ python3 -m media_engine.cli premium-test --youtube-url "https://www.youtube.com/
 python3 -m media_engine.cli premium-test --youtube-url "https://www.youtube.com/live/WSg7MGv4_Fs" --renderer ffmpeg --style profiles/nourbit_opus_style.json
 python3 -m media_engine.cli premium-test --youtube-url "https://www.youtube.com/live/WSg7MGv4_Fs" --renderer remotion
 python3 -m media_engine.cli premium-curate --youtube-url "https://www.youtube.com/live/WSg7MGv4_Fs" --count 5 --llm-provider none
+
+# Explainer Mode Phase 0 (fixtures + stitch → review). See docs/explainer-mode.md
+.venv-tools/bin/pip install -r requirements-explainer.txt   # Pillow for title cards
+python3 -m media_engine.cli explainer-create --topic "Apa itu Bitcoin?"
+python3 -m media_engine.cli explainer-run --job-id <job_id> --ffmpeg-only
+# Thin MCP: python3 -m media_engine.otonom_mcp  (docs/otonom-mcp.cursor.example.json)
 python3 -m media_engine.cli premium-batch --youtube-url "https://www.youtube.com/live/WSg7MGv4_Fs" --count 5 --renderer ffmpeg --style profiles/nourbit_opus_style.json --llm-provider none
 python3 -m media_engine.cli approve --candidate-id <clip_id>
 python3 -m media_engine.cli publish --candidate-id <clip_id>

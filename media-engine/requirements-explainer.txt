@@ -1,0 +1,2 @@
+# Optional deps for Explainer Mode Phase 0 title cards (FFmpeg builds without libfreetype).
+pillow>=10.0.0
