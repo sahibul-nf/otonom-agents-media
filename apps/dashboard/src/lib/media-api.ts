@@ -63,6 +63,7 @@ export type ClipCandidate = {
     caption_coverage?: number;
     caption_overlap_count?: number;
     output_path?: string;
+    renderer?: string;
   };
   cost?: {
     estimated_total?: number;
@@ -72,6 +73,15 @@ export type ClipCandidate = {
   };
   curation_metadata?: Record<string, unknown>;
 };
+
+/** Explainer Mode long-form candidates registered by explainer_pipeline. */
+export function isExplainerClip(clip?: ClipCandidate | null): boolean {
+  if (!clip) return false;
+  if (clip.caption_source === "explainer") return true;
+  if (clip.curation_metadata?.kind === "explainer") return true;
+  if (typeof clip.curation_metadata?.job_id === "string" && String(clip.id || "").startsWith("cand_expl_")) return true;
+  return String(clip.render_quality?.renderer || "") === "explainer_stitch";
+}
 
 export type PublishTarget = {
   id: number;

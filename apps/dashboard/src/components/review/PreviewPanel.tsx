@@ -2,7 +2,7 @@
 
 import {Pause, Play, SkipBack, SkipForward, Volume2, VolumeX} from "lucide-react";
 import {useRef, useState} from "react";
-import {apiPath, ClipCandidate} from "@/lib/media-api";
+import {apiPath, ClipCandidate, isExplainerClip} from "@/lib/media-api";
 
 type PreviewPanelProps = {
   clip?: ClipCandidate;
@@ -13,15 +13,20 @@ type PreviewPanelProps = {
 
 export function PreviewPanel({clip, statusTone, embedded = false, hideHeader = false}: PreviewPanelProps) {
   const output = clip?.output_path || clip?.render_quality?.output_path;
+  const landscape = isExplainerClip(clip);
   return (
     <div className={embedded ? "" : "rounded-[28px] border border-white/[0.08] bg-surface p-5"}>
-      {!hideHeader ? <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-white">9:16 Preview</h3>
-        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip?.status || "empty")}`}>{clip?.status || "No clip"}</span>
+      {!hideHeader ? <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="text-lg font-semibold text-white">{landscape ? "16:9 Preview" : "9:16 Preview"}</h3>
+        <div className="flex items-center gap-2">
+          {landscape ? (
+            <span className="rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-xs font-semibold text-cyan">Explainer</span>
+          ) : null}
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(clip?.status || "empty")}`}>{clip?.status || "No clip"}</span>
+        </div>
       </div> : null}
       
-      {/* Clean rounded 9:16 preview container matching the grid cards precisely */}
-      <div className="relative mx-auto w-full max-w-[17.5rem] aspect-[9/16] overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#050507] shadow-inner">
+      <div className={`relative mx-auto w-full overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#050507] shadow-inner ${landscape ? "max-w-3xl aspect-video" : "max-w-[17.5rem] aspect-[9/16]"}`}>
         {output ? <VideoPreviewPlayer key={output} output={output} /> : (
           <div className="absolute inset-0 grid place-items-center bg-black/40">
             <div className="grid place-items-center gap-3 px-8 text-center text-sm text-zinc-500">

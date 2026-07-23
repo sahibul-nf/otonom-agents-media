@@ -2,7 +2,7 @@
 
 import {AlertTriangle, CheckCircle2, ChevronRight, Clock3, ListFilter, Loader2, MessageSquareText, MoreHorizontal, RefreshCcw, Scissors, Sparkles, Trash2, LayoutGrid, List, Play} from "lucide-react";
 import {useEffect, useRef, useState} from "react";
-import {ClipCandidate, formatDuration, formatTimestamp, scoreValue, apiPath} from "@/lib/media-api";
+import {ClipCandidate, formatDuration, formatTimestamp, isExplainerClip, scoreValue, apiPath} from "@/lib/media-api";
 import {PreviewPanel} from "@/components/review/PreviewPanel";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {FocusModal} from "@/components/FocusModal";
@@ -81,6 +81,10 @@ function clipReadinessItems(clip: ClipCandidate): ReadinessItem[] {
   const confidence = clip.score?.caption_confidence || clip.score?.asr_confidence;
   const qualityScore = clip.render_quality?.quality_score;
   const captionBlocked = clip.status === "held" || (clip.render_quality?.caption_overlap_count || 0) > 0;
+  const explainer = isExplainerClip(clip);
+  const timingReady = explainer
+    ? duration >= 3_000 && duration <= 30 * 60_000
+    : duration >= 20_000 && duration <= 180_000;
   return [
     {
       id: "hook",
@@ -92,16 +96,30 @@ function clipReadinessItems(clip: ClipCandidate): ReadinessItem[] {
     {
       id: "timing",
       label: "Timing",
-      status: duration >= 20_000 && duration <= 180_000 ? "ready" : "blocked",
+      status: timingReady ? "ready" : "blocked",
       tab: "timing",
-      note: `${formatDuration(duration)} clip span`,
+      note: explainer ? `${formatDuration(duration)} long-form Explainer` : `${formatDuration(duration)} clip span`,
     },
     {
       id: "captions",
       label: "Captions",
-      status: captionBlocked ? "blocked" : typeof coverage === "number" && coverage < 0.9 || typeof confidence === "number" && confidence < 82 ? "review" : "ready",
+      status: explainer
+        ? captionBlocked
+          ? "blocked"
+          : "ready"
+        : captionBlocked
+          ? "blocked"
+          : typeof coverage === "number" && coverage < 0.9 || typeof confidence === "number" && confidence < 82
+            ? "review"
+            : "ready",
       tab: "captions",
-      note: captionBlocked ? "Repair captions before approval" : typeof coverage === "number" ? `${Math.round(coverage * 100)}% coverage` : "Caption timing available",
+      note: explainer
+        ? "Explainer uses scene overlays; short-form ASR checks skipped"
+        : captionBlocked
+          ? "Repair captions before approval"
+          : typeof coverage === "number"
+            ? `${Math.round(coverage * 100)}% coverage`
+            : "Caption timing available",
     },
     {
       id: "qa",
@@ -344,6 +362,7 @@ export function ReviewStudioSection({
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="truncate text-sm font-semibold text-white">{clip.title_hook}</h4>
+                    {isExplainerClip(clip) ? <span className="rounded-full border border-cyan/30 bg-cyan/10 px-2 py-0.5 text-[10px] font-medium text-cyan">Explainer</span> : null}
                     {clip.status !== "draft" ? <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusTone(clip.status)}`}>{formatStatus(clip.status)}</span> : null}
                     {renderState ? <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusTone(renderState.status === "running" ? "running" : renderState.status === "failed" ? "failed" : "completed")}`}>{renderState.status === "running" ? "Rendering" : formatStatus(renderState.status)}</span> : null}
                     {rowAction && renderState?.status !== "running" ? <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusTone(rowAction.status === "running" ? "running" : rowAction.status)}`}>{rowAction.message}</span> : null}
@@ -615,7 +634,12 @@ function ReviewDetailPane({
               <div className="grid gap-4">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Hook Title</p>
-                  <p className="mt-1 text-lg font-semibold text-white leading-relaxed">{clip.title_hook}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <p className="text-lg font-semibold text-white leading-relaxed">{clip.title_hook}</p>
+                    {isExplainerClip(clip) ? (
+                      <span className="rounded-full border border-cyan/30 bg-cyan/10 px-2.5 py-0.5 text-[10px] font-semibold text-cyan">Explainer</span>
+                    ) : null}
+                  </div>
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Viral Reason / Subtitle</p>
@@ -812,13 +836,19 @@ function parseTimecode(value: string) {
   return Math.round(seconds * 1000);
 }
 
-function boundaryValidation(startText: string, endText: string) {
+function boundaryValidation(startText: string, endText: string, options?: {explainer?: boolean}) {
   const startMs = parseTimecode(startText);
   const endMs = parseTimecode(endText);
   if (startMs === null || endMs === null) return {valid: false, message: "Use HH:MM:SS, MM:SS, or seconds.", startMs: 0, endMs: 0};
   if (endMs <= startMs) return {valid: false, message: "End time must be after start time.", startMs, endMs};
   const duration = endMs - startMs;
-  if (duration < 20_000 || duration > 180_000) return {valid: false, message: "Duration must stay between 20 seconds and 3 minutes.", startMs, endMs};
+  if (options?.explainer) {
+    if (duration < 3_000 || duration > 30 * 60_000) {
+      return {valid: false, message: "Explainer duration must stay between 3 seconds and 30 minutes.", startMs, endMs};
+    }
+  } else if (duration < 20_000 || duration > 180_000) {
+    return {valid: false, message: "Duration must stay between 20 seconds and 3 minutes.", startMs, endMs};
+  }
   return {valid: true, message: `${formatDuration(duration)} duration`, startMs, endMs};
 }
 
@@ -951,7 +981,9 @@ function TimingEditor({clip, actionBusy, boundaryState, onSaveBoundary}: {
 }) {
   const [timingStart, setTimingStart] = useState(formatTimestamp(clip.start_ms));
   const [timingEnd, setTimingEnd] = useState(formatTimestamp(clip.end_ms));
-  const boundary = boundaryValidation(timingStart, timingEnd);
+  const explainer = isExplainerClip(clip);
+  const minSpanMs = explainer ? 3_000 : 20_000;
+  const boundary = boundaryValidation(timingStart, timingEnd, {explainer});
   const trimStartMs = boundary.startMs || clip.start_ms;
   const trimEndMs = boundary.endMs || clip.end_ms;
   const clipDuration = Math.max(1, clip.end_ms - clip.start_ms);
@@ -961,12 +993,12 @@ function TimingEditor({clip, actionBusy, boundaryState, onSaveBoundary}: {
   const controlsDisabled = actionBusy || clip.status === "published";
 
   function setStartMs(nextMs: number) {
-    const clamped = Math.min(Math.max(clip.start_ms, nextMs), trimEndMs - 20_000);
+    const clamped = Math.min(Math.max(clip.start_ms, nextMs), trimEndMs - minSpanMs);
     setTimingStart(formatTimestamp(clamped));
   }
 
   function setEndMs(nextMs: number) {
-    const clamped = Math.max(Math.min(clip.end_ms, nextMs), trimStartMs + 20_000);
+    const clamped = Math.max(Math.min(clip.end_ms, nextMs), trimStartMs + minSpanMs);
     setTimingEnd(formatTimestamp(clamped));
   }
 
@@ -1000,9 +1032,9 @@ function TimingEditor({clip, actionBusy, boundaryState, onSaveBoundary}: {
           <input
             type="range"
             min={clip.start_ms}
-            max={Math.max(clip.start_ms + 20_000, trimEndMs - 20_000)}
+            max={Math.max(clip.start_ms + minSpanMs, trimEndMs - minSpanMs)}
             step={500}
-            value={Math.max(clip.start_ms, Math.min(trimStartMs, trimEndMs - 20_000))}
+            value={Math.max(clip.start_ms, Math.min(trimStartMs, trimEndMs - minSpanMs))}
             disabled={controlsDisabled}
             onChange={(event) => setStartMs(Number(event.currentTarget.value))}
             className="absolute inset-x-3 top-1/2 z-10 h-1 -translate-y-1/2 cursor-pointer appearance-none bg-transparent accent-[#6ce2ee] disabled:cursor-not-allowed disabled:opacity-40"
@@ -1010,10 +1042,10 @@ function TimingEditor({clip, actionBusy, boundaryState, onSaveBoundary}: {
           />
           <input
             type="range"
-            min={Math.min(clip.end_ms - 20_000, trimStartMs + 20_000)}
+            min={Math.min(clip.end_ms - minSpanMs, trimStartMs + minSpanMs)}
             max={clip.end_ms}
             step={500}
-            value={Math.min(clip.end_ms, Math.max(trimEndMs, trimStartMs + 20_000))}
+            value={Math.min(clip.end_ms, Math.max(trimEndMs, trimStartMs + minSpanMs))}
             disabled={controlsDisabled}
             onChange={(event) => setEndMs(Number(event.currentTarget.value))}
             className="absolute inset-x-3 top-1/2 z-20 h-1 -translate-y-1/2 cursor-pointer appearance-none bg-transparent accent-[#6ce2ee] disabled:cursor-not-allowed disabled:opacity-40"
@@ -1229,7 +1261,7 @@ function ClipGridCard({
       } ${rowMenuId === clip.id ? "z-20" : ""}`}
     >
       <MediaPreviewFrame
-        aspect="portrait"
+        aspect={isExplainerClip(clip) ? "landscape" : "portrait"}
         src={hasVideo ? videoUrl : null}
         videoRef={videoRef}
         className="review-clip-card-preview"
@@ -1244,6 +1276,11 @@ function ClipGridCard({
         }
       >
         <div className="absolute left-2 top-2 z-[4] flex flex-wrap gap-1">
+          {isExplainerClip(clip) ? (
+            <span className="rounded-full border border-cyan/[0.28] bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-cyan backdrop-blur-md">
+              Explainer
+            </span>
+          ) : null}
           {renderState?.status === "running" ? (
             <span className="inline-flex items-center gap-1 rounded-full border border-cyan/[0.28] bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-cyan backdrop-blur-md">
               <Loader2 className="h-2.5 w-2.5 animate-spin" />
