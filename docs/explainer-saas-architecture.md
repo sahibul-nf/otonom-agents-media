@@ -1,8 +1,8 @@
 # Explainer Mode & SaaS Render Architecture
 
-**Status:** Design note (pre-implementation)  
+**Status:** Phase 0 + MCP + TechTalk pack + dashboard Explainer tab on `main` (see #5 #6 #8 #10)  
 **Related issue:** [#4 — Explainer Mode](https://github.com/sahibul-nf/otonom-agents-media/issues/4)  
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-23
 
 ---
 

@@ -17,6 +17,7 @@ import {
   Sparkles,
   Wand2,
   XCircle,
+  BookOpen,
 } from "lucide-react";
 import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
 import {
@@ -29,6 +30,7 @@ import {
   CredentialStatus,
   DurationPreset,
   EngineHealth,
+  ExplainerJob,
   formatDuration,
   formatTimestamp,
   GenerationJob,
@@ -48,12 +50,13 @@ import {BrandSection} from "@/components/brand/BrandSection";
 import {FocusModal} from "@/components/FocusModal";
 import {DashboardSection} from "@/components/home/DashboardSection";
 import {GenerateSection} from "@/components/generate/GenerateSection";
+import {ExplainerSection} from "@/components/explainer/ExplainerSection";
 import {TemplatesSection} from "@/components/templates/TemplatesSection";
 import {CalendarSection} from "@/components/calendar/CalendarSection";
 import {PublishSection} from "@/components/channels/PublishSection";
 import {EmptyState, InlineActionStatus, SettingTile} from "@/components/shared/StudioPrimitives";
 
-type Section = "dashboard" | "generate" | "templates" | "review" | "calendar" | "publish" | "brand";
+type Section = "dashboard" | "generate" | "explainer" | "templates" | "review" | "calendar" | "publish" | "brand";
 type NextAction = {
   label: string;
   detail: string;
@@ -161,6 +164,7 @@ function publicAccountLabel(target: PublishTarget) {
 const nav = [
   {id: "dashboard", label: "Home", icon: LayoutDashboard},
   {id: "generate", label: "Create", icon: Wand2},
+  {id: "explainer", label: "Explainer", icon: BookOpen},
   {id: "templates", label: "Templates", icon: Sparkles},
   {id: "review", label: "Review", icon: Clapperboard},
   {id: "calendar", label: "Schedule", icon: CalendarDays},
@@ -176,6 +180,10 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   generate: {
     title: "Create",
     subtitle: "Choose a template, add a source, and generate a focused production batch.",
+  },
+  explainer: {
+    title: "Explainer",
+    subtitle: "Plan hybrid long-form jobs, stitch fixtures, then approve in Review.",
   },
   templates: {
     title: "Templates",
@@ -211,6 +219,13 @@ function renderEditorialTitle(title: string) {
     return (
       <>
         <span className="font-editorial italic font-normal text-cyan">Create</span> clips
+      </>
+    );
+  }
+  if (title === "Explainer") {
+    return (
+      <>
+        <span className="font-editorial italic font-normal text-cyan">Explainer</span> studio
       </>
     );
   }
@@ -440,6 +455,7 @@ export function MediaStudioApp() {
   const [engineHealth, setEngineHealth] = useState<EngineHealth | null>(null);
   const [autonomy, setAutonomy] = useState<AutonomySettings | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  const [explainerJobs, setExplainerJobs] = useState<ExplainerJob[]>([]);
   const [rerenderJobs, setRerenderJobs] = useState<RerenderJob[]>([]);
   const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
   const [publishAttempts, setPublishAttempts] = useState<PublishAttempt[]>([]);
@@ -588,6 +604,7 @@ export function MediaStudioApp() {
         scheduleRows,
         autonomyRows,
         attemptResult,
+        explainerResult,
       ] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>("targets"),
@@ -604,6 +621,7 @@ export function MediaStudioApp() {
         apiGet<ScheduledPost[]>("schedule"),
         apiGet<AutonomySettings>("autonomy-settings"),
         apiGet<PublishAttempt[]>("publish-attempts").then((rows) => ({ok: true as const, rows})).catch((error) => ({ok: false as const, error})),
+        apiGet<{jobs: ExplainerJob[]}>("explainers").then((payload) => ({ok: true as const, jobs: payload.jobs || []})).catch((error) => ({ok: false as const, error})),
       ]);
       setClips(reviewRows);
       setTargets(targetRows);
@@ -620,6 +638,7 @@ export function MediaStudioApp() {
       setSchedule(scheduleRows);
       setAutonomy(autonomyRows);
       setPublishAttempts(attemptResult.ok ? attemptResult.rows : []);
+      setExplainerJobs(explainerResult.ok ? explainerResult.jobs : []);
       setRerendering({});
       setPublishSelection((current) => {
         const enabled = targetRows
@@ -712,6 +731,49 @@ export function MediaStudioApp() {
       window.setTimeout(() => void refreshAll(), 1600);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Generation failed");
+    }
+  }
+
+  const refreshExplainerJobs = () => {
+    void refreshAll();
+  };
+
+  async function createExplainerJob(payload: {topic: string; sources: string; hyperframes_template: string}) {
+    const key = "explainer:create";
+    try {
+      const job = await runAction(
+        key,
+        "Creating Explainer job...",
+        () =>
+          apiPost<ExplainerJob>("explainers", {
+            topic: payload.topic,
+            sources: payload.sources,
+            hyperframes_template: payload.hyperframes_template,
+          }),
+        "Explainer job created",
+      );
+      setExplainerJobs((items) => [job, ...items.filter((item) => item.job_id !== job.job_id)]);
+      setStatus(`Explainer planned: ${job.job_id}`);
+      pushToast("Explainer job created — import avatar fixtures, then stitch", "success");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Explainer create failed");
+    }
+  }
+
+  async function runExplainerJob(jobId: string, ffmpegOnly: boolean) {
+    const key = `explainer:${jobId}:run`;
+    try {
+      const job = await runAction(
+        key,
+        "Queueing Explainer stitch...",
+        () => apiPost<ExplainerJob>("explainer-run", {job_id: jobId, ffmpeg_only: ffmpegOnly}),
+        "Explainer stitch started",
+      );
+      setExplainerJobs((items) => items.map((item) => (item.job_id === jobId ? {...item, ...job} : item)));
+      setStatus("Explainer rendering in background");
+      window.setTimeout(() => void refreshAll(), 2000);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Explainer run failed");
     }
   }
 
@@ -1189,6 +1251,24 @@ export function MediaStudioApp() {
               onGenerate={startGeneration}
               onCopy={() => copyText(command, "Production command copied")}
               renderReadinessLine={(props) => <ReadinessLine {...props} />}
+              renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
+              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
+            />
+          )}
+
+          {section === "explainer" && (
+            <ExplainerSection
+              jobs={explainerJobs}
+              templates={hyperframesTemplates}
+              actionState={actionStates["explainer:create"] || Object.entries(actionStates).find(([key]) => key.startsWith("explainer:") && key.endsWith(":run"))?.[1]}
+              statusTone={statusTone}
+              onCreate={createExplainerJob}
+              onRun={runExplainerJob}
+              onRefresh={refreshExplainerJobs}
+              onOpenReview={(candidateId) => {
+                if (candidateId) setSelectedId(candidateId);
+                setSection("review");
+              }}
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
               renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
             />

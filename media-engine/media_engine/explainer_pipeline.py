@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ from .explainer_stitch import (
     stitch_segments,
     write_stitch_manifest,
 )
+from .hyperframes_templates import normalize_hyperframes_template
 
 
 def _job_id() -> str:
@@ -78,6 +80,19 @@ def import_avatar_clip(
     return dest
 
 
+def _apply_template_to_plan(plan: dict[str, Any], template: str) -> dict[str, Any]:
+    template_id = normalize_hyperframes_template(template or "techtalk_explainer")
+    if template_id == "auto":
+        template_id = "techtalk_intel_brief"
+    for scene in plan.get("scenes") or []:
+        if not isinstance(scene, dict):
+            continue
+        if str(scene.get("type") or "") in {"text", "broll"}:
+            scene["template"] = template_id
+    plan["hyperframes_template"] = template_id
+    return plan
+
+
 def create_explainer_job(
     *,
     topic: str,
@@ -86,6 +101,7 @@ def create_explainer_job(
     llm_provider: str = "none",
     language: str = "id",
     scenes_path: str | None = None,
+    hyperframes_template: str = "techtalk_explainer",
     db_path: str | Path = DEFAULT_DB,
 ) -> dict[str, Any]:
     """Create job folder + scene plan (does not stitch yet)."""
@@ -98,6 +114,7 @@ def create_explainer_job(
         plan = load_plan_file(scenes_path)
     else:
         plan = plan_explainer(topic, sources=sources, llm_provider=llm_provider, language=language)
+    plan = _apply_template_to_plan(plan, hyperframes_template)
 
     plan_path = root / "scenes.json"
     plan_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -109,9 +126,12 @@ def create_explainer_job(
         "status": "planned",
         "plan_path": str(plan_path),
         "fixtures_dir": str(fixtures),
+        "hyperframes_template": plan.get("hyperframes_template") or "techtalk_intel_brief",
         "candidate_id": None,
         "output_path": None,
         "error": "",
+        "scene_count": len(plan.get("scenes") or []),
+        "avatar_scene_count": sum(1 for s in (plan.get("scenes") or []) if isinstance(s, dict) and s.get("type") == "avatar"),
     }
     (root / "status.json").write_text(json.dumps(status, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -366,3 +386,36 @@ def list_review_queue(*, db_path: str | Path = DEFAULT_DB, limit: int = 50) -> l
         item["curation_metadata"] = meta
         items.append(item)
     return items
+
+
+def start_explainer_run(
+    *,
+    job_id: str,
+    profile_id: str = DEFAULT_WORKSPACE_PROFILE_ID,
+    prefer_hyperframes: bool = False,
+    db_path: str | Path = DEFAULT_DB,
+) -> dict[str, Any]:
+    """Queue an async stitch for an existing Explainer job. Returns current status."""
+    status = read_explainer_status(job_id, profile_id=profile_id)
+    if status.get("status") == "rendering":
+        return status
+
+    root = explainer_artifact_dir(profile_id, job_id)
+    status["status"] = "rendering"
+    status["error"] = ""
+    _write_status(root, status)
+
+    def _worker() -> None:
+        try:
+            run_explainer(
+                job_id=job_id,
+                profile_id=profile_id,
+                prefer_hyperframes=prefer_hyperframes,
+                db_path=db_path,
+            )
+        except Exception:
+            # run_explainer already persists failed status
+            return
+
+    threading.Thread(target=_worker, daemon=True, name=f"explainer-run-{job_id}").start()
+    return status
