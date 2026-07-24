@@ -212,11 +212,20 @@ def _techtalk_overlay(c, _t, _l):
     hook = _e(c.get("titleHook") or c.get("title_hook") or "Key takeaway")
     subtitle = _e(c.get("hookSubtitle") or c.get("hook_subtitle") or c.get("subtitle") or "")
     brand = _e(c.get("watermarkText") or "TechTalk")
+    reason = str(c.get("viralReason") or c.get("viral_reason") or "").lower()
+    is_broll = "broll" in reason or "b-roll" in reason or "signal" in reason
+    micro = "Signal snapshot" if is_broll else "Key takeaway"
     subtitle_html = f"<small>{subtitle}</small>" if subtitle else ""
+    bars = (
+        '<div class="template-layer techtalk-bars"><span></span><span></span><span></span><span class="hot"></span><span></span></div>'
+        if is_broll
+        else '<div class="template-layer techtalk-chips"><span>Insight</span><span>Clear</span><span>Actionable</span></div>'
+    )
     return (
         f'<div class="template-layer techtalk-brand">{brand}</div>'
         '<div class="template-layer techtalk-keyline"></div>'
-        f'<div class="template-layer techtalk-brief"><span class="micro-label">Key takeaway</span>'
+        f'{bars}'
+        f'<div class="template-layer techtalk-brief"><span class="micro-label">{micro}</span>'
         f"<strong>{hook}</strong>{subtitle_html}</div>"
     )
 
@@ -296,10 +305,26 @@ _RECIPE_SPECS: list[dict[str, Any]] = [
             "text-transform:uppercase;color:var(--template-accent);font-weight:700}"
             ".techtalk-brief strong{display:block;font-size:36px;line-height:1.15;font-weight:700}"
             ".techtalk-brief small{display:block;margin-top:10px;font-size:18px;line-height:1.35;color:#cbd5e1}"
+            ".techtalk-chips{left:48px;top:140px;display:flex;gap:10px}"
+            ".techtalk-chips span{padding:8px 12px;border-radius:999px;border:1px solid rgba(45,212,191,.35);"
+            "background:rgba(8,15,28,.55);color:#99f6e4;font-size:13px;font-weight:700;letter-spacing:.04em;"
+            "font-family:'Space Grotesk',sans-serif;text-transform:uppercase}"
+            ".techtalk-bars{right:64px;top:160px;display:flex;align-items:flex-end;gap:10px;height:160px}"
+            ".techtalk-bars span{width:22px;border-radius:8px 8px 4px 4px;background:rgba(56,189,248,.75);"
+            "box-shadow:0 0 18px rgba(56,189,248,.25)}"
+            ".techtalk-bars span:nth-child(1){height:42%}.techtalk-bars span:nth-child(2){height:68%}"
+            ".techtalk-bars span:nth-child(3){height:54%}.techtalk-bars span:nth-child(4){height:92%}"
+            ".techtalk-bars span:nth-child(5){height:70%}"
+            ".techtalk-bars span.hot{background:var(--template-accent);box-shadow:0 0 22px rgba(45,212,191,.45)}"
         ),
         motion_extra=(
             ".techtalk-brief{animation:techtalkBriefIn .55s ease-out both}"
+            ".techtalk-chips span,.techtalk-bars span{animation:techtalkChipIn .5s ease-out both}"
+            ".techtalk-chips span:nth-child(2),.techtalk-bars span:nth-child(2){animation-delay:.08s}"
+            ".techtalk-chips span:nth-child(3),.techtalk-bars span:nth-child(3){animation-delay:.14s}"
+            ".techtalk-bars span:nth-child(4){animation-delay:.2s}.techtalk-bars span:nth-child(5){animation-delay:.26s}"
             "@keyframes techtalkBriefIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}"
+            "@keyframes techtalkChipIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}"
         ),
     ),
 ]
