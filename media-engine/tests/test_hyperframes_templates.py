@@ -87,7 +87,21 @@ class HyperframesTemplateTests(unittest.TestCase):
         self.assertIn("techtalk-brief", html)
         self.assertIn("Bitcoin is scarce", html)
         self.assertIn("TechTalk", html)
+        self.assertIn("techtalk-chips", html)
         self.assertEqual(recipe.style_meta().motion_preset, "brief-slide")
+
+        broll_html = recipe.render_overlay(
+            {
+                "titleHook": "How it works",
+                "hookSubtitle": "Supply schedule",
+                "watermarkText": "TechTalk",
+                "viralReason": "explainer broll scene",
+            },
+            {"id": "techtalk_intel_brief"},
+            layout,
+        )
+        self.assertIn("techtalk-bars", broll_html)
+        self.assertIn("Signal snapshot", broll_html)
 
 
 if __name__ == "__main__":

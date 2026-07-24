@@ -189,6 +189,8 @@ def build_premium_render_contract(
         "endTimecode": ms_to_timecode(candidate["end_ms"]),
         "titleHook": candidate["title_hook"],
         "subtitle": candidate.get("hook_subtitle", candidate["viral_reason"]),
+        "hookSubtitle": candidate.get("hook_subtitle", ""),
+        "viralReason": candidate.get("viral_reason", ""),
         "captionText": candidate["transcript_span"],
         "captions": captions,
         "captionEvents": caption_events,

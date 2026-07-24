@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
+- Polished Explainer non-avatar text/b-roll cards (TechTalk gradient takeaways, signal bars, gentle Ken Burns) so FFmpeg-only stitches look less like draft title slides.
 - Fixed Review Studio so Explainer long-form candidates use 16:9 preview and long-form timing readiness instead of shorts-only 9:16 / 20s–3min gates.
 - Added TechTalk HyperFrames brand pack (`techtalk_intel_brief` / `techtalk_explainer`) as the Explainer Mode default for text/b-roll scenes, plus `profiles/techtalk_style.json`.
 - Added dashboard **Explainer** tab plus `/api/explainers` and `/api/explainer-run` for plan → stitch → Review, with documented own-channel long-form → shorts flywheel.
+- Hardened `scripts/dev.sh` so a backend missing `/api/explainers` is treated as stale and restarted.
 
 ## 2026-05-18
 

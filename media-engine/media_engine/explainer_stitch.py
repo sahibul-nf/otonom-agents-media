@@ -104,41 +104,94 @@ def _wrap_text(draw, text: str, font, max_width: int) -> list[str]:
     return lines
 
 
+def _draw_vertical_gradient(image, top: tuple[int, int, int], bottom: tuple[int, int, int]) -> None:
+    from PIL import ImageDraw
+
+    draw = ImageDraw.Draw(image)
+    for y in range(HEIGHT):
+        t = y / max(1, HEIGHT - 1)
+        color = tuple(int(top[i] * (1 - t) + bottom[i] * t) for i in range(3))
+        draw.line([(0, y), (WIDTH, y)], fill=color)
+
+
 def _render_title_png(
     path: Path,
     *,
     headline: str,
     narration: str,
     label: str,
+    scene_type: str = "text",
 ) -> Path:
+    """TechTalk edu-finance card: slate gradient, brand chip, takeaway panel."""
     from PIL import Image, ImageDraw
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    image = Image.new("RGB", (WIDTH, HEIGHT), color=(11, 18, 32))
+    is_broll = scene_type == "broll"
+    image = Image.new("RGB", (WIDTH, HEIGHT), color=(8, 15, 28))
+    _draw_vertical_gradient(image, (8, 15, 28), (15, 23, 42) if not is_broll else (2, 44, 52))
+
+    glow = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    glow_draw = ImageDraw.Draw(glow)
+    cx, cy = int(WIDTH * 0.72), int(HEIGHT * 0.35)
+    for radius, alpha in ((520, 28), (340, 40), (180, 55)):
+        glow_draw.ellipse(
+            (cx - radius, cy - radius, cx + radius, cy + radius),
+            fill=(45, 212, 191, alpha),
+        )
+    image = Image.alpha_composite(image.convert("RGBA"), glow).convert("RGB")
     draw = ImageDraw.Draw(image)
-    label_font = _pick_font(36)
-    headline_font = _pick_font(64)
-    body_font = _pick_font(36)
-    max_width = WIDTH - 240
 
-    y = int(HEIGHT * 0.28)
-    for line in _wrap_text(draw, label, label_font, max_width):
-        w = draw.textlength(line, font=label_font)
-        draw.text(((WIDTH - w) / 2, y), line, fill=(56, 189, 248), font=label_font)
-        y += 48
+    if is_broll:
+        for x in range(120, WIDTH - 80, 48):
+            draw.line([(x, 140), (x, HEIGHT - 160)], fill=(30, 58, 72), width=1)
+        for y in range(160, HEIGHT - 140, 48):
+            draw.line([(100, y), (WIDTH - 100, y)], fill=(30, 58, 72), width=1)
+        bar_base_y = HEIGHT - 220
+        bar_x = WIDTH - 420
+        heights = (90, 150, 110, 200, 160)
+        for i, h in enumerate(heights):
+            x0 = bar_x + i * 52
+            draw.rectangle(
+                (x0, bar_base_y - h, x0 + 34, bar_base_y),
+                fill=(45, 212, 191) if i == 3 else (56, 189, 248),
+            )
 
-    y = int(HEIGHT * 0.40)
-    for line in _wrap_text(draw, headline, headline_font, max_width):
-        w = draw.textlength(line, font=headline_font)
-        draw.text(((WIDTH - w) / 2, y), line, fill=(255, 255, 255), font=headline_font)
-        y += 74
+    brand_font = _pick_font(28)
+    label_font = _pick_font(26)
+    headline_font = _pick_font(58)
+    body_font = _pick_font(32)
+
+    brand = "TECHTALK"
+    chip_pad_x, chip_pad_y = 18, 10
+    bw = int(draw.textlength(brand, font=brand_font)) + chip_pad_x * 2
+    bh = 44
+    draw.rounded_rectangle((64, 56, 64 + bw, 56 + bh), radius=22, fill=(45, 212, 191))
+    draw.text((64 + chip_pad_x, 56 + chip_pad_y - 2), brand, fill=(15, 23, 42), font=brand_font)
+    draw.rectangle((64, 120, 136, 124), fill=(45, 212, 191))
+
+    panel = (64, int(HEIGHT * 0.34), WIDTH - 64, HEIGHT - 120)
+    panel_img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    panel_draw = ImageDraw.Draw(panel_img)
+    panel_draw.rounded_rectangle(panel, radius=28, fill=(8, 15, 28, 210), outline=(45, 212, 191, 90), width=2)
+    image = Image.alpha_composite(image.convert("RGBA"), panel_img).convert("RGB")
+    draw = ImageDraw.Draw(image)
+
+    micro = "SIGNAL SNAPSHOT" if is_broll else "KEY TAKEAWAY"
+    if label and label.upper() not in {"KEY POINT", "B-ROLL", "EXPLAINER"}:
+        micro = label.upper()
+    draw.text((96, panel[1] + 28), micro, fill=(45, 212, 191), font=label_font)
+
+    y = panel[1] + 78
+    max_width = WIDTH - 220
+    for line in _wrap_text(draw, headline, headline_font, max_width)[:4]:
+        draw.text((96, y), line, fill=(248, 250, 252), font=headline_font)
+        y += 68
 
     if narration:
-        y = max(y + 24, int(HEIGHT * 0.58))
-        for line in _wrap_text(draw, narration, body_font, max_width):
-            w = draw.textlength(line, font=body_font)
-            draw.text(((WIDTH - w) / 2, y), line, fill=(203, 213, 225), font=body_font)
-            y += 48
+        y += 8
+        for line in _wrap_text(draw, narration, body_font, max_width)[:4]:
+            draw.text((96, y), line, fill=(186, 198, 214), font=body_font)
+            y += 44
 
     image.save(path, format="PNG")
     return path
@@ -151,17 +204,31 @@ def render_title_card(
     narration: str = "",
     duration: float = 10.0,
     label: str = "EXPLAINER",
+    scene_type: str = "text",
 ) -> Path:
-    """Landscape title card (tech dark aesthetic) via Pillow PNG + FFmpeg."""
+    """Landscape TechTalk title card via Pillow PNG + gentle Ken Burns + FFmpeg."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     duration = max(3.0, float(duration))
     headline = (headline or "Untitled").strip()[:120]
     narration = (narration or "").strip()[:220]
     label = (label or "EXPLAINER").strip()[:40]
+    scene_type = "broll" if scene_type == "broll" else "text"
 
     png_path = output_path.with_suffix(".png")
-    _render_title_png(png_path, headline=headline, narration=narration, label=label)
+    _render_title_png(
+        png_path,
+        headline=headline,
+        narration=narration,
+        label=label,
+        scene_type=scene_type,
+    )
 
+    frames = max(1, int(duration * FPS))
+    vf = (
+        f"scale={WIDTH * 2}:{HEIGHT * 2},"
+        f"zoompan=z='min(1.0+0.00035*on,1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+        f":d={frames}:s={WIDTH}x{HEIGHT}:fps={FPS}"
+    )
     cmd = [
         _ffmpeg_bin(),
         "-y",
@@ -175,6 +242,8 @@ def render_title_card(
         f"anullsrc=channel_layout=stereo:sample_rate=44100:d={duration:.3f}",
         "-t",
         f"{duration:.3f}",
+        "-vf",
+        vf,
         "-r",
         str(FPS),
         "-c:v",
@@ -260,6 +329,7 @@ def render_hyperframes_card(
     narration: str,
     duration: float,
     template: str = "techtalk_explainer",
+    scene_type: str = "text",
 ) -> Path:
     """Render a text/broll card via HyperFrames when runtime is ready."""
     status = check_hyperframes_runtime(run_doctor=False)
@@ -270,6 +340,7 @@ def render_hyperframes_card(
     duration_ms = int(duration * 1000)
     source = _silent_color_source(work_dir / "hf_source.mp4", duration)
     job_id = f"explainer_hf_{uuid.uuid4().hex[:10]}"
+    scene_kind = "broll" if scene_type == "broll" else "text"
     candidate = {
         "id": candidate_id,
         "profile_id": profile_id,
@@ -277,7 +348,7 @@ def render_hyperframes_card(
         "end_ms": duration_ms,
         "title_hook": headline,
         "hook_subtitle": narration,
-        "viral_reason": "explainer text/broll scene",
+        "viral_reason": f"explainer {scene_kind} scene",
         "transcript_span": narration or headline,
         "caption_source": "explainer",
         "asr_metadata": {},
@@ -338,6 +409,7 @@ def render_text_or_broll_scene(
                 narration=narration,
                 duration=duration,
                 template=str(scene.get("template") or "techtalk_explainer"),
+                scene_type=scene_type,
             )
         except Exception:
             pass
@@ -348,6 +420,7 @@ def render_text_or_broll_scene(
         narration=narration,
         duration=duration,
         label=label,
+        scene_type=scene_type,
     )
 
 

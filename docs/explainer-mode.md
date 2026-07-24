@@ -153,6 +153,8 @@ Checked-in example: [`docs/otonom-mcp.cursor.example.json`](./otonom-mcp.cursor.
 - HyperFrames default for text/broll: `techtalk_explainer` → `techtalk_intel_brief`
 - Style profile: `media-engine/profiles/techtalk_style.json`
 
+**Polish order:** non-avatar text/b-roll graphics first (FFmpeg title cards + TechTalk recipe). HeyGen avatar quality is trusted; script/prompt + Direct API come later.
+
 Vibe references (edu-finance hybrid, not hour-long podcasts):
 
 - https://www.youtube.com/@RaymondChins/videos
