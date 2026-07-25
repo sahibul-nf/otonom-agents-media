@@ -6,6 +6,15 @@ type Params = {
   params: Promise<{path: string[]}>;
 };
 
+function offlineMessage(cause: unknown): string {
+  const detail = cause instanceof Error ? cause.message : String(cause || "");
+  const lower = detail.toLowerCase();
+  if (lower.includes("econnrefused") || lower.includes("fetch failed") || lower.includes("network")) {
+    return `Media engine API is offline at ${API_BASE}. Start it with npm run dev (or restart media-engine).`;
+  }
+  return `Could not reach media engine at ${API_BASE}: ${detail || "network error"}. If the backend is up, check MEDIA_ENGINE_API_BASE.`;
+}
+
 async function forward(request: NextRequest, {params}: Params) {
   const {path} = await params;
   const url = new URL(request.url);
@@ -24,17 +33,17 @@ async function forward(request: NextRequest, {params}: Params) {
       body,
       cache: "no-store",
     });
-  } catch {
-    return NextResponse.json(
-      {error: `Media engine API is offline. Start it at ${API_BASE}.`},
-      {status: 503},
-    );
+  } catch (cause) {
+    return NextResponse.json({error: offlineMessage(cause)}, {status: 503});
   }
   const responseContentType = response.headers.get("Content-Type") || "";
   if (responseContentType.includes("application/json")) {
     const text = await response.text();
     if (!text.trim()) {
-      return NextResponse.json({error: `Media engine returned an empty response for /api/${path.join("/")}.`}, {status: response.status || 502});
+      return NextResponse.json(
+        {error: `Media engine returned an empty response for /api/${path.join("/")}.`},
+        {status: response.status || 502},
+      );
     }
     try {
       return NextResponse.json(JSON.parse(text), {status: response.status});
@@ -48,9 +57,18 @@ async function forward(request: NextRequest, {params}: Params) {
   const mediaRequest = path[0] === "artifact";
   if (!mediaRequest && response.status >= 400) {
     const raw = await response.text();
+    // Prefer upstream body when it already looks like JSON with an error field.
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && "error" in parsed) {
+        return NextResponse.json(parsed, {status: response.status});
+      }
+    } catch {
+      // fall through
+    }
     return NextResponse.json(
       {
-        error: `Media engine endpoint /api/${path.join("/")} returned ${response.status}. The backend may be stale; restart npm run dev.`,
+        error: `Media engine /api/${path.join("/")} returned ${response.status}.`,
         raw: raw.slice(0, 500),
       },
       {status: response.status},

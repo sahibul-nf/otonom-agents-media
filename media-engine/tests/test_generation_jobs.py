@@ -8,6 +8,7 @@ from media_engine import generation_jobs as generation_jobs_module
 from media_engine.duration_presets import duration_preset_options, resolve_duration_preset
 from media_engine.db import connect, initialize
 from media_engine.generation_jobs import (
+    _failure_summary,
     build_generation_command,
     create_generation_job,
     list_brand_templates,
@@ -203,6 +204,17 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(changed, 0)
         self.assertEqual(row["status"], "running")
         self.assertEqual(row["progress"], 40)
+
+    def test_failure_summary_prefers_value_error(self):
+        output = "\n".join(
+            [
+                "[media-engine] fetching",
+                "Traceback (most recent call last):",
+                '  File "cli.py", line 1, in main',
+                "ValueError: transcript is too short for premium candidate selection",
+            ]
+        )
+        self.assertIn("transcript is too short", _failure_summary(output, 1))
 
 
 if __name__ == "__main__":

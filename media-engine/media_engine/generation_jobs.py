@@ -438,6 +438,31 @@ def _heartbeat_generation_job(job_id: str, stop_event: threading.Event) -> None:
         touch_generation_job(job_id)
 
 
+def _failure_summary(output: str, code: int) -> str:
+    """Prefer the last actionable exception/message over a bare exit code."""
+    text = (output or "").strip()
+    if not text:
+        return f"premium-batch exited with code {code}"
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for line in reversed(lines):
+        lower = line.lower()
+        if lower.startswith("traceback"):
+            continue
+        if "error:" in lower or line.startswith("ValueError:") or line.startswith("RuntimeError:"):
+            return line[:500]
+        if lower.startswith("valueerror:") or lower.startswith("filenotfounderror:"):
+            return line[:500]
+    # Fall back to last non-progress line
+    for line in reversed(lines):
+        if "[media-engine]" in line:
+            continue
+        if line.startswith("File ") or line.startswith("~~"):
+            continue
+        return f"premium-batch exited with code {code}: {line[:400]}"
+    return f"premium-batch exited with code {code}"
+
+
 def run_generation_job(job_id: str, command: list[str]) -> None:
     conn = connect(DEFAULT_DB)
     initialize(conn)
@@ -480,7 +505,7 @@ def run_generation_job(job_id: str, command: list[str]) -> None:
                 SET status = 'failed', progress = 100, result_json = ?, error = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (json.dumps(result, ensure_ascii=False), f"premium-batch exited with code {code}", job_id),
+                (json.dumps(result, ensure_ascii=False), _failure_summary(output, code), job_id),
             )
         else:
             conn.execute(

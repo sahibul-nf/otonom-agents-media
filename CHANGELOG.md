@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Verified Create → Generate queues HTTP 202 without FK/lock; failed jobs now surface actionable CLI errors (not bare exit codes); Next proxy only says “offline” on true connection failures (#2).
 - Path A control loop (#21): dashboard **Generate via Cursor** → Automation webhook / Cloud Agents API → poll until `FINISHED` → local `ingest_longform` → Telegram status (no public URL).
 - Path A: ingest HeyGen/long-form MP4 into Review via `POST /api/ingest-longform`, Otonom MCP `ingest_longform`, and Explainer dashboard form (`review_only` + optional `clip_batch`).
 - Path B scaffold: `heygen_client.py` Video Agent Direct API helpers + MCP tools (API wallet; dry-run supported). Docs: `docs/heygen-paths.md`.
