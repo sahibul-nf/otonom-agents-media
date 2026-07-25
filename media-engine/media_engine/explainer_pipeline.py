@@ -24,6 +24,7 @@ from .explainer_planner import load_plan_file, plan_explainer
 from .explainer_stitch import (
     build_scene_segments,
     explainer_artifact_dir,
+    extract_audio_track,
     probe_duration_seconds,
     stitch_segments,
     write_stitch_manifest,
@@ -76,6 +77,63 @@ def import_avatar_clip(
         except json.JSONDecodeError:
             imports = []
     imports.append({"dest": dest_name, "source": source})
+    manifest_path.write_text(json.dumps(imports, indent=2, ensure_ascii=False), encoding="utf-8")
+    return dest
+
+
+def import_narration_audio(
+    *,
+    job_id: str,
+    dest_name: str,
+    source: str,
+    profile_id: str = DEFAULT_WORKSPACE_PROFILE_ID,
+) -> Path:
+    """
+    Import VO for text/broll scenes into fixtures/.
+
+    Accepts a local/HTTPS audio file, or a HeyGen avatar MP4 (Creator-plan path):
+    video sources are extracted to AAC (.m4a). Prefer dest like `scene_02.m4a`.
+    """
+    dest_name = Path(dest_name).name
+    suffix = Path(dest_name).suffix.lower()
+    if suffix not in {".m4a", ".mp3", ".wav", ".aac"}:
+        dest_name = f"{Path(dest_name).stem}.m4a"
+
+    fixtures = explainer_artifact_dir(profile_id, job_id) / "fixtures"
+    fixtures.mkdir(parents=True, exist_ok=True)
+    dest = fixtures / dest_name
+    source = (source or "").strip()
+    if not source:
+        raise ValueError("source path or URL is required")
+
+    parsed = urlparse(source)
+    tmp_dir = fixtures / "_vo_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    if parsed.scheme in {"http", "https"}:
+        download_name = Path(parsed.path).name or "vo_source.bin"
+        downloaded = tmp_dir / download_name
+        urlretrieve(source, downloaded)  # noqa: S310 — operator-controlled CDN URLs
+        src_path = downloaded
+    else:
+        src_path = Path(source).expanduser().resolve()
+        if not src_path.exists():
+            raise FileNotFoundError(f"narration source not found: {src_path}")
+
+    if src_path.suffix.lower() in {".mp4", ".mov", ".webm", ".mkv"}:
+        extract_audio_track(src_path, dest)
+    else:
+        shutil.copy2(src_path, dest)
+
+    manifest_path = fixtures / "imports.json"
+    imports: list[dict[str, Any]] = []
+    if manifest_path.exists():
+        try:
+            imports = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if not isinstance(imports, list):
+                imports = []
+        except json.JSONDecodeError:
+            imports = []
+    imports.append({"dest": dest_name, "source": source, "kind": "narration_audio"})
     manifest_path.write_text(json.dumps(imports, indent=2, ensure_ascii=False), encoding="utf-8")
     return dest
 
@@ -260,7 +318,7 @@ def run_explainer(
     llm_provider: str = "none",
     language: str = "id",
     sources: list[str] | None = None,
-    prefer_hyperframes: bool = True,
+    prefer_hyperframes: bool = False,
     register_review: bool = True,
     db_path: str | Path = DEFAULT_DB,
 ) -> dict[str, Any]:
@@ -270,6 +328,9 @@ def run_explainer(
     Provide either:
     - existing job_id (uses its scenes.json + fixtures/), or
     - topic / scenes_path + clips_dir
+
+    Default stitch uses FFmpeg TechTalk v2 cards (non-avatar happy path).
+    Set prefer_hyperframes=True only when HyperFrames runtime is known-good.
     """
     conn = connect(db_path)
     initialize(conn)

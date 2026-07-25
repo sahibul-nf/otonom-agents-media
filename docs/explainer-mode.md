@@ -147,13 +147,26 @@ Checked-in example: [`docs/otonom-mcp.cursor.example.json`](./otonom-mcp.cursor.
 
 ## Brand constants (TechTalk)
 
-- Avatar look: `0f4dca86e0bd42d8a8afdae9948338ce`
-- Voice: `LXpG1p9h8viifHEGQiFJ`
+- Avatar group **Sahibul NF**: `3fd3a245e31047eaa28c8578ab252338`
+- Avatar looks (pass look_id as `avatar_id`): podcast `6ebfb592422447caaf17e0ded0934566`, mic `6ae996d03d9f4b2781b32067537536a1`
+- Voice **Sahibul NF**: `60ea08f7cf2342cdbf3951c345009d34`
+- Legacy look/voice (older docs): `0f4dca86…` / `LXpG1p9h…`
 - Direct API (later #7): engine `avatar_iii`
 - HyperFrames default for text/broll: `techtalk_explainer` → `techtalk_intel_brief`
 - Style profile: `media-engine/profiles/techtalk_style.json`
 
-**Polish order:** non-avatar text/b-roll graphics first (FFmpeg title cards + TechTalk recipe). HeyGen avatar quality is trusted; script/prompt + Direct API come later.
+**Polish order:** non-avatar text/b-roll graphics + continuous VO first. HeyGen avatar quality is trusted; Direct API (#7) later.
+
+### Non-avatar VO (Phase 1 — Creator plan)
+
+`create_speech` (HeyGen TTS) requires **API credits**, not Creator premium credits. Phase 1 path:
+
+1. Generate a short Sahibul NF avatar clip with the scene narration (`create_video_from_avatar`).
+2. `import_narration_audio` with that MP4 URL/path → extracts `scene_XX.m4a` into fixtures.
+3. Set `audio_file` on the text/broll scene (or use naming `scene_02.m4a` for `s02`).
+4. `run_explainer` (ffmpeg_only) muxes VO onto TechTalk v2 cards.
+
+Re-stitch pilot example: job `expl_480ad0da1b22`.
 
 Vibe references (edu-finance hybrid, not hour-long podcasts):
 

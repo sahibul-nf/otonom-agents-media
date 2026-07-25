@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Path A control loop (#21): dashboard **Generate via Cursor** → Automation webhook / Cloud Agents API → poll until `FINISHED` → local `ingest_longform` → Telegram status (no public URL).
+- Path A: ingest HeyGen/long-form MP4 into Review via `POST /api/ingest-longform`, Otonom MCP `ingest_longform`, and Explainer dashboard form (`review_only` + optional `clip_batch`).
+- Path B scaffold: `heygen_client.py` Video Agent Direct API helpers + MCP tools (API wallet; dry-run supported). Docs: `docs/heygen-paths.md`.
+- Explainer non-avatar visuals v2: multi-layer TechTalk motion cards (staggered reveals, distinct text vs broll data stage) as the FFmpeg happy path.
+- Explainer non-avatar narration: mux Sahibul NF VO onto text/broll via `import_narration_audio` (Creator avatar-proxy extract; `create_speech` needs API credits).
 - Polished Explainer non-avatar text/b-roll cards (TechTalk gradient takeaways, signal bars, gentle Ken Burns) so FFmpeg-only stitches look less like draft title slides.
 - Fixed Review Studio so Explainer long-form candidates use 16:9 preview and long-form timing readiness instead of shorts-only 9:16 / 20s–3min gates.
 - Added TechTalk HyperFrames brand pack (`techtalk_intel_brief` / `techtalk_explainer`) as the Explainer Mode default for text/b-roll scenes, plus `profiles/techtalk_style.json`.

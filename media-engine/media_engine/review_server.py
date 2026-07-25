@@ -28,6 +28,9 @@ from .explainer_pipeline import (
     read_explainer_status,
     start_explainer_run,
 )
+from .ingest_longform import ingest_longform
+from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_generate
+from .cursor_cloud import CursorCloudError
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .genres import genre_options
 from .hyperframes_catalog import list_hyperframes_catalog
@@ -278,6 +281,27 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 limit = 20
             self._send_json({"jobs": list_explainer_jobs(profile_id=profile_id, limit=max(1, min(limit, 100)))})
             return
+        if parsed.path == "/api/path-a-jobs":
+            query = parse_qs(parsed.query)
+            profile_id = query.get("profile_id", [DEFAULT_WORKSPACE_PROFILE_ID])[0] or DEFAULT_WORKSPACE_PROFILE_ID
+            try:
+                limit = int(query.get("limit", ["20"])[0] or 20)
+            except ValueError:
+                limit = 20
+            self._send_json({"jobs": list_path_a_jobs(profile_id=profile_id, limit=max(1, min(limit, 100)))})
+            return
+        if parsed.path == "/api/path-a-status":
+            query = parse_qs(parsed.query)
+            job_id = (query.get("job_id", [""])[0] or "").strip()
+            profile_id = query.get("profile_id", [DEFAULT_WORKSPACE_PROFILE_ID])[0] or DEFAULT_WORKSPACE_PROFILE_ID
+            if not job_id:
+                self._send_json({"error": "job_id is required"}, status=400)
+                return
+            try:
+                self._send_json(read_path_a_status(job_id, profile_id=profile_id))
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+            return
         if parsed.path == "/api/explainer-status":
             query = parse_qs(parsed.query)
             job_id = (query.get("job_id", [""])[0] or "").strip()
@@ -496,6 +520,51 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(status, status=202)
+            return
+
+        if parsed.path == "/api/ingest-longform":
+            source = str(payload.get("source") or "").strip()
+            if not source:
+                self._send_json({"error": "source is required"}, status=400)
+                return
+            mode = str(payload.get("mode") or "review_only").strip() or "review_only"
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            try:
+                result = ingest_longform(
+                    source=source,
+                    mode=mode,  # type: ignore[arg-type]
+                    title=str(payload.get("title") or "").strip(),
+                    profile_id=profile_id,
+                    count=int(payload.get("count") or 5),
+                    language=str(payload.get("language") or "id"),
+                )
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+                return
+            except (OSError, ValueError, RuntimeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result, status=201)
+            return
+
+        if parsed.path == "/api/path-a-generate":
+            topic = str(payload.get("topic") or "").strip()
+            if not topic:
+                self._send_json({"error": "topic is required"}, status=400)
+                return
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            load_env_file(ENV_FILE)
+            try:
+                created = start_path_a_generate(
+                    topic=topic,
+                    title=str(payload.get("title") or "").strip(),
+                    script=str(payload.get("script") or "").strip(),
+                    profile_id=profile_id,
+                )
+            except (CursorCloudError, ValueError, OSError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(created, status=202)
             return
 
         if parsed.path == "/api/brand-template":

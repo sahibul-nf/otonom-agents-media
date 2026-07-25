@@ -74,13 +74,14 @@ export type ClipCandidate = {
   curation_metadata?: Record<string, unknown>;
 };
 
-/** Explainer Mode long-form candidates registered by explainer_pipeline. */
+/** Long-form 16:9 candidates (Explainer stitch or Path A HeyGen/MP4 ingest). */
 export function isExplainerClip(clip?: ClipCandidate | null): boolean {
   if (!clip) return false;
-  if (clip.caption_source === "explainer") return true;
-  if (clip.curation_metadata?.kind === "explainer") return true;
+  if (clip.caption_source === "explainer" || clip.caption_source === "ingest_longform") return true;
+  const kind = clip.curation_metadata?.kind;
+  if (kind === "explainer" || kind === "longform_ingest") return true;
   if (typeof clip.curation_metadata?.job_id === "string" && String(clip.id || "").startsWith("cand_expl_")) return true;
-  return String(clip.render_quality?.renderer || "") === "explainer_stitch";
+  return String(clip.render_quality?.renderer || "") === "explainer_stitch" || String(clip.render_quality?.renderer || "") === "ingest_longform";
 }
 
 export type PublishTarget = {
@@ -289,6 +290,24 @@ export type ExplainerJob = {
   scene_count?: number;
   avatar_scene_count?: number;
   duration_seconds?: number;
+};
+
+export type PathAJob = {
+  job_id: string;
+  profile_id?: string;
+  topic?: string;
+  title?: string;
+  status: string;
+  error?: string;
+  agent_id?: string;
+  run_id?: string;
+  agent_url?: string;
+  video_url?: string;
+  candidate_ids?: string[];
+  ingest_job_id?: string;
+  telegram_notified?: boolean;
+  cursor_run_status?: string;
+  trigger_mode?: string;
 };
 
 export function apiPath(path: string) {

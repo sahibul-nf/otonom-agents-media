@@ -1,0 +1,55 @@
+---
+description: Platform goals & product north star (do not forget)
+alwaysApply: true
+---
+
+# Otonom Media — product north star
+
+Canonical intent for humans and agents working in this repo. Do not drift into rebuilding HeyGen Video Agent locally.
+
+## Primary goal (personal ops → later product)
+
+Replace **OpusClip.pro** + manual **NotebookLM → caption → multi-platform publish** so the operator can focus on client work (~$17/hr), not glue work between tools.
+
+**Closed loop that must exist** (otherwise HeyGen/Creator alone does not solve the pain):
+
+```text
+topic / source
+  → generate or import long-form (HeyGen VA / NotebookLM / YouTube)
+  → land in Review (one approve inbox)
+  → schedule + publish (YouTube / Shorts / TikTok / Telegram / …)
+  → optional: auto-clip long-form → more shorts
+```
+
+Human review before publish is intentional. Automate everything *except* that approve step.
+
+## Content types (one dashboard eventually)
+
+Not video-only. Same platform should eventually handle:
+
+| Type | Sources / references | Role of this repo |
+|------|----------------------|-------------------|
+| Video long-form | HeyGen Creator Video Agent (preferred quality); import URL/file | Orchestrate + Review + distribute — **do not** rebuild VA visuals in FFmpeg |
+| Video shorts | Existing clip factory (OpusClip replacement) | Core — harden first |
+| Text + image posts | `techtalk-autonomous`; better text patterns from `sahibul-nf/social-media-content-ai-generation` | Unify into dashboard later; improve prompts, don’t fork a second video stack |
+
+## Cost / HeyGen rules of thumb
+
+- **Creator ($29/mo) premium credits** ≠ **Direct API wallet (USD)**. MCP/OAuth uses Creator credits; app `X-Api-Key` uses API wallet.
+- Avatar group / looks / cloned voices created on Creator are **assets on the account** — reusable via API with the same IDs; you still **pay API usage** separately when calling Direct API.
+- Prefer: HeyGen as long-form **engine**; this app as **distribution + review + shorts**.
+
+## Priority order (when choosing work)
+
+1. Clip → Review → schedule → publish reliability (OpusClip replacement)
+2. Path A: HeyGen MCP (Creator) → `ingest_longform` → Review → schedule (`docs/heygen-paths.md`)
+3. Optional: Path B Direct API when Creator exhausted / no Cursor (`heygen_client.py`)
+4. Unify text/image post flows into the same dashboard
+5. Defer: Virtuals Protocol / A2A until Web2 loop runs weekly without babysitting
+6. Do **not**: chase FFmpeg/HyperFrames parity with Video Agent Quality Mode
+
+## Related
+
+- Strategy canvas (session): `platform-direction-advice`
+- Docs: `docs/heygen-paths.md`, `docs/explainer-saas-architecture.md`, `docs/explainer-mode.md`
+- Issues: #19 Path A ingest, #20 Path B scaffold, #7 avatar Direct API

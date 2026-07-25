@@ -31,6 +31,7 @@ import {
   DurationPreset,
   EngineHealth,
   ExplainerJob,
+  PathAJob,
   formatDuration,
   formatTimestamp,
   GenerationJob,
@@ -456,6 +457,7 @@ export function MediaStudioApp() {
   const [autonomy, setAutonomy] = useState<AutonomySettings | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [explainerJobs, setExplainerJobs] = useState<ExplainerJob[]>([]);
+  const [pathAJobs, setPathAJobs] = useState<PathAJob[]>([]);
   const [rerenderJobs, setRerenderJobs] = useState<RerenderJob[]>([]);
   const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
   const [publishAttempts, setPublishAttempts] = useState<PublishAttempt[]>([]);
@@ -605,6 +607,7 @@ export function MediaStudioApp() {
         autonomyRows,
         attemptResult,
         explainerResult,
+        pathAResult,
       ] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>("targets"),
@@ -622,6 +625,7 @@ export function MediaStudioApp() {
         apiGet<AutonomySettings>("autonomy-settings"),
         apiGet<PublishAttempt[]>("publish-attempts").then((rows) => ({ok: true as const, rows})).catch((error) => ({ok: false as const, error})),
         apiGet<{jobs: ExplainerJob[]}>("explainers").then((payload) => ({ok: true as const, jobs: payload.jobs || []})).catch((error) => ({ok: false as const, error})),
+        apiGet<{jobs: PathAJob[]}>("path-a-jobs").then((payload) => ({ok: true as const, jobs: payload.jobs || []})).catch((error) => ({ok: false as const, error})),
       ]);
       setClips(reviewRows);
       setTargets(targetRows);
@@ -639,6 +643,7 @@ export function MediaStudioApp() {
       setAutonomy(autonomyRows);
       setPublishAttempts(attemptResult.ok ? attemptResult.rows : []);
       setExplainerJobs(explainerResult.ok ? explainerResult.jobs : []);
+      setPathAJobs(pathAResult.ok ? pathAResult.jobs : []);
       setRerendering({});
       setPublishSelection((current) => {
         const enabled = targetRows
@@ -774,6 +779,54 @@ export function MediaStudioApp() {
       window.setTimeout(() => void refreshAll(), 2000);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Explainer run failed");
+    }
+  }
+
+  async function ingestLongformMedia(payload: {source: string; title: string; mode: "review_only" | "clip_batch"}) {
+    const key = "ingest:longform";
+    try {
+      const result = await runAction(
+        key,
+        payload.mode === "clip_batch" ? "Ingesting + clipping…" : "Ingesting long-form to Review…",
+        () =>
+          apiPost<{candidate_ids: string[]; job_id: string; mode: string}>("ingest-longform", {
+            source: payload.source,
+            title: payload.title,
+            mode: payload.mode,
+          }),
+        "Ingested — open Review to approve",
+      );
+      const first = result.candidate_ids?.[0];
+      if (first) setSelectedId(first);
+      setStatus(`Ingest ${result.job_id}: ${result.candidate_ids?.length || 0} candidate(s)`);
+      pushToast("Long-form ingested — approve in Review", "success");
+      window.setTimeout(() => void refreshAll(), 800);
+      setSection("review");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Ingest failed");
+    }
+  }
+
+  async function startPathAGenerate(payload: {topic: string; title: string; script: string}) {
+    const key = "path-a:generate";
+    try {
+      const job = await runAction(
+        key,
+        "Starting Cursor Path A generate…",
+        () =>
+          apiPost<PathAJob>("path-a-generate", {
+            topic: payload.topic,
+            title: payload.title,
+            script: payload.script,
+          }),
+        "Path A job started — polling Cursor",
+      );
+      setPathAJobs((items) => [job, ...items.filter((item) => item.job_id !== job.job_id)]);
+      setStatus(`Path A started: ${job.job_id}`);
+      pushToast("Cursor generate started — Telegram will ping when Review is ready", "success");
+      window.setTimeout(() => void refreshAll(), 2000);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Path A generate failed");
     }
   }
 
@@ -1259,8 +1312,14 @@ export function MediaStudioApp() {
           {section === "explainer" && (
             <ExplainerSection
               jobs={explainerJobs}
+              pathAJobs={pathAJobs}
               templates={hyperframesTemplates}
-              actionState={actionStates["explainer:create"] || Object.entries(actionStates).find(([key]) => key.startsWith("explainer:") && key.endsWith(":run"))?.[1]}
+              actionState={
+                actionStates["path-a:generate"] ||
+                actionStates["ingest:longform"] ||
+                actionStates["explainer:create"] ||
+                Object.entries(actionStates).find(([key]) => key.startsWith("explainer:") && key.endsWith(":run"))?.[1]
+              }
               statusTone={statusTone}
               onCreate={createExplainerJob}
               onRun={runExplainerJob}
@@ -1269,6 +1328,10 @@ export function MediaStudioApp() {
                 if (candidateId) setSelectedId(candidateId);
                 setSection("review");
               }}
+              onIngest={ingestLongformMedia}
+              onPathAGenerate={startPathAGenerate}
+              ingesting={actionStates["ingest:longform"]?.status === "running"}
+              pathAGenerating={actionStates["path-a:generate"]?.status === "running"}
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
               renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
             />

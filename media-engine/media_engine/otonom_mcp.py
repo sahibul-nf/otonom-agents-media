@@ -15,10 +15,20 @@ from .db import DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID
 from .explainer_pipeline import (
     create_explainer_job,
     import_avatar_clip,
+    import_narration_audio,
     list_explainer_jobs,
     list_review_queue,
     read_explainer_status,
     run_explainer,
+)
+from .ingest_longform import ingest_longform
+from .heygen_client import (
+    DEFAULT_AVATAR_LOOK_ID,
+    DEFAULT_VOICE_ID,
+    HeyGenApiError,
+    HeyGenConfig,
+    create_video_agent_session,
+    get_video_agent_session,
 )
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -107,6 +117,30 @@ TOOLS = [
         },
     },
     {
+        "name": "import_narration_audio",
+        "description": (
+            "Import Sahibul NF VO for text/broll scenes. Accepts audio URL/path, or a HeyGen "
+            "avatar MP4 (Creator plan) — video is extracted to .m4a in fixtures/ "
+            "(e.g. scene_02.m4a). create_speech needs API credits; avatar-proxy extract is Phase 1."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "string"},
+                "dest_name": {
+                    "type": "string",
+                    "description": "Filename in fixtures/, e.g. scene_02.m4a",
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Local path or https URL to audio or avatar MP4",
+                },
+                "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
+            },
+            "required": ["job_id", "dest_name", "source"],
+        },
+    },
+    {
         "name": "run_explainer",
         "description": "Stitch an existing explainer job (after fixtures imported) into review queue",
         "inputSchema": {
@@ -128,6 +162,75 @@ TOOLS = [
                 "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
                 "limit": {"type": "integer", "default": 20},
             },
+        },
+    },
+    {
+        "name": "ingest_longform",
+        "description": (
+            "Path A delivery: import a HeyGen video_url or local MP4 into Review. "
+            "mode=review_only (default) registers the whole long-form; mode=clip_batch "
+            "runs Whisper + cuts shorts into Review. Never auto-approves or publishes."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "HTTPS MP4 URL (HeyGen CDN) or local filesystem path",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["review_only", "clip_batch"],
+                    "default": "review_only",
+                },
+                "title": {"type": "string"},
+                "count": {
+                    "type": "integer",
+                    "default": 5,
+                    "description": "clip_batch only — number of short candidates",
+                },
+                "language": {"type": "string", "default": "id"},
+                "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
+            },
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "heygen_video_agent_create",
+        "description": (
+            "Path B only: create a HeyGen Video Agent session via Direct API (HEYGEN_API_KEY / "
+            "USD wallet). Prefer Path A (HeyGen MCP in Cursor) for Creator credits. "
+            "Dry-run if HEYGEN_API_DRY_RUN=1."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string"},
+                "voice_id": {"type": "string", "default": DEFAULT_VOICE_ID},
+                "avatar_id": {"type": "string", "default": DEFAULT_AVATAR_LOOK_ID},
+                "orientation": {
+                    "type": "string",
+                    "enum": ["landscape", "portrait"],
+                    "default": "landscape",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["generate", "chat"],
+                    "default": "generate",
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
+    {
+        "name": "heygen_video_agent_status",
+        "description": "Path B: poll Direct API Video Agent session status (requires HEYGEN_API_KEY).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string"},
+            },
+            "required": ["session_id"],
         },
     },
 ]
@@ -185,6 +288,15 @@ def call_tool(name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
             )
             return _tool_result({"ok": True, "path": str(path)})
 
+        if name == "import_narration_audio":
+            path = import_narration_audio(
+                job_id=str(args.get("job_id") or "").strip(),
+                dest_name=str(args.get("dest_name") or "").strip(),
+                source=str(args.get("source") or "").strip(),
+                profile_id=str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
+            )
+            return _tool_result({"ok": True, "path": str(path)})
+
         if name == "run_explainer":
             job_id = str(args.get("job_id") or "").strip()
             profile_id = str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID)
@@ -200,6 +312,42 @@ def call_tool(name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
             profile_id = str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID)
             limit = int(args.get("limit") or 20)
             return _tool_result(list_explainer_jobs(profile_id=profile_id, limit=limit))
+
+        if name == "ingest_longform":
+            result = ingest_longform(
+                source=str(args.get("source") or "").strip(),
+                mode=str(args.get("mode") or "review_only"),  # type: ignore[arg-type]
+                title=str(args.get("title") or "").strip(),
+                profile_id=str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
+                count=int(args.get("count") or 5),
+                language=str(args.get("language") or "id"),
+                db_path=DEFAULT_DB,
+            )
+            return _tool_result(result)
+
+        if name == "heygen_video_agent_create":
+            try:
+                created = create_video_agent_session(
+                    prompt=str(args.get("prompt") or "").strip(),
+                    voice_id=str(args.get("voice_id") or DEFAULT_VOICE_ID).strip() or None,
+                    avatar_id=str(args.get("avatar_id") or DEFAULT_AVATAR_LOOK_ID).strip() or None,
+                    orientation=str(args.get("orientation") or "landscape"),
+                    mode=str(args.get("mode") or "generate"),
+                    config=HeyGenConfig.from_env(),
+                )
+            except (HeyGenApiError, ValueError) as exc:
+                return _tool_result({"error": str(exc)}, is_error=True)
+            return _tool_result(created)
+
+        if name == "heygen_video_agent_status":
+            try:
+                status = get_video_agent_session(
+                    str(args.get("session_id") or "").strip(),
+                    config=HeyGenConfig.from_env(),
+                )
+            except (HeyGenApiError, ValueError) as exc:
+                return _tool_result({"error": str(exc)}, is_error=True)
+            return _tool_result(status)
 
         return _tool_result(f"Unknown tool: {name}", is_error=True)
     except Exception as exc:

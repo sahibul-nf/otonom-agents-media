@@ -51,7 +51,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 port = int(sys.argv[1])
-required = ("review", "schedule", "publish-attempts", "connections", "explainers")
+required = ("review", "schedule", "publish-attempts", "connections", "explainers", "path-a-jobs")
 for endpoint in required:
     try:
         with urlopen(f"http://127.0.0.1:{port}/api/{endpoint}", timeout=2) as response:
