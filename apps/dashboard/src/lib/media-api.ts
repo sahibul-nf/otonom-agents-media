@@ -23,6 +23,7 @@ export type ClipCandidate = {
   title_hook: string;
   hook_subtitle?: string;
   viral_reason: string;
+  transcript_span: string;
   start_ms: number;
   end_ms: number;
   caption_source?: string;
@@ -73,6 +74,56 @@ export type ClipCandidate = {
     caption_source?: string;
   };
   curation_metadata?: Record<string, unknown>;
+};
+
+export type EditorCapability = "scene" | "short" | "imported_longform";
+
+export type ExplainerSceneType = "avatar" | "text" | "broll";
+
+export type ExplainerScene = {
+  id: string;
+  type: ExplainerSceneType;
+  duration_target: number;
+  script?: string;
+  headline?: string;
+  narration?: string;
+  template?: string;
+  clip_file?: string;
+  audio_file?: string;
+};
+
+export type ExplainerScenePlan = {
+  title: string;
+  scenes: ExplainerScene[];
+};
+
+export type EditorJob = {
+  job_id: string;
+  status: string;
+  error?: string;
+  progress?: number;
+  message?: string;
+  hyperframes_template?: string;
+};
+
+export type EditorRender = {
+  status: string;
+  error?: string;
+};
+
+export type EditorContext = {
+  candidate_id: string;
+  capability: EditorCapability;
+  can_edit_scenes: boolean;
+  can_trim: boolean;
+  can_rerender: boolean;
+  render?: EditorRender;
+  plan?: ExplainerScenePlan;
+  job?: EditorJob;
+};
+
+export type SaveScenePlanResponse = EditorContext & {
+  rerender_started?: boolean;
 };
 
 /** Long-form 16:9 candidates (Explainer stitch or Path A HeyGen/MP4 ingest). */

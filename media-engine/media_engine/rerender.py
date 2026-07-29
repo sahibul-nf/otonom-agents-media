@@ -16,6 +16,7 @@ from .costs import estimate_clip_cost
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_one, initialize, load_json, seed_profile
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
+from .silence_trim import apply_silence_trim_for_render, remap_caption_groups
 from .styles import load_style
 from .transcript_quality import correct_asr_words
 from .youtube_pipeline import download_youtube_section
@@ -90,7 +91,8 @@ def _update_candidate_after_rerender(conn, candidate: dict[str, Any]) -> None:
         """
         UPDATE clip_candidates
         SET score_json = ?, caption_source = ?, render_quality_json = ?, cost_json = ?,
-            quality_gate_json = ?, caption_corrections_json = ?, review_deadline_at = ?, status = ?
+            quality_gate_json = ?, caption_corrections_json = ?, curation_metadata_json = ?,
+            review_deadline_at = ?, status = ?
         WHERE id = ?
         """,
         (
@@ -100,6 +102,7 @@ def _update_candidate_after_rerender(conn, candidate: dict[str, Any]) -> None:
             json.dumps(candidate.get("cost", {}), ensure_ascii=False),
             json.dumps(candidate.get("quality_gate", {}), ensure_ascii=False),
             json.dumps(candidate.get("caption_corrections", {}), ensure_ascii=False),
+            json.dumps(candidate.get("curation_metadata", {}), ensure_ascii=False),
             candidate.get("review_deadline_at", ""),
             candidate.get("status", "rendered"),
             candidate["id"],
@@ -179,10 +182,18 @@ def rerender_candidate(
     else:
         source_clip = _find_source_clip(candidate["profile_id"], candidate_id, render_metadata)
         source_url = str(render_metadata.get("sourceUrl") or "")
-    style = load_style(style_path)
 
     edited = candidate.get("caption_corrections", {}).get("edited_captions")
     edited_is_stale = bool(candidate.get("caption_corrections", {}).get("manual_edit_stale"))
+    pending_keep = (candidate.get("curation_metadata") or {}).get("manual_silence_keep_segments")
+    if isinstance(edited, list) and edited and not edited_is_stale:
+        candidate["timed_captions"] = edited
+        candidate["caption_source"] = "manual_edit"
+
+    report(27, "Auto-trimming silence on source clip")
+    source_clip = apply_silence_trim_for_render(source_clip, candidate)
+    style = load_style(style_path)
+
     if regenerate_captions:
         report(30, "Regenerating captions for edited boundary")
         _regenerate_captions(
@@ -192,8 +203,18 @@ def rerender_candidate(
             model_name=str(candidate.get("asr_metadata", {}).get("model") or "medium"),
         )
     elif isinstance(edited, list) and edited and not edited_is_stale:
-        candidate["timed_captions"] = edited
-        candidate["caption_source"] = "manual_edit"
+        # Prefer already-remapped manual captions when Remove Pause queued a keep plan.
+        if not pending_keep:
+            candidate["timed_captions"] = edited
+            candidate["caption_source"] = "manual_edit"
+            trim = candidate.get("silence_trim") if isinstance(candidate.get("silence_trim"), dict) else {}
+            keep = trim.get("keep_segments") if trim.get("changed") else None
+            if isinstance(keep, list) and keep:
+                segments = [(int(pair[0]), int(pair[1])) for pair in keep]
+                candidate["timed_captions"] = remap_caption_groups(candidate["timed_captions"], segments)
+        else:
+            candidate["timed_captions"] = edited
+            candidate["caption_source"] = "manual_edit"
 
     source_attribution = str(render_metadata.get("sourceAttribution") or "Source: Channel clip")
     resolved_renderer = "hyperframes" if quality == "production" and renderer == "ffmpeg" else renderer
@@ -211,6 +232,8 @@ def rerender_candidate(
     job_id = Path(output_path).stem
     report(82, "Running render QA checks")
     render_quality = build_render_quality_report(contract, output_path)
+    if isinstance(candidate.get("silence_trim"), dict):
+        render_quality["silence_trim"] = candidate["silence_trim"]
     candidate["render_quality"] = render_quality
     candidate["cost"] = estimate_clip_cost(
         int(candidate["end_ms"]) - int(candidate["start_ms"]),

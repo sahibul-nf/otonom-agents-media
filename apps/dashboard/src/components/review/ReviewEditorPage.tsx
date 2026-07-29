@@ -1,0 +1,521 @@
+"use client";
+
+import Link from "next/link";
+import {useRouter} from "next/navigation";
+import {ArrowLeft, ChevronLeft, ChevronRight, Loader2, MoreHorizontal} from "lucide-react";
+import {useCallback, useEffect, useMemo, useState} from "react";
+import {EditorHeaderActions} from "@/components/review/editor/EditorHeaderActions";
+import {ReviewEditorWorkspace} from "@/components/review/editor/ReviewEditorWorkspace";
+import {captionIndexAtSeconds, captionRelativeSeconds, isRenderingContext, joinCaptionsFromSegments, redistributeCaptionDocument, type ActionState, type InspectorTab} from "@/components/review/editor/types";
+import {
+  apiGet,
+  apiPost,
+  type BrandTemplate,
+  type ClipCandidate,
+  type EditorContext,
+  type ExplainerScene,
+  type ExplainerScenePlan,
+  type HyperframesTemplate,
+  type PublishTarget,
+  type SaveScenePlanResponse,
+} from "@/lib/media-api";
+
+type ScenePlanResult = Partial<SaveScenePlanResponse> & {plan: ExplainerScenePlan};
+
+export function ReviewEditorPage({clipId}: {clipId: string}) {
+  const router = useRouter();
+  const [clip, setClip] = useState<ClipCandidate | null>();
+  const [clips, setClips] = useState<ClipCandidate[]>([]);
+  const [context, setContext] = useState<EditorContext | null>();
+  const [cleanPlan, setCleanPlan] = useState<ExplainerScenePlan>();
+  const [draftPlan, setDraftPlan] = useState<ExplainerScenePlan>();
+  const [templates, setTemplates] = useState<HyperframesTemplate[]>([]);
+  const [brandTemplates, setBrandTemplates] = useState<BrandTemplate[]>([]);
+  const [schedulePlatforms, setSchedulePlatforms] = useState<string[]>([]);
+  const [rerenderStyle, setRerenderStyle] = useState("");
+  const [cleanCaptionDraft, setCleanCaptionDraft] = useState("");
+  const [captionDraft, setCaptionDraft] = useState("");
+  const [cleanPostCopy, setCleanPostCopy] = useState("");
+  const [postCopyDraft, setPostCopyDraft] = useState("");
+  const [selectedSceneId, setSelectedSceneId] = useState<string>();
+  const [selectedCaptionIndex, setSelectedCaptionIndex] = useState<number>();
+  const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTab>("scene");
+  const [inspectorPanelOpen, setInspectorPanelOpen] = useState(false);
+  const [currentSeconds, setCurrentSeconds] = useState(0);
+  const [seekRequest, setSeekRequest] = useState<{id: number; seconds: number}>();
+  const [playbackRequest, setPlaybackRequest] = useState<{id: number; action: "toggle" | "play" | "pause"}>();
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [previewEpoch, setPreviewEpoch] = useState(0);
+
+  const planDirty = useMemo(() => JSON.stringify(draftPlan) !== JSON.stringify(cleanPlan), [cleanPlan, draftPlan]);
+  const captionsDirty = captionDraft !== cleanCaptionDraft;
+  const postCopyDirty = postCopyDraft !== cleanPostCopy;
+  const dirty = planDirty || captionsDirty || postCopyDirty;
+  const rendering = isRenderingContext(context || undefined);
+
+  const applyContext = useCallback((next: EditorContext, resetPlan: boolean) => {
+    setContext(next);
+    if (next.plan && resetPlan) {
+      setCleanPlan(structuredClone(next.plan));
+      setDraftPlan(structuredClone(next.plan));
+      setSelectedSceneId((current) => next.plan?.scenes.some((scene) => scene.id === current) ? current : next.plan?.scenes[0]?.id);
+    }
+    setActiveInspectorTab((current) => {
+      if (next.capability === "scene") return current === "scene" || current === "metadata" || current === "post" || current === "qa" ? current : "scene";
+      if (next.capability === "short") {
+        if (current === "scene" || current === "captions") return next.can_trim ? "trim" : "silence";
+        if (current === "silence" || current === "trim" || current === "metadata" || current === "post" || current === "qa") return current;
+        return next.can_trim ? "trim" : "silence";
+      }
+      return current === "scene" || current === "captions" || current === "trim" || current === "silence" ? "metadata" : current;
+    });
+  }, []);
+
+  const loadInitial = useCallback(async () => {
+    try {
+      const [reviewItems, editorContext, targets, nextBrandTemplates, nextTemplates] = await Promise.all([
+        apiGet<ClipCandidate[]>("review"),
+        apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clipId)}`),
+        apiGet<PublishTarget[]>("targets"),
+        apiGet<BrandTemplate[]>("brand-templates"),
+        apiGet<HyperframesTemplate[]>("hyperframes-templates"),
+      ]);
+      const nextClip = reviewItems.find((item) => item.id === clipId) || null;
+      setClips(reviewItems);
+      setClip(nextClip);
+      setTemplates(nextTemplates);
+      setBrandTemplates(nextBrandTemplates);
+      setSchedulePlatforms(targets.filter((target) => target.mode !== "off").map((target) => target.platform));
+      setRerenderStyle(nextBrandTemplates[0]?.path || "");
+      if (nextClip) {
+        const captions = joinCaptionsFromSegments(nextClip.captions || []);
+        const postCopy = nextClip.post_caption || "";
+        setCleanCaptionDraft(captions);
+        setCaptionDraft(captions);
+        setCleanPostCopy(postCopy);
+        setPostCopyDraft(postCopy);
+        if (editorContext.capability !== "scene" && (captions || nextClip.transcript_span?.trim())) {
+          setSelectedCaptionIndex(0);
+        }
+      }
+      applyContext(editorContext, true);
+    } catch {
+      setClip(null);
+      setContext(null);
+    }
+  }, [applyContext, clipId]);
+
+  const refreshClip = useCallback(async () => {
+    const reviewItems = await apiGet<ClipCandidate[]>("review");
+    const nextClip = reviewItems.find((item) => item.id === clipId) || null;
+    setClips(reviewItems);
+    setClip(nextClip);
+    if (nextClip) {
+      const captions = joinCaptionsFromSegments(nextClip.captions || []);
+      const postCopy = nextClip.post_caption || "";
+      setCaptionDraft((current) => current === cleanCaptionDraft ? captions : current);
+      setCleanCaptionDraft(captions);
+      setPostCopyDraft((current) => current === cleanPostCopy ? postCopy : current);
+      setCleanPostCopy(postCopy);
+    }
+  }, [cleanCaptionDraft, cleanPostCopy, clipId]);
+
+  useEffect(() => {
+    void loadInitial();
+  }, [loadInitial]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!rendering) return;
+    const timer = window.setInterval(() => {
+      void apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clipId)}`)
+        .then(async (next) => {
+          const stillRendering = isRenderingContext(next);
+          applyContext(next, !dirty);
+          if (!stillRendering) {
+            await refreshClip();
+            setPreviewEpoch((value) => value + 1);
+            setSeekRequest({id: Date.now(), seconds: 0});
+            setPlaybackRequest({id: Date.now(), action: "pause"});
+            if (next.job?.error) {
+              setActionStates((items) => ({
+                ...items,
+                [`clip:${clipId}:rerender`]: {status: "failed", message: next.job?.error || "Re-render failed"},
+              }));
+            }
+          }
+        })
+        .catch(() => undefined);
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [applyContext, clipId, dirty, refreshClip, rendering]);
+
+  useEffect(() => {
+    if (!clip?.captions?.length) return;
+    if (context?.capability === "scene") return;
+    const index = captionIndexAtSeconds(clip, clip.captions, currentSeconds);
+    if (index !== undefined) setSelectedCaptionIndex(index);
+  }, [clip, context?.capability, currentSeconds]);
+
+  async function runAction(key: string, pending: string, action: () => Promise<void>, done: string, refresh = true) {
+    setActionStates((items) => ({...items, [key]: {status: "running", message: pending}}));
+    try {
+      await action();
+      setActionStates((items) => ({...items, [key]: {status: "done", message: done}}));
+      if (refresh) await refreshClip();
+    } catch (error) {
+      setActionStates((items) => ({...items, [key]: {status: "failed", message: error instanceof Error ? error.message : "Action failed"}}));
+    }
+  }
+
+  function navigate(href?: string) {
+    if (!href) return;
+    if (dirty && !window.confirm("Discard unsaved editor changes?")) return;
+    router.push(href);
+  }
+
+  async function savePlan(rerender: boolean) {
+    if (!draftPlan || !context) return;
+    await runAction("plan", rerender ? "Saving and rendering…" : "Saving plan…", async () => {
+      const result = await apiPost<ScenePlanResult>("explainer-scene-plan", {
+        candidate_id: clipId,
+        title: draftPlan.title,
+        scenes: draftPlan.scenes,
+        rerender_after: rerender,
+        prefer_hyperframes: rerender,
+      });
+      const nextContext: EditorContext = {
+        ...context,
+        ...result,
+        candidate_id: result.candidate_id || context.candidate_id,
+        capability: result.capability || context.capability,
+        can_edit_scenes: result.can_edit_scenes ?? context.can_edit_scenes,
+        can_trim: result.can_trim ?? context.can_trim,
+        can_rerender: result.can_rerender ?? context.can_rerender,
+        plan: result.plan,
+      };
+      applyContext(nextContext, true);
+    }, rerender ? "Full render started" : "Plan saved", false);
+  }
+
+  async function saveAllChanges() {
+    await runAction("plan", "Saving editor changes…", async () => {
+      if (planDirty && draftPlan && context) {
+        const result = await apiPost<ScenePlanResult>("explainer-scene-plan", {
+          candidate_id: clipId,
+          title: draftPlan.title,
+          scenes: draftPlan.scenes,
+          rerender_after: false,
+        });
+        applyContext({...context, ...result, plan: result.plan}, true);
+      }
+      if (captionsDirty && clip) {
+        const nextCaptions = redistributeCaptionDocument(clip.captions || [], captionDraft);
+        await apiPost("caption-corrections", {candidate_id: clip.id, captions: nextCaptions});
+        setCleanCaptionDraft(joinCaptionsFromSegments(nextCaptions));
+        setCaptionDraft(joinCaptionsFromSegments(nextCaptions));
+        setClip((current) => current ? {...current, captions: nextCaptions} : current);
+      }
+      if (postCopyDirty && clip) {
+        await apiPost("post-copy", {candidate_id: clip.id, post_caption: postCopyDraft});
+        setCleanPostCopy(postCopyDraft);
+        setClip((current) => current ? {...current, post_caption: postCopyDraft} : current);
+      }
+    }, "Editor changes saved", false);
+  }
+
+  function updateSceneList(updater: (scenes: ExplainerScene[]) => ExplainerScene[]) {
+    if (!draftPlan) return;
+    setDraftPlan({...draftPlan, scenes: updater(draftPlan.scenes)});
+  }
+
+  if (clip === undefined || context === undefined) return <div className="grid min-h-screen place-items-center bg-canvas-deep"><Loader2 className="h-6 w-6 animate-spin text-cyan" /></div>;
+  if (!clip || !context) return <Unavailable />;
+
+  const clipIndex = clips.findIndex((item) => item.id === clip.id);
+  const previousClip = clips[clipIndex - 1];
+  const nextClip = clips[clipIndex + 1];
+
+  return (
+    <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-canvas text-zinc-100">
+      <header className="z-40 shrink-0 bg-gradient-to-b from-canvas-deep/80 via-canvas/40 to-transparent px-3 py-2.5 sm:px-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button type="button" onClick={() => dirty ? navigate("/?section=review") : router.back()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="Back to Review"><ArrowLeft className="h-4 w-4" /></button>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-semibold tracking-tight text-white">{draftPlan?.title || clip.title_hook}</h1>
+              <p className="truncate text-[11px] text-zinc-600">{clipIndex + 1}/{clips.length} · canvas</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="hidden items-center rounded-full border border-white/[0.05] bg-black/20 p-0.5 backdrop-blur-md md:flex">
+              <button type="button" disabled={!previousClip} onClick={() => navigate(previousClip ? `/review/${encodeURIComponent(previousClip.id)}` : undefined)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-500 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-25" aria-label="Previous review item"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" disabled={!nextClip} onClick={() => navigate(nextClip ? `/review/${encodeURIComponent(nextClip.id)}` : undefined)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-500 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-25" aria-label="Next review item"><ChevronRight className="h-4 w-4" /></button>
+            </div>
+            <EditorHeaderActions
+              clip={clip}
+              context={context}
+              dirty={dirty}
+              rendering={rendering}
+              actionStates={actionStates}
+              onSave={() => void saveAllChanges()}
+              onRender={() => void savePlan(true)}
+              onApprove={() => void runAction(`clip:${clip.id}:approve`, "Approving…", () => apiPost("approve", {candidate_id: clip.id}), "Approved")}
+              onSchedule={() => void runAction(`clip:${clip.id}:schedule`, "Scheduling…", () => apiPost("schedule-next", {candidate_id: clip.id, platforms: schedulePlatforms}), "Scheduled")}
+            />
+            <div className="relative">
+              <button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="More review actions" aria-expanded={menuOpen}><MoreHorizontal className="h-4 w-4" /></button>
+              {menuOpen ? <div className="absolute right-0 top-11 z-50 w-48 overflow-hidden rounded-2xl border border-white/[0.06] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl">
+                <button type="button" onClick={() => { setMenuOpen(false); void runAction(`clip:${clip.id}:hold`, "Holding…", () => apiPost("hold", {candidate_id: clip.id}), "Held"); }} className="w-full rounded-xl px-3 py-2 text-left text-sm text-warning hover:bg-warning/[0.08]">Hold for later</button>
+                <button type="button" onClick={() => { setMenuOpen(false); if (window.confirm("Delete this item and rendered files?")) void runAction(`clip:${clip.id}:delete`, "Deleting…", async () => { await apiPost("delete-candidate", {candidate_id: clip.id, delete_artifacts: true}); router.push("/?section=review"); }, "Deleted", false); }} className="w-full rounded-xl px-3 py-2 text-left text-sm text-danger hover:bg-danger/[0.08]">Delete item</button>
+              </div> : null}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1">
+        <ReviewEditorWorkspace
+          clip={clip}
+          context={context}
+          draftPlan={draftPlan}
+          templates={templates}
+          selectedSceneId={selectedSceneId}
+          selectedCaptionIndex={selectedCaptionIndex}
+          activeInspectorTab={activeInspectorTab}
+          inspectorPanelOpen={inspectorPanelOpen}
+          captionDraft={captionDraft}
+          postCopyDraft={postCopyDraft}
+          currentSeconds={currentSeconds}
+          seekRequest={seekRequest}
+          playbackRequest={playbackRequest}
+          isPlaying={isPlaying}
+          dirty={dirty}
+          rendering={rendering}
+          actionStates={actionStates}
+          onSelectScene={(id) => { setSelectedSceneId(id); setActiveInspectorTab("scene"); setInspectorPanelOpen(true); }}
+          onSelectCaption={(index) => {
+            setSelectedCaptionIndex(index);
+            const caption = clip.captions?.[index];
+            if (caption) {
+              setSeekRequest({id: Date.now(), seconds: captionRelativeSeconds(clip, caption)});
+            }
+            if (context.capability === "short") {
+              setActiveInspectorTab((current) => (current === "captions" ? (context.can_trim ? "trim" : "metadata") : current));
+            }
+          }}
+          onHighlightCaption={setSelectedCaptionIndex}
+          onInspectorTabChange={setActiveInspectorTab}
+          onInspectorPanelOpenChange={setInspectorPanelOpen}
+          onPlanChange={setDraftPlan}
+          onAddScene={() => {
+            const scene: ExplainerScene = {id: `scene-${crypto.randomUUID()}`, type: "text", duration_target: 5, headline: "", script: "", narration: ""};
+            updateSceneList((scenes) => [...scenes, scene]);
+            setSelectedSceneId(scene.id);
+            setActiveInspectorTab("scene");
+            setInspectorPanelOpen(true);
+          }}
+          onDuplicateScene={(id) => updateSceneList((scenes) => {
+            const index = scenes.findIndex((scene) => scene.id === id);
+            if (index < 0) return scenes;
+            const copy = {...scenes[index], id: `scene-${crypto.randomUUID()}`};
+            setSelectedSceneId(copy.id);
+            return [...scenes.slice(0, index + 1), copy, ...scenes.slice(index + 1)];
+          })}
+          onDeleteScene={(id) => updateSceneList((scenes) => {
+            if (scenes.length <= 1) return scenes;
+            const index = scenes.findIndex((scene) => scene.id === id);
+            const next = scenes.filter((scene) => scene.id !== id);
+            setSelectedSceneId(next[Math.min(index, next.length - 1)]?.id);
+            return next;
+          })}
+          onMoveScene={(id, direction) => updateSceneList((scenes) => {
+            const index = scenes.findIndex((scene) => scene.id === id);
+            const target = index + direction;
+            if (index < 0 || target < 0 || target >= scenes.length) return scenes;
+            const next = [...scenes];
+            [next[index], next[target]] = [next[target], next[index]];
+            return next;
+          })}
+          onCaptionDraftChange={setCaptionDraft}
+          onPostCopyChange={setPostCopyDraft}
+          onSeek={(seconds) => setSeekRequest({id: Date.now(), seconds})}
+          onTogglePlayback={() => setPlaybackRequest({id: Date.now(), action: "toggle"})}
+          onPlaybackChange={setIsPlaying}
+          onTimeChange={setCurrentSeconds}
+          onRemovePause={(pause) => {
+            if (captionsDirty) {
+              window.alert("Save or discard caption text edits before removing a pause.");
+              return;
+            }
+            if (rendering) {
+              window.alert("Wait for the current render to finish before removing another pause.");
+              return;
+            }
+            void runAction(
+              `clip:${clip.id}:remove-pause`,
+              "Removing pause…",
+              async () => {
+                type RemovePauseResult = {
+                  captions: NonNullable<ClipCandidate["captions"]>;
+                  removed_ms?: number;
+                  rerender_job?: {id?: string; status?: string; error?: string; message?: string; progress?: number};
+                  rerender_error?: string;
+                };
+                const result = await apiPost<RemovePauseResult>("remove-pause", {
+                  candidate_id: clip.id,
+                  pause_at_ms: pause.atMs,
+                  gap_ms: pause.gapMs,
+                  rerender_after: true,
+                  renderer: "hyperframes",
+                  quality: "production",
+                  style: rerenderStyle,
+                });
+                const nextCaptions = result.captions || [];
+                const nextDraft = joinCaptionsFromSegments(nextCaptions);
+                setClip((current) => (current ? {...current, captions: nextCaptions} : current));
+                setCleanCaptionDraft(nextDraft);
+                setCaptionDraft(nextDraft);
+                setSeekRequest({id: Date.now(), seconds: Math.max(0, pause.atMs / 1000)});
+                setPlaybackRequest({id: Date.now(), action: "pause"});
+                if (result.rerender_error) {
+                  throw new Error(result.rerender_error);
+                }
+                const nextContext = await apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clip.id)}`);
+                const job = result.rerender_job;
+                applyContext(
+                  {
+                    ...nextContext,
+                    job: nextContext.job || (job?.id
+                      ? {
+                          job_id: job.id,
+                          status: job.status || "queued",
+                          error: job.error || "",
+                          progress: job.progress,
+                          message: job.message || "Re-rendering after pause removal…",
+                        }
+                      : nextContext.job),
+                  },
+                  false,
+                );
+              },
+              "Pause removed. Re-render started — preview updates when ready.",
+              false,
+            );
+          }}
+          onBatchRemovePauses={(minGapMs) => {
+            if (captionsDirty) {
+              window.alert("Save or discard caption text edits before removing pauses.");
+              return;
+            }
+            if (rendering) {
+              window.alert("Wait for the current render to finish before removing pauses.");
+              return;
+            }
+            void runAction(
+              `clip:${clip.id}:remove-pauses-batch`,
+              "Removing pauses…",
+              async () => {
+                type BatchResult = {
+                  captions: NonNullable<ClipCandidate["captions"]>;
+                  match_count?: number;
+                  removed_ms?: number;
+                  rerender_job?: {id?: string; status?: string; error?: string; message?: string; progress?: number};
+                  rerender_error?: string;
+                };
+                const result = await apiPost<BatchResult>("remove-pauses-batch", {
+                  candidate_id: clip.id,
+                  min_gap_ms: minGapMs,
+                  dry_run: false,
+                  rerender_after: true,
+                  renderer: "hyperframes",
+                  quality: "production",
+                  style: rerenderStyle,
+                });
+                const nextCaptions = result.captions || [];
+                const nextDraft = joinCaptionsFromSegments(nextCaptions);
+                setClip((current) => (current ? {...current, captions: nextCaptions} : current));
+                setCleanCaptionDraft(nextDraft);
+                setCaptionDraft(nextDraft);
+                setSeekRequest({id: Date.now(), seconds: 0});
+                setPlaybackRequest({id: Date.now(), action: "pause"});
+                setActiveInspectorTab("silence");
+                setInspectorPanelOpen(true);
+                if (result.rerender_error) {
+                  throw new Error(result.rerender_error);
+                }
+                const nextContext = await apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clip.id)}`);
+                const job = result.rerender_job;
+                applyContext(
+                  {
+                    ...nextContext,
+                    job: nextContext.job || (job?.id
+                      ? {
+                          job_id: job.id,
+                          status: job.status || "queued",
+                          error: job.error || "",
+                          progress: job.progress,
+                          message: job.message || "Re-rendering after batch pause removal…",
+                        }
+                      : nextContext.job),
+                  },
+                  false,
+                );
+              },
+              "Pauses removed. Re-render started — preview updates when ready.",
+              false,
+            );
+          }}
+          onGeneratePostCopy={() => void runAction(`post:${clip.id}:generate`, "Generating post copy…", async () => { const result = await apiPost<{post_caption: string}>("post-copy-generate", {candidate_id: clip.id, llm_provider: "deepseek"}); setPostCopyDraft(result.post_caption); }, "Post copy generated", false)}
+          onRefreshMetadata={() => void runAction(`clip:${clip.id}:metadata`, "Refreshing metadata…", () => apiPost("metadata-refresh", {candidate_id: clip.id, mode: "smart"}), "Metadata refreshed")}
+          onSaveBoundary={(startMs, endMs, rerenderAfter) => void runAction(`clip:${clip.id}:boundary`, "Saving trim…", () => apiPost("clip-boundary", {candidate_id: clip.id, start_ms: startMs, end_ms: endMs, rerender_after: rerenderAfter, renderer: "hyperframes", quality: "production", style: rerenderStyle}), "Trim saved")}
+          onRerenderShort={() => {
+            if (!context.can_rerender || context.capability !== "short") return;
+            void runAction(
+              `clip:${clip.id}:rerender`,
+              "Starting re-render…",
+              async () => {
+                type RerenderJob = {id: string; status: string; error?: string; message?: string; progress?: number};
+                const job = await apiPost<RerenderJob>("rerender", {
+                  candidate_id: clip.id,
+                  renderer: "hyperframes",
+                  quality: "production",
+                  style: rerenderStyle,
+                });
+                const nextContext = await apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clip.id)}`);
+                applyContext(
+                  {
+                    ...nextContext,
+                    job: nextContext.job || {
+                      job_id: job.id,
+                      status: job.status || "queued",
+                      error: job.error || "",
+                      progress: job.progress,
+                      message: job.message || "Re-rendering…",
+                    },
+                  },
+                  false,
+                );
+              },
+              "Re-render started — preview updates when ready.",
+              false,
+            );
+          }}
+          previewEpoch={previewEpoch}
+        />
+      </div>
+    </main>
+  );
+}
+
+function Unavailable() {
+  return <main className="grid min-h-screen place-items-center bg-canvas-deep px-5 text-center"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-danger">Review unavailable</p><h1 className="mt-3 text-2xl font-semibold text-white">This item or its editor context could not be loaded.</h1><Link href="/?section=review" className="mt-6 inline-flex rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-ink">Back to Review</Link></div></main>;
+}

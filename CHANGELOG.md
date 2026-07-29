@@ -7,7 +7,27 @@
 - Workspace-scoped publish credentials (#34): Facebook/YouTube/TikTok/Telegram account tokens live in a per-profile vault under `media-engine/data/credentials/` (gitignored); OAuth connect/disconnect and live publish resolve the active workspace. Existing `.env.local` account keys migrate once into `nourbit`.
 - Watch channel → auto-clip → autonomy schedule (#32): add a YouTube channel once, poll for new uploads, enqueue clip jobs, apply `off`/`assisted`/`full` autonomy, and enforce per-account posts/day delivery caps with a workspace switcher (`nourbit` / `workspace`).
 - Channel watcher worker: `python -m media_engine.cli watch-poll` and `scripts/run_watch_poll_worker.sh` for background polling.
-
+- Batch Remove Pauses (#31): short-form right rail **Silence** tool sets a gap threshold in seconds, previews match count, then batch-compresses those pauses (caption remap + keep plan + re-render) without replacing per-chip Remove Pause.
+- Remove Pause A/V cut fix (#29): keep plans use the current source/caption timeline (not the original YouTube span), clamp to source duration, and HyperFrames `durationMs` follows the trimmed media so exports no longer pad leftover silence.
+- Remove Pause preview refresh (#29): short-form editor-context now surfaces async re-render jobs so the stage shows Rendering…, polls to completion, refreshes clip data, and reloads the preview video (cache-busted).
+- Remove Pause UX fix (#29): Pause chip menu no longer vanishes on rail scroll; menu uses fixed positioning with Seek / Remove, and Remove status shows in the Captions rail.
+- Remove Pause (#29): Pause chips open Seek / Remove actions; Remove compresses that silence window, retimes captions/words, and queues a short-form re-render with the pending keep plan (burn-in cue bridges stay intact).
+- Karaoke word highlight (#30): Captions rail follows the spoken word during preview playback with an Opus-style cyan chip (solid pill behind the active word); falls back to cue highlight when word timings are missing or copy is dirty.
+- Auto-trim silence on short-form render (#28): source clips drop leading/trailing dead-air and compress long internal pauses before captions/render; diagnostics land on `render_quality.silence_trim`.
+- Interactive Captions document (#27): short-form Captions rail keeps continuous copy, adds playhead-synced cue highlight, floating selection toolbar (Play/Pause + Seek), and Pause chips from **word-level** gaps (cue windows stay bridged for burn-in).
+- SaaS dashboard UX (#22): Create and Long Video now center one primary task with contextual progress and secondary history/operator controls; Review is a one-interaction preview gallery with a dedicated `/review/[clipId]` editing workspace.
+- Studio workspace polish (#22): Review Editor now uses a preview-first inspector/timeline layout; Templates, Channels, Schedule, Brand Builder, mobile navigation, and contextual activity surfaces follow a focused SaaS hierarchy.
+- AI Scene Editor reconstruction (#22): Review now opens a full-width three-pane production workspace with real Explainer scene-plan add/edit/reorder/delete APIs, atomic save and full-render handoff, capability-aware short/imported-long-form finishing tools, dirty-leave and approval gates, responsive scene/transcript navigation, a contextual inspector, and an explicit Save → Render → Approve command flow.
+- Editor visual polish (#22): Script/Captions rail is now a HeyGen-style numbered text list without bordered cards; editor chrome uses the dashboard canvas tokens and quieter inspector/timeline surfaces.
+- Inline script editing (#22): Scene and caption text can be typed directly in the Script/Captions rail, with type/duration and add/duplicate/reorder/delete actions on each block.
+- Editor save & script flow (#22): one command-bar Save covers script/captions/post copy; confirmations kept only for discard-dirty and delete; Script/Captions reads as continuous numbered paragraphs.
+- Continuous captions (#22): short-form Captions rail is one paragraph document; timed cues keep their windows and words redistribute on Save.
+- OpusClip-familiar editor chrome (#26): header Save changes + Approve, center stage, right icon tool rail with collapsible detail panel, and always-visible bottom timeline synced to script/captions.
+- Editor visual system (#26): Review Editor chrome now uses the same surface cards, cyan CTAs, rounded-full actions, and eyebrow labels as Brand Builder / dashboard sections.
+- Editor canvas vibe (#26): bordered panel cards removed; workspace reads as one continuous canvas with quiet hairline dividers and a floating preview stage.
+- Canvas tool docks (#26): top/left/right/bottom chrome are floating glass docks (gradient fades + soft chips) instead of bordered dashboard toolbars.
+- Long-form canvas polish (#26): Explainer/imported long-form uses quieter script document selection, wider 16:9 floating stage, and a softer scene timeline strip.
+- Resizable script rail (#26): left Captions/Script dock defaults wider and can be dragged (300–560px); width persists in localStorage.
 - Verified Create → Generate queues HTTP 202 without FK/lock; failed jobs now surface actionable CLI errors (not bare exit codes); Next proxy only says “offline” on true connection failures (#2).
 - Path A control loop (#21): dashboard **Generate via Cursor** → Automation webhook / Cloud Agents API → poll until `FINISHED` → local `ingest_longform` → Telegram status (no public URL).
 - Path A: ingest HeyGen/long-form MP4 into Review via `POST /api/ingest-longform`, Otonom MCP `ingest_longform`, and Explainer dashboard form (`review_only` + optional `clip_batch`).

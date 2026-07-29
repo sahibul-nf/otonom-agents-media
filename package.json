@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "bash ./scripts/dev.sh",
+    "dev:reuse": "DEV_REUSE=1 bash ./scripts/dev.sh",
     "health": "python3 ./scripts/system_health.py",
     "pm2:start": "pm2 start ./scripts/media-engine-pm2.config.cjs",
     "pm2:restart": "pm2 restart otonom-media-api otonom-media-dashboard otonom-media-health",

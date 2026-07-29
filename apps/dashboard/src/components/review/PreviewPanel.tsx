@@ -1,21 +1,46 @@
 "use client";
 
 import {Pause, Play, SkipBack, SkipForward, Volume2, VolumeX} from "lucide-react";
-import {useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {apiPath, ClipCandidate, isExplainerClip} from "@/lib/media-api";
+
+export type PreviewSeekRequest = {id: number; seconds: number};
+export type PreviewPlaybackRequest = {id: number; action: "toggle" | "play" | "pause"};
 
 type PreviewPanelProps = {
   clip?: ClipCandidate;
   statusTone: (status: string) => string;
   embedded?: boolean;
   hideHeader?: boolean;
+  variant?: "card" | "stage";
+  seekRequest?: PreviewSeekRequest;
+  playbackRequest?: PreviewPlaybackRequest;
+  onTimeChange?: (seconds: number) => void;
+  onPlaybackChange?: (playing: boolean) => void;
+  /** Bumps when a re-render finishes so the <video> reloads even if output_path is unchanged. */
+  previewEpoch?: number;
 };
 
-export function PreviewPanel({clip, statusTone, embedded = false, hideHeader = false}: PreviewPanelProps) {
+export function PreviewPanel({
+  clip,
+  statusTone,
+  embedded = false,
+  hideHeader = false,
+  variant = "card",
+  seekRequest,
+  playbackRequest,
+  onTimeChange,
+  onPlaybackChange,
+  previewEpoch = 0,
+}: PreviewPanelProps) {
   const output = clip?.output_path || clip?.render_quality?.output_path;
   const landscape = isExplainerClip(clip);
+  const stageClass = landscape
+    ? "aspect-video h-auto max-h-full w-full max-w-[min(100%,1120px)]"
+    : "aspect-[9/16] h-full max-h-full w-auto max-w-full";
+  const cardClass = landscape ? "max-w-3xl aspect-video" : "max-w-[17.5rem] aspect-[9/16]";
   return (
-    <div className={embedded ? "" : "rounded-[28px] border border-white/[0.08] bg-surface p-5"}>
+    <div className={embedded ? (variant === "stage" ? "flex h-full min-h-0 w-full items-center justify-center" : "") : "rounded-[28px] border border-white/[0.08] bg-surface p-5"}>
       {!hideHeader ? <div className="mb-4 flex items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-white">{landscape ? "16:9 Preview" : "9:16 Preview"}</h3>
         <div className="flex items-center gap-2">
@@ -26,8 +51,18 @@ export function PreviewPanel({clip, statusTone, embedded = false, hideHeader = f
         </div>
       </div> : null}
       
-      <div className={`relative mx-auto w-full overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#050507] shadow-inner ${landscape ? "max-w-3xl aspect-video" : "max-w-[17.5rem] aspect-[9/16]"}`}>
-        {output ? <VideoPreviewPlayer key={output} output={output} /> : (
+      <div className={`relative overflow-hidden bg-[#050507] ${variant === "stage" ? `${stageClass} ${landscape ? "rounded-xl shadow-[0_20px_70px_rgba(0,0,0,0.4)] ring-1 ring-white/[0.04]" : "rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.06]"}` : `mx-auto w-full rounded-[16px] border border-white/[0.08] shadow-inner ${cardClass}`}`}>
+        {output ? (
+          <VideoPreviewPlayer
+            key={`${output}::${previewEpoch}`}
+            output={output}
+            previewEpoch={previewEpoch}
+            seekRequest={seekRequest}
+            playbackRequest={playbackRequest}
+            onTimeChange={onTimeChange}
+            onPlaybackChange={onPlaybackChange}
+          />
+        ) : (
           <div className="absolute inset-0 grid place-items-center bg-black/40">
             <div className="grid place-items-center gap-3 px-8 text-center text-sm text-zinc-500">
               <Play className="h-10 w-10 text-zinc-700" />
@@ -40,7 +75,21 @@ export function PreviewPanel({clip, statusTone, embedded = false, hideHeader = f
   );
 }
 
-function VideoPreviewPlayer({output}: {output: string}) {
+function VideoPreviewPlayer({
+  output,
+  previewEpoch,
+  seekRequest,
+  playbackRequest,
+  onTimeChange,
+  onPlaybackChange,
+}: {
+  output: string;
+  previewEpoch: number;
+  seekRequest?: PreviewSeekRequest;
+  playbackRequest?: PreviewPlaybackRequest;
+  onTimeChange?: (seconds: number) => void;
+  onPlaybackChange?: (playing: boolean) => void;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -48,6 +97,38 @@ function VideoPreviewPlayer({output}: {output: string}) {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
+  const src = `${apiPath(`artifact?path=${encodeURIComponent(output)}`)}${previewEpoch ? `&v=${previewEpoch}` : ""}`;
+
+  useEffect(() => {
+    if (!seekRequest || !videoRef.current) return;
+    const video = videoRef.current;
+    const next = Math.max(0, Math.min(video.duration || seekRequest.seconds, seekRequest.seconds));
+    video.currentTime = next;
+    setCurrentTime(next);
+  }, [seekRequest]);
+
+  useEffect(() => {
+    if (!playbackRequest || !videoRef.current) return;
+    const video = videoRef.current;
+    const action = playbackRequest.action;
+
+    async function applyPlayback() {
+      const shouldPlay = action === "play" || (action === "toggle" && video.paused);
+      if (shouldPlay) {
+        await video.play();
+        setIsPlaying(true);
+        onPlaybackChange?.(true);
+        return;
+      }
+      video.pause();
+      setIsPlaying(false);
+      onPlaybackChange?.(false);
+    }
+
+    void applyPlayback();
+    // Request id is the trigger; avoid re-running on callback identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackRequest]);
 
   function formatClock(totalSeconds: number) {
     if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return "0:00";
@@ -65,10 +146,12 @@ function VideoPreviewPlayer({output}: {output: string}) {
     if (video.paused) {
       await video.play();
       setIsPlaying(true);
+      onPlaybackChange?.(true);
       return;
     }
     video.pause();
     setIsPlaying(false);
+    onPlaybackChange?.(false);
   }
 
   function seekTo(nextTime: number) {
@@ -107,24 +190,31 @@ function VideoPreviewPlayer({output}: {output: string}) {
         playsInline
         preload="metadata"
         className="h-full w-full object-contain"
-        src={apiPath(`artifact?path=${encodeURIComponent(output)}`)}
+        src={src}
         onLoadedMetadata={(event) => {
           setDuration(event.currentTarget.duration || 0);
           setCurrentTime(event.currentTarget.currentTime || 0);
           setIsReady(true);
           setIsMuted(event.currentTarget.muted);
         }}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime || 0)}
+        onTimeUpdate={(event) => {
+          const next = event.currentTarget.currentTime || 0;
+          setCurrentTime(next);
+          onTimeChange?.(next);
+        }}
         onPlay={() => {
           setIsPlaying(true);
+          onPlaybackChange?.(true);
           setControlsVisible(false);
         }}
         onPause={() => {
           setIsPlaying(false);
+          onPlaybackChange?.(false);
           setControlsVisible(true);
         }}
         onEnded={() => {
           setIsPlaying(false);
+          onPlaybackChange?.(false);
           setControlsVisible(true);
         }}
         onClick={() => void togglePlayback()}

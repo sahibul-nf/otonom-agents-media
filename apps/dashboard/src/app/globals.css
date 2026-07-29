@@ -360,7 +360,19 @@ video {
   pointer-events: auto;
 }
 
+@media (hover: none) {
+  .template-card-open-hint,
+  .review-clip-card-open-hint,
+  .review-clip-card-actions {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .template-card,
+  .template-card *,
   .template-preview-motion,
   .template-preview-motion *,
   .review-clip-card,

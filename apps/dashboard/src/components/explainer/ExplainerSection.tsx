@@ -1,9 +1,73 @@
 "use client";
 
-import {Clapperboard, Film, Loader2, RefreshCcw, Sparkles, Wand2} from "lucide-react";
+import {ChevronDown, Clapperboard, Film, Loader2, Sparkles, Wand2} from "lucide-react";
 import {useEffect, useMemo, useState, type ReactNode} from "react";
 import {type ActionUiState, type HyperframesTemplate} from "@/components/generate/types";
 import {type ExplainerJob, type PathAJob} from "@/lib/media-api";
+
+function friendlyStatus(status: string): string {
+  const map: Record<string, string> = {
+    starting: "Starting",
+    triggering: "Starting",
+    polling: "Generating",
+    ingesting: "Preparing review",
+    ready: "Ready to review",
+    failed: "Failed",
+    planned: "Planned",
+    rendering: "Rendering",
+    rendered: "Ready to review",
+    queued: "Queued",
+  };
+  return map[status] || status.replaceAll("_", " ");
+}
+
+function ActivityCard({
+  title,
+  subtitle,
+  status,
+  statusClass,
+  error,
+  primaryLabel,
+  onPrimary,
+  secondary,
+}: {
+  title: string;
+  subtitle?: string;
+  status: string;
+  statusClass: string;
+  error?: string;
+  primaryLabel?: string;
+  onPrimary?: () => void;
+  secondary?: ReactNode;
+}) {
+  return (
+    <article className="rounded-3xl border border-white/[0.08] bg-black/25 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-medium text-white">{title}</p>
+          {subtitle ? <p className="mt-1 text-xs text-zinc-500">{subtitle}</p> : null}
+        </div>
+        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusClass}`}>
+          {friendlyStatus(status)}
+        </span>
+      </div>
+      {error ? <p className="mt-2 text-xs text-danger line-clamp-2">{error}</p> : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {primaryLabel && onPrimary ? (
+          <button
+            type="button"
+            onClick={onPrimary}
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-zinc-200"
+          >
+            <Clapperboard className="h-3.5 w-3.5" />
+            {primaryLabel}
+          </button>
+        ) : null}
+        {secondary}
+      </div>
+    </article>
+  );
+}
 
 export function ExplainerSection({
   jobs,
@@ -38,6 +102,10 @@ export function ExplainerSection({
   renderActionStatus: (state?: ActionUiState) => ReactNode;
   renderEmptyState: (title: string, text: string) => ReactNode;
 }) {
+  const [brief, setBrief] = useState("");
+  const [extraNotes, setExtraNotes] = useState("");
+  const [showNotes, setShowNotes] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [topic, setTopic] = useState("");
   const [sources, setSources] = useState("");
   const [templateId, setTemplateId] = useState("techtalk_intel_brief");
@@ -45,9 +113,6 @@ export function ExplainerSection({
   const [ingestSource, setIngestSource] = useState("");
   const [ingestTitle, setIngestTitle] = useState("");
   const [ingestMode, setIngestMode] = useState<"review_only" | "clip_batch">("review_only");
-  const [pathATopic, setPathATopic] = useState("");
-  const [pathATitle, setPathATitle] = useState("");
-  const [pathAScript, setPathAScript] = useState("");
 
   const templateOptions = useMemo(() => {
     const preferred = templates.filter((item) =>
@@ -55,17 +120,13 @@ export function ExplainerSection({
     );
     return preferred.length ? preferred : templates.slice(0, 8);
   }, [templates]);
-
-  useEffect(() => {
-    if (!templates.some((item) => item.id === templateId) && templateOptions[0]) {
-      setTemplateId(templateOptions[0].id);
-    }
-  }, [templateId, templateOptions, templates]);
+  const activeTemplateId = templates.some((item) => item.id === templateId) ? templateId : templateOptions[0]?.id || templateId;
 
   const rendering = jobs.some((job) => job.status === "rendering");
   const pathAActive = pathAJobs.some((job) =>
     ["starting", "triggering", "polling", "ingesting"].includes(job.status),
   );
+  const busy = pathAGenerating || pathAActive || actionState?.status === "running";
 
   useEffect(() => {
     if (!rendering && !pathAActive) return;
@@ -73,305 +134,266 @@ export function ExplainerSection({
     return () => window.clearInterval(timer);
   }, [rendering, pathAActive, onRefresh]);
 
+  const activity = useMemo(() => {
+    const pathItems = pathAJobs.map((job) => ({
+      key: `patha-${job.job_id}`,
+      kind: "generate" as const,
+      title: job.title || job.topic || "Long video",
+      subtitle: pathAActive && job === pathAJobs[0] ? "Working — you’ll get a Telegram ping when ready" : undefined,
+      status: job.status,
+      error: job.error,
+      candidateId: job.candidate_ids?.[0],
+      agentUrl: job.agent_url,
+      updated: job.job_id,
+    }));
+    const explainerItems = jobs.map((job) => ({
+      key: `expl-${job.job_id}`,
+      kind: "plan" as const,
+      title: job.topic || "Hybrid plan",
+      subtitle: job.status === "planned" ? "Plan ready — stitch when fixtures are in" : undefined,
+      status: job.status,
+      error: job.error,
+      candidateId: job.candidate_id || undefined,
+      jobId: job.job_id,
+      updated: job.job_id,
+    }));
+    return [...pathItems, ...explainerItems].slice(0, 12);
+  }, [jobs, pathAJobs, pathAActive]);
+  const currentActivity = activity.find((item) => ["starting", "triggering", "polling", "ingesting", "rendering", "queued"].includes(item.status)) || activity[0];
+  const historyActivity = activity.filter((item) => item.key !== currentActivity?.key);
+
+  function handleGenerate() {
+    const topicText = brief.trim();
+    if (!topicText) return;
+    void onPathAGenerate({
+      topic: topicText,
+      title: topicText,
+      script: extraNotes.trim(),
+    });
+  }
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+    <div className="mx-auto grid w-full max-w-4xl gap-5">
       <section className="rounded-[32px] border border-white/[0.08] bg-surface/40 p-6 backdrop-blur-md">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold tracking-[-0.02em] text-white">
-              Start <span className="font-editorial italic font-normal text-cyan">Explainer</span>
-            </h3>
-            <p className="mt-1 text-sm text-zinc-500">
-              Path A: trigger Cursor (HeyGen) from a button, or paste a ready <code className="text-zinc-400">video_url</code>.
-              Approve in Review — no auto-publish.
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan">New long video</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">Describe the story. The finished video waits in Review for your approval.</p>
           </div>
-          <Film className="h-5 w-5 text-cyan" />
+          <Film className="h-5 w-5 shrink-0 text-cyan" />
         </div>
 
-        <div className="mb-8 rounded-2xl border border-cyan/20 bg-cyan/5 p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-cyan">
-            <Wand2 className="h-4 w-4" />
-            Generate via Cursor (Path A)
-          </div>
-          <p className="mb-3 text-xs text-zinc-500">
-            Manual trigger → poll Cursor → local ingest → Telegram when Review is ready. No public URL required.
-          </p>
-          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Topic</label>
-          <input
-            value={pathATopic}
-            onChange={(event) => setPathATopic(event.target.value)}
-            placeholder="Apakah Membeli Bitcoin Itu Bodoh?"
-            className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
-          />
-          <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Title (optional)</label>
-          <input
-            value={pathATitle}
-            onChange={(event) => setPathATitle(event.target.value)}
-            placeholder="Defaults to topic"
-            className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
-          />
-          <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Script / brief (optional)
-          </label>
+        <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">What’s this about?</label>
+        <textarea
+          value={brief}
+          onChange={(event) => setBrief(event.target.value)}
+          rows={3}
+          placeholder="e.g. Apakah membeli Bitcoin itu bodoh? Angle: risk vs FOMO for beginners"
+          className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
+        />
+
+        <button
+          type="button"
+          onClick={() => setShowNotes((open) => !open)}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-300"
+        >
+          <ChevronDown className={`h-3.5 w-3.5 transition ${showNotes ? "rotate-180" : ""}`} />
+          {showNotes ? "Hide talking points" : "Add talking points (optional)"}
+        </button>
+        {showNotes ? (
           <textarea
-            value={pathAScript}
-            onChange={(event) => setPathAScript(event.target.value)}
+            value={extraNotes}
+            onChange={(event) => setExtraNotes(event.target.value)}
             rows={3}
-            placeholder="Key talking points for Video Agent…"
+            placeholder="Key points, tone, must-mention facts…"
             className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
           />
+        ) : null}
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            disabled={!pathATopic.trim() || pathAGenerating || pathAActive}
-            onClick={() =>
-              void onPathAGenerate({
-                topic: pathATopic.trim(),
-                title: pathATitle.trim(),
-                script: pathAScript.trim(),
-              })
-            }
-            className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-cyan px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-40"
+            disabled={!brief.trim() || busy}
+            onClick={handleGenerate}
+            className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-black disabled:opacity-40"
           >
             {pathAGenerating || pathAActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-            Generate via Cursor
+            Generate video
           </button>
-          {pathAJobs[0] ? (
-            <p className="mt-3 text-xs text-zinc-500">
-              Latest: <span className="text-zinc-300">{pathAJobs[0].status}</span>
-              {pathAJobs[0].error ? <span className="text-danger"> — {pathAJobs[0].error}</span> : null}
-            </p>
-          ) : null}
         </div>
-
-        <div className="mb-8 rounded-2xl border border-white/[0.08] bg-black/20 p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-200">
-            <Sparkles className="h-4 w-4 text-cyan" />
-            Ingest HeyGen / long-form MP4
+        <div className="mt-3">{renderActionStatus(actionState)}</div>
+        {currentActivity ? (
+          <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4" aria-live="polite">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Current video</p>
+                <p className="mt-1 text-sm font-semibold text-white">{currentActivity.title}</p>
+              </div>
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusTone(currentActivity.status)}`}>
+                {friendlyStatus(currentActivity.status)}
+              </span>
+            </div>
+            {["starting", "triggering", "polling", "ingesting", "rendering", "queued"].includes(currentActivity.status) ? (
+              <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                <div className="h-full w-2/3 animate-pulse rounded-full bg-cyan motion-reduce:animate-none" />
+              </div>
+            ) : null}
+            {currentActivity.error ? <p className="mt-3 text-xs text-danger">{currentActivity.error}</p> : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {currentActivity.candidateId ? (
+                <button type="button" onClick={() => onOpenReview(currentActivity.candidateId)} className="inline-flex items-center gap-2 rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-ink">
+                  <Clapperboard className="h-3.5 w-3.5" /> Open in Review
+                </button>
+              ) : null}
+              {"agentUrl" in currentActivity && currentActivity.agentUrl ? (
+                <a href={currentActivity.agentUrl} target="_blank" rel="noreferrer" className="rounded-full border border-white/[0.10] px-4 py-2 text-xs font-semibold text-zinc-300">View generation</a>
+              ) : null}
+            </div>
           </div>
-          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Source URL or path</label>
-          <input
-            value={ingestSource}
-            onChange={(event) => setIngestSource(event.target.value)}
-            placeholder="https://files2.heygen.ai/.../video.mp4"
-            className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
-          />
-          <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Title (optional)</label>
-          <input
-            value={ingestTitle}
-            onChange={(event) => setIngestTitle(event.target.value)}
-            placeholder="Apakah Membeli Bitcoin Itu Bodoh?"
-            className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
-          />
-          <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-zinc-500">Mode</label>
-          <select
-            value={ingestMode}
-            onChange={(event) => setIngestMode(event.target.value as "review_only" | "clip_batch")}
-            className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none"
-          >
-            <option value="review_only">review_only — whole video → Review (16:9)</option>
-            <option value="clip_batch">clip_batch — Whisper + cut shorts → Review</option>
-          </select>
-          <button
-            type="button"
-            disabled={!ingestSource.trim() || ingesting}
-            onClick={() => void onIngest({source: ingestSource.trim(), title: ingestTitle.trim(), mode: ingestMode})}
-            className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-cyan px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-40"
-          >
-            {ingesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
-            Ingest to Review
-          </button>
-        </div>
+        ) : null}
 
-        <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Topic</label>
-        <input
-          value={topic}
-          onChange={(event) => setTopic(event.target.value)}
-          placeholder="Apa itu Bitcoin?"
-          className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
-        />
-
-        <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Sources (optional, one per line)
-        </label>
-        <textarea
-          value={sources}
-          onChange={(event) => setSources(event.target.value)}
-          rows={3}
-          placeholder="https://…"
-          className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
-        />
-
-        <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          HyperFrames template
-        </label>
-        <select
-          value={templateId}
-          onChange={(event) => setTemplateId(event.target.value)}
-          className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none"
+        <details
+          className="mt-8 rounded-2xl border border-white/[0.08] bg-black/20 p-4"
+          open={advancedOpen}
+          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
         >
-          {templateOptions.map((template) => (
-            <option key={template.id} value={template.id}>
-              {template.label}
-            </option>
-          ))}
-        </select>
+          <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
+            Advanced
+            <span className="ml-2 text-xs font-medium text-zinc-500">import file · hybrid plan · style</span>
+          </summary>
 
-        <label className="mt-5 flex items-center gap-3 text-sm text-zinc-300">
-          <input
-            type="checkbox"
-            checked={ffmpegOnly}
-            onChange={(event) => setFfmpegOnly(event.target.checked)}
-            className="h-4 w-4 rounded border-white/20 bg-black/40"
-          />
-          Stitch with FFmpeg title cards (reliable; skip HyperFrames runtime)
-        </label>
+          <div className="mt-5 space-y-6 border-t border-white/[0.06] pt-5">
+            <div>
+              <p className="text-sm font-medium text-zinc-200">Import an existing video</p>
+              <p className="mt-1 text-xs text-zinc-500">Paste a finished MP4 URL to send it straight to Review.</p>
+              <input
+                value={ingestSource}
+                onChange={(event) => setIngestSource(event.target.value)}
+                placeholder="https://…/video.mp4"
+                className="mt-3 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
+              />
+              <input
+                value={ingestTitle}
+                onChange={(event) => setIngestTitle(event.target.value)}
+                placeholder="Title (optional)"
+                className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
+              />
+              <select
+                value={ingestMode}
+                onChange={(event) => setIngestMode(event.target.value as "review_only" | "clip_batch")}
+                className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none"
+              >
+                <option value="review_only">Whole video → Review</option>
+                <option value="clip_batch">Also cut short clips → Review</option>
+              </select>
+              <button
+                type="button"
+                disabled={!ingestSource.trim() || ingesting}
+                onClick={() => void onIngest({source: ingestSource.trim(), title: ingestTitle.trim(), mode: ingestMode})}
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-4 py-2 text-sm font-semibold text-cyan disabled:opacity-40"
+              >
+                {ingesting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}
+                Send to Review
+              </button>
+            </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            disabled={!topic.trim() || actionState?.status === "running"}
-            onClick={() => void onCreate({topic: topic.trim(), sources, hyperframes_template: templateId})}
-            className="inline-flex items-center gap-2 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-black disabled:opacity-50"
-          >
-            {actionState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Create job
-          </button>
-          <button
-            type="button"
-            onClick={onRefresh}
-            className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] px-4 py-2.5 text-sm text-zinc-300 hover:border-white/25"
-          >
-            <RefreshCcw className="h-4 w-4" />
-            Refresh
-          </button>
-        </div>
-        <div className="mt-4">{renderActionStatus(actionState)}</div>
-
-        <div className="mt-8 rounded-3xl border border-white/[0.06] bg-black/20 p-4 text-sm text-zinc-400">
-          <p className="font-medium text-zinc-200">Flywheel</p>
-          <ol className="mt-2 list-decimal space-y-1 pl-5">
-            <li>Create job → Cursor/HeyGen MCP imports avatar MP4s into fixtures.</li>
-            <li>Stitch → candidate lands in Review → approve / schedule (existing publishers).</li>
-            <li>After YouTube long-form publish, paste that URL in Create to clip shorts.</li>
-          </ol>
-        </div>
+            <div>
+              <p className="text-sm font-medium text-zinc-200">Hybrid plan (avatar + cards)</p>
+              <p className="mt-1 text-xs text-zinc-500">Optional local plan/stitch workflow for operators assembling fixtures.</p>
+              <input
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                placeholder="Topic for scene plan"
+                className="mt-3 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
+              />
+              <textarea
+                value={sources}
+                onChange={(event) => setSources(event.target.value)}
+                rows={2}
+                placeholder="Sources (optional, one per line)"
+                className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
+              />
+              <select
+                value={activeTemplateId}
+                onChange={(event) => setTemplateId(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none"
+              >
+                {templateOptions.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.label}
+                  </option>
+                ))}
+              </select>
+              <label className="mt-3 flex items-center gap-3 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={ffmpegOnly}
+                  onChange={(event) => setFfmpegOnly(event.target.checked)}
+                  className="h-4 w-4 rounded border-white/20 bg-black/40"
+                />
+                Prefer reliable local stitch
+              </label>
+              <button
+                type="button"
+                disabled={!topic.trim() || actionState?.status === "running"}
+                onClick={() => void onCreate({topic: topic.trim(), sources, hyperframes_template: activeTemplateId})}
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-200 disabled:opacity-50"
+              >
+                {actionState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                Create plan
+              </button>
+            </div>
+          </div>
+        </details>
       </section>
 
-      <section className="rounded-[32px] border border-white/[0.08] bg-surface/40 p-6 backdrop-blur-md">
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-white">
-            Path A <span className="font-editorial italic font-normal text-cyan">Cursor jobs</span>
-          </h3>
-          {pathAActive ? (
-            <span className="inline-flex items-center gap-2 text-xs text-cyan">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Running…
-            </span>
-          ) : null}
-        </div>
-        {!pathAJobs.length
-          ? renderEmptyState("No Path A jobs yet", "Use Generate via Cursor with a topic.")
-          : (
-            <div className="mb-8 space-y-3">
-              {pathAJobs.map((job) => (
-                <article key={job.job_id} className="rounded-3xl border border-white/[0.08] bg-black/25 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-white">{job.title || job.topic || job.job_id}</p>
-                      <p className="mt-1 text-xs text-zinc-500">{job.job_id}</p>
-                    </div>
-                    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusTone(job.status)}`}>
-                      {job.status}
-                    </span>
-                  </div>
-                  {job.error ? <p className="mt-2 text-xs text-danger">{job.error}</p> : null}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {job.candidate_ids?.[0] ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenReview(job.candidate_ids?.[0])}
-                        className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-zinc-200"
-                      >
-                        <Clapperboard className="h-3.5 w-3.5" />
-                        Open in Review
-                      </button>
-                    ) : null}
-                    {job.agent_url ? (
-                      <a
-                        href={job.agent_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1.5 text-xs font-semibold text-cyan"
-                      >
-                        Cursor agent
-                      </a>
-                    ) : null}
-                  </div>
-                </article>
+      {historyActivity.length ? (
+        <details className="rounded-[28px] border border-white/[0.08] bg-surface/50 p-5">
+          <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-300">
+            Previous videos <span className="ml-2 text-xs font-medium text-zinc-600">{historyActivity.length}</span>
+          </summary>
+          <div className="mt-4 space-y-3 border-t border-white/[0.06] pt-4">
+              {historyActivity.map((item) => (
+                <ActivityCard
+                  key={item.key}
+                  title={item.title}
+                  subtitle={item.subtitle}
+                  status={item.status}
+                  statusClass={statusTone(item.status)}
+                  error={item.error}
+                  primaryLabel={item.candidateId ? "Open in Review" : undefined}
+                  onPrimary={item.candidateId ? () => onOpenReview(item.candidateId) : undefined}
+                  secondary={
+                    <>
+                      {item.kind === "plan" && item.jobId ? (
+                        <button
+                          type="button"
+                          disabled={item.status === "rendering"}
+                          onClick={() => void onRun(item.jobId!, ffmpegOnly)}
+                          className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1.5 text-xs font-semibold text-cyan disabled:opacity-50"
+                        >
+                          Stitch
+                        </button>
+                      ) : null}
+                      {"agentUrl" in item && item.agentUrl ? (
+                        <a
+                          href={item.agentUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-zinc-400"
+                        >
+                          View run
+                        </a>
+                      ) : null}
+                    </>
+                  }
+                />
               ))}
-            </div>
-          )}
-
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-white">
-            Explainer <span className="font-editorial italic font-normal text-cyan">jobs</span>
-          </h3>
-          {rendering ? (
-            <span className="inline-flex items-center gap-2 text-xs text-cyan">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Rendering…
-            </span>
-          ) : null}
-        </div>
-
-        {!jobs.length
-          ? renderEmptyState("No Explainer jobs yet", "Create a topic plan to get a fixtures folder and scene breakdown.")
-          : (
-            <div className="space-y-3">
-              {jobs.map((job) => (
-                <article
-                  key={job.job_id}
-                  className="rounded-3xl border border-white/[0.08] bg-black/25 p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-white">{job.topic || job.job_id}</p>
-                      <p className="mt-1 text-xs text-zinc-500">{job.job_id}</p>
-                    </div>
-                    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusTone(job.status)}`}>
-                      {job.status}
-                    </span>
-                  </div>
-                  <p className="mt-3 text-xs text-zinc-500">
-                    {job.scene_count ?? "?"} scenes · {job.avatar_scene_count ?? "?"} avatar · template {job.hyperframes_template || "techtalk"}
-                  </p>
-                  {job.error ? <p className="mt-2 text-xs text-danger">{job.error}</p> : null}
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={job.status === "rendering"}
-                      onClick={() => void onRun(job.job_id, ffmpegOnly)}
-                      className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1.5 text-xs font-semibold text-cyan disabled:opacity-50"
-                    >
-                      Stitch now
-                    </button>
-                    {job.candidate_id ? (
-                      <button
-                        type="button"
-                        onClick={() => onOpenReview(job.candidate_id)}
-                        className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1.5 text-xs font-semibold text-zinc-200"
-                      >
-                        <Clapperboard className="h-3.5 w-3.5" />
-                        Open in Review
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-      </section>
+          </div>
+        </details>
+      ) : !currentActivity ? (
+        renderEmptyState("Ready when you are", "Describe a topic above to create your first long video.")
+      ) : null}
     </div>
   );
 }

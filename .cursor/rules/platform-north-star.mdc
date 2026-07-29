@@ -23,6 +23,22 @@ topic / source
 
 Human review before publish is intentional. Automate everything *except* that approve step.
 
+## Brand / niche positioning (TechTalk Intel ID)
+
+Do **not** optimize the product or content pipeline for Top-100 mass-entertainment volume (kids, gaming, sketch, corporate media). That market wins subscribers; **Tech & Finance** wins **RPM, intent, and B2B**.
+
+| Mass entertainment | Tech & Finance (our lane) |
+|---|---|
+| Huge addressable audience, lower RPM | Smaller, productive-age audience, high purchasing power |
+| AdSense / broad CPM | High-value brand deals, affiliate, courses, SaaS, consulting |
+| Chase 10M+ subs | Loyal, critical, high-intent segment is enough |
+
+**Content concept — edutainment (data + drama):**
+- Package tech/finance as **story + clear opinion**, not dry charts-only explainers (reference patterns: Raymond Chin / Timothy Ronald style — bold narrative, modern studio/podcast feel).
+- Prefer **pragmatic builder & investor** angles: business impact of tech/AI/markets, not generic gadget unboxing.
+- **Long-form** builds credibility; **Shorts/Reels 30–60s** (clips from the long piece) are the distribution wedge for reach — this is why the OpusClip-replacement loop stays P0.
+- Success metric for this repo: reliable weekly publish of that loop, not chasing Top-100 subscriber charts.
+
 ## Content types (one dashboard eventually)
 
 Not video-only. Same platform should eventually handle:
@@ -52,4 +68,5 @@ Not video-only. Same platform should eventually handle:
 
 - Strategy canvas (session): `platform-direction-advice`
 - Docs: `docs/heygen-paths.md`, `docs/explainer-saas-architecture.md`, `docs/explainer-mode.md`
+- Brand/content: TechTalk **edutainment** positioning lives in this file (Tech & Finance ≠ Top-100 volume chase)
 - Issues: #19 Path A ingest, #20 Path B scaffold, #7 avatar Direct API

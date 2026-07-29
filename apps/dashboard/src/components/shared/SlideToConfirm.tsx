@@ -24,7 +24,9 @@ export function SlideToConfirm({
   const handleRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragX, setDragX] = useState(0);
+  const [progressPercent, setProgressPercent] = useState(0);
   const [hasConfirmed, setHasConfirmed] = useState(false);
+  const wasLoadingRef = useRef(isLoading);
 
   // Maximum drag distance calculation
   const getMaxTravel = () => {
@@ -33,12 +35,15 @@ export function SlideToConfirm({
   };
 
   useEffect(() => {
-    if (isLoading) {
-      setHasConfirmed(true);
-    } else if (!isLoading && hasConfirmed) {
-      // Reset if loading finishes
-      setHasConfirmed(false);
-      setDragX(0);
+    const finishedLoading = wasLoadingRef.current && !isLoading;
+    wasLoadingRef.current = isLoading;
+    if (finishedLoading) {
+      const frame = window.requestAnimationFrame(() => {
+        setHasConfirmed(false);
+        setDragX(0);
+        setProgressPercent(0);
+      });
+      return () => window.cancelAnimationFrame(frame);
     }
   }, [isLoading]);
 
@@ -54,12 +59,14 @@ export function SlideToConfirm({
 
       const clampedX = Math.max(0, Math.min(maxTravel, currentX));
       setDragX(clampedX);
+      setProgressPercent(maxTravel > 0 ? (clampedX / maxTravel) * 100 : 0);
 
       // Trigger if reached near the very end
       if (clampedX >= maxTravel * 0.98) {
         setIsDragging(false);
         setHasConfirmed(true);
         setDragX(maxTravel);
+        setProgressPercent(100);
         onConfirm();
       }
     };
@@ -77,11 +84,13 @@ export function SlideToConfirm({
 
       const clampedX = Math.max(0, Math.min(maxTravel, currentX));
       setDragX(clampedX);
+      setProgressPercent(maxTravel > 0 ? (clampedX / maxTravel) * 100 : 0);
 
       if (clampedX >= maxTravel * 0.98) {
         setIsDragging(false);
         setHasConfirmed(true);
         setDragX(maxTravel);
+        setProgressPercent(100);
         onConfirm();
       }
     };
@@ -94,6 +103,7 @@ export function SlideToConfirm({
       if (dragX < maxTravel * 0.98) {
         // Reset position with smooth css transition
         setDragX(0);
+        setProgressPercent(0);
       }
     };
 
@@ -116,9 +126,6 @@ export function SlideToConfirm({
     if (disabled || hasConfirmed) return;
     setIsDragging(true);
   };
-
-  const travel = getMaxTravel();
-  const progressPercent = travel > 0 ? (dragX / travel) * 100 : 0;
 
   return (
     <div

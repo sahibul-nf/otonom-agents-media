@@ -18,6 +18,7 @@ from .autonomy import get_autonomy_settings, update_autonomy_settings
 from .caption_edits import merge_caption_corrections
 from .clip_boundaries import update_clip_boundary
 from .db import ARTIFACTS_DIR, DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, fetch_all, initialize
+from .silence_trim import captions_duration_ms, remove_pause_from_captions, remove_pauses_batch_from_captions, word_pause_gaps
 from .credentials import credential_status
 from .credential_vault import ensure_default_migration, set_profile_secrets, unset_profile_secrets
 from .duration_presets import duration_preset_options
@@ -26,6 +27,8 @@ from .explainer_pipeline import (
     create_explainer_job,
     list_explainer_jobs,
     read_explainer_status,
+    resolve_explainer_review_candidate,
+    save_explainer_scene_plan,
     start_explainer_run,
 )
 from .ingest_longform import ingest_longform
@@ -135,6 +138,40 @@ def _loads(value: str | None, fallback):
         return fallback
 
 
+def _active_clip_duration_ms(
+    *,
+    captions: list,
+    candidate_row,
+    render_meta: dict,
+) -> int:
+    """Timeline used for Remove Pause planning: current media, not original YouTube span.
+
+    After auto-trim / prior Remove Pause, captions and the working source are shorter than
+    ``end_ms - start_ms``. Using max(original_span, …) made keep plans extend past the
+    source so forced A/V cuts were skipped (``changed=False``).
+    """
+    caption_ms = captions_duration_ms(captions) if isinstance(captions, list) else 0
+    rq = _loads(candidate_row["render_quality_json"], {})
+    if not isinstance(rq, dict):
+        rq = {}
+    trim = rq.get("silence_trim") if isinstance(rq.get("silence_trim"), dict) else {}
+    trim_ms = int(trim.get("duration_after_ms") or 0)
+    rq_ms = int(rq.get("duration_ms") or 0)
+    source_ms = 0
+    source_path = str(render_meta.get("sourceVideoPath") or "").strip()
+    if source_path and Path(source_path).exists():
+        try:
+            from .silence_trim import probe_duration_ms
+
+            source_ms = probe_duration_ms(source_path)
+        except Exception:  # noqa: BLE001 - fall back to caption/trim estimates
+            source_ms = 0
+    positives = [ms for ms in (caption_ms, trim_ms, source_ms, rq_ms) if ms > 0]
+    if positives:
+        return int(min(positives))
+    return max(0, int(candidate_row["end_ms"] or 0) - int(candidate_row["start_ms"] or 0))
+
+
 def _normalize_clip_status(row: dict) -> dict:
     status = str(row.get("status") or "")
     if status == "needs_caption_fix":
@@ -143,6 +180,113 @@ def _normalize_clip_status(row: dict) -> dict:
         metadata["hold_reason"] = metadata.get("hold_reason") or "caption_fix_required"
         row["curation_metadata_json"] = json.dumps(metadata, ensure_ascii=False)
     return row
+
+
+def get_editor_context(candidate_id: str, *, db_path: str | Path = DEFAULT_DB) -> dict:
+    candidate_id = str(candidate_id or "").strip()
+    if not candidate_id:
+        raise ValueError("candidate_id is required")
+    conn = connect(db_path)
+    initialize(conn)
+    row = conn.execute(
+        """
+        SELECT c.id, c.profile_id, c.status, c.caption_source, c.curation_metadata_json,
+               r.status AS render_status, r.metadata_json AS render_metadata_json
+        FROM clip_candidates c
+        LEFT JOIN render_jobs r ON r.id = (
+          SELECT r2.id FROM render_jobs r2
+          WHERE r2.candidate_id = c.id
+          ORDER BY r2.created_at DESC, r2.id DESC
+          LIMIT 1
+        )
+        WHERE c.id = ?
+        """,
+        (candidate_id,),
+    ).fetchone()
+    if not row:
+        raise FileNotFoundError("candidate not found")
+    candidate = dict(row)
+    metadata = _loads(candidate.get("curation_metadata_json"), {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+    render_metadata = _loads(candidate.get("render_metadata_json"), {})
+    if not isinstance(render_metadata, dict):
+        render_metadata = {}
+    kind = str(metadata.get("kind") or "")
+    published = candidate["status"] == "published"
+    context = {
+        "candidate_id": candidate_id,
+        "profile_id": candidate["profile_id"],
+        "capability": "short",
+        "can_edit_scenes": False,
+        "can_trim": not published,
+        "can_rerender": not published,
+        "render": {
+            "status": candidate.get("render_status") or candidate["status"],
+            "error": str(render_metadata.get("error") or ""),
+        },
+    }
+    if kind == "explainer":
+        resolved = resolve_explainer_review_candidate(candidate_id, db_path=db_path)
+        status = _loads(resolved["status_path"].read_text(encoding="utf-8"), {})
+        if not isinstance(status, dict):
+            status = {}
+        context.update(
+            {
+                "capability": "scene",
+                "can_edit_scenes": not published,
+                "can_trim": False,
+                "plan": resolved["plan"],
+                "job": {
+                    "job_id": resolved["job_id"],
+                    "status": str(status.get("status") or "planned"),
+                    "error": str(status.get("error") or ""),
+                    "hyperframes_template": str(
+                        status.get("hyperframes_template")
+                        or resolved["plan"].get("hyperframes_template")
+                        or ""
+                    ),
+                },
+                "render": {
+                    "status": str(status.get("status") or "planned"),
+                    "error": str(status.get("error") or ""),
+                },
+            }
+        )
+    elif kind == "longform_ingest" or candidate["caption_source"] == "ingest_longform":
+        context.update(
+            {
+                "capability": "imported_longform",
+                "can_trim": False,
+                "can_rerender": False,
+            }
+        )
+    else:
+        # Short-form: surface active/latest async re-render so the editor can poll.
+        rerender = conn.execute(
+            """
+            SELECT id, status, error, progress, message
+            FROM rerender_jobs
+            WHERE candidate_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (candidate_id,),
+        ).fetchone()
+        if rerender:
+            context["job"] = {
+                "job_id": rerender["id"],
+                "status": str(rerender["status"] or ""),
+                "error": str(rerender["error"] or ""),
+                "progress": int(rerender["progress"] or 0),
+                "message": str(rerender["message"] or ""),
+            }
+            if str(rerender["status"] or "") in {"queued", "running"}:
+                context["render"] = {
+                    "status": str(rerender["status"]),
+                    "error": str(rerender["error"] or ""),
+                }
+    return context
 
 
 def _parse_range_header(value: str, size: int) -> tuple[int, int] | None:
@@ -238,6 +382,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)
+            return
+        if parsed.path == "/api/editor-context":
+            candidate_id = (parse_qs(parsed.query).get("candidate_id", [""])[0] or "").strip()
+            try:
+                self._send_json(get_editor_context(candidate_id, db_path=DEFAULT_DB))
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, status=404)
             return
         if parsed.path == "/api/targets":
             conn = connect(DEFAULT_DB)
@@ -636,6 +789,34 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(status, status=202)
             return
 
+        if parsed.path == "/api/explainer-scene-plan":
+            candidate_id = str(payload.get("candidate_id") or "").strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            if "title" not in payload or "scenes" not in payload:
+                self._send_json({"error": "title and scenes are required"}, status=400)
+                return
+            try:
+                saved = save_explainer_scene_plan(
+                    candidate_id,
+                    title=payload.get("title"),
+                    scenes=payload.get("scenes"),
+                    rerender_after=bool(payload.get("rerender_after", False)),
+                    prefer_hyperframes=bool(payload.get("prefer_hyperframes", False)),
+                    db_path=DEFAULT_DB,
+                )
+                context = get_editor_context(candidate_id, db_path=DEFAULT_DB)
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+                return
+            except (OSError, TypeError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            context["rerender_started"] = saved["rerender_started"]
+            self._send_json(context, status=202 if saved["rerender_started"] else 200)
+            return
+
         if parsed.path == "/api/ingest-longform":
             source = str(payload.get("source") or "").strip()
             if not source:
@@ -760,6 +941,245 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             )
             conn.commit()
             self._send_json({"candidate_id": candidate_id, "status": next_status, "caption_corrections": corrections})
+            return
+
+        if parsed.path == "/api/remove-pause":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            pause_at_ms = int(payload.get("pause_at_ms") or 0)
+            gap_ms = int(payload.get("gap_ms") or 0)
+            rerender_after = bool(payload.get("rerender_after", True))
+            if not candidate_id or gap_ms < 40:
+                self._send_json({"error": "candidate_id and gap_ms (>=40) are required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            row = conn.execute(
+                """
+                SELECT c.*, r.metadata_json AS render_metadata_json
+                FROM clip_candidates c
+                LEFT JOIN render_jobs r ON r.id = (
+                  SELECT r2.id FROM render_jobs r2
+                  WHERE r2.candidate_id = c.id
+                  ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1
+                )
+                WHERE c.id = ?
+                """,
+                (candidate_id,),
+            ).fetchone()
+            if not row:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            if row["status"] == "published":
+                self._send_json({"error": "published clip is locked"}, status=400)
+                return
+
+            corrections = _loads(row["caption_corrections_json"], {})
+            render_meta = _loads(row["render_metadata_json"], {})
+            captions = corrections.get("edited_captions") or render_meta.get("captions") or []
+            if not isinstance(captions, list) or not captions:
+                self._send_json({"error": "no captions available to retiming"}, status=400)
+                return
+
+            duration_ms = _active_clip_duration_ms(
+                captions=captions,
+                candidate_row=row,
+                render_meta=render_meta,
+            )
+            try:
+                keep_segments, remapped = remove_pause_from_captions(captions, duration_ms, pause_at_ms, gap_ms)
+            except (TypeError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+
+            if keep_segments == [(0, duration_ms)] or not remapped:
+                self._send_json({"error": "pause window did not change the timeline"}, status=400)
+                return
+
+            try:
+                next_corrections = merge_caption_corrections(corrections, remapped)
+            except (TypeError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+
+            curation = _loads(row["curation_metadata_json"], {})
+            cuts = list(curation.get("manual_silence_cuts") or [])
+            cuts.append({"pause_at_ms": pause_at_ms, "gap_ms": gap_ms, "end_ms": pause_at_ms + gap_ms})
+            curation["manual_silence_cuts"] = cuts
+            curation["manual_silence_keep_segments"] = keep_segments
+
+            next_status = row["status"]
+            if next_status not in {"approved", "scheduled", "ready_to_publish", "published"}:
+                next_status = "held"
+            conn.execute(
+                """
+                UPDATE clip_candidates
+                SET caption_corrections_json = ?, caption_source = 'manual_edit',
+                    curation_metadata_json = ?, status = ?, review_deadline_at = ''
+                WHERE id = ?
+                """,
+                (
+                    json.dumps(next_corrections, ensure_ascii=False),
+                    json.dumps(curation, ensure_ascii=False),
+                    next_status,
+                    candidate_id,
+                ),
+            )
+            conn.commit()
+
+            result = {
+                "candidate_id": candidate_id,
+                "status": next_status,
+                "captions": remapped,
+                "caption_corrections": next_corrections,
+                "keep_segments": keep_segments,
+                "removed_ms": max(0, gap_ms - 140),
+                "curation_metadata": curation,
+            }
+            if rerender_after:
+                load_env_file(ENV_FILE)
+                try:
+                    result["rerender_job"] = create_rerender_job(
+                        candidate_id,
+                        renderer=str(payload.get("renderer") or "hyperframes"),
+                        quality=str(payload.get("quality") or "production"),
+                        style_path=str(payload.get("style") or "") or None,
+                        force_source_refresh=False,
+                        regenerate_captions=False,
+                    )
+                except (RuntimeError, ValueError) as exc:
+                    result["rerender_error"] = str(exc)
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/remove-pauses-batch":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            min_gap_ms = int(payload.get("min_gap_ms") or 0)
+            dry_run = bool(payload.get("dry_run", False))
+            rerender_after = bool(payload.get("rerender_after", True))
+            if not candidate_id or min_gap_ms < 40:
+                self._send_json({"error": "candidate_id and min_gap_ms (>=40) are required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            row = conn.execute(
+                """
+                SELECT c.*, r.metadata_json AS render_metadata_json
+                FROM clip_candidates c
+                LEFT JOIN render_jobs r ON r.id = (
+                  SELECT r2.id FROM render_jobs r2
+                  WHERE r2.candidate_id = c.id
+                  ORDER BY r2.created_at DESC, r2.id DESC LIMIT 1
+                )
+                WHERE c.id = ?
+                """,
+                (candidate_id,),
+            ).fetchone()
+            if not row:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            if row["status"] == "published":
+                self._send_json({"error": "published clip is locked"}, status=400)
+                return
+
+            corrections = _loads(row["caption_corrections_json"], {})
+            render_meta = _loads(row["render_metadata_json"], {})
+            captions = corrections.get("edited_captions") or render_meta.get("captions") or []
+            if not isinstance(captions, list) or not captions:
+                self._send_json({"error": "no captions available to retiming"}, status=400)
+                return
+
+            duration_ms = _active_clip_duration_ms(
+                captions=captions,
+                candidate_row=row,
+                render_meta=render_meta,
+            )
+            gaps = word_pause_gaps(captions, min_gap_ms)
+            preview = {
+                "candidate_id": candidate_id,
+                "min_gap_ms": min_gap_ms,
+                "duration_ms": duration_ms,
+                "match_count": len(gaps),
+                "matches": gaps,
+                "removable_ms": sum(max(0, int(gap["gap_ms"]) - 140) for gap in gaps),
+            }
+            if dry_run:
+                self._send_json(preview)
+                return
+            if not gaps:
+                self._send_json({"error": "no pauses at or above that threshold"}, status=400)
+                return
+
+            try:
+                keep_segments, remapped, _gaps = remove_pauses_batch_from_captions(
+                    captions, duration_ms, min_gap_ms
+                )
+            except (TypeError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+
+            if keep_segments == [(0, duration_ms)] or not remapped:
+                self._send_json({"error": "pause windows did not change the timeline"}, status=400)
+                return
+
+            try:
+                next_corrections = merge_caption_corrections(corrections, remapped)
+            except (TypeError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+
+            curation = _loads(row["curation_metadata_json"], {})
+            cuts = list(curation.get("manual_silence_cuts") or [])
+            cuts.extend(gaps)
+            curation["manual_silence_cuts"] = cuts
+            curation["manual_silence_keep_segments"] = keep_segments
+            curation["manual_silence_batch"] = {
+                "min_gap_ms": min_gap_ms,
+                "match_count": len(gaps),
+            }
+
+            next_status = row["status"]
+            if next_status not in {"approved", "scheduled", "ready_to_publish", "published"}:
+                next_status = "held"
+            conn.execute(
+                """
+                UPDATE clip_candidates
+                SET caption_corrections_json = ?, caption_source = 'manual_edit',
+                    curation_metadata_json = ?, status = ?, review_deadline_at = ''
+                WHERE id = ?
+                """,
+                (
+                    json.dumps(next_corrections, ensure_ascii=False),
+                    json.dumps(curation, ensure_ascii=False),
+                    next_status,
+                    candidate_id,
+                ),
+            )
+            conn.commit()
+
+            kept_ms = sum(end - start for start, end in keep_segments)
+            result = {
+                **preview,
+                "status": next_status,
+                "captions": remapped,
+                "caption_corrections": next_corrections,
+                "keep_segments": keep_segments,
+                "removed_ms": max(0, duration_ms - kept_ms),
+                "curation_metadata": curation,
+            }
+            if rerender_after:
+                load_env_file(ENV_FILE)
+                try:
+                    result["rerender_job"] = create_rerender_job(
+                        candidate_id,
+                        renderer=str(payload.get("renderer") or "hyperframes"),
+                        quality=str(payload.get("quality") or "production"),
+                        style_path=str(payload.get("style") or "") or None,
+                        force_source_refresh=False,
+                        regenerate_captions=False,
+                    )
+                except (RuntimeError, ValueError) as exc:
+                    result["rerender_error"] = str(exc)
+            self._send_json(result)
             return
 
         if parsed.path == "/api/post-copy":

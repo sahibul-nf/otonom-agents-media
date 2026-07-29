@@ -12,6 +12,7 @@ from typing import Any
 from .captions import build_fallback_caption_segments, normalize_caption_groups
 from .db import ARTIFACTS_DIR, ROOT
 from .hyperframes_renderer import check_hyperframes_runtime, render_premium_hyperframes as _render_hyperframes_contract
+from .silence_trim import captions_duration_ms, probe_duration_ms
 from .styles import load_style
 
 PREMIUM_PRESET = "nourbit_premium_v1"
@@ -145,6 +146,34 @@ def build_render_contract(candidate: dict[str, Any], profile: dict[str, Any]) ->
     }
 
 
+def resolve_render_duration_ms(
+    candidate: dict[str, Any],
+    source_video_path: str | Path | None = None,
+) -> int:
+    """Composition length for the working media timeline.
+
+    Silence trim / Remove Pause can shorten the source below ``end_ms - start_ms``.
+    HyperFrames must follow the shorter media, otherwise the export pads dead air.
+    """
+    window_ms = max(0, int(candidate.get("end_ms") or 0) - int(candidate.get("start_ms") or 0))
+    probed = 0
+    if source_video_path:
+        try:
+            probed = probe_duration_ms(source_video_path)
+        except Exception:  # noqa: BLE001 - fall back to window/captions
+            probed = 0
+    caption_ms = 0
+    timed = candidate.get("timed_captions")
+    if isinstance(timed, list) and timed:
+        caption_ms = captions_duration_ms(timed)
+    media_candidates = [ms for ms in (probed, caption_ms) if ms > 400]
+    if media_candidates:
+        media_ms = min(media_candidates)
+        if window_ms <= 0 or media_ms < window_ms - 80:
+            return media_ms
+    return window_ms
+
+
 def build_premium_render_contract(
     candidate: dict[str, Any],
     profile: dict[str, Any],
@@ -154,7 +183,7 @@ def build_premium_render_contract(
     style: dict[str, Any] | None = None,
     genres: list[str] | None = None,
 ) -> dict[str, Any]:
-    duration_ms = candidate["end_ms"] - candidate["start_ms"]
+    duration_ms = resolve_render_duration_ms(candidate, source_video_path)
     validate_premium_duration(duration_ms)
     style = style or load_style()
     caption_style = style["caption"]
@@ -184,9 +213,9 @@ def build_premium_render_contract(
         "sourceUrl": source_url,
         "sourceAttribution": source_attribution,
         "startMs": candidate["start_ms"],
-        "endMs": candidate["end_ms"],
+        "endMs": int(candidate["start_ms"]) + duration_ms,
         "startTimecode": ms_to_timecode(candidate["start_ms"]),
-        "endTimecode": ms_to_timecode(candidate["end_ms"]),
+        "endTimecode": ms_to_timecode(int(candidate["start_ms"]) + duration_ms),
         "titleHook": candidate["title_hook"],
         "subtitle": candidate.get("hook_subtitle", candidate["viral_reason"]),
         "hookSubtitle": candidate.get("hook_subtitle", ""),
