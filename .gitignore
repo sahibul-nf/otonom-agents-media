@@ -59,6 +59,8 @@ media-engine/.specstory/
 .runtime/
 .playwright-cli/
 media-engine/profiles/custom_*.json
+.cursor/mcp.json
+*.tsbuildinfo
 
 # Generated media
 output/
