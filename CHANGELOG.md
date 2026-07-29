@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Channels empty fix (#39): new workspaces and empty `workspace` profiles auto-seed Telegram / YouTube Shorts / Facebook Reels / TikTok publish destinations; Create says “Watch YouTube sources”, sidebar/publish says “Publish accounts”.
 - Workspace CRUD in dashboard (#36): **Manage** next to the workspace switcher creates / renames / deletes workspaces via API (`POST /api/profiles`, `/api/profile-update`, `/api/profile-delete`). Built-in `nourbit` and `workspace` cannot be deleted; custom workspaces need slide-confirm and `force` when clips/schedule/channels remain. Create initializes an empty credential vault for that profile.
 - Workspace-scoped publish credentials (#34): Facebook/YouTube/TikTok/Telegram account tokens live in a per-profile vault under `media-engine/data/credentials/` (gitignored); OAuth connect/disconnect and live publish resolve the active workspace. Existing `.env.local` account keys migrate once into `nourbit`.
 - Watch channel → auto-clip → autonomy schedule (#32): add a YouTube channel once, poll for new uploads, enqueue clip jobs, apply `off`/`assisted`/`full` autonomy, and enforce per-account posts/day delivery caps with a workspace switcher (`nourbit` / `workspace`).
