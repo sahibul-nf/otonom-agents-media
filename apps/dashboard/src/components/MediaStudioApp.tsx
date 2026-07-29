@@ -427,6 +427,7 @@ export function MediaStudioApp() {
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [watchChannels, setWatchChannels] = useState<WatchChannel[]>([]);
   const [clips, setClips] = useState<ClipCandidate[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [targets, setTargets] = useState<PublishTarget[]>([]);
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null);
   const [style, setStyle] = useState<StyleProfile | null>(null);
@@ -581,7 +582,6 @@ export function MediaStudioApp() {
         apiGet<EngineHealth>("engine-health"),
         apiGet<HyperframesCatalog>("hyperframes-catalog"),
         apiGet<GenerationJob[]>("generation-jobs"),
-        apiGet<RerenderJob[]>("rerender-jobs"),
         apiGet<ScheduledPost[]>(`schedule?profile_id=${encodeURIComponent(activeProfile)}`),
         apiGet<AutonomySettings>(`autonomy-settings?profile_id=${encodeURIComponent(activeProfile)}`),
         apiGet<PublishAttempt[]>("publish-attempts").then((rows) => ({ok: true as const, rows})).catch((error) => ({ok: false as const, error})),
@@ -610,7 +610,6 @@ export function MediaStudioApp() {
       setPathAJobs(pathAResult.ok ? pathAResult.jobs : []);
       setProfiles(profilesResult.ok ? profilesResult.profiles : []);
       setWatchChannels(watchResult.ok ? watchResult.channels : []);
-      setRerendering({});
       setPublishSelection((current) => {
         const enabled = targetRows
           .filter((target) => publishPlatforms.includes(target.platform) && target.mode !== "off" && (target.enabled ?? true))
