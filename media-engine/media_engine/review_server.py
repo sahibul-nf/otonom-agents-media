@@ -62,6 +62,13 @@ from .channel_watcher import (
     update_watch_channel,
     upsert_publish_target,
 )
+from .workspace_profiles import (
+    WorkspaceProfileError,
+    create_profile,
+    delete_profile,
+    profile_usage,
+    update_profile,
+)
 from .scheduler import (
     list_scheduled_posts,
     process_due_auto_schedule,
@@ -521,6 +528,47 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(settings)
+            return
+
+        if parsed.path == "/api/profiles":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                profile = create_profile(conn, payload)
+            except WorkspaceProfileError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json({"profile": profile, "profiles": list_media_profiles(conn)}, status=201)
+            return
+
+        if parsed.path == "/api/profile-update":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                profile = update_profile(conn, payload)
+            except WorkspaceProfileError as exc:
+                message = str(exc)
+                status = 404 if "not found" in message.lower() else 400
+                self._send_json({"error": message}, status=status)
+                return
+            self._send_json({"profile": profile, "profiles": list_media_profiles(conn)})
+            return
+
+        if parsed.path == "/api/profile-delete":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            profile_id = str(payload.get("id") or payload.get("profile_id") or "").strip()
+            usage = profile_usage(conn, profile_id) if profile_id else {}
+            try:
+                result = delete_profile(conn, payload)
+            except WorkspaceProfileError as exc:
+                message = str(exc)
+                status = 404 if "not found" in message.lower() else 400
+                if "force=true" in message.lower() or "still has" in message.lower():
+                    status = 409
+                self._send_json({"error": message, "usage": usage}, status=status)
+                return
+            self._send_json({**result, "profiles": list_media_profiles(conn)})
             return
 
         if parsed.path == "/api/generation-jobs":

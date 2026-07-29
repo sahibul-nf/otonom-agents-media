@@ -101,7 +101,12 @@ export type MediaProfile = {
   id: string;
   name: string;
   niche?: string;
+  languages?: string[];
+  default_render_preset?: string;
+  cta_text?: string;
+  watermark_text?: string;
   created_at?: string;
+  protected?: boolean;
 };
 
 export type WatchChannel = {
