@@ -383,6 +383,9 @@ def list_media_profiles(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 def list_publish_targets(conn: sqlite3.Connection, profile_id: str | None = None) -> list[dict[str, Any]]:
     if profile_id:
+        from .workspace_profiles import ensure_default_publish_targets
+
+        ensure_default_publish_targets(conn, profile_id)
         rows = fetch_all(
             conn,
             "SELECT * FROM publish_targets WHERE profile_id = ? ORDER BY platform ASC, id ASC",

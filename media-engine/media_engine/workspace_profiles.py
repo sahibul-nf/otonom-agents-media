@@ -13,6 +13,14 @@ from .db import DEFAULT_WORKSPACE_PROFILE_ID, ensure_media_profile, fetch_all, f
 PROTECTED_PROFILE_IDS = frozenset({"nourbit", DEFAULT_WORKSPACE_PROFILE_ID})
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
 
+# Live publish destinations shown on Channels (matches dashboard publishPlatforms).
+DEFAULT_PUBLISH_PLATFORMS: tuple[tuple[str, str], ...] = (
+    ("telegram_channel", "{name} Telegram"),
+    ("youtube_shorts", "{name} YouTube Shorts"),
+    ("facebook_reels", "{name} Facebook Reels"),
+    ("tiktok", "{name} TikTok"),
+)
+
 
 class WorkspaceProfileError(ValueError):
     """Raised for invalid workspace profile operations."""
@@ -73,6 +81,43 @@ def _row_to_profile(row: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def ensure_default_publish_targets(
+    conn: sqlite3.Connection,
+    profile_id: str,
+    *,
+    display_name: str | None = None,
+) -> list[str]:
+    """If a workspace has zero publish destinations, seed the four live platforms."""
+    profile_id = (profile_id or "").strip()
+    if not profile_id:
+        return []
+    count_row = conn.execute(
+        "SELECT COUNT(*) FROM publish_targets WHERE profile_id = ?",
+        (profile_id,),
+    ).fetchone()
+    if int(count_row[0] if count_row else 0) > 0:
+        return []
+
+    profile = get_profile(conn, profile_id)
+    name = (display_name or (profile or {}).get("name") or profile_id).strip() or profile_id
+    created: list[str] = []
+    for platform, label_template in DEFAULT_PUBLISH_PLATFORMS:
+        label = label_template.format(name=name)
+        conn.execute(
+            """
+            INSERT INTO publish_targets
+              (profile_id, platform, account_label, mode, require_approval,
+               ai_disclosure_required, daily_cap, enabled)
+            VALUES (?, ?, ?, 'review_required', 1, 0, 2, 1)
+            """,
+            (profile_id, platform, label),
+        )
+        created.append(platform)
+    if created:
+        conn.commit()
+    return created
+
+
 def list_profiles(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ensure_media_profile(conn, "nourbit")
     ensure_media_profile(conn, DEFAULT_WORKSPACE_PROFILE_ID)
@@ -85,7 +130,10 @@ def list_profiles(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         ORDER BY name ASC
         """,
     )
-    return [_row_to_profile(row) for row in rows if row]
+    profiles = [_row_to_profile(row) for row in rows if row]
+    for profile in profiles:
+        ensure_default_publish_targets(conn, profile["id"], display_name=profile.get("name"))
+    return profiles
 
 
 def get_profile(conn: sqlite3.Connection, profile_id: str) -> dict[str, Any] | None:
@@ -149,6 +197,7 @@ def create_profile(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[st
     )
     conn.commit()
     ensure_profile_vault(profile_id)
+    ensure_default_publish_targets(conn, profile_id, display_name=name)
     profile = get_profile(conn, profile_id)
     if not profile:
         raise WorkspaceProfileError("Failed to create workspace")

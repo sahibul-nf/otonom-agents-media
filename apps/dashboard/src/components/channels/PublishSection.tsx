@@ -84,13 +84,18 @@ function PlatformActionMenu({
 function getPlatformIcon(platform: string) {
   switch (platform) {
     case "youtube":
+    case "youtube_shorts":
       return <Youtube className="h-5 w-5" />;
     case "instagram":
+    case "instagram_reels":
       return <Instagram className="h-5 w-5" />;
     case "facebook":
+    case "facebook_reels":
       return <Facebook className="h-5 w-5" />;
     case "linkedin":
       return <Linkedin className="h-5 w-5" />;
+    case "telegram_channel":
+      return <Send className="h-5 w-5" />;
     case "tiktok":
       return (
         <svg className="h-5 w-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -134,6 +139,15 @@ const platformThemes: Record<string, {glow: string; text: string; bg: string; ic
     bg: "bg-blue-600/5 hover:bg-blue-600/10",
     iconBg: "bg-blue-700/10 text-blue-500 border border-blue-500/20",
   },
+};
+platformThemes.youtube_shorts = platformThemes.youtube;
+platformThemes.facebook_reels = platformThemes.facebook;
+platformThemes.instagram_reels = platformThemes.instagram;
+platformThemes.telegram_channel = {
+  glow: "rgba(56,189,248,0.15)",
+  text: "text-sky-400",
+  bg: "bg-sky-500/5 hover:bg-sky-500/10",
+  iconBg: "bg-sky-600/10 text-sky-400 border border-sky-500/20",
 };
 
 export function PublishSection({
@@ -191,10 +205,10 @@ export function PublishSection({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-white/[0.06] pb-6">
           <div>
             <h3 className="text-2xl font-semibold tracking-[-0.03em] text-white">
-              Connect <span className="font-editorial italic font-normal text-cyan">channels</span>
+              Connect <span className="font-editorial italic font-normal text-cyan">publish accounts</span>
             </h3>
             <p className="mt-1.5 text-sm text-zinc-400 max-w-xl leading-relaxed">
-              Link your social network accounts to establish default publication pipelines. The final step is managed cleanly via the Content Schedule.
+              Link Facebook, YouTube, TikTok, or Telegram for this workspace. This is where clips publish — not the same as watching a YouTube source on Create.
             </p>
           </div>
           <span className="inline-flex rounded-full border border-cyan/[0.25] bg-teal/[0.10] px-4 py-1.5 text-xs font-bold text-cyan self-start tracking-wider uppercase">
@@ -203,6 +217,12 @@ export function PublishSection({
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          {targets.length === 0
+            ? renderEmptyState(
+                "No publish destinations yet",
+                "This workspace has no platform rows. Refresh the page (targets auto-seed for empty workspaces), or switch to another workspace.",
+              )
+            : null}
           {targets.map((target) => {
             const ready = credentials?.platforms[target.platform]?.ready;
             const credential = credentials?.platforms[target.platform];

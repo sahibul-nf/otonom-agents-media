@@ -6,5 +6,38 @@
   "default_render_preset": "short_clean",
   "cta_text": "",
   "watermark_text": "",
-  "publish_targets": []
+  "publish_targets": [
+    {
+      "platform": "telegram_channel",
+      "account_label": "Workspace Telegram",
+      "mode": "review_required",
+      "require_approval": true,
+      "ai_disclosure_required": false,
+      "daily_cap": 2
+    },
+    {
+      "platform": "youtube_shorts",
+      "account_label": "Workspace YouTube Shorts",
+      "mode": "review_required",
+      "require_approval": true,
+      "ai_disclosure_required": false,
+      "daily_cap": 2
+    },
+    {
+      "platform": "facebook_reels",
+      "account_label": "Workspace Facebook Reels",
+      "mode": "review_required",
+      "require_approval": true,
+      "ai_disclosure_required": false,
+      "daily_cap": 2
+    },
+    {
+      "platform": "tiktok",
+      "account_label": "Workspace TikTok",
+      "mode": "review_required",
+      "require_approval": true,
+      "ai_disclosure_required": false,
+      "daily_cap": 2
+    }
+  ]
 }

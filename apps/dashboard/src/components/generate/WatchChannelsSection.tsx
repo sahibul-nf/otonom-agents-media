@@ -43,10 +43,10 @@ export function WatchChannelsSection({
     <section className="rounded-[28px] border border-white/[0.07] bg-surface/30 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Watch channels</p>
-          <h3 className="mt-1 text-lg font-semibold text-white">Add once, auto-clip new uploads</h3>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Watch YouTube sources</p>
+          <h3 className="mt-1 text-lg font-semibold text-white">Auto-clip new uploads</h3>
           <p className="mt-1 max-w-2xl text-sm text-zinc-500">
-            Workspace <span className="font-semibold text-zinc-300">{profileId}</span> polls YouTube for new videos, enqueues clip jobs, and routes high-score clips through autonomy scheduling.
+            Workspace <span className="font-semibold text-zinc-300">{profileId}</span> polls a YouTube channel for new videos and enqueues clip jobs. This is not where you connect Facebook/TikTok publish accounts — use Publish accounts for that.
           </p>
         </div>
       </div>
@@ -81,7 +81,7 @@ export function WatchChannelsSection({
           className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:opacity-60"
         >
           {actionStates["watch:add"]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Add channel
+          Add YouTube source
         </button>
       </form>
       {renderActionStatus(actionStates["watch:add"])}
@@ -89,7 +89,7 @@ export function WatchChannelsSection({
       <div className="mt-5 grid gap-3">
         {channels.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/[0.08] bg-black/20 px-4 py-8 text-center text-sm text-zinc-500">
-            No watched channels yet. Paste a channel URL to start the short-form flywheel.
+            No watched YouTube sources yet. Paste a channel URL to start auto-clipping new uploads.
           </div>
         ) : (
           channels.map((channel) => {
