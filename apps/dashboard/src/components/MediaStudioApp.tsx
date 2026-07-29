@@ -26,6 +26,7 @@ import {FocusModal} from "@/components/FocusModal";
 import {DashboardSection} from "@/components/home/DashboardSection";
 import {GenerateSection} from "@/components/generate/GenerateSection";
 import {WatchChannelsSection} from "@/components/generate/WatchChannelsSection";
+import {WorkspaceManagerModal} from "@/components/workspace/WorkspaceManagerModal";
 import {ExplainerSection} from "@/components/explainer/ExplainerSection";
 import {TemplatesSection} from "@/components/templates/TemplatesSection";
 import {CalendarSection} from "@/components/calendar/CalendarSection";
@@ -455,6 +456,7 @@ export function MediaStudioApp() {
   const [section, setSection] = useState<Section>("dashboard");
   const [profileId, setProfileId] = useState("nourbit");
   const [profiles, setProfiles] = useState<MediaProfile[]>([]);
+  const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [watchChannels, setWatchChannels] = useState<WatchChannel[]>([]);
   const [clips, setClips] = useState<ClipCandidate[]>([]);
   const [targets, setTargets] = useState<PublishTarget[]>([]);
@@ -1368,6 +1370,13 @@ export function MediaStudioApp() {
                       </option>
                     ))}
                   </select>
+                  <button
+                    type="button"
+                    onClick={() => setWorkspaceModalOpen(true)}
+                    className="inline-flex h-8 items-center rounded-full border border-white/[0.10] bg-surface px-3 text-xs font-semibold text-zinc-300 hover:bg-surface-raised"
+                  >
+                    Manage
+                  </button>
                 </label>
               </div>
               <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">
@@ -1608,6 +1617,18 @@ export function MediaStudioApp() {
         </nav>
         <ToastStack toasts={toasts} onDismiss={(id) => setToasts((items) => items.filter((item) => item.id !== id))} />
         <ActionMonitor actionStates={actionStates} />
+        <WorkspaceManagerModal
+          open={workspaceModalOpen}
+          profiles={profiles}
+          activeProfileId={profileId}
+          onClose={() => setWorkspaceModalOpen(false)}
+          onProfilesChange={setProfiles}
+          onSwitchProfile={switchProfile}
+          onStatus={(message) => {
+            setStatus(message);
+            pushToast(message, "success");
+          }}
+        />
         <ConfirmDialog dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
       </main>
     </div>

@@ -116,6 +116,36 @@ def set_profile_secrets(profile_id: str, updates: dict[str, str]) -> dict[str, s
     return current
 
 
+def ensure_profile_vault(profile_id: str) -> Path:
+    """Create an empty per-workspace vault file if missing (no secrets yet)."""
+    profile_id = (profile_id or "").strip()
+    if not profile_id:
+        raise ValueError("profile_id is required")
+    path = _vault_path(profile_id)
+    with _lock:
+        VAULT_DIR.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text("{}\n", encoding="utf-8")
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+    return path
+
+
+def delete_profile_vault(profile_id: str) -> bool:
+    """Remove the vault JSON for a workspace. Returns True if a file was deleted."""
+    profile_id = (profile_id or "").strip()
+    if not profile_id:
+        return False
+    path = _vault_path(profile_id)
+    with _lock:
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+
+
 def unset_profile_secrets(profile_id: str, keys: list[str]) -> dict[str, str]:
     current = get_profile_secrets(profile_id)
     for key in keys:

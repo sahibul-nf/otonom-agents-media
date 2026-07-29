@@ -376,10 +376,9 @@ def poll_due_watch_channels(
 
 
 def list_media_profiles(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    ensure_media_profile(conn, "nourbit")
-    ensure_media_profile(conn, DEFAULT_WORKSPACE_PROFILE_ID)
-    rows = fetch_all(conn, "SELECT id, name, niche, created_at FROM media_profiles ORDER BY name ASC")
-    return rows
+    from .workspace_profiles import list_profiles
+
+    return list_profiles(conn)
 
 
 def list_publish_targets(conn: sqlite3.Connection, profile_id: str | None = None) -> list[dict[str, Any]]:

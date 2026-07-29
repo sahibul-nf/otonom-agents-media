@@ -132,10 +132,14 @@ if is_port_open "${FRONTEND_PORT}"; then
   echo "[otonom-media] frontend already running on port ${FRONTEND_PORT}, reusing it"
   FRONTEND_PID=""
 else
+  if [[ ! -x "${ROOT_DIR}/apps/dashboard/node_modules/.bin/next" ]]; then
+    echo "[otonom-media] missing apps/dashboard/node_modules — run: (cd apps/dashboard && npm install)" >&2
+    exit 1
+  fi
   (
     cd "${ROOT_DIR}/apps/dashboard"
     MEDIA_ENGINE_API_BASE="http://127.0.0.1:${BACKEND_PORT}" \
-      npx next dev --hostname 127.0.0.1 --port "${FRONTEND_PORT}"
+      ./node_modules/.bin/next dev --hostname 127.0.0.1 --port "${FRONTEND_PORT}"
   ) &
   FRONTEND_PID=$!
 fi
