@@ -10,7 +10,7 @@ MAX_CAPTION_TEXT_LENGTH = 220
 
 
 def normalize_edited_captions(captions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Validate and normalize edited caption text while preserving timing."""
+    """Validate and normalize edited caption text while preserving timing (and words when present)."""
     normalized: list[dict[str, Any]] = []
     previous_end = 0
     for index, caption in enumerate(captions[:MAX_CAPTION_SEGMENTS]):
@@ -24,16 +24,32 @@ def normalize_edited_captions(captions: list[dict[str, Any]]) -> list[dict[str, 
         if end_ms <= start_ms:
             continue
         text = text[:MAX_CAPTION_TEXT_LENGTH].strip()
-        normalized.append(
-            {
-                "text": text,
-                "startMs": start_ms,
-                "endMs": end_ms,
-                "timestampMs": start_ms,
-                "manualIndex": index,
-            }
-        )
-        previous_end = end_ms
+        entry: dict[str, Any] = {
+            "text": text,
+            "startMs": start_ms,
+            "endMs": end_ms,
+            "timestampMs": start_ms,
+            "manualIndex": index,
+        }
+        words_in = caption.get("words")
+        if isinstance(words_in, list) and words_in:
+            words_out: list[dict[str, Any]] = []
+            for word in words_in:
+                word_text = " ".join(str(word.get("text") or "").split())
+                if not word_text:
+                    continue
+                w_start = int(word.get("startMs", start_ms) or start_ms)
+                w_end = int(word.get("endMs", w_start) or w_start)
+                if w_end <= w_start:
+                    w_end = w_start + 40
+                words_out.append({**word, "text": word_text[:80], "startMs": w_start, "endMs": w_end})
+            if words_out:
+                entry["words"] = words_out
+                entry["startMs"] = words_out[0]["startMs"]
+                entry["endMs"] = max(words_out[-1]["endMs"], entry["startMs"] + 40)
+                entry["timestampMs"] = entry["startMs"]
+        normalized.append(entry)
+        previous_end = int(entry["endMs"])
     if not normalized:
         raise ValueError("at least one valid caption segment is required")
     return normalized

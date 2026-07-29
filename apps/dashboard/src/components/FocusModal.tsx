@@ -1,7 +1,16 @@
 "use client";
 
 import {X} from "lucide-react";
-import {type ReactNode, useEffect, useRef} from "react";
+import {type ReactNode, useEffect, useId, useRef} from "react";
+
+const focusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
 export function FocusModal({
   open,
@@ -22,9 +31,17 @@ export function FocusModal({
 }) {
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const titleId = useId();
+  const subtitleId = useId();
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     const previousPosition = document.body.style.position;
     const previousTop = document.body.style.top;
@@ -34,10 +51,32 @@ export function FocusModal({
     document.body.style.position = "fixed";
     document.body.style.top = `-${scrollY}px`;
     document.body.style.width = "100%";
-    const autoFocusTarget = panelRef.current?.querySelector<HTMLElement>("[data-autofocus]");
-    (autoFocusTarget || closeRef.current)?.focus({preventScroll: true});
+    const autoFocusTarget = panelRef.current?.querySelector<HTMLElement>("[data-autofocus]:not(:disabled)");
+    (autoFocusTarget || closeRef.current || panelRef.current)?.focus({preventScroll: true});
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !panelRef.current) return;
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => element.getClientRects().length > 0 && element.getAttribute("aria-hidden") !== "true",
+      );
+      if (!focusable.length) {
+        event.preventDefault();
+        panelRef.current.focus({preventScroll: true});
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panelRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => {
@@ -47,8 +86,9 @@ export function FocusModal({
       document.body.style.width = previousWidth;
       window.scrollTo(0, scrollY);
       document.removeEventListener("keydown", onKeyDown);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus({preventScroll: true});
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -71,13 +111,15 @@ export function FocusModal({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        aria-describedby={subtitle ? subtitleId : undefined}
+        tabIndex={-1}
         className={`absolute inset-0 flex h-full w-full flex-col overflow-hidden border-white/[0.10] bg-surface shadow-glow sm:inset-x-6 sm:inset-y-6 sm:mx-auto sm:h-[calc(100vh-48px)] sm:rounded-[30px] sm:border ${widthClass}`}
       >
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-white/[0.08] bg-canvas-deep/70 px-5 py-4 backdrop-blur-xl">
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold text-white">{title}</h2>
-            {subtitle ? <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-400">{subtitle}</p> : null}
+            <h2 id={titleId} className="text-xl font-semibold text-white">{title}</h2>
+            {subtitle ? <p id={subtitleId} className="mt-1 max-w-3xl text-sm leading-6 text-zinc-400">{subtitle}</p> : null}
           </div>
           <button
             ref={closeRef}

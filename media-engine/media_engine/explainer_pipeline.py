@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import threading
 import uuid
@@ -20,7 +21,7 @@ from .db import (
     ensure_source_manifest,
     initialize,
 )
-from .explainer_planner import load_plan_file, plan_explainer
+from .explainer_planner import load_plan_file, normalize_plan, plan_explainer
 from .explainer_stitch import (
     build_scene_segments,
     explainer_artifact_dir,
@@ -38,6 +39,186 @@ def _job_id() -> str:
 
 def _candidate_id(job_id: str) -> str:
     return f"cand_{job_id}"
+
+
+def _safe_path_component(value: Any, label: str) -> str:
+    component = str(value or "").strip()
+    if not component or component in {".", ".."} or Path(component).name != component:
+        raise ValueError(f"invalid {label}")
+    return component
+
+
+def _safe_fixture_reference(value: Any, label: str) -> str:
+    reference = str(value or "").strip()
+    path = Path(reference)
+    if not reference or path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"invalid {label}")
+    return reference
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{label} is invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return payload
+
+
+def _normalized_plan_with_render_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    plan = normalize_plan(raw)
+    raw_scenes = raw.get("scenes")
+    if not isinstance(raw_scenes, list):
+        return plan
+    for scene, source in zip(plan["scenes"], raw_scenes):
+        if not isinstance(source, dict):
+            continue
+        for field in ("clip_file", "audio_file"):
+            if source.get(field):
+                scene[field] = _safe_fixture_reference(source[field], f"scene.{field}")
+        if source.get("template") and scene["type"] in {"text", "broll"}:
+            scene["template"] = normalize_hyperframes_template(source["template"])
+    return plan
+
+
+def resolve_explainer_review_candidate(
+    candidate_id: str,
+    *,
+    db_path: str | Path = DEFAULT_DB,
+) -> dict[str, Any]:
+    """Resolve an Explainer job using only trusted candidate metadata."""
+    candidate_id = str(candidate_id or "").strip()
+    if not candidate_id:
+        raise ValueError("candidate_id is required")
+    conn = connect(db_path)
+    initialize(conn)
+    row = conn.execute(
+        """
+        SELECT id, profile_id, status, curation_metadata_json
+        FROM clip_candidates
+        WHERE id = ?
+        """,
+        (candidate_id,),
+    ).fetchone()
+    if not row:
+        raise FileNotFoundError("candidate not found")
+    candidate = dict(row)
+    try:
+        metadata = json.loads(candidate.get("curation_metadata_json") or "{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError("candidate curation metadata is invalid") from exc
+    if not isinstance(metadata, dict) or metadata.get("kind") != "explainer":
+        raise ValueError("candidate is not an explainer")
+
+    profile_id = _safe_path_component(candidate["profile_id"], "profile_id")
+    job_id = _safe_path_component(metadata.get("job_id"), "explainer job_id")
+    artifacts_root = ARTIFACTS_DIR.resolve()
+    job_root = (artifacts_root / profile_id / "explainers" / job_id).resolve()
+    if artifacts_root not in job_root.parents:
+        raise ValueError("invalid explainer artifact path")
+    scenes_path = job_root / "scenes.json"
+    status_path = job_root / "status.json"
+    if not scenes_path.is_file() or not status_path.is_file():
+        raise FileNotFoundError(f"explainer job not found: {job_id}")
+    scenes_path = scenes_path.resolve()
+    status_path = status_path.resolve()
+    if scenes_path.parent != job_root or status_path.parent != job_root:
+        raise ValueError("invalid explainer artifact path")
+
+    raw_plan = _read_json_object(scenes_path, "scenes.json")
+    plan = _normalized_plan_with_render_fields(raw_plan)
+    template = normalize_hyperframes_template(
+        raw_plan.get("hyperframes_template") or _read_json_object(status_path, "status.json").get("hyperframes_template")
+    )
+    plan["hyperframes_template"] = template
+    return {
+        "candidate_id": candidate_id,
+        "profile_id": profile_id,
+        "job_id": job_id,
+        "candidate_status": candidate["status"],
+        "root": job_root,
+        "plan_path": scenes_path,
+        "status_path": status_path,
+        "plan": plan,
+    }
+
+
+def save_explainer_scene_plan(
+    candidate_id: str,
+    *,
+    title: Any,
+    scenes: Any,
+    rerender_after: bool = False,
+    prefer_hyperframes: bool = False,
+    db_path: str | Path = DEFAULT_DB,
+) -> dict[str, Any]:
+    """Validate and atomically persist an editor plan for a review candidate."""
+    resolved = resolve_explainer_review_candidate(candidate_id, db_path=db_path)
+    if resolved["candidate_status"] == "published":
+        raise ValueError("published explainer plan is locked")
+    if not isinstance(scenes, list):
+        raise ValueError("scenes must be a list")
+
+    existing = resolved["plan"]
+    incoming = {"title": title, "scenes": scenes}
+    plan = _normalized_plan_with_render_fields(incoming)
+    ids = [scene["id"] for scene in plan["scenes"]]
+    if len(ids) != len(set(ids)):
+        raise ValueError("scene ids must be unique")
+
+    existing_by_id = {scene["id"]: scene for scene in existing["scenes"]}
+    for scene, source in zip(plan["scenes"], scenes):
+        previous = existing_by_id.get(scene["id"])
+        if not previous or not isinstance(source, dict):
+            continue
+        for field in ("clip_file", "audio_file", "template"):
+            if field not in source and previous.get(field):
+                scene[field] = previous[field]
+
+    template = normalize_hyperframes_template(existing.get("hyperframes_template"))
+    if template == "auto":
+        template = "techtalk_intel_brief"
+    for scene in plan["scenes"]:
+        if scene["type"] in {"text", "broll"} and not scene.get("template"):
+            scene["template"] = template
+    plan["hyperframes_template"] = template
+
+    plan_path = resolved["plan_path"]
+    temp_path = plan_path.with_name(f".{plan_path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(temp_path, plan_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+    status = _read_json_object(resolved["status_path"], "status.json")
+    status.update(
+        {
+            "status": "planned",
+            "error": "",
+            "scene_count": len(plan["scenes"]),
+            "avatar_scene_count": sum(scene["type"] == "avatar" for scene in plan["scenes"]),
+            "hyperframes_template": template,
+        }
+    )
+    _write_status(resolved["root"], status)
+    if rerender_after:
+        status = start_explainer_run(
+            job_id=resolved["job_id"],
+            profile_id=resolved["profile_id"],
+            prefer_hyperframes=prefer_hyperframes,
+            db_path=db_path,
+        )
+    return {
+        "candidate_id": candidate_id,
+        "profile_id": resolved["profile_id"],
+        "job_id": resolved["job_id"],
+        "plan": plan,
+        "status": status,
+        "rerender_started": rerender_after,
+    }
 
 
 def import_avatar_clip(

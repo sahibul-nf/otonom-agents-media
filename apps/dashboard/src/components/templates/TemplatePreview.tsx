@@ -1,6 +1,6 @@
 "use client";
 
-import {useRef, useState, useEffect} from "react";
+import {useRef, useState, useEffect, type MouseEvent} from "react";
 import {Play, Pause, Volume2, VolumeX} from "lucide-react";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {HyperframesTemplate} from "@/lib/media-api";
@@ -64,10 +64,10 @@ export function TemplatePreview({
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    if (!compact && shouldLoadPreview) {
+    if (shouldLoadPreview) {
       const video = videoRef.current;
       if (video) {
-        video.muted = isMuted;
+        video.muted = compact ? true : isMuted;
         video.play().catch(() => {});
       }
     }
@@ -88,7 +88,7 @@ export function TemplatePreview({
   const footerInset = gridCard ? "bottom-2 left-2 right-2" : "bottom-3 left-3 right-3";
   const frameLabel = compact ? (isLong ? "15s · 16:9" : "15s · 9:16") : `${durationSeconds}s · ${isLong ? "Long 16:9" : "Short/Reels 9:16"}`;
   const renderLabel = compact ? "HF render" : "HyperFrames render";
-  const hoverLabel = gridCard ? "Hover" : compact && !isLong ? "Hover preview" : "Hover to play real preview";
+  const previewPrompt = gridCard ? "Tap or hover" : compact && !isLong ? "Tap or hover to preview" : "Tap or hover to play preview";
   const previewStyle = {
     "--preview-accent": theme.accent,
     "--preview-secondary": theme.secondary,
@@ -103,7 +103,7 @@ export function TemplatePreview({
     return `${minutes}:${String(seconds).padStart(2, "0")}`;
   };
 
-  const togglePlayback = (e?: React.MouseEvent) => {
+  const togglePlayback = (e?: MouseEvent) => {
     if (e) e.stopPropagation();
     const video = videoRef.current;
     if (!video) return;
@@ -124,7 +124,7 @@ export function TemplatePreview({
     setCurrentTime(clamped);
   };
 
-  const toggleMuted = (e?: React.MouseEvent) => {
+  const toggleMuted = (e?: MouseEvent) => {
     if (e) e.stopPropagation();
     const video = videoRef.current;
     if (!video) return;
@@ -149,6 +149,16 @@ export function TemplatePreview({
     if (!video) return;
     video.pause();
     video.currentTime = 0;
+  };
+  const handlePreviewTap = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!shouldLoadPreview) {
+      setShouldLoadPreview(true);
+      setVideoLoaded(false);
+      setVideoError(false);
+      return;
+    }
+    togglePlayback(event);
   };
 
   const showVideo = Boolean(previewUrl && shouldLoadPreview && !videoError);
@@ -229,10 +239,19 @@ export function TemplatePreview({
           {!compact ? <p className="mt-1 line-clamp-2 text-xs leading-4 text-zinc-300">{template.best_for}</p> : null}
         </div>
       ) : null}
-      {hoverToPlay && previewUrl && !shouldLoadPreview ? (
-        <div className="template-preview-play-hint absolute inset-0 z-20 grid place-items-center bg-black/20 transition duration-200">
-          <span className="whitespace-nowrap rounded-full border border-white/[0.16] bg-black/72 px-4 py-2 text-xs font-black leading-4 text-white shadow-2xl">{hoverLabel}</span>
-        </div>
+      {hoverToPlay && previewUrl ? (
+        <button
+          type="button"
+          onClick={handlePreviewTap}
+          className={`template-preview-play-hint absolute inset-0 z-20 grid place-items-center bg-black/20 transition duration-200 ${
+            shouldLoadPreview ? "opacity-0 hover:opacity-100 focus:opacity-100" : ""
+          }`}
+          aria-label={`${isPlaying && shouldLoadPreview ? "Pause" : "Play"} ${template.label} preview`}
+        >
+          <span className="whitespace-nowrap rounded-full border border-white/[0.16] bg-black/72 px-4 py-2 text-xs font-black leading-4 text-white shadow-2xl">
+            {shouldLoadPreview ? (isPlaying ? "Pause preview" : "Play preview") : previewPrompt}
+          </span>
+        </button>
       ) : null}
 
       {!compact && showVideo ? (

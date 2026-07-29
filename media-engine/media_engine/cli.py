@@ -29,6 +29,7 @@ from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .rerender import rerender_from_args
 from .schedule_publisher import process_due_publishes
+from .silence_trim import apply_silence_trim_for_render
 from .styles import load_style
 from .transcript_quality import correct_asr_words
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
@@ -310,6 +311,8 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     insert_candidate(conn, candidate)
     bar.step(f"downloading source clip for {candidate['id']}")
     source_clip = download_youtube_section(args.youtube_url, args.profile, candidate)
+    bar.step("auto-trimming silence on source clip")
+    source_clip = apply_silence_trim_for_render(source_clip, candidate)
     bar.step(f"preparing captions with {args.caption_source}")
     prepare_production_captions(candidate, source_clip, args, style)
     attribution = args.source_attribution or "Source: Channel clip"
@@ -404,6 +407,8 @@ def render_premium_candidate(
     insert_candidate(conn, candidate)
     (bar.step if bar else progress)(f"{prefix}downloading source clip for {candidate['id']}")
     source_clip = download_youtube_section(youtube_url, profile["id"], candidate)
+    (bar.step if bar else progress)(f"{prefix}auto-trimming silence")
+    source_clip = apply_silence_trim_for_render(source_clip, candidate)
     (bar.step if bar else progress)(f"{prefix}preparing captions with {getattr(args, 'caption_source', 'youtube')}")
     prepare_production_captions(candidate, source_clip, args, style)
     renderer, renderer_note = resolve_renderer(renderer, args.quality)
@@ -513,6 +518,8 @@ def prepare_production_captions(candidate: dict[str, Any], source_clip: str, arg
 
 def finalize_candidate_metadata(candidate: dict[str, Any], contract: dict[str, Any], output_path: str, args: argparse.Namespace, renderer: str) -> None:
     render_quality = build_render_quality_report(contract, output_path)
+    if isinstance(candidate.get("silence_trim"), dict):
+        render_quality["silence_trim"] = candidate["silence_trim"]
     cost = estimate_clip_cost(
         int(candidate["end_ms"]) - int(candidate["start_ms"]),
         llm_provider=getattr(args, "llm_provider", "none"),

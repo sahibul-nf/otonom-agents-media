@@ -23,7 +23,7 @@ function WorkflowRail({steps, onSection}: {steps: WorkflowStep[]; onSection: (se
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h3 className="text-lg font-semibold text-white tracking-[-0.02em]">
-            Production <span className="font-editorial italic font-normal text-cyan">pipeline</span>
+            Production <span className="font-editorial italic font-normal text-cyan">workspace</span>
           </h3>
           <p className="text-xs text-zinc-500 mt-0.5">Real-time status of your end-to-end automated media workflow</p>
         </div>

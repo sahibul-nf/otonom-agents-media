@@ -37,7 +37,6 @@ import {
   apiPost,
   AutonomySettings,
   BrandTemplate,
-  CaptionSegment,
   ClipCandidate,
   CredentialStatus,
   DurationPreset,
@@ -54,7 +53,6 @@ import {
   platformLabel,
   PublishAttempt,
   PublishTarget,
-  RerenderJob,
   ScheduledPost,
   scoreValue,
   StyleProfile,
@@ -78,7 +76,6 @@ type WorkflowStep = {
 
 const defaultSourceUrl = "";
 const defaultTemplate = "profiles/default_workspace_style.json";
-type RerenderUiState = {status: "running" | "done" | "failed"; message: string; progress?: number};
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 type ToastMessage = {id: string; tone: "success" | "error" | "info"; message: string};
 type ConfirmDialogState = {
@@ -144,14 +141,6 @@ function formatClipStatus(status?: string) {
   return labels[status] || status.replaceAll("_", " ");
 }
 
-function canApproveClip(clip: ClipCandidate) {
-  return ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status);
-}
-
-function canScheduleClip(clip: ClipCandidate) {
-  return clip.status === "approved";
-}
-
 function publishActionHint(error?: string) {
   const value = (error || "").toLowerCase();
   if (!value) return "";
@@ -175,7 +164,7 @@ function publicAccountLabel(target: PublishTarget) {
 const nav = [
   {id: "dashboard", label: "Home", icon: LayoutDashboard},
   {id: "generate", label: "Create", icon: Wand2},
-  {id: "explainer", label: "Explainer", icon: BookOpen},
+  {id: "explainer", label: "Long video", icon: BookOpen},
   {id: "templates", label: "Templates", icon: Sparkles},
   {id: "review", label: "Review", icon: Clapperboard},
   {id: "calendar", label: "Schedule", icon: CalendarDays},
@@ -186,27 +175,27 @@ const nav = [
 const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   dashboard: {
     title: "Command Center",
-    subtitle: "Start with the one action that moves this production pipeline forward.",
+    subtitle: "One clear next step to keep publishing moving.",
   },
   generate: {
     title: "Create",
-    subtitle: "Choose a template, add a source, and generate a focused production batch.",
+    subtitle: "Paste a long video link and generate short clips for Review.",
   },
   explainer: {
-    title: "Explainer",
-    subtitle: "Plan hybrid long-form jobs, stitch fixtures, then approve in Review.",
+    title: "Long video",
+    subtitle: "Describe a topic, generate a long video, then approve in Review.",
   },
   templates: {
     title: "Templates",
-    subtitle: "Browse HyperFrames video flows and pick the visual direction before generating.",
+    subtitle: "Pick a visual style before you generate clips.",
   },
   review: {
     title: "Review",
-    subtitle: "Approve, repair, or schedule clip candidates from a focused queue.",
+    subtitle: "Approve, fix, or schedule — nothing goes live without you.",
   },
   calendar: {
     title: "Schedule",
-    subtitle: "Place approved clips into guarded publishing slots.",
+    subtitle: "Place approved clips into publishing slots.",
   },
   publish: {
     title: "Publish accounts",
@@ -214,7 +203,7 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
   brand: {
     title: "Brand",
-    subtitle: "Build reusable HyperFrames brand systems from production presets.",
+    subtitle: "Tune colors, captions, and reusable brand presets.",
   },
 };
 
@@ -233,10 +222,10 @@ function renderEditorialTitle(title: string) {
       </>
     );
   }
-  if (title === "Explainer") {
+  if (title === "Explainer" || title === "Long video") {
     return (
       <>
-        <span className="font-editorial italic font-normal text-cyan">Explainer</span> studio
+        <span className="font-editorial italic font-normal text-cyan">Long</span> video
       </>
     );
   }
@@ -280,7 +269,7 @@ function renderEditorialTitle(title: string) {
 
 function statusTone(status: string) {
   if (["approved", "published", "ready", "rendered", "scheduled", "ready_to_publish", "completed", "pending_auto_schedule"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
-  if (["running", "queued"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
+  if (["running", "queued", "starting", "triggering", "polling", "ingesting", "rendering", "planned"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
   if (["failed", "rejected"].includes(status)) return "text-danger border-danger/[0.30] bg-danger/[0.10]";
   if (["held"].includes(status)) return "text-warning border-warning/[0.30] bg-warning/[0.10]";
   if (["cooldown"].includes(status)) return "text-zinc-300 border-white/[0.14] bg-white/[0.04]";
@@ -305,18 +294,6 @@ function formatSchedule(value: string) {
     minute: "2-digit",
     timeZone: "Asia/Jakarta",
   }).format(date);
-}
-
-function formatDeadline(value?: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  const diffMs = date.getTime() - Date.now();
-  if (diffMs <= 0) return "Auto-schedule due";
-  const hours = Math.floor(diffMs / 3_600_000);
-  const minutes = Math.round((diffMs % 3_600_000) / 60_000);
-  if (hours <= 0) return `${minutes}m to auto-schedule`;
-  return `${hours}h ${minutes}m to auto-schedule`;
 }
 
 type GenerateConfig = {
@@ -353,15 +330,6 @@ function matchesReviewFilter(clip: ClipCandidate, filter: string) {
   return (group.statuses as readonly string[]).includes(clip.status);
 }
 
-function primaryReviewAction(clip: ClipCandidate) {
-  if (canScheduleClip(clip)) return "Schedule";
-  if (canApproveClip(clip)) return clip.status === "held" ? "Open fix" : "Approve";
-  if (clip.status === "published") return "Published";
-  if (clip.status === "ready_to_publish") return "Ready";
-  if (clip.status === "scheduled") return "Scheduled";
-  return formatClipStatus(clip.status);
-}
-
 function getNextAction({
   clips,
   approvedCount,
@@ -381,13 +349,13 @@ function getNextAction({
 }): NextAction {
   const reviewCount = clips.filter((clip) => ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status)).length;
   if (!engineReady) {
-    return {label: "Check HyperFrames runtime", detail: "Renderer readiness is the first blocker before production work.", section: "generate", tone: "warning"};
+    return {label: "Check render readiness", detail: "The clip renderer needs a quick health check before you generate.", section: "generate", tone: "warning"};
   }
   if (!hasTemplate) {
-    return {label: "Choose a video template", detail: "Pick the production visual system before generating clips.", section: "templates", tone: "primary"};
+    return {label: "Choose a visual style", detail: "Pick a template so new clips match your brand look.", section: "templates", tone: "primary"};
   }
   if (!clips.length) {
-    return {label: "Generate first batch", detail: "Start from a long video source and create ranked clip candidates.", section: "generate", tone: "primary"};
+    return {label: "Generate first clips", detail: "Start from a long YouTube video and land candidates in Review.", section: "generate", tone: "primary"};
   }
   if (reviewCount > 0) {
     return {label: `Review ${reviewCount} clips`, detail: "Approve the strongest candidates or open repair tools for blocked clips.", section: "review", tone: "primary"};
@@ -421,7 +389,7 @@ function buildWorkflowSteps({
   const reviewCount = clips.filter((clip) => ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status)).length;
   return [
     {id: "brand", label: "Brand", status: hasTemplate ? "ready" : "active", detail: hasTemplate ? "Template available" : "Pick a preset", section: "brand"},
-    {id: "template", label: "Template", status: hasTemplate ? "ready" : "blocked", detail: hasTemplate ? "HyperFrames ready" : "Choose first", section: "templates"},
+    {id: "template", label: "Template", status: hasTemplate ? "ready" : "blocked", detail: hasTemplate ? "Style ready" : "Choose first", section: "templates"},
     {id: "generate", label: "Create", status: clips.length ? "ready" : engineReady && hasTemplate ? "active" : "blocked", detail: clips.length ? `${clips.length} clips` : "No batch yet", section: "generate"},
     {id: "review", label: "Review", status: reviewCount ? "active" : approvedCount || scheduledCount ? "ready" : "idle", detail: reviewCount ? `${reviewCount} need action` : approvedCount ? `${approvedCount} approved` : "Waiting", section: "review"},
     {id: "schedule", label: "Schedule", status: scheduledCount ? "ready" : approvedCount ? "active" : "idle", detail: scheduledCount ? `${scheduledCount} queued` : approvedCount ? "Ready to slot" : "Waiting", section: "calendar"},
@@ -472,10 +440,8 @@ export function MediaStudioApp() {
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [explainerJobs, setExplainerJobs] = useState<ExplainerJob[]>([]);
   const [pathAJobs, setPathAJobs] = useState<PathAJob[]>([]);
-  const [rerenderJobs, setRerenderJobs] = useState<RerenderJob[]>([]);
   const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
   const [publishAttempts, setPublishAttempts] = useState<PublishAttempt[]>([]);
-  const [selectedId, setSelectedId] = useState("");
   const [filter, setFilter] = useState("all");
   const [showPublished, setShowPublished] = useState(false);
   const [status, setStatus] = useState("Ready");
@@ -483,9 +449,6 @@ export function MediaStudioApp() {
   const [actionStates, setActionStates] = useState<Record<string, ActionUiState>>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
-  const [rerendering, setRerendering] = useState<Record<string, RerenderUiState>>({});
-  const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
-  const [postCopyDrafts, setPostCopyDrafts] = useState<Record<string, string>>({});
   const [publishSelection, setPublishSelection] = useState<string[]>(publishPlatforms);
   const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
     sourceUrl: defaultSourceUrl,
@@ -540,7 +503,7 @@ export function MediaStudioApp() {
   });
   const isErrorStatus = /failed|error|invalid|offline|unauthorized|blocked/i.test(status);
   const headerStatus = !busy && !isErrorStatus && !engineReady
-    ? engineHealth?.hyperframes.reason || "HyperFrames runtime check required"
+    ? engineHealth?.hyperframes.reason || "Video engine check required"
     : status;
   const workflowSteps = buildWorkflowSteps({
     clips: profileClips,
@@ -552,8 +515,6 @@ export function MediaStudioApp() {
     hasTemplate,
   });
   const command = productionCommand(generateConfig);
-  const selectedCaptionDraft = selected ? captionDrafts[selected.id] ?? (selected.captions || []).map((caption) => caption.text).filter(Boolean).join("\n") : "";
-  const selectedPostCopyDraft = selected ? postCopyDrafts[selected.id] ?? selected.post_caption ?? "" : "";
 
   function pushToast(message: string, tone: ToastMessage["tone"] = "info") {
     const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -584,33 +545,6 @@ export function MediaStudioApp() {
       throw error;
     }
   }
-  const rerenderState = useMemo(() => {
-    const persisted: Record<string, RerenderUiState> = {};
-    for (const job of rerenderJobs) {
-      if (persisted[job.candidate_id]) continue;
-      if (job.status === "queued" || job.status === "running") {
-        persisted[job.candidate_id] = {
-          status: "running",
-          message: job.message || "Re-rendering video...",
-          progress: typeof job.progress === "number" ? job.progress : 0,
-        };
-      } else if (job.status === "failed") {
-        persisted[job.candidate_id] = {
-          status: "failed",
-          message: job.error || job.message || "Re-render failed",
-          progress: 100,
-        };
-      } else if (job.status === "completed") {
-        persisted[job.candidate_id] = {
-          status: "done",
-          message: job.message || "Render updated",
-          progress: 100,
-        };
-      }
-    }
-    return {...persisted, ...rerendering};
-  }, [rerenderJobs, rerendering]);
-
   async function refreshAll() {
     setBusy(true);
     setStatus("Syncing media engine...");
@@ -628,7 +562,6 @@ export function MediaStudioApp() {
         engineRows,
         catalogRows,
         jobRows,
-        rerenderRows,
         scheduleRows,
         autonomyRows,
         attemptResult,
@@ -670,7 +603,6 @@ export function MediaStudioApp() {
       setEngineHealth(engineRows);
       setHyperframesCatalog(catalogRows);
       setJobs(jobRows);
-      setRerenderJobs(rerenderRows);
       setSchedule(scheduleRows);
       setAutonomy(autonomyRows);
       setPublishAttempts(attemptResult.ok ? attemptResult.rows : []);
@@ -712,30 +644,6 @@ export function MediaStudioApp() {
     await navigator.clipboard.writeText(value);
     setStatus(label);
     pushToast(label, "success");
-  }
-
-  async function approveClip(id: string) {
-    const key = `clip:${id}:approve`;
-    try {
-      await runAction(key, "Approving clip...", async () => {
-        await apiPost("approve", {candidate_id: id});
-        setClips((items) => items.map((clip) => (clip.id === id ? {...clip, status: "approved"} : clip)));
-      }, "Clip approved");
-      setStatus("Clip approved");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Approve failed");
-    }
-  }
-
-  async function holdClip(id: string) {
-    const key = `clip:${id}:hold`;
-    try {
-      await runAction(key, "Holding for review...", () => apiPost("hold", {candidate_id: id}), "Clip held for manual review");
-      setStatus("Clip held for manual review");
-      await refreshAll();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Hold failed");
-    }
   }
 
   async function updateAutonomyMode(mode: string) {
@@ -852,20 +760,20 @@ export function MediaStudioApp() {
     try {
       const job = await runAction(
         key,
-        "Creating Explainer job...",
+        "Creating long video plan…",
         () =>
           apiPost<ExplainerJob>("explainers", {
             topic: payload.topic,
             sources: payload.sources,
             hyperframes_template: payload.hyperframes_template,
           }),
-        "Explainer job created",
+        "Long video plan ready",
       );
       setExplainerJobs((items) => [job, ...items.filter((item) => item.job_id !== job.job_id)]);
-      setStatus(`Explainer planned: ${job.job_id}`);
-      pushToast("Explainer job created — import avatar fixtures, then stitch", "success");
+      setStatus(`Long video planned: ${job.job_id}`);
+      pushToast("Plan ready — open Advanced to stitch when needed", "success");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Explainer create failed");
+      setStatus(error instanceof Error ? error.message : "Long video create failed");
     }
   }
 
@@ -874,15 +782,15 @@ export function MediaStudioApp() {
     try {
       const job = await runAction(
         key,
-        "Queueing Explainer stitch...",
+        "Queueing long video stitch…",
         () => apiPost<ExplainerJob>("explainer-run", {job_id: jobId, ffmpeg_only: ffmpegOnly}),
-        "Explainer stitch started",
+        "Stitch started",
       );
       setExplainerJobs((items) => items.map((item) => (item.job_id === jobId ? {...item, ...job} : item)));
-      setStatus("Explainer rendering in background");
+      setStatus("Long video rendering in background");
       window.setTimeout(() => void refreshAll(), 2000);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Explainer run failed");
+      setStatus(error instanceof Error ? error.message : "Long video run failed");
     }
   }
 
@@ -901,11 +809,11 @@ export function MediaStudioApp() {
         "Ingested — open Review to approve",
       );
       const first = result.candidate_ids?.[0];
-      if (first) setSelectedId(first);
       setStatus(`Ingest ${result.job_id}: ${result.candidate_ids?.length || 0} candidate(s)`);
-      pushToast("Long-form ingested — approve in Review", "success");
+      pushToast("Long video imported — approve in Review", "success");
       window.setTimeout(() => void refreshAll(), 800);
-      setSection("review");
+      if (first) window.location.assign(`/review/${encodeURIComponent(first)}`);
+      else setSection("review");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Ingest failed");
     }
@@ -916,21 +824,21 @@ export function MediaStudioApp() {
     try {
       const job = await runAction(
         key,
-        "Starting Cursor Path A generate…",
+        "Starting long video…",
         () =>
           apiPost<PathAJob>("path-a-generate", {
             topic: payload.topic,
             title: payload.title,
             script: payload.script,
           }),
-        "Path A job started — polling Cursor",
+        "Long video started — watching progress",
       );
       setPathAJobs((items) => [job, ...items.filter((item) => item.job_id !== job.job_id)]);
-      setStatus(`Path A started: ${job.job_id}`);
-      pushToast("Cursor generate started — Telegram will ping when Review is ready", "success");
+      setStatus(`Long video started: ${job.job_id}`);
+      pushToast("Generate started — Telegram will ping when Review is ready", "success");
       window.setTimeout(() => void refreshAll(), 2000);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Path A generate failed");
+      setStatus(error instanceof Error ? error.message : "Long video generate failed");
     }
   }
 
@@ -981,30 +889,6 @@ export function MediaStudioApp() {
     }
   }
 
-  function deleteClip(id: string) {
-    setConfirmDialog({
-      title: "Delete rendered clip?",
-      message: "This removes the clip from the review queue and deletes its local rendered artifacts.",
-      confirmLabel: "Delete clip",
-      tone: "danger",
-      onConfirm: () => void performDeleteClip(id),
-    });
-  }
-
-  async function performDeleteClip(id: string) {
-    const key = `clip:${id}:delete`;
-    try {
-      await runAction(key, "Deleting clip artifacts...", async () => {
-        await apiPost("delete-candidate", {candidate_id: id, delete_artifacts: true});
-        setClips((items) => items.filter((clip) => clip.id !== id));
-        if (selectedId === id) setSelectedId("");
-      }, "Clip deleted");
-      setStatus("Clip deleted");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Delete failed");
-    }
-  }
-
   function clearQueue() {
     setConfirmDialog({
       title: "Clear review queue?",
@@ -1021,7 +905,6 @@ export function MediaStudioApp() {
       await runAction(key, "Clearing review queue...", async () => {
         await apiPost("clear-review", {confirm: "DELETE", delete_artifacts: true});
         setClips([]);
-        setSelectedId("");
       }, "Queue cleared");
       setStatus("Queue cleared");
     } catch (error) {
@@ -1107,168 +990,20 @@ export function MediaStudioApp() {
     }
   }
 
-  function buildEditedCaptionSegments(base: CaptionSegment[], draft: string) {
-    const lines = draft.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-    return base.slice(0, lines.length).map((segment, index) => ({
-      text: lines[index],
-      startMs: segment.startMs,
-      endMs: segment.endMs,
-      timestampMs: segment.startMs,
-    }));
-  }
-
-  async function saveCaptionCorrections(id: string, draft: string) {
-    const clip = clips.find((item) => item.id === id);
-    const base = clip?.captions || [];
-    const captions = buildEditedCaptionSegments(base, draft);
-    if (!captions.length) {
-      setStatus("No caption lines to save");
-      return;
-    }
-    const key = `caption:${id}:save`;
-    try {
-      await runAction(key, "Saving caption edits...", () => apiPost("caption-corrections", {candidate_id: id, captions}), "Caption edits saved");
-      setStatus("Caption edits saved. Re-render this clip to update the video.");
-      await refreshAll();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Caption save failed");
-    }
-  }
-
-  async function savePostCopy(id: string, draft: string) {
-    const key = `post:${id}:save`;
-    try {
-      const result = await runAction(
-        key,
-        "Saving post copy...",
-        () => apiPost<{post_caption: string}>("post-copy", {candidate_id: id, post_caption: draft}),
-        "Post copy saved",
-      );
-      setPostCopyDrafts((items) => ({...items, [id]: result.post_caption}));
-      setStatus("Post copy saved for scheduled and live publishing.");
-      await refreshAll();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Post copy save failed");
-    }
-  }
-
-  async function generatePostCopy(id: string) {
-    const key = `post:${id}:generate`;
-    try {
-      const result = await runAction(
-        key,
-        "Generating post copy with AI...",
-        () => apiPost<{post_caption: string; source?: string}>("post-copy-generate", {
-          candidate_id: id,
-          llm_provider: generateConfig.llmProvider,
-        }),
-        "Post copy regenerated",
-      );
-      setPostCopyDrafts((items) => ({...items, [id]: result.post_caption}));
-      setStatus(result.source?.startsWith("llm_") ? "AI post copy generated." : "Post copy generated from transcript fallback.");
-      await refreshAll();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Post copy generation failed");
-    }
-  }
-
-  async function rerenderClip(id: string) {
-    const key = `clip:${id}:rerender`;
-    setRerendering((items) => ({...items, [id]: {status: "running", message: "Queued for re-render", progress: 2}}));
-    setStatus("Re-rendering selected clip...");
-    try {
-      const job = await runAction(key, "Starting re-render job...", () => apiPost<RerenderJob>("rerender", {
-        candidate_id: id,
-        renderer: "hyperframes",
-        quality: "production",
-        style: generateConfig.brandTemplate || defaultTemplate,
-      }), "Re-render job started");
-      setRerenderJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
-      setStatus("Re-render job started");
-      window.setTimeout(() => void refreshAll(), 900);
-    } catch (error) {
-      setRerendering((items) => ({
-        ...items,
-        [id]: {
-          status: "failed",
-          message: error instanceof Error ? error.message : "Re-render failed",
-          progress: 100,
-        },
-      }));
-      setStatus(error instanceof Error ? error.message : "Re-render failed");
-    }
-  }
-
-  async function refreshClipMetadata(id: string, mode: "smart" | "local" = "smart") {
-    const key = `clip:${id}:metadata`;
-    try {
-      await runAction(
-        key,
-        mode === "smart" ? "Refreshing metadata with smart fallback..." : "Refreshing metadata locally...",
-        () => apiPost("metadata-refresh", {candidate_id: id, mode}),
-        "Metadata refreshed",
-      );
-      await refreshAll();
-      setConfirmDialog({
-        title: "Metadata refreshed",
-        message: "Title, description, scoring, and post copy are updated. Re-render now if you want the new hook baked into the video file.",
-        confirmLabel: "Re-render now",
-        cancelLabel: "Later",
-        onConfirm: () => void rerenderClip(id),
-      });
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Metadata refresh failed");
-    }
-  }
-
-  async function saveClipBoundary(id: string, startMs: number, endMs: number, rerenderAfter: boolean) {
-    const key = `clip:${id}:boundary`;
-    try {
-      const result = await runAction(
-        key,
-        rerenderAfter ? "Saving timing and starting re-render..." : "Saving clip timing...",
-        () => apiPost<{rerender_job?: RerenderJob}>("clip-boundary", {
-          candidate_id: id,
-          start_ms: startMs,
-          end_ms: endMs,
-          rerender_after: rerenderAfter,
-          renderer: "hyperframes",
-          quality: "production",
-          style: generateConfig.brandTemplate || defaultTemplate,
-        }),
-        rerenderAfter ? "Timing saved. Re-render started." : "Timing saved",
-      );
-      if (result.rerender_job) {
-        setRerenderJobs((items) => [result.rerender_job!, ...items.filter((item) => item.id !== result.rerender_job!.id)]);
-      } else if (!rerenderAfter) {
-        setConfirmDialog({
-          title: "Timing saved",
-          message: "The clip boundary changed. Re-render now to generate a video file with the new start/end timing.",
-          confirmLabel: "Re-render now",
-          cancelLabel: "Later",
-          onConfirm: () => void rerenderClip(id),
-        });
-      }
-      await refreshAll();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Timing update failed");
-    }
-  }
-
-  function setSelectedCaptionDraft(value: string) {
-    if (!selected) return;
-    setCaptionDrafts((items) => ({...items, [selected.id]: value}));
-  }
-
-  function setSelectedPostCopyDraft(value: string) {
-    if (!selected) return;
-    setPostCopyDrafts((items) => ({...items, [selected.id]: value}));
-  }
-
   useEffect(() => {
     const savedTemplate = window.localStorage.getItem("otonom.hyperframesTemplateDefault");
     if (!savedTemplate) return;
-    setGenerateConfig((current) => ({...current, hyperframesTemplate: savedTemplate}));
+    const frame = window.requestAnimationFrame(() => {
+      setGenerateConfig((current) => ({...current, hyperframesTemplate: savedTemplate}));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    const requestedSection = new URLSearchParams(window.location.search).get("section");
+    if (!requestedSection || !nav.some((item) => item.id === requestedSection)) return;
+    const frame = window.requestAnimationFrame(() => setSection(requestedSection as Section));
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -1288,13 +1023,14 @@ export function MediaStudioApp() {
 
   useEffect(() => {
     const hasRunningGeneration = jobs.some((job) => job.status === "queued" || job.status === "running");
-    const hasRunningRerender = rerenderJobs.some((job) => job.status === "queued" || job.status === "running");
-    if (!hasRunningGeneration && !hasRunningRerender) return;
+    if (!hasRunningGeneration) return;
     const timer = window.setInterval(() => {
       void refreshAll();
     }, 3500);
     return () => window.clearInterval(timer);
-  }, [jobs, rerenderJobs]);
+  }, [jobs]);
+
+  const focusedWorkflow = section !== "dashboard";
 
   return (
     <div className="min-h-screen overflow-x-hidden text-zinc-100">
@@ -1351,7 +1087,7 @@ export function MediaStudioApp() {
         </div>
       </aside>
 
-      <main className="min-w-0 pb-20 lg:pl-[280px] lg:pb-0">
+      <main className="min-w-0 pb-32 lg:pl-[280px] lg:pb-0">
         <header className="sticky top-0 z-20 overflow-hidden border-b border-white/[0.06] bg-canvas-deep/[0.82] px-5 py-4 backdrop-blur-xl lg:px-8">
           <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
@@ -1384,15 +1120,17 @@ export function MediaStudioApp() {
               </h2>
               <p className="mt-1 max-w-[calc(100vw-40px)] break-words text-sm text-zinc-400 md:max-w-2xl">{sectionCopy[section].subtitle}</p>
             </div>
-            <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:flex sm:flex-wrap">
-              <button onClick={() => setSection(nextAction.section)} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink">
-                <Wand2 className="h-4 w-4" /> {nextAction.label}
-              </button>
-              <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh
-              </button>
-              <StatusPill busy={busy} status={headerStatus} />
-            </div>
+            {!focusedWorkflow ? (
+              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:flex sm:flex-wrap">
+                <button onClick={() => setSection(nextAction.section)} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink">
+                  <Wand2 className="h-4 w-4" /> {nextAction.label}
+                </button>
+                <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh
+                </button>
+                <StatusPill busy={busy} status={headerStatus} />
+              </div>
+            ) : null}
           </div>
         </header>
 
@@ -1437,6 +1175,7 @@ export function MediaStudioApp() {
               defaultTemplatePath={defaultTemplate}
               statusTone={statusTone}
               onGenerate={startGeneration}
+              onOpenReview={() => setSection("review")}
               onCopy={() => copyText(command, "Production command copied")}
               renderReadinessLine={(props) => <ReadinessLine {...props} />}
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
@@ -1461,8 +1200,8 @@ export function MediaStudioApp() {
               onRun={runExplainerJob}
               onRefresh={refreshExplainerJobs}
               onOpenReview={(candidateId) => {
-                if (candidateId) setSelectedId(candidateId);
-                setSection("review");
+                if (candidateId) window.location.assign(`/review/${encodeURIComponent(candidateId)}`);
+                else setSection("review");
               }}
               onIngest={ingestLongformMedia}
               onPathAGenerate={startPathAGenerate}
@@ -1489,12 +1228,12 @@ export function MediaStudioApp() {
                   brandTemplate: selectedTemplate?.brand_template_path || current.brandTemplate,
                 }));
                 setSection("generate");
-                pushToast("Template selected for HyperFrames", "success");
+                pushToast("Template selected for Create", "success");
               }}
               onSetDefault={(templateId) => {
                 window.localStorage.setItem("otonom.hyperframesTemplateDefault", templateId);
                 setGenerateConfig((current) => ({...current, hyperframesTemplate: templateId}));
-                pushToast("HyperFrames default saved in this browser", "success");
+                pushToast("Default template saved in this browser", "success");
               }}
               onCustomize={(templateId) => {
                 window.localStorage.setItem("otonom.brandBuilderStarterTemplate", templateId);
@@ -1511,33 +1250,14 @@ export function MediaStudioApp() {
           {section === "review" && (
             <ReviewStudioSection
               clips={filtered}
-              selected={selected}
-              rerendering={rerenderState}
               filter={filter}
               showPublished={showPublished}
               reviewFilters={reviewFilters}
               actionStates={actionStates}
               setFilter={setFilter}
               setShowPublished={setShowPublished}
-              setSelectedId={setSelectedId}
-              captionDraft={selectedCaptionDraft}
-              setCaptionDraft={setSelectedCaptionDraft}
-              postCopyDraft={selectedPostCopyDraft}
-              setPostCopyDraft={setSelectedPostCopyDraft}
               statusTone={statusTone}
-              formatDeadline={formatDeadline}
-              primaryReviewAction={primaryReviewAction}
-              onApprove={approveClip}
-              onSchedule={scheduleNext}
-              onHold={holdClip}
-              onDelete={deleteClip}
               onClear={clearQueue}
-              onSaveCaptions={saveCaptionCorrections}
-              onSavePostCopy={savePostCopy}
-              onGeneratePostCopy={generatePostCopy}
-              onRerender={rerenderClip}
-              onRefreshMetadata={refreshClipMetadata}
-              onSaveBoundary={saveClipBoundary}
             />
           )}
 
@@ -1603,12 +1323,12 @@ export function MediaStudioApp() {
           )}
         </div>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-7 border-t border-white/[0.08] bg-surface/[0.95] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 border-t border-white/[0.08] bg-surface/[0.95] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
           {nav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
             return (
-              <button key={item.id} onClick={() => setSection(item.id)} className={`grid h-16 min-w-0 place-items-center content-center gap-1 px-0.5 text-[9px] ${active ? "text-cyan" : "text-zinc-500"}`}>
+              <button key={item.id} onClick={() => setSection(item.id)} className={`grid h-14 min-w-0 place-items-center content-center gap-1 px-1 text-[9px] ${active ? "text-cyan" : "text-zinc-500"}`}>
                 <Icon className="h-4 w-4" />
                 <span className="max-w-full truncate">{item.label.split(" ")[0]}</span>
               </button>
