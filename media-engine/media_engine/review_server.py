@@ -19,9 +19,9 @@ from .caption_edits import merge_caption_corrections
 from .clip_boundaries import update_clip_boundary
 from .db import ARTIFACTS_DIR, DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, fetch_all, initialize
 from .credentials import credential_status
+from .credential_vault import ensure_default_migration, set_profile_secrets, unset_profile_secrets
 from .duration_presets import duration_preset_options
 from .env_loader import load_env_file
-from .env_store import unset_env_keys
 from .explainer_pipeline import (
     create_explainer_job,
     list_explainer_jobs,
@@ -40,10 +40,7 @@ from .hyperframes_templates import list_hyperframes_templates
 from .live_publishers import (
     LivePublishError,
     publish_live_payload,
-    validate_facebook_connection,
-    validate_telegram_connection,
-    validate_tiktok_connection,
-    validate_youtube_connection,
+    validate_platform_connection,
 )
 from .llm import LLMError
 from .models import PUBLISH_MODES
@@ -81,9 +78,15 @@ ENV_FILE = ROOT.parent / ".env.local"
 PLATFORM_DISCONNECT_KEYS: dict[str, list[str]] = {
     "telegram_channel": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "TELEGRAM_CHAT_ID"],
     "youtube_shorts": ["YOUTUBE_REFRESH_TOKEN"],
-    "facebook_reels": ["META_PAGE_ACCESS_TOKEN"],
+    "facebook_reels": ["META_PAGE_ACCESS_TOKEN", "META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_TOKEN", "NOURBIT_FACEBOOK_PAGE_ID"],
     "tiktok": ["TIKTOK_ACCESS_TOKEN", "TIKTOK_REFRESH_TOKEN", "TIKTOK_OPEN_ID"],
 }
+
+
+def _safe_load_env() -> None:
+    if ENV_FILE.exists():
+        load_env_file(ENV_FILE)
+    ensure_default_migration(ENV_FILE if ENV_FILE.exists() else None)
 
 
 def _artifact_path(value: str) -> Path | None:
@@ -399,14 +402,21 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(rows)
             return
         if parsed.path == "/api/credentials":
-            load_env_file(ENV_FILE)
-            self._send_json(credential_status())
+            _safe_load_env()
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", ["nourbit"])[0] or "nourbit").strip() or "nourbit"
+            self._send_json(credential_status(profile_id))
             return
         if parsed.path == "/api/connections":
-            load_env_file(ENV_FILE)
-            credentials = credential_status()
-            profile_targets = fetch_all(connect(DEFAULT_DB), "SELECT * FROM publish_targets ORDER BY platform")
+            _safe_load_env()
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", ["nourbit"])[0] or "nourbit").strip() or "nourbit"
+            credentials = credential_status(profile_id)
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            profile_targets = list_publish_targets(conn, profile_id=profile_id)
             self._send_json({
+                "profile_id": profile_id,
                 "platforms": credentials["platforms"],
                 "targets": profile_targets,
                 "auth": {
@@ -949,7 +959,8 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 limit = 5
             result = process_due_publishes(
                 db_path=DEFAULT_DB,
-                env_file=ENV_FILE,
+                env_file=ENV_FILE if ENV_FILE.exists() else None,
+                profile_id=str(payload.get("profile_id") or "nourbit").strip() or "nourbit",
                 limit=max(1, min(20, limit)),
                 dry_run=bool(payload.get("dry_run", False)),
                 notify=True,
@@ -958,17 +969,20 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             return
 
         if parsed.path == "/api/oauth-start":
+            _safe_load_env()
             platform = str(payload.get("platform", "")).strip()
+            profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
             host, port = self.server.server_address  # type: ignore[attr-defined]
             server_base = f"http://{host}:{port}"
             try:
-                result = start_oauth(platform, server_base, ENV_FILE)
+                result = start_oauth(platform, server_base, ENV_FILE, profile_id=profile_id)
             except OAuthFlowError as exc:
                 self._send_json({"platform": platform, "error": str(exc)}, status=400)
                 return
             self._send_json(
                 {
                     "platform": result.platform,
+                    "profile_id": result.profile_id,
                     "auth_url": result.auth_url,
                     "state": result.state,
                     "expires_in": result.expires_in,
@@ -978,18 +992,37 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/connection-disconnect":
             platform = str(payload.get("platform", "")).strip()
+            profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
             keys = PLATFORM_DISCONNECT_KEYS.get(platform)
             if not keys:
                 self._send_json({"error": "unsupported platform"}, status=400)
                 return
-            unset_env_keys(ENV_FILE, keys)
-            self._send_json({"platform": platform, "status": "disconnected"})
+            unset_profile_secrets(profile_id, keys)
+            self._send_json({"platform": platform, "profile_id": profile_id, "status": "disconnected"})
+            return
+
+        if parsed.path == "/api/connection-credentials":
+            _safe_load_env()
+            profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
+            platform = str(payload.get("platform") or "").strip()
+            values = payload.get("values") if isinstance(payload.get("values"), dict) else {}
+            allowed = set(PLATFORM_DISCONNECT_KEYS.get(platform) or [])
+            if not allowed:
+                self._send_json({"error": "unsupported platform"}, status=400)
+                return
+            updates = {str(k): str(v) for k, v in values.items() if str(k) in allowed and str(v).strip()}
+            if not updates:
+                self._send_json({"error": "no credential values provided"}, status=400)
+                return
+            set_profile_secrets(profile_id, updates)
+            self._send_json({"platform": platform, "profile_id": profile_id, "status": "saved", "keys": sorted(updates.keys())})
             return
 
         if parsed.path == "/api/connection-test":
             platform = str(payload.get("platform", "")).strip()
-            load_env_file(ENV_FILE)
-            status = credential_status().get("platforms", {}).get(platform)
+            profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
+            _safe_load_env()
+            status = credential_status(profile_id).get("platforms", {}).get(platform)
             if not status:
                 self._send_json({"error": "unsupported platform"}, status=400)
                 return
@@ -997,30 +1030,22 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json(
                     {
                         "platform": platform,
+                        "profile_id": profile_id,
                         "status": "needs_setup",
                         "missing_keys": status.get("missing_keys", []),
-                        "message": "Credentials are missing. Add them to .env.local, then refresh.",
-                        "error": "Credentials are missing. Add them to .env.local, then refresh.",
+                        "message": "Credentials are missing for this workspace. Connect the account, then refresh.",
+                        "error": "Credentials are missing for this workspace. Connect the account, then refresh.",
                     },
                     status=409,
                 )
                 return
             try:
-                if platform == "telegram_channel":
-                    result = validate_telegram_connection()
-                elif platform == "youtube_shorts":
-                    result = validate_youtube_connection()
-                elif platform == "facebook_reels":
-                    result = validate_facebook_connection()
-                elif platform == "tiktok":
-                    result = validate_tiktok_connection()
-                else:
-                    self._send_json({"error": "unsupported platform"}, status=400)
-                    return
+                result = validate_platform_connection(platform, profile_id=profile_id)
             except LivePublishError as exc:
                 self._send_json(
                     {
                         "platform": platform,
+                        "profile_id": profile_id,
                         "status": "unauthorized",
                         "message": str(exc),
                         "error": str(exc),
@@ -1028,7 +1053,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     status=401,
                 )
                 return
-            self._send_json({"platform": platform, "status": "authorized", "message": "Account authorization verified", "result": result})
+            self._send_json({"platform": platform, "profile_id": profile_id, "status": "authorized", "message": "Account authorization verified", "result": result})
             return
 
         if parsed.path == "/api/archive":
@@ -1241,7 +1266,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             if not candidate_id or not platform:
                 self._send_json({"error": "candidate_id and platform are required"}, status=400)
                 return
-            load_env_file(ENV_FILE)
+            _safe_load_env()
             conn = connect(DEFAULT_DB)
             initialize(conn)
             candidate = conn.execute("SELECT * FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
@@ -1273,11 +1298,12 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             built_payload = build_payload(platform, candidate, dict(render_job) if render_job else None)
             built_payload["dry_run"] = dry_run
+            built_payload["profile_id"] = candidate.get("profile_id")
             if dry_run:
                 self._send_json({"status": "dry_run", "attempt": attempt, "payload": built_payload})
                 return
             try:
-                result = publish_live_payload(platform, built_payload)
+                result = publish_live_payload(platform, built_payload, profile_id=str(candidate.get("profile_id") or "nourbit"))
             except LivePublishError as exc:
                 conn.execute(
                     "UPDATE publish_attempts SET status = ?, error = ? WHERE id = ?",
@@ -1349,6 +1375,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     port = int(os.environ.get("MEDIA_ENGINE_PORT", "8765"))
+    _safe_load_env()
     server = ThreadingHTTPServer(("127.0.0.1", port), ReviewHandler)
     print(f"review UI: http://127.0.0.1:{port}/review.html")
     server.serve_forever()

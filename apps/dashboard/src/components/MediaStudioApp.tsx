@@ -637,7 +637,7 @@ export function MediaStudioApp() {
       ] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>(`targets?profile_id=${encodeURIComponent(activeProfile)}`),
-        apiGet<CredentialStatus>("credentials"),
+        apiGet<CredentialStatus>(`credentials?profile_id=${encodeURIComponent(activeProfile)}`),
         apiGet<StyleProfile>("style"),
         apiGet<BrandTemplate[]>("brand-templates"),
         apiGet<HyperframesTemplate[]>("hyperframes-templates"),
@@ -1032,7 +1032,7 @@ export function MediaStudioApp() {
     const message = `Testing ${platformLabel(platform)} connection...`;
     setStatus(message);
     try {
-      await runAction(key, message, () => apiPost("connection-test", {platform}), `${platformLabel(platform)} connected`);
+      await runAction(key, message, () => apiPost("connection-test", {platform, profile_id: profileId}), `${platformLabel(platform)} connected`);
       setStatus(`${platformLabel(platform)} connected`);
       await refreshAll();
     } catch (error) {
@@ -1046,7 +1046,7 @@ export function MediaStudioApp() {
       const result = await runAction(
         key,
         `Opening ${platformLabel(platform)} OAuth...`,
-        () => apiPost<{platform: string; auth_url: string}>("oauth-start", {platform}),
+        () => apiPost<{platform: string; auth_url: string}>("oauth-start", {platform, profile_id: profileId}),
       );
       const popup = window.open(result.auth_url, "_blank", "width=560,height=760,noopener,noreferrer");
       if (!popup) {
@@ -1084,7 +1084,7 @@ export function MediaStudioApp() {
   async function performDisconnectPlatform(platform: string) {
     const key = `disconnect:${platform}`;
     try {
-      await runAction(key, `Disconnecting ${platformLabel(platform)}...`, () => apiPost("connection-disconnect", {platform}), `${platformLabel(platform)} disconnected`);
+      await runAction(key, `Disconnecting ${platformLabel(platform)}...`, () => apiPost("connection-disconnect", {platform, profile_id: profileId}), `${platformLabel(platform)} disconnected`);
       setStatus(`${platformLabel(platform)} disconnected`);
       await refreshAll();
     } catch (error) {
@@ -1096,7 +1096,7 @@ export function MediaStudioApp() {
     const key = dryRun ? "publish:due:dry" : "publish:due:live";
     try {
       setStatus(dryRun ? "Checking due publish queue..." : "Publishing due schedule...");
-      const result = await runAction(key, dryRun ? "Checking due publish queue..." : "Publishing due schedule...", () => apiPost<{count: number; processed?: unknown[]}>("publish-due", {limit: 5, dry_run: dryRun}));
+      const result = await runAction(key, dryRun ? "Checking due publish queue..." : "Publishing due schedule...", () => apiPost<{count: number; processed?: unknown[]}>("publish-due", {limit: 5, dry_run: dryRun, profile_id: profileId}));
       setStatus(`${dryRun ? "Checked" : "Processed"} ${result.count || 0} due publish item(s)`);
       pushToast(`${dryRun ? "Checked" : "Processed"} ${result.count || 0} due publish item(s)`, "success");
       await refreshAll();

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Workspace-scoped publish credentials (#34): Facebook/YouTube/TikTok/Telegram account tokens live in a per-profile vault under `media-engine/data/credentials/` (gitignored); OAuth connect/disconnect and live publish resolve the active workspace. Existing `.env.local` account keys migrate once into `nourbit`.
 - Watch channel → auto-clip → autonomy schedule (#32): add a YouTube channel once, poll for new uploads, enqueue clip jobs, apply `off`/`assisted`/`full` autonomy, and enforce per-account posts/day delivery caps with a workspace switcher (`nourbit` / `workspace`).
 - Channel watcher worker: `python -m media_engine.cli watch-poll` and `scripts/run_watch_poll_worker.sh` for background polling.
 

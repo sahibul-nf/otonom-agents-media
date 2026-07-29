@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import os
 import secrets
 import time
 import urllib.error
@@ -16,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .env_loader import load_env_file
-from .env_store import set_env_values
+from .credential_vault import resolve_env_value, set_profile_secrets
 
 
 class OAuthFlowError(RuntimeError):
@@ -33,14 +32,11 @@ class OAuthStartResult:
     auth_url: str
     state: str
     expires_in: int
+    profile_id: str = "nourbit"
 
 
-def _env_first(*keys: str) -> str:
-    for key in keys:
-        value = os.environ.get(key, "").strip()
-        if value:
-            return value
-    return ""
+def _env_first(*keys: str, profile_id: str | None = None) -> str:
+    return resolve_env_value(*keys, profile_id=profile_id)
 
 
 def _json_get(url: str, headers: dict[str, str] | None = None, timeout_seconds: int = 30) -> dict[str, Any]:
@@ -114,10 +110,17 @@ def _redirect_for(platform: str, server_base: str) -> str:
     return f"{server_base.rstrip('/')}/api/oauth/callback/{platform}"
 
 
-def start_oauth(platform: str, server_base: str, env_file: str | Path) -> OAuthStartResult:
+def start_oauth(
+    platform: str,
+    server_base: str,
+    env_file: str | Path,
+    profile_id: str = "nourbit",
+) -> OAuthStartResult:
     load_env_file(env_file)
+    profile_id = (profile_id or "nourbit").strip() or "nourbit"
     state = secrets.token_urlsafe(24)
     redirect_uri = _redirect_for(platform, server_base)
+    base_payload = {"profile_id": profile_id}
 
     if platform == "youtube_shorts":
         client_id = _env_first("YOUTUBE_CLIENT_ID")
@@ -134,8 +137,8 @@ def start_oauth(platform: str, server_base: str, env_file: str | Path) -> OAuthS
             "state": state,
         }
         auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
-        _remember_state(state, platform)
-        return OAuthStartResult(platform=platform, auth_url=auth_url, state=state, expires_in=OAUTH_TTL_SECONDS)
+        _remember_state(state, platform, base_payload)
+        return OAuthStartResult(platform=platform, auth_url=auth_url, state=state, expires_in=OAUTH_TTL_SECONDS, profile_id=profile_id)
 
     if platform == "facebook_reels":
         app_id = _env_first("META_APP_ID")
@@ -158,8 +161,8 @@ def start_oauth(platform: str, server_base: str, env_file: str | Path) -> OAuthS
             ),
         }
         auth_url = f"https://www.facebook.com/{api_version}/dialog/oauth?" + urllib.parse.urlencode(params)
-        _remember_state(state, platform)
-        return OAuthStartResult(platform=platform, auth_url=auth_url, state=state, expires_in=OAUTH_TTL_SECONDS)
+        _remember_state(state, platform, base_payload)
+        return OAuthStartResult(platform=platform, auth_url=auth_url, state=state, expires_in=OAUTH_TTL_SECONDS, profile_id=profile_id)
 
     if platform == "tiktok":
         client_key = _env_first("TIKTOK_CLIENT_KEY")
@@ -177,8 +180,8 @@ def start_oauth(platform: str, server_base: str, env_file: str | Path) -> OAuthS
             "code_challenge_method": "S256",
         }
         auth_url = "https://www.tiktok.com/v2/auth/authorize/?" + urllib.parse.urlencode(params)
-        _remember_state(state, platform, {"code_verifier": verifier, "redirect_uri": redirect_uri})
-        return OAuthStartResult(platform=platform, auth_url=auth_url, state=state, expires_in=OAUTH_TTL_SECONDS)
+        _remember_state(state, platform, {**base_payload, "code_verifier": verifier, "redirect_uri": redirect_uri})
+        return OAuthStartResult(platform=platform, auth_url=auth_url, state=state, expires_in=OAUTH_TTL_SECONDS, profile_id=profile_id)
 
     raise OAuthFlowError(f"OAuth is not supported for {platform}")
 
@@ -193,6 +196,7 @@ def complete_oauth(platform: str, query: dict[str, str], server_base: str, env_f
     if not state or not code:
         raise OAuthFlowError("Missing OAuth state or code")
     payload = _pop_state(state, platform)
+    profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
     redirect_uri = payload.get("redirect_uri") or _redirect_for(platform, server_base)
 
     if platform == "youtube_shorts":
@@ -212,12 +216,12 @@ def complete_oauth(platform: str, query: dict[str, str], server_base: str, env_f
         )
         refresh = str(token.get("refresh_token") or "").strip()
         if not refresh:
-            current = _env_first("YOUTUBE_REFRESH_TOKEN")
+            current = _env_first("YOUTUBE_REFRESH_TOKEN", profile_id=profile_id)
             if not current:
                 raise OAuthFlowError("OAuth completed but no refresh token was returned. Remove app access and reconnect with consent.")
             refresh = current
-        set_env_values(env_file, {"YOUTUBE_REFRESH_TOKEN": refresh})
-        return {"platform": platform, "status": "connected"}
+        set_profile_secrets(profile_id, {"YOUTUBE_REFRESH_TOKEN": refresh})
+        return {"platform": platform, "status": "connected", "profile_id": profile_id}
 
     if platform == "facebook_reels":
         app_id = _env_first("META_APP_ID")
@@ -239,15 +243,16 @@ def complete_oauth(platform: str, query: dict[str, str], server_base: str, env_f
         user_access_token = str(token.get("access_token") or "").strip()
         if not user_access_token:
             raise OAuthFlowError(f"Facebook did not return access_token: {token}")
-        page_id = _env_first("META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_ID")
-        page_access_token = ""
+        page_id = _env_first("META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_ID", profile_id=profile_id)
+        page_tok = ""
         resolved_page_id = page_id
         if page_id:
             page_info = _json_get(
                 "https://graph.facebook.com/" + api_version + "/" + page_id + "?"
                 + urllib.parse.urlencode({"fields": "id,name,access_token", "access_token": user_access_token}),
             )
-            page_access_token = str(page_info.get("access_token") or "").strip()
+            raw_page = page_info.get("access_token") or ""
+            page_tok = str(raw_page).strip()
         else:
             pages = _json_get(
                 "https://graph.facebook.com/" + api_version + "/me/accounts?"
@@ -258,17 +263,18 @@ def complete_oauth(platform: str, query: dict[str, str], server_base: str, env_f
                 raise OAuthFlowError("No Facebook pages found for this account")
             first = data[0]
             resolved_page_id = str(first.get("id") or "").strip()
-            page_access_token = str(first.get("access_token") or "").strip()
-        if not resolved_page_id or not page_access_token:
+            raw_page = first.get("access_token") or ""
+            page_tok = str(raw_page).strip()
+        if not resolved_page_id or not page_tok:
             raise OAuthFlowError("Unable to resolve Facebook page token")
-        set_env_values(
-            env_file,
+        set_profile_secrets(
+            profile_id,
             {
                 "META_PAGE_ID": resolved_page_id,
-                "META_PAGE_ACCESS_TOKEN": page_access_token,
+                "META_PAGE_ACCESS_TOKEN": page_tok,
             },
         )
-        return {"platform": platform, "status": "connected", "page_id": resolved_page_id}
+        return {"platform": platform, "status": "connected", "page_id": resolved_page_id, "profile_id": profile_id}
 
     if platform == "tiktok":
         client_key = _env_first("TIKTOK_CLIENT_KEY")
@@ -300,7 +306,7 @@ def complete_oauth(platform: str, query: dict[str, str], server_base: str, env_f
         }
         if open_id:
             updates["TIKTOK_OPEN_ID"] = open_id
-        set_env_values(env_file, updates)
-        return {"platform": platform, "status": "connected"}
+        set_profile_secrets(profile_id, updates)
+        return {"platform": platform, "status": "connected", "profile_id": profile_id}
 
     raise OAuthFlowError(f"OAuth is not supported for {platform}")

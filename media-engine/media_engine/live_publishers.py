@@ -15,6 +15,9 @@ from typing import Any
 from urllib.parse import urlencode
 
 
+from .credential_vault import resolve_env_value, use_profile_credentials
+
+
 class LivePublishError(RuntimeError):
     pass
 
@@ -24,11 +27,7 @@ TELEGRAM_AUDIO_KBPS = 96
 
 
 def _env_first(*keys: str) -> str:
-    for key in keys:
-        value = os.environ.get(key, "").strip()
-        if value:
-            return value
-    return ""
+    return resolve_env_value(*keys)
 
 
 def _http_json_get(url: str, headers: dict[str, str] | None = None, timeout_seconds: int = 20) -> dict[str, Any]:
@@ -622,13 +621,28 @@ def publish_facebook_reel(payload: dict[str, Any], timeout_seconds: int = 300) -
     }
 
 
-def publish_live_payload(platform: str, payload: dict[str, Any]) -> dict[str, Any]:
-    if platform == "telegram_channel":
-        return publish_telegram_video(payload)
-    if platform == "youtube_shorts":
-        return publish_youtube_short(payload)
-    if platform == "tiktok":
-        return publish_tiktok_video(payload)
-    if platform == "facebook_reels":
-        return publish_facebook_reel(payload)
-    raise LivePublishError(f"live publishing is not supported for {platform}")
+def publish_live_payload(platform: str, payload: dict[str, Any], profile_id: str | None = None) -> dict[str, Any]:
+    profile = (profile_id or str(payload.get("profile_id") or "").strip() or None)
+    with use_profile_credentials(profile):
+        if platform == "telegram_channel":
+            return publish_telegram_video(payload)
+        if platform == "youtube_shorts":
+            return publish_youtube_short(payload)
+        if platform == "tiktok":
+            return publish_tiktok_video(payload)
+        if platform == "facebook_reels":
+            return publish_facebook_reel(payload)
+        raise LivePublishError(f"live publishing is not supported for {platform}")
+
+
+def validate_platform_connection(platform: str, profile_id: str | None = None, timeout_seconds: int = 20) -> dict[str, Any]:
+    with use_profile_credentials(profile_id):
+        if platform == "telegram_channel":
+            return validate_telegram_connection(timeout_seconds=timeout_seconds)
+        if platform == "facebook_reels":
+            return validate_facebook_connection(timeout_seconds=timeout_seconds)
+        if platform == "youtube_shorts":
+            return validate_youtube_connection(timeout_seconds=timeout_seconds)
+        if platform == "tiktok":
+            return validate_tiktok_connection(timeout_seconds=timeout_seconds)
+        raise LivePublishError(f"connection test is not supported for {platform}")
