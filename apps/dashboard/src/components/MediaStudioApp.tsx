@@ -20,6 +20,17 @@ import {
   BookOpen,
 } from "lucide-react";
 import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
+import {ReviewStudioSection} from "@/components/review/ReviewStudioSection";
+import {BrandSection} from "@/components/brand/BrandSection";
+import {FocusModal} from "@/components/FocusModal";
+import {DashboardSection} from "@/components/home/DashboardSection";
+import {GenerateSection} from "@/components/generate/GenerateSection";
+import {WatchChannelsSection} from "@/components/generate/WatchChannelsSection";
+import {ExplainerSection} from "@/components/explainer/ExplainerSection";
+import {TemplatesSection} from "@/components/templates/TemplatesSection";
+import {CalendarSection} from "@/components/calendar/CalendarSection";
+import {PublishSection} from "@/components/channels/PublishSection";
+import {EmptyState, InlineActionStatus, SettingTile} from "@/components/shared/StudioPrimitives";
 import {
   apiGet,
   apiPost,
@@ -38,6 +49,7 @@ import {
   GenreOption,
   HyperframesCatalog,
   HyperframesTemplate,
+  MediaProfile,
   platformLabel,
   PublishAttempt,
   PublishTarget,
@@ -45,17 +57,8 @@ import {
   ScheduledPost,
   scoreValue,
   StyleProfile,
+  WatchChannel,
 } from "@/lib/media-api";
-import {ReviewStudioSection} from "@/components/review/ReviewStudioSection";
-import {BrandSection} from "@/components/brand/BrandSection";
-import {FocusModal} from "@/components/FocusModal";
-import {DashboardSection} from "@/components/home/DashboardSection";
-import {GenerateSection} from "@/components/generate/GenerateSection";
-import {ExplainerSection} from "@/components/explainer/ExplainerSection";
-import {TemplatesSection} from "@/components/templates/TemplatesSection";
-import {CalendarSection} from "@/components/calendar/CalendarSection";
-import {PublishSection} from "@/components/channels/PublishSection";
-import {EmptyState, InlineActionStatus, SettingTile} from "@/components/shared/StudioPrimitives";
 
 type Section = "dashboard" | "generate" | "explainer" | "templates" | "review" | "calendar" | "publish" | "brand";
 type NextAction = {
@@ -87,6 +90,12 @@ type ConfirmDialogState = {
 };
 const publishPlatforms = ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"];
 const oauthPlatforms = new Set(["youtube_shorts", "facebook_reels", "tiktok"]);
+const PROFILE_STORAGE_KEY = "otonom.activeProfileId";
+
+function readStoredProfileId() {
+  if (typeof window === "undefined") return "nourbit";
+  return window.localStorage.getItem(PROFILE_STORAGE_KEY) || "nourbit";
+}
 
 function cleanPublishStatus(status?: string) {
   if (!status) return "Not run";
@@ -444,6 +453,9 @@ MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPA
 
 export function MediaStudioApp() {
   const [section, setSection] = useState<Section>("dashboard");
+  const [profileId, setProfileId] = useState("nourbit");
+  const [profiles, setProfiles] = useState<MediaProfile[]>([]);
+  const [watchChannels, setWatchChannels] = useState<WatchChannel[]>([]);
   const [clips, setClips] = useState<ClipCandidate[]>([]);
   const [targets, setTargets] = useState<PublishTarget[]>([]);
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null);
@@ -493,19 +505,30 @@ export function MediaStudioApp() {
     llmProvider: "deepseek",
   });
 
-  const selected = useMemo(() => clips.find((clip) => clip.id === selectedId) || clips[0], [clips, selectedId]);
-  const filtered = useMemo(
-    () => clips.filter((clip) => matchesReviewFilter(clip, filter)).filter((clip) => showPublished || filter === "published" || clip.status !== "published"),
-    [clips, filter, showPublished],
+  useEffect(() => {
+    setProfileId(readStoredProfileId());
+  }, []);
+
+  const profileClips = useMemo(
+    () => clips.filter((clip) => !clip.profile_id || clip.profile_id === profileId),
+    [clips, profileId],
   );
-  const activeTargets = useMemo(() => targets.filter((target) => publishPlatforms.includes(target.platform)), [targets]);
-  const approved = clips.filter((clip) => clip.status === "approved").length;
-  const scheduledCount = clips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
+  const selected = useMemo(() => profileClips.find((clip) => clip.id === selectedId) || profileClips[0], [profileClips, selectedId]);
+  const filtered = useMemo(
+    () => profileClips.filter((clip) => matchesReviewFilter(clip, filter)).filter((clip) => showPublished || filter === "published" || clip.status !== "published"),
+    [profileClips, filter, showPublished],
+  );
+  const activeTargets = useMemo(
+    () => targets.filter((target) => publishPlatforms.includes(target.platform) && (!target.profile_id || target.profile_id === profileId)),
+    [targets, profileId],
+  );
+  const approved = profileClips.filter((clip) => clip.status === "approved").length;
+  const scheduledCount = profileClips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
   const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
   const hasTemplate = hyperframesTemplates.length > 0 || generateConfig.hyperframesTemplate !== "auto";
   const engineReady = Boolean(engineHealth?.hyperframes.ready);
   const nextAction = getNextAction({
-    clips,
+    clips: profileClips,
     approvedCount: approved,
     scheduledCount,
     readyPlatforms,
@@ -518,7 +541,7 @@ export function MediaStudioApp() {
     ? engineHealth?.hyperframes.reason || "HyperFrames runtime check required"
     : status;
   const workflowSteps = buildWorkflowSteps({
-    clips,
+    clips: profileClips,
     approvedCount: approved,
     scheduledCount,
     readyPlatforms,
@@ -590,6 +613,7 @@ export function MediaStudioApp() {
     setBusy(true);
     setStatus("Syncing media engine...");
     try {
+      const activeProfile = profileId || readStoredProfileId();
       const [
         reviewRows,
         targetRows,
@@ -608,9 +632,11 @@ export function MediaStudioApp() {
         attemptResult,
         explainerResult,
         pathAResult,
+        profilesResult,
+        watchResult,
       ] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
-        apiGet<PublishTarget[]>("targets"),
+        apiGet<PublishTarget[]>(`targets?profile_id=${encodeURIComponent(activeProfile)}`),
         apiGet<CredentialStatus>("credentials"),
         apiGet<StyleProfile>("style"),
         apiGet<BrandTemplate[]>("brand-templates"),
@@ -621,12 +647,16 @@ export function MediaStudioApp() {
         apiGet<HyperframesCatalog>("hyperframes-catalog"),
         apiGet<GenerationJob[]>("generation-jobs"),
         apiGet<RerenderJob[]>("rerender-jobs"),
-        apiGet<ScheduledPost[]>("schedule"),
-        apiGet<AutonomySettings>("autonomy-settings"),
+        apiGet<ScheduledPost[]>(`schedule?profile_id=${encodeURIComponent(activeProfile)}`),
+        apiGet<AutonomySettings>(`autonomy-settings?profile_id=${encodeURIComponent(activeProfile)}`),
         apiGet<PublishAttempt[]>("publish-attempts").then((rows) => ({ok: true as const, rows})).catch((error) => ({ok: false as const, error})),
         apiGet<{jobs: ExplainerJob[]}>("explainers").then((payload) => ({ok: true as const, jobs: payload.jobs || []})).catch((error) => ({ok: false as const, error})),
         apiGet<{jobs: PathAJob[]}>("path-a-jobs").then((payload) => ({ok: true as const, jobs: payload.jobs || []})).catch((error) => ({ok: false as const, error})),
+        apiGet<{profiles: MediaProfile[]}>("profiles").then((payload) => ({ok: true as const, profiles: payload.profiles || []})).catch((error) => ({ok: false as const, error})),
+        apiGet<{channels: WatchChannel[]}>(`watch-channels?profile_id=${encodeURIComponent(activeProfile)}`).then((payload) => ({ok: true as const, channels: payload.channels || []})).catch((error) => ({ok: false as const, error})),
       ]);
+      // Opportunistic due-channel poll (respects interval server-side).
+      void apiGet<{results: unknown[]}>(`watch-poll?profile_id=${encodeURIComponent(activeProfile)}`).catch(() => null);
       setClips(reviewRows);
       setTargets(targetRows);
       setCredentials(credentialRows);
@@ -644,14 +674,17 @@ export function MediaStudioApp() {
       setPublishAttempts(attemptResult.ok ? attemptResult.rows : []);
       setExplainerJobs(explainerResult.ok ? explainerResult.jobs : []);
       setPathAJobs(pathAResult.ok ? pathAResult.jobs : []);
+      setProfiles(profilesResult.ok ? profilesResult.profiles : []);
+      setWatchChannels(watchResult.ok ? watchResult.channels : []);
       setRerendering({});
       setPublishSelection((current) => {
         const enabled = targetRows
-          .filter((target) => publishPlatforms.includes(target.platform) && target.mode !== "off")
+          .filter((target) => publishPlatforms.includes(target.platform) && target.mode !== "off" && (target.enabled ?? true))
           .map((target) => target.platform);
         return current.length ? current.filter((platform) => enabled.includes(platform)) : enabled;
       });
-      setSelectedId((current) => current || reviewRows[0]?.id || "");
+      const scoped = reviewRows.filter((clip) => !clip.profile_id || clip.profile_id === activeProfile);
+      setSelectedId((current) => (scoped.some((clip) => clip.id === current) ? current : scoped[0]?.id || ""));
       if (!attemptResult.ok) {
         const message = attemptResult.error instanceof Error ? attemptResult.error.message : "publish history temporarily unavailable";
         setStatus(`Workspace synced with warning: ${message}`);
@@ -663,6 +696,14 @@ export function MediaStudioApp() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function switchProfile(nextProfileId: string) {
+    setProfileId(nextProfileId);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(PROFILE_STORAGE_KEY, nextProfileId);
+    }
+    window.setTimeout(() => void refreshAll(), 0);
   }
 
   async function copyText(value: string, label = "Copied") {
@@ -699,7 +740,7 @@ export function MediaStudioApp() {
     if (!autonomy) return;
     const key = `autonomy:${mode}`;
     try {
-      const next = await runAction(key, `Switching autonomy to ${mode}...`, () => apiPost<AutonomySettings>("autonomy-settings", {...autonomy, autonomy_mode: mode}), `Autonomy set to ${mode}`);
+      const next = await runAction(key, `Switching autonomy to ${mode}...`, () => apiPost<AutonomySettings>("autonomy-settings", {...autonomy, profile_id: profileId, autonomy_mode: mode}), `Autonomy set to ${mode}`);
       setAutonomy(next);
       setStatus(`Autonomy mode set to ${mode}`);
     } catch (error) {
@@ -713,6 +754,8 @@ export function MediaStudioApp() {
       setStatus("Generation job queued...");
       const job = await runAction(key, "Starting generation batch...", () => apiPost<GenerationJob>("generation-jobs", {
           source_url: generateConfig.sourceUrl,
+          profile_id: profileId,
+          source_id: `${profileId}_source`,
           count: generateConfig.count,
           clip_length_preset: generateConfig.clipLength,
           clip_min_seconds: generateConfig.clipMinSeconds,
@@ -737,6 +780,65 @@ export function MediaStudioApp() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Generation failed");
     }
+  }
+
+  async function addWatchChannel(channelUrl: string, label: string) {
+    await runAction("watch:add", "Adding watch channel...", () => apiPost<WatchChannel>("watch-channels", {
+      channel_url: channelUrl,
+      label,
+      profile_id: profileId,
+      generation_defaults: {
+        count: generateConfig.count,
+        clip_length_preset: generateConfig.clipLength,
+        clip_min_seconds: generateConfig.clipMinSeconds,
+        clip_max_seconds: generateConfig.clipMaxSeconds,
+        genres: generateConfig.genres,
+        brand_template: generateConfig.brandTemplate,
+        hyperframes_template: generateConfig.hyperframesTemplate,
+        brand_system_template_id: generateConfig.brandSystemTemplateId,
+        hyperframes_format: generateConfig.hyperframesFormat,
+        renderer: generateConfig.renderer,
+        quality: generateConfig.quality,
+        caption_source: generateConfig.captionSource,
+        asr_model: generateConfig.asrModel,
+        speech_language: generateConfig.speechLanguage,
+        transcript_languages: generateConfig.transcriptLanguages,
+        llm_provider: generateConfig.llmProvider,
+      },
+    }), "Watch channel added");
+    await refreshAll();
+  }
+
+  async function toggleWatchChannel(channel: WatchChannel, enabled: boolean) {
+    const key = `watch:${channel.id}:toggle`;
+    await runAction(key, enabled ? "Resuming channel..." : "Pausing channel...", () => apiPost<WatchChannel>("watch-channel-update", {
+      id: channel.id,
+      enabled,
+    }), enabled ? "Channel resumed" : "Channel paused");
+    await refreshAll();
+  }
+
+  async function pollWatchChannelNow(channel: WatchChannel) {
+    const key = `watch:${channel.id}:poll`;
+    await runAction(key, "Polling channel...", () => apiPost("watch-poll", {id: channel.id, force: true}), "Channel poll finished");
+    await refreshAll();
+  }
+
+  async function deleteWatchChannel(channel: WatchChannel) {
+    const key = `watch:${channel.id}:delete`;
+    await runAction(key, "Removing channel...", () => apiPost("watch-channel-delete", {id: channel.id}), "Channel removed");
+    await refreshAll();
+  }
+
+  async function updateDeliverySettings(target: PublishTarget, patch: {daily_cap?: number; enabled?: boolean; mode?: string}) {
+    const key = `target:${target.platform}:delivery`;
+    const next = await runAction(key, "Updating delivery settings...", () => apiPost<PublishTarget>("publish-target", {
+      id: target.id,
+      profile_id: target.profile_id,
+      platform: target.platform,
+      ...patch,
+    }), "Delivery settings saved");
+    setTargets((items) => items.map((item) => (item.id === next.id ? next : item)));
   }
 
   const refreshExplainerJobs = () => {
@@ -1253,7 +1355,20 @@ export function MediaStudioApp() {
             <div className="min-w-0">
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <span className="rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">Guided Studio OS</span>
-                <span className="text-xs font-medium text-zinc-500">Active Workspace</span>
+                <label className="inline-flex items-center gap-2 text-xs font-medium text-zinc-500">
+                  Workspace
+                  <select
+                    value={profileId}
+                    onChange={(event) => switchProfile(event.target.value)}
+                    className="h-8 rounded-full border border-white/[0.10] bg-surface px-3 text-xs font-semibold text-zinc-200 outline-none"
+                  >
+                    {(profiles.length ? profiles : [{id: profileId, name: profileId}]).map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name || profile.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
               <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">
                 {renderEditorialTitle(sectionCopy[section].title)}
@@ -1275,7 +1390,7 @@ export function MediaStudioApp() {
         <div className="grid min-w-0 gap-5 px-5 py-5 lg:px-8">
           {section === "dashboard" && (
             <DashboardSection
-              clips={clips}
+              clips={profileClips}
               schedule={schedule}
               nextAction={nextAction}
               workflowSteps={workflowSteps}
@@ -1287,6 +1402,17 @@ export function MediaStudioApp() {
           )}
 
           {section === "generate" && (
+            <>
+            <WatchChannelsSection
+              channels={watchChannels}
+              profileId={profileId}
+              actionStates={actionStates}
+              onAdd={addWatchChannel}
+              onToggle={toggleWatchChannel}
+              onPoll={pollWatchChannelNow}
+              onDelete={deleteWatchChannel}
+              renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
+            />
             <GenerateSection
               config={generateConfig}
               templates={templates}
@@ -1307,6 +1433,7 @@ export function MediaStudioApp() {
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
               renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
             />
+            </>
           )}
 
           {section === "explainer" && (
@@ -1439,6 +1566,7 @@ export function MediaStudioApp() {
               onTestConnection={testConnection}
               onStartOauth={startOauthConnect}
               onDisconnect={disconnectPlatform}
+              onUpdateDelivery={updateDeliverySettings}
               oauthPlatforms={oauthPlatforms}
               publicAccountLabel={publicAccountLabel}
               publishActionHint={publishActionHint}

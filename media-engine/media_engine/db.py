@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS publish_targets (
   require_approval INTEGER NOT NULL DEFAULT 1,
   ai_disclosure_required INTEGER NOT NULL DEFAULT 0,
   daily_cap INTEGER NOT NULL DEFAULT 10,
+  enabled INTEGER NOT NULL DEFAULT 1,
   UNIQUE(profile_id, platform)
 );
 
@@ -177,6 +178,26 @@ CREATE TABLE IF NOT EXISTS autonomy_settings (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS watch_channels (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES media_profiles(id),
+  channel_url TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  permission_status TEXT NOT NULL DEFAULT 'user_attested',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  poll_interval_minutes INTEGER NOT NULL DEFAULT 30,
+  last_polled_at TEXT NOT NULL DEFAULT '',
+  last_seen_video_id TEXT NOT NULL DEFAULT '',
+  last_new_video_id TEXT NOT NULL DEFAULT '',
+  last_new_video_at TEXT NOT NULL DEFAULT '',
+  last_clip_job_id TEXT NOT NULL DEFAULT '',
+  last_error TEXT NOT NULL DEFAULT '',
+  generation_defaults_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(profile_id, channel_url)
+);
 """
 
 
@@ -243,7 +264,10 @@ SCHEMA_UPGRADES = {
         "result_json": "TEXT NOT NULL DEFAULT '{}'",
         "error": "TEXT NOT NULL DEFAULT ''",
         "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
-    }
+    },
+    "publish_targets": {
+        "enabled": "INTEGER NOT NULL DEFAULT 1",
+    },
 }
 
 
@@ -318,8 +342,8 @@ def seed_profile(conn: sqlite3.Connection, profile: dict[str, Any]) -> None:
             """
             INSERT OR REPLACE INTO publish_targets
               (profile_id, platform, account_label, mode, require_approval,
-               ai_disclosure_required, daily_cap)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+               ai_disclosure_required, daily_cap, enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 profile["id"],
@@ -329,6 +353,7 @@ def seed_profile(conn: sqlite3.Connection, profile: dict[str, Any]) -> None:
                 int(target.get("require_approval", True)),
                 int(target.get("ai_disclosure_required", False)),
                 int(target.get("daily_cap", 10)),
+                int(target.get("enabled", True)),
             ),
         )
     conn.commit()

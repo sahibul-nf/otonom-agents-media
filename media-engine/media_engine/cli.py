@@ -735,6 +735,19 @@ def cmd_set_target_mode(args: argparse.Namespace) -> None:
     print(json.dumps({"profile": args.profile, "platform": args.platform, "mode": args.mode}, indent=2))
 
 
+def cmd_watch_poll(args: argparse.Namespace) -> None:
+    from .channel_watcher import poll_due_watch_channels, poll_watch_channel
+
+    conn = connect(args.db)
+    initialize(conn)
+    if args.channel_id:
+        result = poll_watch_channel(conn, args.channel_id, enqueue=not args.dry_run, force=True)
+        print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+        return
+    results = poll_due_watch_channels(conn, profile_id=args.profile or None, force=args.force)
+    print(json.dumps({"results": results}, indent=2, ensure_ascii=False, default=str))
+
+
 def cmd_authorize_source(args: argparse.Namespace) -> None:
     require_choice(args.permission_status, RIGHTS_MODES, "permission_status")
     conn = connect(args.db)
@@ -890,6 +903,13 @@ def build_parser() -> argparse.ArgumentParser:
     publish_due.add_argument("--dry-run", action="store_true")
     publish_due.add_argument("--no-notify", action="store_true")
     publish_due.set_defaults(func=cmd_publish_due)
+
+    watch_poll = sub.add_parser("watch-poll", help="Poll watched channels for new uploads and enqueue clip jobs")
+    watch_poll.add_argument("--profile", default="", help="Limit to one workspace/profile")
+    watch_poll.add_argument("--channel-id", default="", help="Poll a single watch channel id")
+    watch_poll.add_argument("--force", action="store_true", help="Ignore poll interval")
+    watch_poll.add_argument("--dry-run", action="store_true", help="With --channel-id, detect only (no enqueue)")
+    watch_poll.set_defaults(func=cmd_watch_poll)
 
     rerender = sub.add_parser("rerender")
     rerender.add_argument("--candidate-id", required=True)

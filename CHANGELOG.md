@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Watch channel → auto-clip → autonomy schedule (#32): add a YouTube channel once, poll for new uploads, enqueue clip jobs, apply `off`/`assisted`/`full` autonomy, and enforce per-account posts/day delivery caps with a workspace switcher (`nourbit` / `workspace`).
+- Channel watcher worker: `python -m media_engine.cli watch-poll` and `scripts/run_watch_poll_worker.sh` for background polling.
+
 - Verified Create → Generate queues HTTP 202 without FK/lock; failed jobs now surface actionable CLI errors (not bare exit codes); Next proxy only says “offline” on true connection failures (#2).
 - Path A control loop (#21): dashboard **Generate via Cursor** → Automation webhook / Cloud Agents API → poll until `FINISHED` → local `ingest_longform` → Telegram status (no public URL).
 - Path A: ingest HeyGen/long-form MP4 into Review via `POST /api/ingest-longform`, Otonom MCP `ingest_longform`, and Explainer dashboard form (`review_only` + optional `clip_batch`).

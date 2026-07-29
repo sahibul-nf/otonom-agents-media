@@ -53,7 +53,27 @@ from .post_copy import build_post_caption, generate_post_caption, sanitize_post_
 from .publishers import build_payload, create_dry_run_attempt
 from .rerender import create_rerender_job, list_rerender_jobs
 from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
-from .scheduler import list_scheduled_posts, process_due_auto_schedule, schedule_candidate_next, unschedule_candidate, update_schedule, update_schedule_platforms
+from .channel_watcher import (
+    add_watch_channel,
+    delete_watch_channel,
+    list_media_profiles,
+    list_publish_targets,
+    list_watch_channels,
+    poll_due_watch_channels,
+    poll_watch_channel,
+    update_publish_target,
+    update_watch_channel,
+    upsert_publish_target,
+)
+from .scheduler import (
+    list_scheduled_posts,
+    process_due_auto_schedule,
+    process_due_auto_schedule_all,
+    schedule_candidate_next,
+    unschedule_candidate,
+    update_schedule,
+    update_schedule_platforms,
+)
 from .styles import load_style, save_brand_system_template, save_style_template
 
 
@@ -211,8 +231,22 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/targets":
             conn = connect(DEFAULT_DB)
-            rows = fetch_all(conn, "SELECT * FROM publish_targets ORDER BY platform")
-            self._send_json(rows)
+            initialize(conn)
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", [""])[0] or "").strip() or None
+            self._send_json(list_publish_targets(conn, profile_id=profile_id))
+            return
+        if parsed.path == "/api/profiles":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            self._send_json({"profiles": list_media_profiles(conn)})
+            return
+        if parsed.path == "/api/watch-channels":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", [""])[0] or "").strip() or None
+            self._send_json({"channels": list_watch_channels(conn, profile_id=profile_id)})
             return
         if parsed.path == "/api/style":
             query = parse_qs(parsed.query)
@@ -317,13 +351,35 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/autonomy-settings":
             conn = connect(DEFAULT_DB)
             initialize(conn)
-            self._send_json(get_autonomy_settings(conn))
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", ["nourbit"])[0] or "nourbit").strip() or "nourbit"
+            self._send_json(get_autonomy_settings(conn, profile_id))
             return
         if parsed.path == "/api/schedule":
             conn = connect(DEFAULT_DB)
             initialize(conn)
-            process_due_auto_schedule(conn)
-            self._send_json(list_scheduled_posts(conn))
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", [""])[0] or "").strip()
+            if profile_id:
+                process_due_auto_schedule(conn, profile_id=profile_id)
+                self._send_json(list_scheduled_posts(conn, profile_id=profile_id))
+            else:
+                process_due_auto_schedule_all(conn)
+                # Default list still uses nourbit for backward compatibility when no profile filter.
+                self._send_json(list_scheduled_posts(conn))
+            return
+        if parsed.path == "/api/watch-poll":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", [""])[0] or "").strip() or None
+            force = (query.get("force", ["0"])[0] or "0") in {"1", "true", "True"}
+            try:
+                results = poll_due_watch_channels(conn, profile_id=profile_id, force=force)
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"error": str(exc)}, status=500)
+                return
+            self._send_json({"results": results})
             return
         if parsed.path == "/api/publish-attempts":
             conn = connect(DEFAULT_DB)
@@ -1076,6 +1132,88 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json({"deleted": counts, "artifacts_removed": removed})
             return
 
+        if parsed.path == "/api/watch-channels":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            channel_url = str(payload.get("channel_url") or payload.get("url") or "").strip()
+            if not channel_url:
+                self._send_json({"error": "channel_url is required"}, status=400)
+                return
+            try:
+                channel = add_watch_channel(
+                    conn,
+                    channel_url=channel_url,
+                    profile_id=str(payload.get("profile_id") or "nourbit").strip() or "nourbit",
+                    label=str(payload.get("label") or "").strip(),
+                    permission_status=str(payload.get("permission_status") or "user_attested").strip(),
+                    poll_interval_minutes=int(payload.get("poll_interval_minutes") or 30),
+                    generation_defaults=payload.get("generation_defaults") if isinstance(payload.get("generation_defaults"), dict) else None,
+                    bootstrap_seen=bool(payload.get("bootstrap_seen", True)),
+                )
+            except (ValueError, RuntimeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(channel, status=201)
+            return
+
+        if parsed.path == "/api/watch-channel-update":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            channel_id = str(payload.get("id") or payload.get("channel_id") or "").strip()
+            if not channel_id:
+                self._send_json({"error": "id is required"}, status=400)
+                return
+            try:
+                channel = update_watch_channel(conn, channel_id, payload)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(channel)
+            return
+
+        if parsed.path == "/api/watch-channel-delete":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            channel_id = str(payload.get("id") or payload.get("channel_id") or "").strip()
+            if not channel_id:
+                self._send_json({"error": "id is required"}, status=400)
+                return
+            try:
+                self._send_json(delete_watch_channel(conn, channel_id))
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+            return
+
+        if parsed.path == "/api/watch-poll":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            channel_id = str(payload.get("id") or payload.get("channel_id") or "").strip()
+            force = bool(payload.get("force", True))
+            try:
+                if channel_id:
+                    result = poll_watch_channel(conn, channel_id, enqueue=True, force=force)
+                    self._send_json(result)
+                else:
+                    profile_id = str(payload.get("profile_id") or "").strip() or None
+                    self._send_json({"results": poll_due_watch_channels(conn, profile_id=profile_id, force=force)})
+            except (ValueError, RuntimeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+            return
+
+        if parsed.path == "/api/publish-target":
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                if payload.get("id") is not None:
+                    target = update_publish_target(conn, payload)
+                else:
+                    target = upsert_publish_target(conn, payload)
+            except (ValueError, TypeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(target)
+            return
+
         if parsed.path == "/api/set-target-mode":
             profile = str(payload.get("profile", "nourbit")).strip()
             platform = str(payload.get("platform", "")).strip()
@@ -1084,6 +1222,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "unsupported mode"}, status=400)
                 return
             conn = connect(DEFAULT_DB)
+            initialize(conn)
             result = conn.execute(
                 "UPDATE publish_targets SET mode = ? WHERE profile_id = ? AND platform = ?",
                 (mode, profile, platform),
