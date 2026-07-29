@@ -131,6 +131,57 @@ def next_available_slot(
     raise RuntimeError("no schedule slot available in the next 90 days")
 
 
+def enabled_delivery_platforms(conn: sqlite3.Connection, profile_id: str, now: datetime | None = None) -> list[str]:
+    """Return enabled publish platforms that still have daily capacity today."""
+    now = now or datetime.now(DEFAULT_TZ)
+    now = now.astimezone(DEFAULT_TZ)
+    day_start = datetime.combine(now.date(), time(0, 0), DEFAULT_TZ)
+    day_end = day_start + timedelta(days=1)
+    targets = conn.execute(
+        """
+        SELECT platform, daily_cap, enabled, mode
+        FROM publish_targets
+        WHERE profile_id = ?
+        ORDER BY platform ASC
+        """,
+        (profile_id,),
+    ).fetchall()
+    if not targets:
+        return ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"]
+
+    scheduled_rows = conn.execute(
+        """
+        SELECT platforms_json FROM scheduled_posts
+        WHERE profile_id = ?
+          AND status IN ('scheduled', 'ready_to_publish', 'publishing', 'published')
+          AND scheduled_at >= ? AND scheduled_at < ?
+        """,
+        (profile_id, _iso(day_start), _iso(day_end)),
+    ).fetchall()
+    counts: dict[str, int] = {}
+    for row in scheduled_rows:
+        try:
+            platforms = json.loads(row["platforms_json"] or "[]")
+        except json.JSONDecodeError:
+            platforms = []
+        for platform in platforms:
+            counts[platform] = counts.get(platform, 0) + 1
+
+    selected: list[str] = []
+    for row in targets:
+        if "enabled" in row.keys() and not int(row["enabled"] or 0):
+            continue
+        if row["mode"] == "off":
+            continue
+        cap = int(row["daily_cap"] or 0)
+        if cap <= 0:
+            continue
+        if counts.get(row["platform"], 0) >= cap:
+            continue
+        selected.append(row["platform"])
+    return selected
+
+
 def schedule_candidate_next(
     conn: sqlite3.Connection,
     candidate_id: str,
@@ -146,7 +197,9 @@ def schedule_candidate_next(
     profile_id = candidate["profile_id"] or profile_id
     scheduled_at = next_available_slot(conn, profile_id=profile_id, now=now)
     schedule_id = f"sched_{uuid.uuid4().hex[:12]}"
-    platform_list = platforms or ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"]
+    platform_list = platforms or enabled_delivery_platforms(conn, profile_id, now=now)
+    if not platform_list:
+        raise ValueError("no delivery platforms with remaining daily capacity")
     conn.execute(
         """
         INSERT OR REPLACE INTO scheduled_posts
@@ -195,10 +248,23 @@ def process_due_auto_schedule(conn: sqlite3.Connection, profile_id: str = "nourb
             conn.execute("UPDATE clip_candidates SET status = 'rendered' WHERE id = ?", (row["id"],))
             continue
         try:
-            scheduled.append(schedule_candidate_next(conn, row["id"], profile_id=profile_id, now=now))
+            platforms = enabled_delivery_platforms(conn, profile_id, now=now)
+            if not platforms:
+                break
+            scheduled.append(schedule_candidate_next(conn, row["id"], profile_id=profile_id, platforms=platforms, now=now))
         except ValueError:
             continue
     conn.commit()
+    return scheduled
+
+
+def process_due_auto_schedule_all(conn: sqlite3.Connection, now: datetime | None = None) -> list[dict]:
+    profiles = [row["id"] for row in conn.execute("SELECT id FROM media_profiles ORDER BY id ASC").fetchall()]
+    if not profiles:
+        profiles = ["nourbit"]
+    scheduled: list[dict] = []
+    for profile_id in profiles:
+        scheduled.extend(process_due_auto_schedule(conn, profile_id=profile_id, now=now))
     return scheduled
 
 

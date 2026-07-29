@@ -147,6 +147,7 @@ export function PublishSection({
   onTestConnection,
   onStartOauth,
   onDisconnect,
+  onUpdateDelivery,
   publicAccountLabel,
   publishActionHint,
   formatPlatformMode,
@@ -166,6 +167,7 @@ export function PublishSection({
   onTestConnection: (platform: string) => void;
   onStartOauth: (platform: string) => void;
   onDisconnect: (platform: string) => void;
+  onUpdateDelivery?: (target: PublishTarget, patch: {daily_cap?: number; enabled?: boolean; mode?: string}) => void;
   publicAccountLabel: (target: PublishTarget) => string;
   publishActionHint: (error?: string) => string;
   formatPlatformMode: (mode?: string) => string;
@@ -277,9 +279,38 @@ export function PublishSection({
                     {selectedForPublish ? "Target Active" : "Target Paused"}
                   </span>
                   <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${ready ? "border-teal/15 bg-teal/[0.04] text-teal" : "border-warning/15 bg-warning/[0.04] text-warning"}`}>
-                    {ready ? "Authorized" : "Setup Required"}
+                    {ready ? "Connected" : "Setup needed"}
                   </span>
                 </div>
+
+                {onUpdateDelivery ? (
+                  <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-4">
+                    <label className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Posts / day
+                      <input
+                        type="number"
+                        min={0}
+                        max={50}
+                        defaultValue={target.daily_cap}
+                        key={`${target.id}-${target.daily_cap}`}
+                        onBlur={(event) => {
+                          const next = Number(event.target.value);
+                          if (!Number.isFinite(next) || next === target.daily_cap) return;
+                          onUpdateDelivery(target, {daily_cap: Math.max(0, Math.min(50, Math.round(next)))});
+                        }}
+                        className="h-8 w-16 rounded-xl border border-white/[0.08] bg-black/30 px-2 text-sm text-white outline-none focus:border-cyan/40"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => onUpdateDelivery(target, {enabled: !(target.enabled ?? true)})}
+                      className="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 hover:text-cyan"
+                    >
+                      {(target.enabled ?? true) ? "Disable delivery" : "Enable delivery"}
+                    </button>
+                  </div>
+                ) : null}
 
                 {!ready && (
                   <div className="mt-3.5 flex items-start gap-2 rounded-xl border border-warning/[0.12] bg-warning/[0.05] p-3 text-xs leading-relaxed text-warning">

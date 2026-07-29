@@ -18,6 +18,7 @@ export type CaptionSegment = {
 
 export type ClipCandidate = {
   id: string;
+  profile_id?: string;
   status: ClipStatus;
   title_hook: string;
   hook_subtitle?: string;
@@ -90,9 +91,34 @@ export type PublishTarget = {
   platform: string;
   account_label: string;
   mode: string;
-  require_approval: number;
-  ai_disclosure_required: number;
+  require_approval: number | boolean;
+  ai_disclosure_required: number | boolean;
   daily_cap: number;
+  enabled?: number | boolean;
+};
+
+export type MediaProfile = {
+  id: string;
+  name: string;
+  niche?: string;
+  created_at?: string;
+};
+
+export type WatchChannel = {
+  id: string;
+  profile_id: string;
+  channel_url: string;
+  label: string;
+  permission_status: string;
+  enabled: boolean;
+  poll_interval_minutes: number;
+  last_polled_at?: string;
+  last_seen_video_id?: string;
+  last_new_video_id?: string;
+  last_new_video_at?: string;
+  last_clip_job_id?: string;
+  last_error?: string;
+  generation_defaults?: Record<string, unknown>;
 };
 
 export type CredentialStatus = {

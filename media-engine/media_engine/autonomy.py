@@ -182,8 +182,11 @@ def evaluate_quality_gate(
     passed = all(checks.values())
     mode = settings.get("autonomy_mode", AUTONOMY_ASSISTED)
     deadline = ""
-    if passed and mode in {AUTONOMY_ASSISTED, AUTONOMY_FULL}:
+    if passed and mode == AUTONOMY_ASSISTED:
         deadline = _iso(_now(now) + timedelta(hours=int(settings["review_grace_hours"])))
+    elif passed and mode == AUTONOMY_FULL:
+        # Full autonomy schedules as soon as process_due_auto_schedule runs.
+        deadline = _iso(_now(now))
     status = "rendered"
     if mode == AUTONOMY_OFF:
         status = "rendered"
