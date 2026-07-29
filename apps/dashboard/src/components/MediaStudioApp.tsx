@@ -179,7 +179,7 @@ const nav = [
   {id: "templates", label: "Templates", icon: Sparkles},
   {id: "review", label: "Review", icon: Clapperboard},
   {id: "calendar", label: "Schedule", icon: CalendarDays},
-  {id: "publish", label: "Channels", icon: Send},
+  {id: "publish", label: "Publish", icon: Send},
   {id: "brand", label: "Brand", icon: Settings},
 ] as const;
 
@@ -209,8 +209,8 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
     subtitle: "Place approved clips into guarded publishing slots.",
   },
   publish: {
-    title: "Channels",
-    subtitle: "Connect platforms and choose where scheduled clips can publish.",
+    title: "Publish accounts",
+    subtitle: "Connect Facebook, YouTube, TikTok, or Telegram for this workspace — separate from watching YouTube sources on Create.",
   },
   brand: {
     title: "Brand",
@@ -261,10 +261,10 @@ function renderEditorialTitle(title: string) {
       </>
     );
   }
-  if (title === "Channels") {
+  if (title === "Publish accounts") {
     return (
       <>
-        Connect <span className="font-editorial italic font-normal text-cyan">channels</span>
+        Publish <span className="font-editorial italic font-normal text-cyan">accounts</span>
       </>
     );
   }
@@ -396,7 +396,7 @@ function getNextAction({
     return {label: `Schedule ${approvedCount} approved clips`, detail: "Move approved clips into the next guarded publishing slots.", section: "calendar", tone: "ready"};
   }
   if (targetCount > 0 && readyPlatforms < targetCount) {
-    return {label: `Connect ${targetCount - readyPlatforms} channels`, detail: "Finish platform readiness so scheduled clips can publish.", section: "publish", tone: "warning"};
+    return {label: `Connect ${targetCount - readyPlatforms} publish accounts`, detail: "Finish platform readiness so scheduled clips can publish.", section: "publish", tone: "warning"};
   }
   return {label: "Generate next batch", detail: "The current pipeline is clear enough to create the next set of candidates.", section: "generate", tone: "primary"};
 }

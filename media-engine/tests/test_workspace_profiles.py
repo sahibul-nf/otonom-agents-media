@@ -66,6 +66,38 @@ class WorkspaceProfileTests(unittest.TestCase):
     def test_slugify(self):
         self.assertEqual(slugify_profile_id("Acme Clips!"), "acme_clips")
 
+    def test_create_bootstraps_publish_targets(self):
+        created = create_profile(self.conn, {"name": "Acme Clips"})
+        rows = self.conn.execute(
+            "SELECT platform FROM publish_targets WHERE profile_id = ? ORDER BY platform",
+            (created["id"],),
+        ).fetchall()
+        platforms = [row[0] for row in rows]
+        self.assertEqual(
+            platforms,
+            ["facebook_reels", "telegram_channel", "tiktok", "youtube_shorts"],
+        )
+
+    def test_list_profiles_seeds_empty_workspace_targets(self):
+        count = self.conn.execute(
+            "SELECT COUNT(*) FROM publish_targets WHERE profile_id = ?",
+            ("workspace",),
+        ).fetchone()[0]
+        self.assertEqual(count, 0)
+        list_profiles(self.conn)
+        count = self.conn.execute(
+            "SELECT COUNT(*) FROM publish_targets WHERE profile_id = ?",
+            ("workspace",),
+        ).fetchone()[0]
+        self.assertEqual(count, 4)
+        # Idempotent — does not duplicate when already present
+        list_profiles(self.conn)
+        count = self.conn.execute(
+            "SELECT COUNT(*) FROM publish_targets WHERE profile_id = ?",
+            ("workspace",),
+        ).fetchone()[0]
+        self.assertEqual(count, 4)
+
     def test_create_update_delete(self):
         created = create_profile(
             self.conn,
@@ -82,7 +114,7 @@ class WorkspaceProfileTests(unittest.TestCase):
         ids = {row["id"] for row in list_profiles(self.conn)}
         self.assertIn("acme_clips", ids)
 
-        deleted = delete_profile(self.conn, {"id": "acme_clips", "confirm": "acme_clips"})
+        deleted = delete_profile(self.conn, {"id": "acme_clips", "confirm": "acme_clips", "force": True})
         self.assertTrue(deleted["deleted"])
         self.assertFalse((self.vault_dir / "acme_clips.json").exists())
         ids = {row["id"] for row in list_profiles(self.conn)}
