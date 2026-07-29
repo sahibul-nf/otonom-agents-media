@@ -2,37 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
-
-PLATFORM_REQUIRED_ENV = {
-    "telegram_channel": [["TELEGRAM_BOT_TOKEN"], ["TELEGRAM_CHANNEL_ID", "TELEGRAM_CHAT_ID"]],
-    "youtube_shorts": [["YOUTUBE_CLIENT_ID"], ["YOUTUBE_CLIENT_SECRET"], ["YOUTUBE_REFRESH_TOKEN"]],
-    "facebook_reels": [["META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_ID"], ["META_PAGE_ACCESS_TOKEN", "NOURBIT_FACEBOOK_PAGE_TOKEN"]],
-    "tiktok": [["TIKTOK_CLIENT_KEY"], ["TIKTOK_CLIENT_SECRET"], ["TIKTOK_ACCESS_TOKEN"], ["TIKTOK_REFRESH_TOKEN"]],
-}
+from .credential_vault import DEFAULT_MIGRATE_PROFILE, credential_status_for_profile
 
 
-def credential_status() -> dict[str, Any]:
-    platforms: dict[str, Any] = {}
-    for platform, key_groups in PLATFORM_REQUIRED_ENV.items():
-        missing = [
-            "/".join(group)
-            for group in key_groups
-            if not any(os.environ.get(key, "").strip() for key in group)
-        ]
-        platforms[platform] = {
-            "ready": not missing,
-            "required_keys": ["/".join(group) for group in key_groups],
-            "missing_keys": missing,
-        }
-    return {
-        "platforms": platforms,
-        "settings": {
-            "nourbit_daily_content_cap": os.environ.get("NOURBIT_DAILY_CONTENT_CAP", "2"),
-            "nourbit_default_publish_mode": os.environ.get("NOURBIT_DEFAULT_PUBLISH_MODE", "review_required"),
-            "comment_automation_enabled": os.environ.get("COMMENT_AUTOMATION_ENABLED", "false"),
-            "comment_automation_mode": os.environ.get("COMMENT_AUTOMATION_MODE", "review_required"),
-        },
-    }
+def credential_status(profile_id: str | None = None) -> dict[str, Any]:
+    return credential_status_for_profile(profile_id or DEFAULT_MIGRATE_PROFILE)

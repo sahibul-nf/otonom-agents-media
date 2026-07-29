@@ -193,7 +193,7 @@ def publish_candidate_platform(
         return {"platform": platform, "status": attempt["status"], "attempt_id": attempt["id"], "payload": payload, "error": attempt["error"]}
 
     try:
-        result = publish_live_payload(platform, payload)
+        result = publish_live_payload(platform, payload, profile_id=str(candidate.get("profile_id") or target.get("profile_id") or "").strip() or None)
     except LivePublishError as exc:
         attempt = record_publish_attempt(conn, candidate["id"], platform, target["mode"], "failed", payload, str(exc))
         return {"platform": platform, "status": "failed", "error": str(exc), "attempt_id": attempt["id"]}
