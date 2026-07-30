@@ -41,12 +41,12 @@ export function WatchChannelsSection({
   const name = (workspaceName || "").trim() || "This workspace";
 
   return (
-    <section className="rounded-[24px] border border-white/[0.06] bg-black/15 p-4 sm:p-5">
+    <section className="rounded-[28px] border border-white/[0.08] bg-surface/40 p-4 sm:rounded-[32px] sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Optional · Watch sources</p>
           <h3 className="mt-1 text-base font-semibold text-white">Auto-clip new uploads</h3>
-          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+          <p className="mt-1 text-sm text-zinc-500">
             {name} can watch a YouTube channel and queue clips automatically.
           </p>
           <p className="mt-1 text-xs text-zinc-600">
@@ -56,7 +56,7 @@ export function WatchChannelsSection({
       </div>
 
       <form
-        className="mt-4 grid gap-3 md:grid-cols-[1fr_160px_auto]"
+        className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px_auto]"
         onSubmit={(event) => {
           event.preventDefault();
           void (async () => {

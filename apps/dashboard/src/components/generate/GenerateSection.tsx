@@ -140,7 +140,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   };
 
   return (
-    <section className="mx-auto grid w-full max-w-4xl min-w-0 gap-5">
+    <section className="grid w-full min-w-0 gap-5">
       <div className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 shadow-[0_0_0_1px_rgba(102,232,249,0.04)] sm:rounded-[32px] sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">

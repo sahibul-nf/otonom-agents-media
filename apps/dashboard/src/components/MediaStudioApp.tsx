@@ -1181,7 +1181,7 @@ export function MediaStudioApp() {
           )}
 
           {section === "generate" && (
-            <div className="grid gap-6">
+            <div className="mx-auto grid w-full max-w-4xl gap-6">
             <GenerateSection
               config={generateConfig}
               templates={templates}
