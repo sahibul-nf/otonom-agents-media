@@ -39,6 +39,39 @@ type ReadinessLineComponent = (props: {ready: boolean; label: string; detail: st
 
 type SelectTileOption = string | {value: string; label: string; disabled?: boolean};
 
+function clipCountLabel(count: number) {
+  return `${count} ${count === 1 ? "clip" : "clips"}`;
+}
+
+function humanizeGenerationError(error?: string) {
+  if (!error) return "";
+  const lower = error.toLowerCase();
+  if (lower.includes("transcript is too short")) {
+    return "This video’s transcript is too short to pick strong clip candidates. Try a longer source video.";
+  }
+  if (lower.includes("no transcript") || lower.includes("captions unavailable")) {
+    return "No usable captions or transcript were found for this video. Try another source or enable captions.";
+  }
+  if (lower.includes("connection") || lower.includes("offline") || lower.includes("refused")) {
+    return "Couldn’t reach the media engine. Make sure the backend is running, then try again.";
+  }
+  return error.replace(/^(ValueError|RuntimeError|Exception|Error):\s*/i, "").trim() || error;
+}
+
+function runStatusLabel(status: string) {
+  switch (status) {
+    case "completed":
+      return "Ready for review";
+    case "running":
+    case "queued":
+      return "Creating clips";
+    case "failed":
+      return "Failed";
+    default:
+      return status.replaceAll("_", " ");
+  }
+}
+
 export function GenerateSection<T extends GenerateConfigLike>({
   config,
   templates,
@@ -107,15 +140,15 @@ export function GenerateSection<T extends GenerateConfigLike>({
   };
 
   return (
-    <section className="mx-auto grid w-full max-w-4xl min-w-0 gap-5">
-      <div className="min-w-0 rounded-[24px] border border-white/[0.08] bg-surface p-4 sm:rounded-[28px] sm:p-5">
+    <section className="grid w-full min-w-0 gap-5">
+      <div className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 shadow-[0_0_0_1px_rgba(102,232,249,0.04)] sm:rounded-[32px] sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan">New clip batch</p>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Paste the source. Every result waits in Review before publishing.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Paste a YouTube link. Results wait in Review before publishing.</p>
           </div>
           <div className="flex shrink-0 items-center gap-2 rounded-full border border-white/[0.08] bg-canvas-deep px-3 py-2 text-xs">
-            <span className="font-semibold text-white">{config.count} clips</span>
+            <span className="font-semibold text-white">{clipCountLabel(config.count)}</span>
             <span className="text-zinc-600">·</span>
             <span className="text-zinc-400">{config.clipMinSeconds}–{config.clipMaxSeconds}s</span>
           </div>
@@ -176,31 +209,39 @@ export function GenerateSection<T extends GenerateConfigLike>({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Current run</p>
-                  <p className="mt-1 text-sm font-semibold text-white">{latest.count} clips</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{clipCountLabel(latest.count)}</p>
                 </div>
                 <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(latest.status)}`}>
-                  {latest.status === "completed" ? "Ready for review" : latest.status === "running" || latest.status === "queued" ? "Creating clips" : latest.status}
+                  {runStatusLabel(latest.status)}
                 </span>
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
-                  <span>{latest.status === "completed" ? "Generation complete" : "Processing source"}</span>
+                  <span>
+                    {latest.status === "completed"
+                      ? "Generation complete"
+                      : latest.status === "failed"
+                        ? "Stopped"
+                        : "Processing source"}
+                  </span>
                   <span className="font-semibold tabular-nums text-cyan">{latestProgress}%</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-surface-strong">
                   <div className="h-full rounded-full bg-cyan transition-[width] duration-500 motion-reduce:transition-none" style={{width: `${Math.max(4, latestProgress)}%`}} />
                 </div>
               </div>
-              {latest.error ? <p className="text-xs text-danger">{latest.error}</p> : null}
+              {latest.error ? <p className="text-sm leading-6 text-danger">{humanizeGenerationError(latest.error)}</p> : null}
               {latest.status === "completed" ? (
                 <button type="button" onClick={onOpenReview} className="inline-flex w-fit items-center gap-2 rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink transition hover:bg-cyan/90">
                   Review clips <ArrowRight className="h-4 w-4" />
                 </button>
               ) : null}
-              <details>
-                <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-500 hover:text-zinc-300">Technical details</summary>
-                <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-black/40 p-3 text-[11px] leading-5 text-zinc-400">{latest.error || latest.log_text || "Waiting…"}</pre>
-              </details>
+              {(latest.error || latest.log_text) && (
+                <details>
+                  <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-500 hover:text-zinc-300">Technical details</summary>
+                  <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-black/40 p-3 text-[11px] leading-5 text-zinc-400">{latest.error || latest.log_text || "Waiting…"}</pre>
+                </details>
+              )}
             </div>
           ) : null}
 
@@ -212,7 +253,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
             <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
               Advanced
               <span className="ml-2 text-xs font-medium text-zinc-500">
-                style · duration · genres · captions
+                style · duration · genres · captions · CLI
               </span>
             </summary>
 
@@ -353,24 +394,25 @@ export function GenerateSection<T extends GenerateConfigLike>({
                 <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
                 <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
               </div>
+
+              <div className="rounded-[20px] border border-white/[0.06] bg-black/20 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-white">Run outside the app</h4>
+                    <p className="mt-1 text-xs text-zinc-500">Copy the CLI command only if you need it.</p>
+                  </div>
+                  <button type="button" onClick={onCopy} className="inline-flex w-fit rounded-full border border-white/[0.10] bg-white/[0.04] px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-cyan/30 hover:text-cyan">
+                    <Copy className="mr-2 h-4 w-4" /> Copy
+                  </button>
+                </div>
+                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-white/[0.06] bg-canvas-deep p-3 text-[11px] leading-5 text-zinc-400">{command}</pre>
+              </div>
             </div>
           </details>
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-5">
-        {!latest ? renderEmptyState("Ready when you are", "Paste a YouTube link above to create your first clip batch.") : null}
-        <details className="min-w-0 rounded-[24px] border border-white/[0.08] bg-surface/60 p-4 sm:rounded-[28px] sm:p-5">
-          <summary className="flex cursor-pointer list-none flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-lg font-semibold text-white">Run outside the app</h3>
-              <p className="mt-1 text-sm text-zinc-500">Copy the CLI command only if you need it.</p>
-            </div>
-            <button type="button" onClick={(event) => { event.preventDefault(); onCopy(); }} className="inline-flex w-fit rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink"><Copy className="mr-2 h-4 w-4" /> Copy</button>
-          </summary>
-          <pre className="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4 text-xs leading-6 text-zinc-300 sm:p-5">{command}</pre>
-        </details>
-      </div>
+      {!latest ? renderEmptyState("Ready when you are", "Paste a YouTube link above to create your first clip batch.") : null}
 
       <FocusModal open={templatePickerOpen} title="Choose video template" subtitle="Pick a visual style before generating clips." width="wide" onClose={() => setTemplatePickerOpen(false)}>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
