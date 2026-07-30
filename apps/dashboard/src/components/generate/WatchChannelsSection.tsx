@@ -8,7 +8,7 @@ type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 
 type Props = {
   channels: WatchChannel[];
-  profileId: string;
+  workspaceName: string;
   actionStates: Record<string, ActionUiState>;
   onAdd: (channelUrl: string, label: string) => Promise<void> | void;
   onToggle: (channel: WatchChannel, enabled: boolean) => Promise<void> | void;
@@ -28,7 +28,7 @@ function formatStamp(value?: string) {
 
 export function WatchChannelsSection({
   channels,
-  profileId,
+  workspaceName,
   actionStates,
   onAdd,
   onToggle,
@@ -38,21 +38,25 @@ export function WatchChannelsSection({
 }: Props) {
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
+  const name = (workspaceName || "").trim() || "This workspace";
 
   return (
-    <section className="rounded-[28px] border border-white/[0.07] bg-surface/30 p-5">
+    <section className="rounded-[24px] border border-white/[0.06] bg-black/15 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Watch YouTube sources</p>
-          <h3 className="mt-1 text-lg font-semibold text-white">Auto-clip new uploads</h3>
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Optional · Watch sources</p>
+          <h3 className="mt-1 text-base font-semibold text-white">Auto-clip new uploads</h3>
           <p className="mt-1 max-w-2xl text-sm text-zinc-500">
-            Workspace <span className="font-semibold text-zinc-300">{profileId}</span> polls a YouTube channel for new videos and enqueues clip jobs. This is not where you connect Facebook/TikTok publish accounts — use Publish accounts for that.
+            {name} can watch a YouTube channel and queue clips automatically.
+          </p>
+          <p className="mt-1 text-xs text-zinc-600">
+            Publish accounts (Facebook / TikTok / …) are managed under Publish — not here.
           </p>
         </div>
       </div>
 
       <form
-        className="mt-5 grid gap-3 md:grid-cols-[1fr_180px_auto]"
+        className="mt-4 grid gap-3 md:grid-cols-[1fr_160px_auto]"
         onSubmit={(event) => {
           event.preventDefault();
           void (async () => {
@@ -78,18 +82,18 @@ export function WatchChannelsSection({
         <button
           type="submit"
           disabled={Boolean(actionStates["watch:add"]?.status === "running")}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-sm font-semibold text-ink disabled:opacity-60"
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-white/[0.04] px-5 text-sm font-semibold text-zinc-200 hover:border-cyan/30 hover:text-cyan disabled:opacity-60"
         >
           {actionStates["watch:add"]?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Add YouTube source
+          Add source
         </button>
       </form>
       {renderActionStatus(actionStates["watch:add"])}
 
-      <div className="mt-5 grid gap-3">
+      <div className="mt-4 grid gap-3">
         {channels.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/[0.08] bg-black/20 px-4 py-8 text-center text-sm text-zinc-500">
-            No watched YouTube sources yet. Paste a channel URL to start auto-clipping new uploads.
+          <div className="rounded-2xl border border-dashed border-white/[0.06] bg-black/10 px-4 py-6 text-center text-sm text-zinc-600">
+            No watched channels yet.
           </div>
         ) : (
           channels.map((channel) => {
@@ -98,7 +102,7 @@ export function WatchChannelsSection({
               actionStates[`watch:${channel.id}:toggle`]?.status === "running" ||
               actionStates[`watch:${channel.id}:delete`]?.status === "running";
             return (
-              <article key={channel.id} className="rounded-2xl border border-white/[0.07] bg-black/20 p-4">
+              <article key={channel.id} className="rounded-2xl border border-white/[0.06] bg-black/20 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -109,13 +113,16 @@ export function WatchChannelsSection({
                       </span>
                     </div>
                     <p className="mt-1 truncate text-xs text-zinc-500">{channel.channel_url}</p>
-                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
-                      <span>Last poll: {formatStamp(channel.last_polled_at)}</span>
-                      <span>Last new: {channel.last_new_video_id || "—"}</span>
-                      <span>Last job: {channel.last_clip_job_id || "—"}</span>
-                      <span>Permission: {channel.permission_status}</span>
-                    </div>
+                    <p className="mt-2 text-[11px] text-zinc-500">Last poll: {formatStamp(channel.last_polled_at)}</p>
                     {channel.last_error ? <p className="mt-2 text-xs text-danger">{channel.last_error}</p> : null}
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[11px] font-medium text-zinc-600 hover:text-zinc-400">Details</summary>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-zinc-500">
+                        <span>Last new: {channel.last_new_video_id || "—"}</span>
+                        <span>Last job: {channel.last_clip_job_id || "—"}</span>
+                        <span>Permission: {channel.permission_status}</span>
+                      </div>
+                    </details>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button

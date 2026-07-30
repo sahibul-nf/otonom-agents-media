@@ -1181,17 +1181,7 @@ export function MediaStudioApp() {
           )}
 
           {section === "generate" && (
-            <>
-            <WatchChannelsSection
-              channels={watchChannels}
-              profileId={profileId}
-              actionStates={actionStates}
-              onAdd={addWatchChannel}
-              onToggle={toggleWatchChannel}
-              onPoll={pollWatchChannelNow}
-              onDelete={deleteWatchChannel}
-              renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
-            />
+            <div className="grid gap-6">
             <GenerateSection
               config={generateConfig}
               templates={templates}
@@ -1213,7 +1203,17 @@ export function MediaStudioApp() {
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
               renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
             />
-            </>
+            <WatchChannelsSection
+              channels={watchChannels}
+              workspaceName={profiles.find((profile) => profile.id === profileId)?.name || profileId}
+              actionStates={actionStates}
+              onAdd={addWatchChannel}
+              onToggle={toggleWatchChannel}
+              onPoll={pollWatchChannelNow}
+              onDelete={deleteWatchChannel}
+              renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
+            />
+            </div>
           )}
 
           {section === "explainer" && (
