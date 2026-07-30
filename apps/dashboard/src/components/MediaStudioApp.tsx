@@ -423,6 +423,9 @@ MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPA
 export function MediaStudioApp() {
   const [section, setSection] = useState<Section>("dashboard");
   const [profileId, setProfileId] = useState("nourbit");
+  const [profileReady, setProfileReady] = useState(false);
+  const profileIdRef = useRef(profileId);
+  profileIdRef.current = profileId;
   const [profiles, setProfiles] = useState<MediaProfile[]>([]);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
   const [watchChannels, setWatchChannels] = useState<WatchChannel[]>([]);
@@ -472,7 +475,10 @@ export function MediaStudioApp() {
   });
 
   useEffect(() => {
-    setProfileId(readStoredProfileId());
+    const stored = readStoredProfileId();
+    profileIdRef.current = stored;
+    setProfileId(stored);
+    setProfileReady(true);
   }, []);
 
   const profileClips = useMemo(
@@ -498,7 +504,7 @@ export function MediaStudioApp() {
     approvedCount: approved,
     scheduledCount,
     readyPlatforms,
-    targetCount: activeTargets.length || publishPlatforms.length,
+    targetCount: activeTargets.length,
     engineReady,
     hasTemplate,
   });
@@ -511,7 +517,7 @@ export function MediaStudioApp() {
     approvedCount: approved,
     scheduledCount,
     readyPlatforms,
-    targetCount: activeTargets.length || publishPlatforms.length,
+    targetCount: activeTargets.length,
     engineReady,
     hasTemplate,
   });
@@ -550,7 +556,9 @@ export function MediaStudioApp() {
     setBusy(true);
     setStatus("Syncing media engine...");
     try {
-      const activeProfile = profileId || readStoredProfileId();
+      // Prefer the live ref so mount/interval callers never sync the wrong workspace
+      // after localStorage hydrate (e.g. nourbit default → workspace).
+      const activeProfile = profileIdRef.current || readStoredProfileId();
       const [
         reviewRows,
         targetRows,
@@ -632,11 +640,13 @@ export function MediaStudioApp() {
   }
 
   function switchProfile(nextProfileId: string) {
+    profileIdRef.current = nextProfileId;
     setProfileId(nextProfileId);
+    setTargets([]);
+    setCredentials(null);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(PROFILE_STORAGE_KEY, nextProfileId);
     }
-    window.setTimeout(() => void refreshAll(), 0);
   }
 
   async function copyText(value: string, label = "Copied") {
@@ -912,6 +922,11 @@ export function MediaStudioApp() {
   }
 
   async function testConnection(platform: string) {
+    if (!credentials?.platforms[platform]?.ready) {
+      setStatus(`Connect ${platformLabel(platform)} before testing`);
+      pushToast(`Connect ${platformLabel(platform)} first`, "info");
+      return;
+    }
     const key = `test:${platform}`;
     const message = `Testing ${platformLabel(platform)} connection...`;
     setStatus(message);
@@ -921,6 +936,22 @@ export function MediaStudioApp() {
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Connection check failed");
+    }
+  }
+
+  async function saveConnectionCredentials(platform: string, values: Record<string, string>) {
+    const key = `credentials:${platform}`;
+    try {
+      await runAction(
+        key,
+        `Saving ${platformLabel(platform)} credentials...`,
+        () => apiPost("connection-credentials", {platform, profile_id: profileId, values}),
+        `${platformLabel(platform)} connected`,
+      );
+      setStatus(`${platformLabel(platform)} credentials saved`);
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Credential save failed");
     }
   }
 
@@ -1006,11 +1037,12 @@ export function MediaStudioApp() {
   }, []);
 
   useEffect(() => {
+    if (!profileReady) return;
     const timer = window.setTimeout(() => {
       void refreshAll();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [profileId, profileReady]);
 
   useEffect(() => {
     if (!toasts.length) return;
@@ -1141,7 +1173,7 @@ export function MediaStudioApp() {
               nextAction={nextAction}
               workflowSteps={workflowSteps}
               readyPlatforms={readyPlatforms}
-              targetCount={activeTargets.length || publishPlatforms.length}
+              targetCount={activeTargets.length}
               activeJobs={jobs.filter((job) => job.status === "queued" || job.status === "running").length}
               onSection={setSection}
             />
@@ -1294,6 +1326,7 @@ export function MediaStudioApp() {
               onTestConnection={testConnection}
               onStartOauth={startOauthConnect}
               onDisconnect={disconnectPlatform}
+              onSaveCredentials={saveConnectionCredentials}
               onUpdateDelivery={updateDeliverySettings}
               oauthPlatforms={oauthPlatforms}
               publicAccountLabel={publicAccountLabel}
@@ -1301,9 +1334,10 @@ export function MediaStudioApp() {
               formatPlatformMode={formatPlatformMode}
               cleanPublishStatus={cleanPublishStatus}
               statusTone={statusTone}
-              renderSettingTile={(label, value) => <SettingTile label={label} value={value} />}
               renderReadinessLine={(ready, label, detail) => <ReadinessLine ready={ready} label={label} detail={detail} />}
-              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
+              renderEmptyState={(title, text) => (
+                <EmptyState title={title} text={text} actionLabel="Load destinations" onAction={() => void refreshAll()} />
+              )}
             />
           )}
 
