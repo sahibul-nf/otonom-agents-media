@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Publish connect-first UX (#42): OAuth platforms show **Connect account** as the primary CTA; Telegram opens a connect dialog for bot token + channel; quieter cards; Auto publish only after connect; sidebar is logs-only.
+- Publish destinations UI: fixed workspace hydrate race that left Publish empty (0/0) while the sidebar showed 0/4; sync now waits for the stored workspace and Load destinations re-fetches/seeds rows.
 - Channels empty fix (#39): new workspaces and empty `workspace` profiles auto-seed Telegram / YouTube Shorts / Facebook Reels / TikTok publish destinations; Create says “Watch YouTube sources”, sidebar/publish says “Publish accounts”.
 - Workspace CRUD in dashboard (#36): **Manage** next to the workspace switcher creates / renames / deletes workspaces via API (`POST /api/profiles`, `/api/profile-update`, `/api/profile-delete`). Built-in `nourbit` and `workspace` cannot be deleted; custom workspaces need slide-confirm and `force` when clips/schedule/channels remain. Create initializes an empty credential vault for that profile.
 - Workspace-scoped publish credentials (#34): Facebook/YouTube/TikTok/Telegram account tokens live in a per-profile vault under `media-engine/data/credentials/` (gitignored); OAuth connect/disconnect and live publish resolve the active workspace. Existing `.env.local` account keys migrate once into `nourbit`.
