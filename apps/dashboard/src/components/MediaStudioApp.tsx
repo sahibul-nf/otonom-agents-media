@@ -199,7 +199,7 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
   publish: {
     title: "Publish accounts",
-    subtitle: "Connect Facebook, YouTube, TikTok, or Telegram for this workspace — separate from watching YouTube sources on Create.",
+    subtitle: "Connect the accounts this workspace publishes to.",
   },
   brand: {
     title: "Brand",
@@ -1328,16 +1328,13 @@ export function MediaStudioApp() {
               onDisconnect={disconnectPlatform}
               onSaveCredentials={saveConnectionCredentials}
               onUpdateDelivery={updateDeliverySettings}
+              onRefresh={() => void refreshAll()}
               oauthPlatforms={oauthPlatforms}
               publicAccountLabel={publicAccountLabel}
               publishActionHint={publishActionHint}
               formatPlatformMode={formatPlatformMode}
               cleanPublishStatus={cleanPublishStatus}
               statusTone={statusTone}
-              renderReadinessLine={(ready, label, detail) => <ReadinessLine ready={ready} label={label} detail={detail} />}
-              renderEmptyState={(title, text) => (
-                <EmptyState title={title} text={text} actionLabel="Load destinations" onAction={() => void refreshAll()} />
-              )}
             />
           )}
 
