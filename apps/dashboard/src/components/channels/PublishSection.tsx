@@ -152,71 +152,112 @@ platformThemes.telegram_channel = {
   iconBg: "bg-sky-600/10 text-sky-400 border border-sky-500/20",
 };
 
-function TelegramConnectForm({
-  disabled,
+function TelegramConnectDialog({
+  open,
   saving,
+  onClose,
   onSave,
 }: {
-  disabled?: boolean;
+  open: boolean;
   saving?: boolean;
-  onSave: (values: Record<string, string>) => void;
+  onClose: () => void;
+  onSave: (values: Record<string, string>) => void | Promise<void>;
 }) {
   const [botToken, setBotToken] = useState("");
   const [channelId, setChannelId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(event: FormEvent) {
+  if (!open) return null;
+
+  const busy = saving || submitting;
+  const canSubmit = Boolean(botToken.trim() && channelId.trim()) && !busy;
+
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const token = botToken.trim();
     const channel = channelId.trim();
-    if (!token || !channel) return;
-    onSave({
-      TELEGRAM_BOT_TOKEN: token,
-      TELEGRAM_CHANNEL_ID: channel,
-      TELEGRAM_CHAT_ID: channel,
-    });
+    if (!token || !channel || busy) return;
+    setSubmitting(true);
+    try {
+      await onSave({
+        TELEGRAM_BOT_TOKEN: token,
+        TELEGRAM_CHANNEL_ID: channel,
+        TELEGRAM_CHAT_ID: channel,
+      });
+      setBotToken("");
+      setChannelId("");
+      onClose();
+    } catch {
+      // Parent surfaces the error toast/status.
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-4 grid gap-2.5">
-      <label className="grid gap-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-        Bot token
-        <input
-          type="password"
-          autoComplete="off"
-          value={botToken}
-          disabled={disabled || saving}
-          onChange={(event) => setBotToken(event.target.value)}
-          placeholder="123456:ABC…"
-          className="h-10 rounded-xl border border-white/[0.08] bg-black/30 px-3 text-sm font-normal normal-case tracking-normal text-white outline-none focus:border-cyan/40"
-        />
-      </label>
-      <label className="grid gap-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-        Channel or chat id
-        <input
-          type="text"
-          autoComplete="off"
-          value={channelId}
-          disabled={disabled || saving}
-          onChange={(event) => setChannelId(event.target.value)}
-          placeholder="@mychannel or -100…"
-          className="h-10 rounded-xl border border-white/[0.08] bg-black/30 px-3 text-sm font-normal normal-case tracking-normal text-white outline-none focus:border-cyan/40"
-        />
-      </label>
-      <button
-        type="submit"
-        disabled={disabled || saving || !botToken.trim() || !channelId.trim()}
-        className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink shadow-[0_8px_24px_rgba(102,232,249,0.18)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="telegram-connect-title">
+      <button type="button" aria-label="Close dialog" className="absolute inset-0 cursor-default" onClick={onClose} />
+      <form
+        onSubmit={(event) => void handleSubmit(event)}
+        className="relative z-10 w-full max-w-md rounded-[28px] border border-white/[0.10] bg-surface p-5 shadow-2xl"
       >
-        {saving ? (
-          <>
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <span>Saving…</span>
-          </>
-        ) : (
-          <span>Save &amp; connect</span>
-        )}
-      </button>
-    </form>
+        <div className="mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-teal/[0.14] text-cyan">
+          <Send className="h-5 w-5" />
+        </div>
+        <h3 id="telegram-connect-title" className="text-xl font-semibold text-white">
+          Connect Telegram
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-zinc-400">Enter the bot token and channel (or chat) id for this workspace.</p>
+
+        <div className="mt-5 grid gap-3">
+          <label className="grid gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            Bot token
+            <input
+              type="password"
+              autoComplete="off"
+              data-autofocus
+              value={botToken}
+              disabled={busy}
+              onChange={(event) => setBotToken(event.target.value)}
+              placeholder="123456:ABC…"
+              className="h-11 rounded-xl border border-white/[0.08] bg-black/30 px-3 text-sm font-normal normal-case tracking-normal text-white outline-none focus:border-cyan/40"
+            />
+          </label>
+          <label className="grid gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            Channel or chat id
+            <input
+              type="text"
+              autoComplete="off"
+              value={channelId}
+              disabled={busy}
+              onChange={(event) => setChannelId(event.target.value)}
+              placeholder="@mychannel or -100…"
+              className="h-11 rounded-xl border border-white/[0.08] bg-black/30 px-3 text-sm font-normal normal-case tracking-normal text-white outline-none focus:border-cyan/40"
+            />
+          </label>
+        </div>
+
+        <div className="mt-6 grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-full border border-white/[0.10] text-sm font-semibold text-zinc-300 hover:bg-white/[0.04] disabled:opacity-40">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="inline-flex h-11 items-center justify-center gap-1.5 rounded-full bg-cyan text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {busy ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Saving…</span>
+              </>
+            ) : (
+              <span>Save &amp; connect</span>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -250,7 +291,7 @@ export function PublishSection({
   onTestConnection: (platform: string) => void;
   onStartOauth: (platform: string) => void;
   onDisconnect: (platform: string) => void;
-  onSaveCredentials?: (platform: string, values: Record<string, string>) => void;
+  onSaveCredentials?: (platform: string, values: Record<string, string>) => void | Promise<void>;
   onUpdateDelivery?: (target: PublishTarget, patch: {daily_cap?: number; enabled?: boolean; mode?: string}) => void;
   onRefresh?: () => void;
   publicAccountLabel: (target: PublishTarget) => string;
@@ -259,6 +300,7 @@ export function PublishSection({
   cleanPublishStatus: (status?: string) => string;
   statusTone: (status: string) => string;
 }) {
+  const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
   const latestByPlatform = new Map<string, PublishAttempt>();
   for (const attempt of attempts) {
     if (!latestByPlatform.has(attempt.platform)) latestByPlatform.set(attempt.platform, attempt);
@@ -266,6 +308,7 @@ export function PublishSection({
 
   const connectedCount = targets.filter((target) => credentials?.platforms[target.platform]?.ready).length;
   const recentLogs = Array.from(latestByPlatform.values());
+  const telegramSaving = actionStates["credentials:telegram_channel"]?.status === "running";
 
   return (
     <section className="grid gap-6 xl:grid-cols-[1fr_360px]">
@@ -304,7 +347,6 @@ export function PublishSection({
             ].find((item) => item?.status === "running");
             const isBusy = Boolean(activeAction);
             const connectRunning = actionStates[`connect:${target.platform}`]?.status === "running";
-            const credentialsRunning = actionStates[`credentials:${target.platform}`]?.status === "running";
             const testRunning = actionStates[`test:${target.platform}`]?.status === "running";
 
             const pt = platformThemes[target.platform] || {
@@ -355,14 +397,6 @@ export function PublishSection({
                   </p>
                 </div>
 
-                {!ready && isTelegram && onSaveCredentials ? (
-                  <TelegramConnectForm
-                    disabled={isBusy}
-                    saving={credentialsRunning}
-                    onSave={(values) => onSaveCredentials(target.platform, values)}
-                  />
-                ) : null}
-
                 {ready && onUpdateDelivery ? (
                   <details className="mt-4 border-t border-white/[0.06] pt-3">
                     <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-300">
@@ -403,14 +437,20 @@ export function PublishSection({
                 ) : null}
 
                 <div className="mt-4 flex items-center gap-2">
-                  {supportsOauth && !ready ? (
+                  {(supportsOauth || isTelegram) && !ready ? (
                     <button
                       type="button"
-                      disabled={isBusy}
-                      onClick={() => onStartOauth(target.platform)}
+                      disabled={isBusy || (isTelegram && !onSaveCredentials)}
+                      onClick={() => {
+                        if (isTelegram) {
+                          setTelegramDialogOpen(true);
+                          return;
+                        }
+                        onStartOauth(target.platform);
+                      }}
                       className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink shadow-[0_8px_24px_rgba(102,232,249,0.18)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {connectRunning ? (
+                      {connectRunning || (isTelegram && telegramSaving) ? (
                         <>
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           <span>Connecting…</span>
@@ -486,6 +526,15 @@ export function PublishSection({
           )}
         </div>
       </div>
+
+      {onSaveCredentials ? (
+        <TelegramConnectDialog
+          open={telegramDialogOpen}
+          saving={telegramSaving}
+          onClose={() => setTelegramDialogOpen(false)}
+          onSave={(values) => onSaveCredentials("telegram_channel", values)}
+        />
+      ) : null}
     </section>
   );
 }

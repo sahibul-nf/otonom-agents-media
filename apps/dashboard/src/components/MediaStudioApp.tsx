@@ -952,6 +952,7 @@ export function MediaStudioApp() {
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Credential save failed");
+      throw error;
     }
   }
 
