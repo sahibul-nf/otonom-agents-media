@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import {useRouter} from "next/navigation";
-import {ArrowLeft, ChevronDown, Loader2} from "lucide-react";
+import {ArrowLeft, ChevronDown, Loader2, SlidersHorizontal, X} from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
-import type {ReactNode} from "react";
-import {TemplatePreview} from "@/components/templates/TemplatePreview";
+import {BrandStudioPreview} from "@/components/brand/BrandStudioPreview";
 import {
   apiGet,
   apiPost,
@@ -57,7 +56,8 @@ type WorkspaceProps = {
   onTemplateSaved: () => void | Promise<void>;
 };
 
-const fontOptions = ["Sora", "Inter", "Montserrat", "Poppins", "Roboto", "Arial", "system-ui"];
+const fontOptions = ["Sora", "Inter", "Montserrat", "Poppins", "Roboto", "Arial", "system-ui"] as const;
+type DockTab = "look" | "type" | "more";
 
 function hexFromColor(value: unknown, fallback: string) {
   const text = String(value || "").trim();
@@ -113,6 +113,16 @@ function snapshot(label: string, selectedTemplate: string, editor: EditorState) 
   return JSON.stringify({label, selectedTemplate, editor});
 }
 
+function catalogOptions(catalog: HyperframesCatalog | null, category: string, fallback: string[]) {
+  const items = (catalog?.items || []).filter((item) => item.category === category && item.status !== "experimental");
+  return items.length
+    ? items.map((item) => ({
+        value: item.id,
+        label: item.status === "production-ready" ? item.label : `${item.label} · ${item.status}`,
+      }))
+    : fallback.map((value) => ({value, label: value}));
+}
+
 export function BrandBuilderWorkspace({
   style,
   templates,
@@ -140,13 +150,17 @@ export function BrandBuilderWorkspace({
   const [saveState, setSaveState] = useState("Ready");
   const [templateBusy, setTemplateBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
-  const [fontAvailability, setFontAvailability] = useState<"checking" | "available" | "fallback">("checking");
+  const [dockTab, setDockTab] = useState<DockTab>("look");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [activePresetId, setActivePresetId] = useState(initialPreset || "");
   const [cleanSnapshot, setCleanSnapshot] = useState(() => snapshot(label, selectedTemplate, initialEditor));
   const currentSnapshot = snapshot(label, selectedTemplate, editor);
   const dirty = currentSnapshot !== cleanSnapshot;
   const selectedStarter = hyperframesTemplates.find((template) => template.id === editor.starterTemplate);
-  const selectedFontOption = useMemo(() => fontOptions.includes(editor.fontFamily) ? editor.fontFamily : "__custom", [editor.fontFamily]);
-  const captionSampleSize = Math.min(Math.max(editor.fontSize - 18, 22), 34);
+  const ambientVideoUrl = useMemo(() => {
+    if (!selectedStarter) return null;
+    return selectedStarter.preview_video_urls?.short_9_16 || selectedStarter.preview_urls?.short_9_16 || null;
+  }, [selectedStarter]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -158,28 +172,15 @@ export function BrandBuilderWorkspace({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirty]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function checkFont() {
-      setFontAvailability("checking");
-      if (editor.fontFamily === "system-ui") {
-        setFontAvailability("available");
-        return;
-      }
-      try {
-        await document.fonts.ready;
-        if (!cancelled) setFontAvailability(document.fonts.check(`16px "${editor.fontFamily}"`) ? "available" : "fallback");
-      } catch {
-        if (!cancelled) setFontAvailability("fallback");
-      }
-    }
-    void checkFont();
-    return () => {
-      cancelled = true;
-    };
-  }, [editor.fontFamily]);
+  const updateEditor = (patch: Partial<EditorState>) => {
+    setActivePresetId("");
+    setEditor((current) => ({...current, ...patch}));
+  };
 
-  const updateEditor = (patch: Partial<EditorState>) => setEditor((current) => ({...current, ...patch}));
+  function applyPreset(presetId: string) {
+    setActivePresetId(presetId);
+    setEditor((current) => applyPresetToEditor(current, presetId));
+  }
 
   function leaveBuilder() {
     if (dirty && !window.confirm("Discard your unsaved Brand Builder changes?")) return;
@@ -189,7 +190,7 @@ export function BrandBuilderWorkspace({
   async function loadTemplate(path: string, markClean = false) {
     setSelectedTemplate(path);
     setTemplateBusy(true);
-    setSaveState("Loading template...");
+    setSaveState("Loading…");
     try {
       const loaded = await apiGet<StyleProfile>(`style?path=${encodeURIComponent(path)}`);
       const nextEditor = editorFromStyle(loaded, editor.starterTemplate);
@@ -197,10 +198,11 @@ export function BrandBuilderWorkspace({
       const nextLabel = template?.label ? `${template.label} Copy` : "Custom Workspace Template";
       setEditor(nextEditor);
       setLabel(nextLabel);
+      setActivePresetId("");
       if (markClean) setCleanSnapshot(snapshot(nextLabel, path, nextEditor));
-      setSaveState("Template loaded");
+      setSaveState("Loaded");
     } catch (error) {
-      setSaveState(error instanceof Error ? error.message : "Template load failed");
+      setSaveState(error instanceof Error ? error.message : "Load failed");
     } finally {
       setTemplateBusy(false);
     }
@@ -210,13 +212,12 @@ export function BrandBuilderWorkspace({
     if (!validInitialBase || validInitialBase === defaultTemplate) return;
     const frame = window.requestAnimationFrame(() => void loadTemplate(validInitialBase, true));
     return () => window.cancelAnimationFrame(frame);
-    // The deep-link base is loaded once when the workspace mounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function saveTemplate() {
     setSaveBusy(true);
-    setSaveState("Saving...");
+    setSaveState("Saving…");
     try {
       await apiPost("brand-system-templates", {
         label,
@@ -243,7 +244,7 @@ export function BrandBuilderWorkspace({
         base_template: selectedTemplate,
       });
       setCleanSnapshot(snapshot(label, selectedTemplate, editor));
-      setSaveState("Template saved");
+      setSaveState("Saved");
       await onTemplateSaved();
     } catch (error) {
       setSaveState(error instanceof Error ? error.message : "Save failed");
@@ -253,207 +254,298 @@ export function BrandBuilderWorkspace({
   }
 
   return (
-    <main className="min-h-screen bg-canvas-deep text-zinc-100">
-      <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-canvas-deep/90 px-4 py-3 backdrop-blur-xl lg:px-8">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <button type="button" onClick={leaveBuilder} className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.10] text-zinc-300 hover:border-cyan/[0.30] hover:text-white" aria-label="Back to Brand">
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="min-w-0">
-              <h1 className="truncate text-base font-semibold text-white">Brand builder</h1>
-              <p className="truncate text-xs text-zinc-500">{selectedStarter?.label || "Custom style"} · live caption preview</p>
-            </div>
+    <main className="flex h-dvh flex-col overflow-hidden bg-[#0a0b0e] text-zinc-100">
+      <header className="z-40 flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-2.5 sm:px-5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <button
+            type="button"
+            onClick={leaveBuilder}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+            aria-label="Back to Brand"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-white">Brand studio</p>
+            <p className="truncate text-[11px] text-zinc-500">{selectedStarter?.label || "Custom"} · live caption</p>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
-            <span className={`hidden text-xs font-semibold sm:inline ${dirty ? "text-warning" : "text-zinc-500"}`}>{dirty ? "Unsaved" : saveState}</span>
-            <button type="button" disabled={!dirty || saveBusy || templateBusy} onClick={() => void saveTemplate()} className="inline-flex h-10 items-center gap-2 rounded-full bg-cyan px-5 text-xs font-bold uppercase tracking-wider text-ink disabled:cursor-not-allowed disabled:opacity-45">
-              {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saveBusy ? "Saving..." : "Save"}
-            </button>
-          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`hidden text-[11px] font-medium sm:inline ${dirty ? "text-warning" : "text-zinc-500"}`}>
+            {dirty ? "Unsaved" : saveState}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="grid h-9 w-9 place-items-center rounded-full border border-white/[0.08] text-zinc-300 transition hover:border-white/[0.16] hover:text-white"
+            aria-label="More settings"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            disabled={!dirty || saveBusy || templateBusy}
+            onClick={() => void saveTemplate()}
+            className="inline-flex h-9 items-center gap-2 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {saveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Save
+          </button>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1440px] gap-6 px-4 py-6 lg:px-8 xl:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
-        <aside className="order-1 min-w-0 xl:order-2 xl:sticky xl:top-[88px] xl:self-start">
-          <div className="rounded-[28px] border border-white/[0.08] bg-surface/25 p-4 backdrop-blur-md sm:p-5">
-            <div className="mb-4 flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold text-white">Preview</h2>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">9:16 · hover to play</span>
-            </div>
+      {/* Stage — preview owns the viewport */}
+      <div
+        className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4 py-4"
+        style={{
+          background: `
+            radial-gradient(ellipse 60% 50% at 50% 35%, ${editor.highlightColor}14, transparent 60%),
+            radial-gradient(circle at 50% 100%, rgba(98,238,248,.04), transparent 40%),
+            #0a0b0e
+          `,
+        }}
+      >
+        <BrandStudioPreview
+          look={editor}
+          ambientVideoUrl={ambientVideoUrl}
+          recipeLabel={selectedStarter?.label}
+        />
+      </div>
 
-            <div className="relative mx-auto aspect-[9/16] w-full max-w-[18rem] overflow-hidden rounded-[18px] border border-white/[0.08] bg-[#050507] shadow-[0_24px_60px_rgba(0,0,0,.45)]">
-              {selectedStarter ? (
-                <TemplatePreview template={selectedStarter} compact gridCard hideFooterLabel hoverToPlay flush variant="studio" />
-              ) : (
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: `radial-gradient(circle at 50% 18%, ${editor.highlightColor}33, transparent 42%), linear-gradient(180deg, #1a1c22, #07080a 70%)`,
-                  }}
+      {/* Bottom dock — visual tools, not a form wall */}
+      <div className="z-30 shrink-0 border-t border-white/[0.07] bg-[#101114]/95 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-3xl gap-1 px-3 pt-2">
+          {(
+            [
+              {id: "look" as const, label: "Look"},
+              {id: "type" as const, label: "Type"},
+              {id: "more" as const, label: "Motion"},
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setDockTab(tab.id)}
+              className={`flex-1 rounded-full py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${
+                dockTab === tab.id ? "bg-white/[0.1] text-white" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mx-auto max-w-3xl px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
+          {dockTab === "look" ? (
+            <div className="space-y-3">
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {brandPresets.map((preset) => {
+                  const active = activePresetId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyPreset(preset.id)}
+                      className={`shrink-0 rounded-2xl border px-3 py-2 text-left transition ${
+                        active ? "border-cyan/50 bg-cyan/[0.12]" : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.16]"
+                      }`}
+                    >
+                      <span className="mb-1.5 flex gap-1" aria-hidden>
+                        <span className="h-3 w-3 rounded-full" style={{background: preset.highlightColor}} />
+                        <span className="h-3 w-3 rounded-full border border-white/20" style={{background: preset.backgroundColor}} />
+                      </span>
+                      <span className="block max-w-[7.5rem] truncate text-[11px] font-semibold text-zinc-200">{preset.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                <Swatch label="Highlight" value={editor.highlightColor} onChange={(highlightColor) => updateEditor({highlightColor})} />
+                <Swatch label="Text" value={editor.textColor} onChange={(textColor) => updateEditor({textColor})} />
+                <Swatch label="Plate" value={editor.backgroundColor} onChange={(backgroundColor) => updateEditor({backgroundColor})} />
+              </div>
+            </div>
+          ) : null}
+
+          {dockTab === "type" ? (
+            <div className="space-y-3">
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {fontOptions.map((font) => {
+                  const active = editor.fontFamily === font;
+                  return (
+                    <button
+                      key={font}
+                      type="button"
+                      onClick={() => updateEditor({fontFamily: font})}
+                      className={`shrink-0 rounded-full border px-3.5 py-2 text-sm transition ${
+                        active ? "border-cyan/45 bg-cyan/[0.12] text-white" : "border-white/[0.08] text-zinc-300 hover:border-white/[0.16]"
+                      }`}
+                      style={{fontFamily: font}}
+                    >
+                      {font}
+                    </button>
+                  );
+                })}
+              </div>
+              <label className="block">
+                <span className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <span>Size</span>
+                  <span className="tabular-nums text-zinc-300">{editor.fontSize}px</span>
+                </span>
+                <input
+                  type="range"
+                  min={28}
+                  max={76}
+                  value={editor.fontSize}
+                  onChange={(event) => updateEditor({fontSize: Number(event.target.value)})}
+                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-cyan"
                 />
-              )}
-
-              {/* Single composed caption — owns the frame; no stacked recipe/demo blocks */}
-              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end">
-                <div className="bg-gradient-to-t from-black/75 via-black/25 to-transparent px-5 pb-5 pt-24">
-                  <div
-                    className="mx-auto max-w-[95%] rounded-2xl px-4 py-3 text-center leading-snug shadow-[0_12px_40px_rgba(0,0,0,.55)]"
-                    style={{
-                      background: editor.backgroundColor,
-                      color: editor.textColor,
-                      fontFamily: editor.fontFamily,
-                      fontSize: `${captionSampleSize}px`,
-                      fontWeight: 800,
-                      WebkitTextStroke: editor.strokeWidth > 0 ? `${Math.min(editor.strokeWidth / 3, 2.5)}px rgba(0,0,0,.55)` : undefined,
-                    }}
-                  >
-                    <span style={{color: editor.highlightColor}}>Sharp</span>
-                    {" "}
-                    key moment
-                  </div>
-                  {editor.watermarkText ? (
-                    <p className="mt-3 text-center text-[10px] font-medium tracking-wide text-zinc-400/90">{editor.watermarkText}</p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-black/25 px-2.5 py-1 text-[10px] font-semibold text-zinc-300">
-                <span className="h-2.5 w-2.5 rounded-full" style={{background: editor.highlightColor}} aria-hidden />
-                Highlight
-              </span>
-              <span className="rounded-full border border-white/[0.08] bg-black/25 px-2.5 py-1 text-[10px] font-semibold text-zinc-300">{editor.fontFamily}</span>
-              <span className="rounded-full border border-white/[0.08] bg-black/25 px-2.5 py-1 text-[10px] font-semibold text-zinc-300">{editor.fontSize}px</span>
-            </div>
-          </div>
-          <Link
-            href="/?section=brand"
-            onClick={(event) => {
-              if (dirty && !window.confirm("Discard your unsaved Brand Builder changes?")) event.preventDefault();
-            }}
-            className="mt-3 block text-center text-xs font-semibold text-zinc-500 hover:text-white"
-          >
-            Return to Brand library
-          </Link>
-        </aside>
-
-        <section className="order-2 min-w-0 xl:order-1">
-          <div className="mb-5">
-            <h2 className="text-xl font-semibold tracking-tight text-white">Tune this look</h2>
-            <p className="mt-1 text-sm text-zinc-500">Adjust what you see in the preview. Extra recipe slots stay under Advanced.</p>
-            {templateBusy ? <Loader2 className="mt-2 h-4 w-4 animate-spin text-cyan" /> : null}
-          </div>
-
-          <div className="grid gap-4">
-            <div className="rounded-[24px] border border-white/[0.08] bg-surface/20 p-5">
-              <p className="mb-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Look</p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FontField value={editor.fontFamily} selectedOption={selectedFontOption} availability={fontAvailability} onChange={(fontFamily) => updateEditor({fontFamily})} />
-                <ColorField label="Highlight" value={editor.highlightColor} onChange={(highlightColor) => updateEditor({highlightColor})} />
-                <ColorField label="Text" value={editor.textColor} onChange={(textColor) => updateEditor({textColor})} />
-                <ColorField label="Caption plate" value={editor.backgroundColor} onChange={(backgroundColor) => updateEditor({backgroundColor})} />
-              </div>
-            </div>
-
-            <ControlGroup title="Type details" summary={`${editor.fontSize}px · stroke ${editor.strokeWidth}`}>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <NumberField label="Font size" value={editor.fontSize} min={28} max={76} onChange={(fontSize) => updateEditor({fontSize})} />
-                <NumberField label="Stroke width" value={editor.strokeWidth} min={0} max={16} onChange={(strokeWidth) => updateEditor({strokeWidth})} />
-                <div className="sm:col-span-2">
-                  <TextField label="Watermark" value={editor.watermarkText} onChange={(watermarkText) => updateEditor({watermarkText})} />
-                </div>
-              </div>
-            </ControlGroup>
-
-            <ControlGroup title="Recipe components" summary={selectedStarter?.label || "Starter + overlays"}>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <SelectField
-                  label="Starter"
-                  value={editor.starterTemplate}
-                  options={(hyperframesTemplates.length ? hyperframesTemplates : [{id: "spiritual_reflective", label: "Spiritual Reflective"} as HyperframesTemplate]).map((template) => ({
-                    value: template.id,
-                    label: template.label,
-                  }))}
-                  onChange={(starterTemplate) => updateEditor({starterTemplate})}
+              </label>
+              <label className="block">
+                <span className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <span>Stroke</span>
+                  <span className="tabular-nums text-zinc-300">{editor.strokeWidth}</span>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={16}
+                  value={editor.strokeWidth}
+                  onChange={(event) => updateEditor({strokeWidth: Number(event.target.value)})}
+                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-cyan"
                 />
-                <SelectField
-                  label="Motion"
-                  value={editor.motionIntensity}
-                  options={[
+              </label>
+              <input
+                value={editor.watermarkText}
+                onChange={(event) => updateEditor({watermarkText: event.target.value})}
+                placeholder="Watermark"
+                className="h-10 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-cyan/35"
+              />
+            </div>
+          ) : null}
+
+          {dockTab === "more" ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
                     {value: "calm", label: "Calm"},
                     {value: "balanced", label: "Balanced"},
                     {value: "energetic", label: "Energetic"},
-                  ]}
-                  onChange={(motionIntensity) => updateEditor({motionIntensity})}
-                />
-                <SelectField label="Captions" value={editor.captionStyle} options={catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"])} onChange={(captionStyle) => updateEditor({captionStyle})} />
-                <SelectField label="Texture" value={editor.textureEffect} options={catalogOptions(hyperframesCatalog, "Texture/effects", ["vignette", "grain-overlay", "shimmer-sweep"])} onChange={(textureEffect) => updateEditor({textureEffect})} />
-                <SelectField label="Social callout" value={editor.ctaOverlay} options={catalogOptions(hyperframesCatalog, "Social overlays", ["yt-lower-third", "instagram-follow", "tiktok-follow"])} onChange={(ctaOverlay) => updateEditor({ctaOverlay})} />
-                <SelectField
-                  label="Transition"
-                  value={editor.transitionFamily}
-                  options={[
-                    {value: "dissolve", label: "Dissolve"},
-                    {value: "push", label: "Push"},
-                    {value: "zoom", label: "Zoom"},
-                    {value: "whip-pan", label: "Whip Pan"},
-                  ]}
-                  onChange={(transitionFamily) => updateEditor({transitionFamily})}
-                />
-                <SelectField
-                  label="Intro"
-                  value={editor.introLayout}
-                  options={[
-                    {value: "editorial-hook", label: "Editorial hook"},
-                    {value: "lower-third-hook", label: "Lower-third hook"},
-                    {value: "data-callout", label: "Data callout"},
-                    {value: "headline-slam", label: "Headline slam"},
-                  ]}
-                  onChange={(introLayout) => updateEditor({introLayout})}
-                />
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => updateEditor({motionIntensity: option.value})}
+                    className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
+                      editor.motionIntensity === option.value
+                        ? "border-cyan/45 bg-cyan/[0.12] text-white"
+                        : "border-white/[0.08] text-zinc-400 hover:border-white/[0.16]"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
-            </ControlGroup>
-
-            <ControlGroup title="Save as" summary={label}>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <TextField label="Template name" value={label} onChange={setLabel} />
-                <SelectField
-                  label="Baseline style"
-                  value={selectedTemplate}
-                  disabled={templateBusy}
-                  options={[{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}, ...templates.filter((template) => template.path !== defaultTemplate)].map((template) => ({
-                    value: template.path,
-                    label: template.label,
-                  }))}
-                  onChange={(path) => void loadTemplate(path)}
-                />
-              </div>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  disabled={!dirty || saveBusy || templateBusy}
-                  onClick={() => void saveTemplate()}
-                  className="inline-flex h-10 items-center gap-2 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  {saveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Save template
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                Caption highlight pace follows motion. Recipe overlays & save name live in{" "}
+                <button type="button" onClick={() => setSheetOpen(true)} className="font-semibold text-cyan hover:underline">
+                  More settings
                 </button>
-                <button
-                  type="button"
-                  disabled={saveBusy || templateBusy}
-                  onClick={() => void loadTemplate(selectedTemplate, true)}
-                  className="h-10 rounded-full border border-white/[0.10] px-4 text-xs font-bold uppercase tracking-wider text-zinc-300 disabled:opacity-45"
-                >
-                  Reset base
-                </button>
-              </div>
-            </ControlGroup>
-          </div>
-        </section>
+                .
+              </p>
+            </div>
+          ) : null}
+        </div>
       </div>
+
+      {sheetOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label="More brand settings">
+          <button type="button" className="absolute inset-0 cursor-default" aria-label="Close" onClick={() => setSheetOpen(false)} />
+          <div className="relative z-10 flex max-h-[min(88dvh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] border border-white/[0.1] bg-[#141518] shadow-2xl sm:rounded-[24px]">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+              <h2 className="text-sm font-semibold text-white">More settings</h2>
+              <button type="button" onClick={() => setSheetOpen(false)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-white/[0.06] hover:text-white" aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-4 overflow-y-auto px-4 py-4">
+              <FieldSelect
+                label="Starter recipe"
+                value={editor.starterTemplate}
+                options={(hyperframesTemplates.length ? hyperframesTemplates : [{id: "spiritual_reflective", label: "Spiritual Reflective"} as HyperframesTemplate]).map((template) => ({
+                  value: template.id,
+                  label: template.label,
+                }))}
+                onChange={(starterTemplate) => updateEditor({starterTemplate})}
+              />
+              <FieldSelect label="Captions" value={editor.captionStyle} options={catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"])} onChange={(captionStyle) => updateEditor({captionStyle})} />
+              <FieldSelect label="Texture" value={editor.textureEffect} options={catalogOptions(hyperframesCatalog, "Texture/effects", ["vignette", "grain-overlay", "shimmer-sweep"])} onChange={(textureEffect) => updateEditor({textureEffect})} />
+              <FieldSelect label="Social callout" value={editor.ctaOverlay} options={catalogOptions(hyperframesCatalog, "Social overlays", ["yt-lower-third", "instagram-follow", "tiktok-follow"])} onChange={(ctaOverlay) => updateEditor({ctaOverlay})} />
+              <FieldSelect
+                label="Transition"
+                value={editor.transitionFamily}
+                options={[
+                  {value: "dissolve", label: "Dissolve"},
+                  {value: "push", label: "Push"},
+                  {value: "zoom", label: "Zoom"},
+                  {value: "whip-pan", label: "Whip Pan"},
+                ]}
+                onChange={(transitionFamily) => updateEditor({transitionFamily})}
+              />
+              <FieldSelect
+                label="Intro"
+                value={editor.introLayout}
+                options={[
+                  {value: "editorial-hook", label: "Editorial hook"},
+                  {value: "lower-third-hook", label: "Lower-third hook"},
+                  {value: "data-callout", label: "Data callout"},
+                  {value: "headline-slam", label: "Headline slam"},
+                ]}
+                onChange={(introLayout) => updateEditor({introLayout})}
+              />
+              <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Template name
+                <input
+                  value={label}
+                  onChange={(event) => setLabel(event.target.value)}
+                  className="h-10 rounded-xl border border-white/[0.08] bg-black/30 px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/35"
+                />
+              </label>
+              <FieldSelect
+                label="Baseline style"
+                value={selectedTemplate}
+                disabled={templateBusy}
+                options={[{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}, ...templates.filter((template) => template.path !== defaultTemplate)].map((template) => ({
+                  value: template.path,
+                  label: template.label,
+                }))}
+                onChange={(path) => void loadTemplate(path)}
+              />
+              <button
+                type="button"
+                disabled={saveBusy || templateBusy}
+                onClick={() => void loadTemplate(selectedTemplate, true)}
+                className="h-10 w-full rounded-full border border-white/[0.1] text-xs font-bold uppercase tracking-wider text-zinc-300 disabled:opacity-45"
+              >
+                Reset to baseline
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <Link
+        href="/?section=brand"
+        onClick={(event) => {
+          if (dirty && !window.confirm("Discard your unsaved Brand Builder changes?")) event.preventDefault();
+        }}
+        className="sr-only"
+      >
+        Brand library
+      </Link>
     </main>
   );
 }
@@ -490,7 +582,7 @@ export function BrandBuilderPage({starter, preset, baseTemplate}: {starter?: str
 
   if (error) {
     return (
-      <main className="grid min-h-screen place-items-center bg-canvas-deep px-5 text-center text-zinc-100">
+      <main className="grid min-h-screen place-items-center bg-[#0a0b0e] px-5 text-center text-zinc-100">
         <div>
           <p className="text-sm font-semibold text-danger">{error}</p>
           <button type="button" onClick={() => void loadData()} className="mt-5 rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-ink">
@@ -502,7 +594,7 @@ export function BrandBuilderPage({starter, preset, baseTemplate}: {starter?: str
   }
   if (!data) {
     return (
-      <main className="grid min-h-screen place-items-center bg-canvas-deep text-cyan">
+      <main className="grid min-h-screen place-items-center bg-[#0a0b0e] text-cyan">
         <Loader2 className="h-6 w-6 animate-spin" />
       </main>
     );
@@ -511,79 +603,25 @@ export function BrandBuilderPage({starter, preset, baseTemplate}: {starter?: str
   return <BrandBuilderWorkspace {...data} initialStarter={starter || storageStarter} initialPreset={preset} initialBaseTemplate={baseTemplate} onTemplateSaved={loadData} />;
 }
 
-function ControlGroup({title, summary, open = false, children}: {title: string; summary: string; open?: boolean; children: ReactNode}) {
+function Swatch({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
   return (
-    <details open={open} className="group rounded-[24px] border border-white/[0.06] bg-black/15 p-4 sm:p-5">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-        <span>
-          <span className="block text-sm font-semibold text-white">{title}</span>
-          <span className="mt-0.5 block text-xs text-zinc-500">{summary}</span>
-        </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500 transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="mt-4 border-t border-white/[0.05] pt-4">{children}</div>
-    </details>
-  );
-}
-
-function catalogOptions(catalog: HyperframesCatalog | null, category: string, fallback: string[]) {
-  const items = (catalog?.items || []).filter((item) => item.category === category && item.status !== "experimental");
-  return items.length
-    ? items.map((item) => ({
-        value: item.id,
-        label: item.status === "production-ready" ? item.label : `${item.label} · ${item.status}`,
-      }))
-    : fallback.map((value) => ({value, label: value}));
-}
-
-function FieldShell({label, children}: {label: string; children: ReactNode}) {
-  return (
-    <label className="grid gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
-      {label}
-      {children}
+    <label className="flex cursor-pointer items-center gap-2.5">
+      <span className="relative h-9 w-9 overflow-hidden rounded-full border border-white/20 shadow-inner">
+        <span className="absolute inset-0" style={{background: value}} />
+        <input
+          type="color"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          aria-label={label}
+        />
+      </span>
+      <span className="text-[11px] font-semibold text-zinc-400">{label}</span>
     </label>
   );
 }
 
-function TextField({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
-  return (
-    <FieldShell label={label}>
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-11 rounded-2xl border border-white/[0.08] bg-black/20 px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
-      />
-    </FieldShell>
-  );
-}
-
-function NumberField({label, value, min, max, onChange}: {label: string; value: number; min: number; max: number; onChange: (value: number) => void}) {
-  return (
-    <FieldShell label={label}>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="h-11 rounded-2xl border border-white/[0.08] bg-black/20 px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35]"
-      />
-    </FieldShell>
-  );
-}
-
-function ColorField({label, value, onChange}: {label: string; value: string; onChange: (value: string) => void}) {
-  return (
-    <FieldShell label={label}>
-      <span className="flex h-11 items-center gap-2.5 rounded-2xl border border-white/[0.08] bg-black/20 px-3 focus-within:border-cyan/[0.35]">
-        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0" />
-        <input value={value} onChange={(event) => onChange(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold normal-case tracking-normal text-white outline-none" />
-      </span>
-    </FieldShell>
-  );
-}
-
-function SelectField({
+function FieldSelect({
   label,
   value,
   options,
@@ -597,58 +635,23 @@ function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <FieldShell label={label}>
+    <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+      {label}
       <span className="relative flex items-center">
         <select
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
-          className="h-11 w-full appearance-none rounded-2xl border border-white/[0.08] bg-black/20 pl-3 pr-10 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/[0.35] disabled:opacity-50"
+          className="h-10 w-full appearance-none rounded-xl border border-white/[0.08] bg-black/30 pl-3 pr-9 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/35 disabled:opacity-50"
         >
           {options.map((option) => (
-            <option key={option.value} value={option.value} className="bg-[#17171a] text-white">
+            <option key={option.value} value={option.value} className="bg-[#17171a]">
               {option.label}
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-3.5 h-4 w-4 text-zinc-500" />
+        <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-zinc-500" />
       </span>
-    </FieldShell>
-  );
-}
-
-function FontField({
-  value,
-  selectedOption,
-  availability,
-  onChange,
-}: {
-  value: string;
-  selectedOption: string;
-  availability: "checking" | "available" | "fallback";
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="grid gap-2">
-      <SelectField
-        label="Font"
-        value={selectedOption}
-        options={[...fontOptions.map((font) => ({value: font, label: font})), {value: "__custom", label: "Custom font"}]}
-        onChange={(next) => {
-          if (next !== "__custom") onChange(next);
-        }}
-      />
-      {selectedOption === "__custom" ? (
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="Exact installed font name"
-          className="h-11 rounded-2xl border border-white/[0.08] bg-black/20 px-3 text-sm font-semibold text-white outline-none focus:border-cyan/[0.35]"
-        />
-      ) : null}
-      <span className={`text-[10px] font-bold uppercase ${availability === "available" ? "text-cyan" : availability === "fallback" ? "text-warning" : "text-zinc-500"}`}>
-        {availability === "checking" ? "Checking..." : availability === "available" ? "Loaded" : "Fallback"}
-      </span>
-    </div>
+    </label>
   );
 }
