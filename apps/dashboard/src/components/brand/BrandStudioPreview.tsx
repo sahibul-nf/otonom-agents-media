@@ -37,7 +37,7 @@ export function BrandStudioPreview({look}: BrandStudioPreviewProps) {
   }, [pace]);
 
   return (
-    <div className="brand-studio-stage relative mx-auto aspect-[9/16] w-full max-w-[min(100%,24rem)] overflow-hidden rounded-[28px] border border-white/[0.12] bg-[#050507] shadow-[0_40px_100px_rgba(0,0,0,.55)]">
+    <div className="brand-studio-stage relative mx-auto aspect-[9/16] h-[min(100%,calc(100dvh-7rem))] max-h-[36rem] w-auto max-w-full overflow-hidden rounded-[28px] border border-white/[0.12] bg-[#050507] shadow-[0_40px_100px_rgba(0,0,0,.55)] lg:max-h-[min(100%,calc(100dvh-5.5rem))]">
       {/* Clean plate — brand atmosphere only */}
       <div
         className="absolute inset-0 transition-[background] duration-500"

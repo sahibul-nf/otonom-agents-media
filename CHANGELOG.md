@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Brand Builder redesign (#48): full-viewport **Brand studio** — centered live caption stage (karaoke sample, ambient recipe video, no stacked recipe chrome); CapCut-style bottom dock (Look presets/swatches, Type chips/sliders, Motion); recipe/save fields in a sheet — not a form wall.
+- Brand Builder redesign (#48): full-viewport **Brand studio** — horizontal two-pane (tools | live caption preview) on desktop, stacked on mobile; clean plate (no recipe-demo video); CapCut-style Look/Type/Motion tools; recipe/save in a sheet.
 - Create clips polish (#44): Generate batch is primary; Watch sources quieter and lower in the same `max-w-4xl` column; workspace display name (no “Workspace workspace”); `1 clip` pluralization; human failed-run copy; CLI moved under Advanced.
 - Publish connect-first UX (#42): OAuth platforms show **Connect account** as the primary CTA; Telegram opens a connect dialog for bot token + channel; quieter cards; Auto publish only after connect; sidebar is logs-only.
 - Publish destinations UI: fixed workspace hydrate race that left Publish empty (0/0) while the sidebar showed 0/4; sync now waits for the stored workspace and Load destinations re-fetches/seeds rows.
