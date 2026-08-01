@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import {useRouter} from "next/navigation";
-import {ArrowLeft, ChevronDown, Loader2, SlidersHorizontal, X} from "lucide-react";
-import {useEffect, useState} from "react";
+import {ArrowLeft, Loader2, SlidersHorizontal, X} from "lucide-react";
+import {useEffect, useState, type ReactNode} from "react";
 import {BrandStudioPreview} from "@/components/brand/BrandStudioPreview";
 import {
   apiGet,
@@ -459,75 +459,129 @@ export function BrandBuilderWorkspace({
       </div>
 
       {sheetOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label="More brand settings">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label="Recipe and save">
           <button type="button" className="absolute inset-0 cursor-default" aria-label="Close" onClick={() => setSheetOpen(false)} />
-          <div className="relative z-10 flex max-h-[min(88dvh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] border border-white/[0.1] bg-[#141518] shadow-2xl sm:rounded-[24px]">
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-              <h2 className="text-sm font-semibold text-white">More settings</h2>
-              <button type="button" onClick={() => setSheetOpen(false)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-400 hover:bg-white/[0.06] hover:text-white" aria-label="Close">
+          <div className="relative z-10 flex max-h-[min(90dvh,720px)] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-white/[0.1] bg-[#121316] shadow-2xl sm:rounded-[28px]">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/[0.06] px-5 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-white">Recipe & save</h2>
+                <p className="mt-0.5 text-[12px] text-zinc-500">Pick overlays for renders. Look colors stay on the main stage.</p>
+              </div>
+              <button type="button" onClick={() => setSheetOpen(false)} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-white/[0.06] hover:text-white" aria-label="Close">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="space-y-4 overflow-y-auto px-4 py-4">
-              <FieldSelect
-                label="Starter recipe"
-                value={editor.starterTemplate}
-                options={(hyperframesTemplates.length ? hyperframesTemplates : [{id: "spiritual_reflective", label: "Spiritual Reflective"} as HyperframesTemplate]).map((template) => ({
-                  value: template.id,
-                  label: template.label,
-                }))}
-                onChange={(starterTemplate) => updateEditor({starterTemplate})}
-              />
-              <FieldSelect label="Captions" value={editor.captionStyle} options={catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"])} onChange={(captionStyle) => updateEditor({captionStyle})} />
-              <FieldSelect label="Texture" value={editor.textureEffect} options={catalogOptions(hyperframesCatalog, "Texture/effects", ["vignette", "grain-overlay", "shimmer-sweep"])} onChange={(textureEffect) => updateEditor({textureEffect})} />
-              <FieldSelect label="Social callout" value={editor.ctaOverlay} options={catalogOptions(hyperframesCatalog, "Social overlays", ["yt-lower-third", "instagram-follow", "tiktok-follow"])} onChange={(ctaOverlay) => updateEditor({ctaOverlay})} />
-              <FieldSelect
-                label="Transition"
-                value={editor.transitionFamily}
-                options={[
-                  {value: "dissolve", label: "Dissolve"},
-                  {value: "push", label: "Push"},
-                  {value: "zoom", label: "Zoom"},
-                  {value: "whip-pan", label: "Whip Pan"},
-                ]}
-                onChange={(transitionFamily) => updateEditor({transitionFamily})}
-              />
-              <FieldSelect
-                label="Intro"
-                value={editor.introLayout}
-                options={[
-                  {value: "editorial-hook", label: "Editorial hook"},
-                  {value: "lower-third-hook", label: "Lower-third hook"},
-                  {value: "data-callout", label: "Data callout"},
-                  {value: "headline-slam", label: "Headline slam"},
-                ]}
-                onChange={(introLayout) => updateEditor({introLayout})}
-              />
-              <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                Template name
+
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
+              <SheetSection title="Starter recipe" hint={selectedStarter?.best_for || "Base HyperFrames look for this brand"}>
+                <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {(hyperframesTemplates.length ? hyperframesTemplates : [{id: "spiritual_reflective", label: "Spiritual Reflective", best_for: ""} as HyperframesTemplate]).map((template) => {
+                    const active = editor.starterTemplate === template.id;
+                    return (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => updateEditor({starterTemplate: template.id})}
+                        className={`w-[9.5rem] shrink-0 rounded-2xl border px-3 py-3 text-left transition ${
+                          active ? "border-cyan/45 bg-cyan/[0.1]" : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.14]"
+                        }`}
+                      >
+                        <span className="block truncate text-[12px] font-semibold text-white">{template.label}</span>
+                        <span className="mt-1 line-clamp-2 text-[10px] leading-snug text-zinc-500">{template.best_for || template.category || "Recipe"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </SheetSection>
+
+              <SheetSection title="Caption style">
+                <ChipGroup
+                  value={editor.captionStyle}
+                  options={catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"])}
+                  onChange={(captionStyle) => updateEditor({captionStyle})}
+                />
+              </SheetSection>
+
+              <SheetSection title="Texture">
+                <ChipGroup
+                  value={editor.textureEffect}
+                  options={catalogOptions(hyperframesCatalog, "Texture/effects", ["vignette", "grain-overlay", "shimmer-sweep"])}
+                  onChange={(textureEffect) => updateEditor({textureEffect})}
+                />
+              </SheetSection>
+
+              <SheetSection title="Social callout">
+                <ChipGroup
+                  value={editor.ctaOverlay}
+                  options={catalogOptions(hyperframesCatalog, "Social overlays", ["yt-lower-third", "instagram-follow", "tiktok-follow"])}
+                  onChange={(ctaOverlay) => updateEditor({ctaOverlay})}
+                />
+              </SheetSection>
+
+              <div className="grid gap-5 sm:grid-cols-2">
+                <SheetSection title="Transition">
+                  <ChipGroup
+                    value={editor.transitionFamily}
+                    options={[
+                      {value: "dissolve", label: "Dissolve"},
+                      {value: "push", label: "Push"},
+                      {value: "zoom", label: "Zoom"},
+                      {value: "whip-pan", label: "Whip Pan"},
+                    ]}
+                    onChange={(transitionFamily) => updateEditor({transitionFamily})}
+                  />
+                </SheetSection>
+                <SheetSection title="Intro">
+                  <ChipGroup
+                    value={editor.introLayout}
+                    options={[
+                      {value: "editorial-hook", label: "Editorial"},
+                      {value: "lower-third-hook", label: "Lower-third"},
+                      {value: "data-callout", label: "Data"},
+                      {value: "headline-slam", label: "Headline"},
+                    ]}
+                    onChange={(introLayout) => updateEditor({introLayout})}
+                  />
+                </SheetSection>
+              </div>
+
+              <SheetSection title="Save as" hint="Name stored in your Brand library">
                 <input
                   value={label}
                   onChange={(event) => setLabel(event.target.value)}
-                  className="h-10 rounded-xl border border-white/[0.08] bg-black/30 px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/35"
+                  placeholder="Template name"
+                  className="h-11 w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3.5 text-sm font-semibold text-white outline-none placeholder:text-zinc-600 focus:border-cyan/35"
                 />
-              </label>
-              <FieldSelect
-                label="Baseline style"
-                value={selectedTemplate}
-                disabled={templateBusy}
-                options={[{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}, ...templates.filter((template) => template.path !== defaultTemplate)].map((template) => ({
-                  value: template.path,
-                  label: template.label,
-                }))}
-                onChange={(path) => void loadTemplate(path)}
-              />
+                <div className="mt-3">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Baseline</p>
+                  <ChipGroup
+                    value={selectedTemplate}
+                    disabled={templateBusy}
+                    options={[{id: defaultTemplate, label: "Default baseline", path: defaultTemplate}, ...templates.filter((template) => template.path !== defaultTemplate)].map((template) => ({
+                      value: template.path,
+                      label: template.label,
+                    }))}
+                    onChange={(path) => void loadTemplate(path)}
+                  />
+                </div>
+              </SheetSection>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] bg-[#121316]/95 px-5 py-3 backdrop-blur">
               <button
                 type="button"
                 disabled={saveBusy || templateBusy}
                 onClick={() => void loadTemplate(selectedTemplate, true)}
-                className="h-10 w-full rounded-full border border-white/[0.1] text-xs font-bold uppercase tracking-wider text-zinc-300 disabled:opacity-45"
+                className="h-10 flex-1 rounded-full border border-white/[0.1] text-xs font-bold uppercase tracking-wider text-zinc-300 disabled:opacity-45"
               >
-                Reset to baseline
+                Reset baseline
+              </button>
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                className="h-10 flex-1 rounded-full bg-cyan text-xs font-bold uppercase tracking-wider text-ink"
+              >
+                Done
               </button>
             </div>
           </div>
@@ -618,37 +672,49 @@ function Swatch({label, value, onChange}: {label: string; value: string; onChang
   );
 }
 
-function FieldSelect({
-  label,
+function SheetSection({title, hint, children}: {title: string; hint?: string; children: ReactNode}) {
+  return (
+    <section>
+      <div className="mb-2.5">
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">{title}</h3>
+        {hint ? <p className="mt-0.5 text-[11px] leading-snug text-zinc-600">{hint}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ChipGroup({
   value,
   options,
   disabled = false,
   onChange,
 }: {
-  label: string;
   value: string;
   options: {value: string; label: string}[];
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-      {label}
-      <span className="relative flex items-center">
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-10 w-full appearance-none rounded-xl border border-white/[0.08] bg-black/30 pl-3 pr-9 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/35 disabled:opacity-50"
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value} className="bg-[#17171a]">
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-zinc-500" />
-      </span>
-    </label>
+    <div className="flex flex-wrap gap-2">
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(option.value)}
+            className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition disabled:opacity-45 ${
+              active
+                ? "border-cyan/45 bg-cyan/[0.12] text-white"
+                : "border-white/[0.08] text-zinc-400 hover:border-white/[0.16] hover:text-zinc-200"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
