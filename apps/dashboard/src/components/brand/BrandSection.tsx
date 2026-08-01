@@ -1,7 +1,7 @@
 "use client";
 
 import {useRouter} from "next/navigation";
-import {CheckCircle2, Layers3, Loader2, Palette, Settings2, Sparkles} from "lucide-react";
+import {CheckCircle2, Layers3, Loader2, Palette, Plus, Settings2, Sparkles} from "lucide-react";
 import {useEffect} from "react";
 import {brandPresets} from "@/components/brand/BrandBuilderWorkspace";
 import type {AutonomySettings, BrandTemplate, HyperframesCatalog, HyperframesTemplate, StyleProfile} from "@/lib/media-api";
@@ -23,20 +23,18 @@ type Props = {
 const STARTER_STORAGE_KEY = "otonom.brandBuilderStarterTemplate";
 
 export function BrandSection({
-  style,
+  style: _style,
   templates,
-  hyperframesTemplates,
-  hyperframesCatalog,
+  hyperframesTemplates: _hyperframesTemplates,
+  hyperframesCatalog: _hyperframesCatalog,
   autonomy,
   actionStates,
-  defaultTemplate,
+  defaultTemplate: _defaultTemplate,
   onAutonomyMode,
   onTemplateSaved,
 }: Props) {
   const router = useRouter();
   const autonomyBusy = Object.entries(actionStates).find(([key, state]) => key.startsWith("autonomy:") && state.status === "running")?.[1];
-  const productionReadyCount = hyperframesCatalog?.items.filter((item) => item.status === "production-ready").length || 0;
-  const currentFont = String(style?.caption?.font_family || "Sora");
 
   useEffect(() => {
     const starterTemplate = window.localStorage.getItem(STARTER_STORAGE_KEY);
@@ -49,122 +47,152 @@ export function BrandSection({
     router.push(`/brand/builder?preset=${encodeURIComponent(preset.id)}&starter=${encodeURIComponent(preset.starterTemplate)}`);
   }
 
+  function openBlank() {
+    router.push("/brand/builder");
+  }
+
   function openSavedTemplate(template: BrandTemplate) {
     router.push(`/brand/builder?base=${encodeURIComponent(template.path)}`);
   }
 
   return (
-    <section className="grid min-w-0 gap-6">
-      <div className="min-w-0 overflow-hidden rounded-[32px] border border-white/[0.08] bg-surface/30 backdrop-blur-md">
-        <div className="border-b border-white/[0.08] bg-gradient-to-b from-cyan/[0.03] to-transparent p-6 sm:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">HyperFrames Brand System</p>
-              <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">
-                Choose a <span className="font-editorial font-normal italic text-cyan">brand direction</span>
-              </h3>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-                Start from a production preset or reopen a saved style. Detailed controls live in the dedicated Brand Builder workspace.
-              </p>
-            </div>
-            <div className="grid gap-1 text-right text-xs text-zinc-500">
-              <span>{hyperframesTemplates.length} starter templates</span>
-              <span>{productionReadyCount} production-ready components</span>
-            </div>
-          </div>
+    <section className="mx-auto grid w-full max-w-5xl min-w-0 gap-5">
+      <div className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface/30 p-5 backdrop-blur-md sm:rounded-[32px] sm:p-6">
+        <div className="mb-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan">Starter presets</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
+            Pick a direction to open the builder, or reopen a saved style below.
+          </p>
         </div>
 
-        <div className="grid gap-7 p-6 sm:p-8">
-          <div>
-            <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {brandPresets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => openPreset(preset)}
+              className="group flex min-h-[180px] flex-col justify-between rounded-[24px] border border-white/[0.06] bg-black/15 p-4 text-left transition hover:-translate-y-0.5 hover:border-cyan/[0.25] hover:bg-black/25"
+            >
               <div>
-                <h4 className="font-semibold text-white">Starter presets</h4>
-                <p className="mt-1 text-xs text-zinc-500">Each preset opens as an editable starting point.</p>
+                <span className="grid h-9 w-9 place-items-center rounded-2xl border border-white/[0.05] bg-black/30 text-cyan">
+                  {preset.id === "editorial" || preset.id === "ember_sunset" ? (
+                    <Sparkles className="h-4 w-4" />
+                  ) : preset.id === "social" || preset.id === "volt_kinetic" || preset.id === "eva_cyber" ? (
+                    <Palette className="h-4 w-4" />
+                  ) : (
+                    <Layers3 className="h-4 w-4" />
+                  )}
+                </span>
+                <p className="mt-4 text-sm font-bold tracking-tight text-white">{preset.label}</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500 group-hover:text-zinc-400">{preset.note}</p>
               </div>
-              <span className="rounded-full border border-white/[0.08] bg-black/20 px-3 py-1 text-xs font-semibold text-zinc-400">Current font · {currentFont}</span>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {brandPresets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => openPreset(preset)}
-                  className="group relative flex min-h-[210px] flex-col justify-between rounded-[28px] border border-white/[0.06] bg-black/15 p-5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan/[0.25] hover:bg-black/25"
-                >
-                  <div>
-                    <span className="grid h-10 w-10 place-items-center rounded-2xl border border-white/[0.05] bg-black/30 text-cyan transition-transform group-hover:scale-105">
-                      {preset.id === "editorial" ? <Sparkles className="h-5 w-5" /> : preset.id === "social" ? <Palette className="h-5 w-5" /> : <Layers3 className="h-5 w-5" />}
-                    </span>
-                    <p className="mt-5 text-base font-bold tracking-tight text-white">{preset.label}</p>
-                    <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 transition-colors group-hover:text-zinc-400">{preset.note}</p>
-                  </div>
-                  <div className="mt-4 flex items-center justify-between border-t border-white/[0.04] pt-4">
-                    <div className="flex items-center gap-1.5">
-                      <span className="h-4 w-4 rounded-full border border-white/10" style={{backgroundColor: preset.backgroundColor}} />
-                      <span className="h-4 w-4 rounded-full border border-white/10" style={{backgroundColor: preset.highlightColor}} />
-                      <span className="font-mono text-[10px] font-semibold text-zinc-500">{preset.fontFamily}</span>
-                    </div>
-                    <span className="text-[9px] font-bold uppercase tracking-wider text-cyan">Open builder →</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[28px] border border-white/[0.06] bg-black/15 p-5">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h4 className="font-semibold tracking-tight text-white">Saved brand styles</h4>
-                <p className="mt-0.5 text-xs text-zinc-500">Reopen a saved system in the builder to fine-tune or create a copy.</p>
-              </div>
-              <span className="self-start rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-cyan">{templates.length} saved</span>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {templates.length ? templates.map((template) => (
-                <button key={template.id} type="button" onClick={() => openSavedTemplate(template)} className="group flex min-w-0 items-center justify-between gap-4 rounded-2xl border border-white/[0.05] bg-surface/30 p-4 text-left text-zinc-200 transition hover:-translate-y-0.5 hover:border-cyan/[0.20] hover:bg-surface/50">
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-white transition-colors group-hover:text-cyan">{template.label}</span>
-                    <span className="mt-1 block truncate text-[11px] font-bold uppercase tracking-wider text-zinc-500">Saved workspace style</span>
-                  </span>
-                  <Sparkles className="h-4 w-4 shrink-0 text-zinc-500 transition-colors group-hover:text-cyan" />
-                </button>
-              )) : (
-                <div className="col-span-2 grid min-h-[140px] place-items-center rounded-[24px] border border-dashed border-white/[0.08] bg-black/15 p-6 text-center text-sm leading-relaxed text-zinc-500">
-                  No customized style files stored yet.
+              <div className="mt-3 flex items-center justify-between border-t border-white/[0.04] pt-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-3.5 w-3.5 rounded-full border border-white/10" style={{backgroundColor: preset.backgroundColor}} />
+                  <span className="h-3.5 w-3.5 rounded-full border border-white/10" style={{backgroundColor: preset.highlightColor}} />
+                  <span className="font-mono text-[10px] font-semibold text-zinc-500">{preset.fontFamily}</span>
                 </div>
-              )}
+                <span className="text-[9px] font-bold uppercase tracking-wider text-cyan">Open →</span>
+              </div>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={openBlank}
+            className="group flex min-h-[180px] flex-col justify-between rounded-[24px] border border-dashed border-white/[0.10] bg-black/10 p-4 text-left transition hover:-translate-y-0.5 hover:border-cyan/[0.25] hover:bg-black/20"
+          >
+            <div>
+              <span className="grid h-9 w-9 place-items-center rounded-2xl border border-white/[0.05] bg-black/30 text-zinc-400 group-hover:text-cyan">
+                <Plus className="h-4 w-4" />
+              </span>
+              <p className="mt-4 text-sm font-bold tracking-tight text-white">Start blank</p>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-500 group-hover:text-zinc-400">Open the builder from your current workspace baseline.</p>
             </div>
+            <div className="mt-3 flex items-center justify-end border-t border-white/[0.04] pt-3">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-cyan">Open →</span>
+            </div>
+          </button>
+        </div>
+
+        <div className="mt-5 border-t border-white/[0.06] pt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-white">Saved styles</h4>
+              <p className="mt-0.5 text-xs text-zinc-500">Reopen to fine-tune or duplicate.</p>
+            </div>
+            {templates.length ? (
+              <span className="rounded-full border border-white/[0.08] bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                {templates.length}
+              </span>
+            ) : null}
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {templates.length ? (
+              templates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => openSavedTemplate(template)}
+                  className="group flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-black/15 px-4 py-3 text-left transition hover:border-cyan/[0.20] hover:bg-black/25"
+                >
+                  <span className="min-w-0 truncate text-sm font-semibold text-white group-hover:text-cyan">{template.label}</span>
+                  <Sparkles className="h-3.5 w-3.5 shrink-0 text-zinc-600 group-hover:text-cyan" />
+                </button>
+              ))
+            ) : (
+              <div className="sm:col-span-2 rounded-2xl border border-dashed border-white/[0.08] bg-black/10 px-4 py-8 text-center text-sm text-zinc-600">
+                No saved styles yet. Open a preset and save from the builder.
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <details className="group rounded-[28px] border border-white/[0.07] bg-surface/20 p-5">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl border border-white/[0.07] bg-black/20 text-zinc-500"><Settings2 className="h-4 w-4" /></span>
+      <details className="group rounded-[24px] border border-white/[0.06] bg-black/10 p-4">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-white/[0.06] bg-black/20 text-zinc-600">
+              <Settings2 className="h-3.5 w-3.5" />
+            </span>
             <span>
-              <span className="block text-sm font-semibold text-zinc-200">Advanced publishing autonomy</span>
-              <span className="mt-0.5 block text-xs text-zinc-600">Current mode: {autonomy?.autonomy_mode || "off"}</span>
+              <span className="block text-xs font-semibold text-zinc-400">Advanced · publishing autonomy</span>
+              <span className="mt-0.5 block text-[11px] text-zinc-600">Mode: {autonomy?.autonomy_mode || "off"}</span>
             </span>
           </div>
-          <span className="text-xs font-semibold text-zinc-500 transition-colors group-open:text-cyan">Configure</span>
+          <span className="text-[11px] font-semibold text-zinc-600 group-open:text-zinc-400">Configure</span>
         </summary>
-        <div className="mt-5 border-t border-white/[0.06] pt-5">
-          <p className="max-w-2xl text-xs leading-relaxed text-zinc-500">Control how aggressively automation schedules approved content. Assisted mode waits {autonomy?.review_grace_hours || 12} hours for manual confirmation.</p>
-          <div className="mt-4 grid max-w-lg grid-cols-3 rounded-full border border-white/[0.08] bg-black/30 p-1">
+        <div className="mt-4 border-t border-white/[0.06] pt-4">
+          <p className="max-w-2xl text-xs leading-relaxed text-zinc-500">
+            How aggressively approved clips can be scheduled. Assisted waits {autonomy?.review_grace_hours || 12}h for confirmation.
+          </p>
+          <div className="mt-3 grid max-w-md grid-cols-3 rounded-full border border-white/[0.08] bg-black/30 p-1">
             {["off", "assisted", "full"].map((mode) => {
               const active = autonomy?.autonomy_mode === mode;
               return (
-                <button key={mode} type="button" disabled={Boolean(autonomyBusy)} onClick={() => onAutonomyMode(mode)} className={`relative rounded-full py-2.5 text-xs font-bold uppercase tracking-wider transition ${active ? "bg-cyan text-ink" : "text-zinc-500 hover:text-zinc-200"}`}>
-                  {actionStates[`autonomy:${mode}`]?.status === "running" ? <span className="absolute inset-0 grid place-items-center rounded-full bg-cyan"><Loader2 className="h-3.5 w-3.5 animate-spin text-ink" /></span> : null}
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={Boolean(autonomyBusy)}
+                  onClick={() => onAutonomyMode(mode)}
+                  className={`relative rounded-full py-2 text-[10px] font-bold uppercase tracking-wider transition ${active ? "bg-cyan text-ink" : "text-zinc-500 hover:text-zinc-200"}`}
+                >
+                  {actionStates[`autonomy:${mode}`]?.status === "running" ? (
+                    <span className="absolute inset-0 grid place-items-center rounded-full bg-cyan">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-ink" />
+                    </span>
+                  ) : null}
                   {mode}
                 </button>
               );
             })}
           </div>
-          <div className="mt-4 flex flex-wrap gap-3 text-xs text-zinc-500">
-            <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-cyan" /> Base: {defaultTemplate}</span>
-            <button type="button" onClick={onTemplateSaved} className="font-semibold text-cyan hover:text-white">Refresh saved styles</button>
+          <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-zinc-600">
+            <span className="inline-flex items-center gap-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5 text-zinc-500" /> Baseline ready
+            </span>
+            <button type="button" onClick={onTemplateSaved} className="font-semibold text-zinc-400 hover:text-cyan">
+              Refresh saved styles
+            </button>
           </div>
         </div>
       </details>

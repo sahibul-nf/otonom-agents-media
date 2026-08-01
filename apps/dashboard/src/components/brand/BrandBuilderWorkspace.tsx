@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import {useRouter} from "next/navigation";
-import {ArrowLeft, BadgeCheck, ChevronDown, Loader2} from "lucide-react";
+import {ArrowLeft, ChevronDown, Loader2} from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
 import type {ReactNode} from "react";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
@@ -145,7 +145,6 @@ export function BrandBuilderWorkspace({
   const currentSnapshot = snapshot(label, selectedTemplate, editor);
   const dirty = currentSnapshot !== cleanSnapshot;
   const selectedStarter = hyperframesTemplates.find((template) => template.id === editor.starterTemplate);
-  const productionReadyCount = hyperframesCatalog?.items.filter((item) => item.status === "production-ready").length || 0;
   const selectedFontOption = useMemo(() => fontOptions.includes(editor.fontFamily) ? editor.fontFamily : "__custom", [editor.fontFamily]);
 
   useEffect(() => {
@@ -261,8 +260,8 @@ export function BrandBuilderWorkspace({
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Brand workspace</p>
-              <h1 className="truncate text-base font-semibold text-white">Brand Builder</h1>
+              <h1 className="truncate text-base font-semibold text-white">Brand builder</h1>
+              <p className="text-xs text-zinc-500">Fine-tune typography, overlays, and save a reusable style.</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-3">
@@ -277,16 +276,15 @@ export function BrandBuilderWorkspace({
 
       <div className="mx-auto grid max-w-[1440px] gap-6 px-4 py-6 lg:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <section className="min-w-0 rounded-[32px] border border-white/[0.08] bg-surface/30 p-5 backdrop-blur-md sm:p-7">
-          <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Interactive sandbox</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-white">Style customizer</h2>
-              <p className="mt-1 text-sm text-zinc-500">Fine-tune one brand system without leaving the workspace.</p>
+              <h2 className="text-xl font-semibold tracking-tight text-white">Style customizer</h2>
+              <p className="mt-1 text-sm text-zinc-500">Adjust captions and components, then save.</p>
             </div>
-            {templateBusy ? <Loader2 className="h-5 w-5 animate-spin text-cyan" /> : <BadgeCheck className="h-5 w-5 text-cyan" />}
+            {templateBusy ? <Loader2 className="h-5 w-5 animate-spin text-cyan" /> : null}
           </div>
 
-          <div className="grid gap-5">
+          <div className="grid gap-4">
             <ControlGroup title="Typography" summary={`${editor.fontFamily} · ${editor.fontSize}px`} open>
               <div className="grid gap-4 lg:grid-cols-2">
                 <FontField value={editor.fontFamily} selectedOption={selectedFontOption} availability={fontAvailability} onChange={(fontFamily) => updateEditor({fontFamily})} />
@@ -299,7 +297,7 @@ export function BrandBuilderWorkspace({
               <div className="mt-4"><TextField label="Watermark text" value={editor.watermarkText} onChange={(watermarkText) => updateEditor({watermarkText})} /></div>
             </ControlGroup>
 
-            <ControlGroup title="Components" summary={`${productionReadyCount} production-ready slots`}>
+            <ControlGroup title="Components" summary="Overlays · motion · intros">
               <div className="grid gap-4 lg:grid-cols-2">
                 <SelectField label="Starter template" value={editor.starterTemplate} options={(hyperframesTemplates.length ? hyperframesTemplates : [{id: "spiritual_reflective", label: "Spiritual Reflective"} as HyperframesTemplate]).map((template) => ({value: template.id, label: template.label}))} onChange={(starterTemplate) => updateEditor({starterTemplate})} />
                 <SelectField label="Motion intensity" value={editor.motionIntensity} options={[{value: "calm", label: "Calm"}, {value: "balanced", label: "Balanced"}, {value: "energetic", label: "Energetic"}]} onChange={(motionIntensity) => updateEditor({motionIntensity})} />
@@ -311,7 +309,7 @@ export function BrandBuilderWorkspace({
               </div>
             </ControlGroup>
 
-            <ControlGroup title="Deploy" summary={dirty ? "Changes pending" : "Up to date"} open>
+            <ControlGroup title="Save" summary={dirty ? "Unsaved changes" : "Up to date"} open>
               <div className="grid gap-4 sm:grid-cols-2">
                 <TextField label="Template label" value={label} onChange={setLabel} />
                 <SelectField label="Baseline style file" value={selectedTemplate} disabled={templateBusy} options={[{id: defaultTemplate, label: "Default style baseline", path: defaultTemplate}, ...templates.filter((template) => template.path !== defaultTemplate)].map((template) => ({value: template.path, label: template.label}))} onChange={(path) => void loadTemplate(path)} />
@@ -333,9 +331,9 @@ export function BrandBuilderWorkspace({
             <div className="mb-5 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-white">Live preview</h2>
-                <p className="mt-0.5 text-xs text-zinc-500">Live brand overlay · hover to play</p>
+                <p className="mt-0.5 text-xs text-zinc-500">Hover to play</p>
               </div>
-              <span className="rounded-full border border-cyan/[0.18] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">9:16</span>
+              <span className="rounded-full border border-white/[0.08] bg-black/20 px-3 py-1 text-xs font-semibold text-zinc-400">9:16</span>
             </div>
             <div className="relative mx-auto aspect-[9/16] w-full max-w-[17.5rem] overflow-hidden rounded-[16px] border border-white/[0.08] bg-[#050507] shadow-inner">
               {selectedStarter ? <TemplatePreview template={selectedStarter} compact gridCard hideFooterLabel hoverToPlay flush /> : <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(108,226,238,.18),transparent_34%),linear-gradient(180deg,#24262c,#0a0a0c_68%)]" />}
@@ -408,7 +406,12 @@ function ControlGroup({title, summary, open = false, children}: {title: string; 
 
 function catalogOptions(catalog: HyperframesCatalog | null, category: string, fallback: string[]) {
   const items = (catalog?.items || []).filter((item) => item.category === category && item.status !== "experimental");
-  return items.length ? items.map((item) => ({value: item.id, label: `${item.label} · ${item.status}`})) : fallback.map((value) => ({value, label: value}));
+  return items.length
+    ? items.map((item) => ({
+        value: item.id,
+        label: item.status === "production-ready" ? item.label : `${item.label} · ${item.status.replaceAll("-", " ")}`,
+      }))
+    : fallback.map((value) => ({value, label: value}));
 }
 
 function FieldShell({label, children}: {label: string; children: ReactNode}) {

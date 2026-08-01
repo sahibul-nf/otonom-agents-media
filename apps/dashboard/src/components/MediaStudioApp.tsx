@@ -203,7 +203,7 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
   brand: {
     title: "Brand",
-    subtitle: "Tune colors, captions, and reusable brand presets.",
+    subtitle: "Pick a starter preset or reopen a saved style in the builder.",
   },
 };
 
