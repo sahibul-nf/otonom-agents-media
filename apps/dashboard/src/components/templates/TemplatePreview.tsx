@@ -36,6 +36,8 @@ export function TemplatePreview({
   frame = "short",
   hoverToPlay = false,
   spacing,
+  /** Brand Builder: hide recipe chrome + quiet loading so the studio caption can own the frame */
+  variant = "default",
 }: {
   template: HyperframesTemplate;
   compact?: boolean;
@@ -46,7 +48,9 @@ export function TemplatePreview({
   frame?: TemplatePreviewFrame;
   hoverToPlay?: boolean;
   spacing?: "card" | "compact" | "none";
+  variant?: "default" | "studio";
 }) {
+  const isStudio = variant === "studio";
   const theme = getRecipeTheme(template.id);
   const isLong = frame === "long";
   const previewKey = isLong ? "long_16_9" : "short_9_16";
@@ -162,7 +166,8 @@ export function TemplatePreview({
   };
 
   const showVideo = Boolean(previewUrl && shouldLoadPreview && !videoError);
-  const showRecipeOverlay = !showVideo || (shouldLoadPreview && !videoLoaded && !videoError);
+  const showRecipeOverlay =
+    !isStudio && (!showVideo || (shouldLoadPreview && !videoLoaded && !videoError));
   const rounded = flush ? "none" : gridCard ? "panel" : compact ? "detail" : "detail";
 
   return (
@@ -215,9 +220,17 @@ export function TemplatePreview({
         </div>
       ) : null}
       {previewUrl && shouldLoadPreview && !videoError && !videoLoaded ? (
-        <div className="absolute inset-0 z-[3] grid place-items-center bg-black/28">
-          <div className="rounded-full border border-white/[0.14] bg-black/65 px-4 py-2 text-xs font-semibold text-zinc-100">Loading preview...</div>
-        </div>
+        isStudio ? (
+          <div className="pointer-events-none absolute inset-0 z-[3] bg-black/15" aria-hidden>
+            <div className="absolute bottom-4 left-1/2 h-1 w-16 -translate-x-1/2 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-white/35" />
+            </div>
+          </div>
+        ) : (
+          <div className="absolute inset-0 z-[3] grid place-items-center bg-black/28">
+            <div className="rounded-full border border-white/[0.14] bg-black/65 px-4 py-2 text-xs font-semibold text-zinc-100">Loading preview...</div>
+          </div>
+        )
       ) : null}
       {!flush ? (
         <>
@@ -243,13 +256,21 @@ export function TemplatePreview({
         <button
           type="button"
           onClick={handlePreviewTap}
-          className={`template-preview-play-hint absolute inset-0 z-20 grid place-items-center bg-black/20 transition duration-200 ${
-            shouldLoadPreview ? "opacity-0 hover:opacity-100 focus:opacity-100" : ""
+          className={`template-preview-play-hint absolute inset-0 z-20 grid place-items-center transition duration-200 ${
+            isStudio
+              ? shouldLoadPreview
+                ? "bg-transparent opacity-0 hover:bg-black/25 hover:opacity-100 focus:bg-black/25 focus:opacity-100"
+                : "bg-black/10"
+              : `bg-black/20 ${shouldLoadPreview ? "opacity-0 hover:opacity-100 focus:opacity-100" : ""}`
           }`}
           aria-label={`${isPlaying && shouldLoadPreview ? "Pause" : "Play"} ${template.label} preview`}
         >
-          <span className="whitespace-nowrap rounded-full border border-white/[0.16] bg-black/72 px-4 py-2 text-xs font-black leading-4 text-white shadow-2xl">
-            {shouldLoadPreview ? (isPlaying ? "Pause preview" : "Play preview") : previewPrompt}
+          <span
+            className={`whitespace-nowrap rounded-full border border-white/[0.16] bg-black/72 font-black leading-4 text-white shadow-2xl ${
+              isStudio ? "px-3 py-1.5 text-[10px] uppercase tracking-wider" : "px-4 py-2 text-xs"
+            }`}
+          >
+            {shouldLoadPreview ? (isPlaying ? "Pause" : "Play") : isStudio ? "Hover to play" : previewPrompt}
           </span>
         </button>
       ) : null}

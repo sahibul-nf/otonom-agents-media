@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Brand Builder composition-first preview (#48): studio `TemplatePreview` hides recipe chrome and quiet-loads; live frame shows one caption sample (not stacked hook/quote/Loading pills); Look controls first, recipe/save under progressive disclosure.
 - Create clips polish (#44): Generate batch is primary; Watch sources quieter and lower in the same `max-w-4xl` column; workspace display name (no “Workspace workspace”); `1 clip` pluralization; human failed-run copy; CLI moved under Advanced.
 - Publish connect-first UX (#42): OAuth platforms show **Connect account** as the primary CTA; Telegram opens a connect dialog for bot token + channel; quieter cards; Auto publish only after connect; sidebar is logs-only.
 - Publish destinations UI: fixed workspace hydrate race that left Publish empty (0/0) while the sidebar showed 0/4; sync now waits for the stored workspace and Load destinations re-fetches/seeds rows.
