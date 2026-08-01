@@ -3,7 +3,7 @@
 import Link from "next/link";
 import {useRouter} from "next/navigation";
 import {ArrowLeft, ChevronDown, Loader2, SlidersHorizontal, X} from "lucide-react";
-import {useEffect, useMemo, useState} from "react";
+import {useEffect, useState} from "react";
 import {BrandStudioPreview} from "@/components/brand/BrandStudioPreview";
 import {
   apiGet,
@@ -157,10 +157,6 @@ export function BrandBuilderWorkspace({
   const currentSnapshot = snapshot(label, selectedTemplate, editor);
   const dirty = currentSnapshot !== cleanSnapshot;
   const selectedStarter = hyperframesTemplates.find((template) => template.id === editor.starterTemplate);
-  const ambientVideoUrl = useMemo(() => {
-    if (!selectedStarter) return null;
-    return selectedStarter.preview_video_urls?.short_9_16 || selectedStarter.preview_urls?.short_9_16 || null;
-  }, [selectedStarter]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -305,11 +301,7 @@ export function BrandBuilderWorkspace({
           `,
         }}
       >
-        <BrandStudioPreview
-          look={editor}
-          ambientVideoUrl={ambientVideoUrl}
-          recipeLabel={selectedStarter?.label}
-        />
+        <BrandStudioPreview look={editor} />
       </div>
 
       {/* Bottom dock — visual tools, not a form wall */}

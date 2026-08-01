@@ -17,15 +17,17 @@ export type BrandStudioLook = {
 
 type BrandStudioPreviewProps = {
   look: BrandStudioLook;
-  ambientVideoUrl?: string | null;
-  recipeLabel?: string;
 };
 
-export function BrandStudioPreview({look, ambientVideoUrl, recipeLabel}: BrandStudioPreviewProps) {
+/**
+ * Brand look preview only — never mounts HyperFrames recipe demos.
+ * Those MP4s already burn in hooks/callouts; stacking a caption on them
+ * recreates the cluttered double-chrome frame.
+ */
+export function BrandStudioPreview({look}: BrandStudioPreviewProps) {
   const [activeWord, setActiveWord] = useState(0);
-  const [videoReady, setVideoReady] = useState(false);
   const pace = look.motionIntensity === "energetic" ? 420 : look.motionIntensity === "calm" ? 900 : 620;
-  const captionPx = Math.min(Math.max(look.fontSize * 0.42, 20), 36);
+  const captionPx = Math.min(Math.max(look.fontSize * 0.44, 22), 38);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -34,54 +36,48 @@ export function BrandStudioPreview({look, ambientVideoUrl, recipeLabel}: BrandSt
     return () => window.clearInterval(id);
   }, [pace]);
 
-  useEffect(() => {
-    setVideoReady(false);
-  }, [ambientVideoUrl]);
-
   return (
-    <div className="brand-studio-stage relative mx-auto aspect-[9/16] w-full max-w-[min(100%,22rem)] overflow-hidden rounded-[28px] border border-white/[0.12] bg-[#050507] shadow-[0_40px_100px_rgba(0,0,0,.55)]">
-      {/* Atmosphere */}
+    <div className="brand-studio-stage relative mx-auto aspect-[9/16] w-full max-w-[min(100%,24rem)] overflow-hidden rounded-[28px] border border-white/[0.12] bg-[#050507] shadow-[0_40px_100px_rgba(0,0,0,.55)]">
+      {/* Clean plate — brand atmosphere only */}
       <div
         className="absolute inset-0 transition-[background] duration-500"
         style={{
           background: `
-            radial-gradient(ellipse 80% 50% at 50% 18%, ${look.highlightColor}40, transparent 55%),
-            radial-gradient(ellipse 70% 45% at 70% 78%, ${look.highlightColor}18, transparent 50%),
-            linear-gradient(165deg, #1c1e24 0%, #0a0b0e 48%, #050507 100%)
+            radial-gradient(ellipse 90% 55% at 50% 28%, ${look.highlightColor}55, transparent 58%),
+            radial-gradient(ellipse 60% 40% at 20% 70%, ${look.highlightColor}18, transparent 50%),
+            linear-gradient(165deg, #22252c 0%, #0c0d10 52%, #050507 100%)
           `,
         }}
       />
 
-      {ambientVideoUrl ? (
-        <video
-          key={ambientVideoUrl}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${videoReady ? "opacity-45" : "opacity-0"}`}
-          src={ambientVideoUrl}
-          muted
-          loop
-          playsInline
-          autoPlay
-          preload="metadata"
-          onLoadedData={() => setVideoReady(true)}
-          onError={() => setVideoReady(false)}
-        />
-      ) : null}
-
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,transparent_30%,rgba(0,0,0,.55)_100%)]" />
-
-      {/* Soft film grain */}
+      {/* Soft subject stand-in (no recipe chrome) */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.07] mix-blend-overlay"
+        className="pointer-events-none absolute left-1/2 top-[22%] h-[42%] w-[58%] -translate-x-1/2 rounded-[40%] opacity-90 blur-[1px]"
+        style={{
+          background: `
+            radial-gradient(circle at 50% 35%, rgba(255,255,255,.22), transparent 42%),
+            radial-gradient(circle at 50% 70%, ${look.highlightColor}33, transparent 55%),
+            linear-gradient(180deg, #3a3d46 0%, #15171c 100%)
+          `,
+          boxShadow: `0 0 60px ${look.highlightColor}33`,
+        }}
+        aria-hidden
+      />
+
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,transparent_22%,rgba(0,0,0,.62)_100%)]" />
+
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.08] mix-blend-overlay"
         style={{
           backgroundImage:
             "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
         }}
       />
 
-      {/* Composition: one caption block */}
-      <div className="absolute inset-x-0 bottom-0 top-[42%] flex flex-col items-center justify-end px-5 pb-8">
+      {/* Single caption — owns the lower third */}
+      <div className="absolute inset-x-0 bottom-0 flex flex-col items-center px-5 pb-9 pt-24">
         <div
-          className="w-full max-w-[92%] rounded-[18px] px-4 py-3.5 text-center shadow-[0_18px_50px_rgba(0,0,0,.5)] transition-[background,color] duration-300"
+          className="w-full max-w-[94%] rounded-[18px] px-4 py-3.5 text-center shadow-[0_18px_50px_rgba(0,0,0,.55)] transition-[background,color] duration-300"
           style={{
             background: look.backgroundColor,
             color: look.textColor,
@@ -122,22 +118,11 @@ export function BrandStudioPreview({look, ambientVideoUrl, recipeLabel}: BrandSt
           </p>
         </div>
 
-        <div className="mt-4 flex w-full items-center justify-between px-1 text-[10px] font-medium tracking-wide text-white/45">
-          <span className="truncate">{look.watermarkText || " "}</span>
-          <span className="truncate text-right" style={{color: `${look.highlightColor}cc`}}>
-            {recipeLabel || "Brand"}
-          </span>
-        </div>
-      </div>
-
-      {/* Quiet top meta — not a chrome badge stack */}
-      <div className="absolute left-0 right-0 top-0 flex items-start justify-between p-4">
-        <div className="h-1 w-10 rounded-full bg-white/25" aria-hidden />
-        <div
-          className="h-2 w-2 rounded-full shadow-[0_0_12px_currentColor]"
-          style={{background: look.highlightColor, color: look.highlightColor}}
-          aria-hidden
-        />
+        {look.watermarkText ? (
+          <p className="mt-3.5 max-w-full truncate text-center text-[10px] font-medium tracking-wide text-white/40">
+            {look.watermarkText}
+          </p>
+        ) : null}
       </div>
     </div>
   );
