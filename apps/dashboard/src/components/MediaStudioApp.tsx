@@ -27,6 +27,7 @@ import {DashboardSection} from "@/components/home/DashboardSection";
 import {GenerateSection} from "@/components/generate/GenerateSection";
 import {WatchChannelsSection} from "@/components/generate/WatchChannelsSection";
 import {WorkspaceManagerModal} from "@/components/workspace/WorkspaceManagerModal";
+import {WorkspaceSwitcher} from "@/components/workspace/WorkspaceSwitcher";
 import {ExplainerSection} from "@/components/explainer/ExplainerSection";
 import {TemplatesSection} from "@/components/templates/TemplatesSection";
 import {CalendarSection} from "@/components/calendar/CalendarSection";
@@ -1103,7 +1104,16 @@ export function MediaStudioApp() {
           </div>
         </div>
 
-        <nav className="mt-8 grid min-h-0 flex-1 auto-rows-min content-start gap-3 overflow-y-auto pr-1">
+        <div className="mt-5 shrink-0">
+          <WorkspaceSwitcher
+            profiles={profiles}
+            profileId={profileId}
+            onSwitch={switchProfile}
+            onManage={() => setWorkspaceModalOpen(true)}
+          />
+        </div>
+
+        <nav className="mt-6 grid min-h-0 flex-1 auto-rows-min content-start gap-3 overflow-y-auto pr-1">
           {nav.map((item, index) => {
             const Icon = item.icon;
             const active = section === item.id;
@@ -1149,29 +1159,14 @@ export function MediaStudioApp() {
         <header className="sticky top-0 z-20 overflow-hidden border-b border-white/[0.06] bg-canvas-deep/[0.82] px-5 py-4 backdrop-blur-xl lg:px-8">
           <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="min-w-0">
-              <div className="mb-1 flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-cyan/[0.20] bg-teal/[0.08] px-3 py-1 text-xs font-semibold text-cyan">Guided Studio OS</span>
-                <label className="inline-flex items-center gap-2 text-xs font-medium text-zinc-500">
-                  Workspace
-                  <select
-                    value={profileId}
-                    onChange={(event) => switchProfile(event.target.value)}
-                    className="h-8 rounded-full border border-white/[0.10] bg-surface px-3 text-xs font-semibold text-zinc-200 outline-none"
-                  >
-                    {(profiles.length ? profiles : [{id: profileId, name: profileId}]).map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name || profile.id}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => setWorkspaceModalOpen(true)}
-                    className="inline-flex h-8 items-center rounded-full border border-white/[0.10] bg-surface px-3 text-xs font-semibold text-zinc-300 hover:bg-surface-raised"
-                  >
-                    Manage
-                  </button>
-                </label>
+              <div className="mb-2 lg:hidden">
+                <WorkspaceSwitcher
+                  variant="mobile"
+                  profiles={profiles}
+                  profileId={profileId}
+                  onSwitch={switchProfile}
+                  onManage={() => setWorkspaceModalOpen(true)}
+                />
               </div>
               <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">
                 {renderEditorialTitle(sectionCopy[section].title)}
