@@ -126,10 +126,27 @@ def _style_hex(value: Any, fallback: str) -> str:
     return text if re.fullmatch(r"#[0-9a-fA-F]{6}", text) else fallback
 
 
-def _shell_css(width: int, height: int, is_landscape: bool, text_color: str, accent: str, secondary_accent: str, caption_font_size: int, video_filter: str) -> str:
+def _shell_css(
+    width: int,
+    height: int,
+    is_landscape: bool,
+    text_color: str,
+    accent: str,
+    secondary_accent: str,
+    caption_font_size: int,
+    video_filter: str,
+    font_family: str = "Arial, sans-serif",
+    caption_background: str = "rgba(4, 7, 8, 0.72)",
+    stroke_width: float = 0,
+) -> str:
+    stroke_css = (
+        f"-webkit-text-stroke: {min(max(stroke_width / 4, 0), 2.5):.2f}px rgba(0,0,0,.45);"
+        if stroke_width > 0
+        else ""
+    )
     return f"""
     * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: #111111; font-family: Arial, sans-serif; }}
+    body {{ margin: 0; background: #111111; font-family: {font_family}; }}
     #root {{
       position: relative;
       width: {width}px;
@@ -137,6 +154,7 @@ def _shell_css(width: int, height: int, is_landscape: bool, text_color: str, acc
       overflow: hidden;
       background: #050607;
       color: {text_color};
+      font-family: {font_family};
       --template-accent: {accent};
       --template-secondary: {secondary_accent};
     }}
@@ -164,7 +182,7 @@ def _shell_css(width: int, height: int, is_landscape: bool, text_color: str, acc
       text-align: center;
       text-shadow: 0 5px 24px rgba(0,0,0,0.72);
     }}
-    .hook h1 {{ margin: 0; font-size: {62 if is_landscape else 74}px; line-height: 0.98; font-weight: 900; letter-spacing: 0; }}
+    .hook h1 {{ margin: 0; font-size: {62 if is_landscape else 74}px; line-height: 0.98; font-weight: 900; letter-spacing: 0; font-family: {font_family}; }}
     .hook p {{ margin: 22px 0 0; font-size: {26 if is_landscape else 30}px; line-height: 1.18; color: rgba(255,255,255,0.84); font-weight: 650; }}
     .caption-clip {{
       position: absolute;
@@ -182,7 +200,7 @@ def _shell_css(width: int, height: int, is_landscape: bool, text_color: str, acc
       padding: 20px 30px 23px;
       border-radius: 16px;
       border: 1px solid rgba(255,255,255,0.16);
-      background: rgba(4, 7, 8, 0.72);
+      background: {caption_background};
       box-shadow: 0 18px 48px rgba(0,0,0,0.42);
       text-align: center;
     }}
@@ -197,7 +215,9 @@ def _shell_css(width: int, height: int, is_landscape: bool, text_color: str, acc
       font-size: {caption_font_size}px;
       line-height: 1.08;
       font-weight: 900;
+      font-family: {font_family};
       text-shadow: 0 3px 12px rgba(0,0,0,0.9);
+      {stroke_css}
     }}
     .caption-text span {{ display: inline-block; color: {text_color}; }}
     .brand-row {{
@@ -230,7 +250,96 @@ def _shell_css(width: int, height: int, is_landscape: bool, text_color: str, acc
       font-weight: 900;
       box-shadow: 0 16px 44px rgba(0,0,0,0.38);
     }}
+    .brand-grain {{
+      position: absolute; inset: 0; pointer-events: none; opacity: 0.22; mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+      background-size: 180px 180px;
+    }}
+    .brand-vignette {{
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(ellipse 70% 65% at 50% 45%, transparent 42%, rgba(0,0,0,.55) 100%);
+    }}
+    .brand-shimmer {{
+      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+    }}
+    .brand-shimmer::before {{
+      content: "";
+      position: absolute; inset: -20% -40%;
+      background: linear-gradient(105deg, transparent 30%, {accent}44 48%, transparent 66%);
+      transform: translateX(-30%) skewX(-12deg);
+      animation: brand-shimmer-sweep 2.8s ease-in-out infinite;
+    }}
+    @keyframes brand-shimmer-sweep {{
+      0% {{ transform: translateX(-40%) skewX(-12deg); }}
+      100% {{ transform: translateX(80%) skewX(-12deg); }}
+    }}
+    .brand-social-pill {{
+      position: absolute;
+      left: 50%;
+      bottom: {300 if is_landscape else 520}px;
+      transform: translateX(-50%);
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 18px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.55);
+      border: 1px solid rgba(255,255,255,.16);
+      color: #fff;
+      font-size: 22px;
+      font-weight: 800;
+      z-index: 4;
+    }}
+    .brand-social-pill span {{
+      display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px;
+      background: var(--template-accent); color: #041018; font-size: 14px;
+    }}
     """
+
+
+def _css_font_family(value: Any) -> str:
+    text = str(value or "").strip() or "Arial"
+    safe = re.sub(r"[^a-zA-Z0-9 \-_]", "", text) or "Arial"
+    return f'"{safe}", Arial, sans-serif'
+
+
+def _css_background(value: Any, fallback: str = "rgba(4, 7, 8, 0.72)") -> str:
+    text = str(value or "").strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", text):
+        return text
+    if re.fullmatch(r"rgba?\([^)]+\)", text):
+        return text
+    return fallback
+
+
+def _brand_system_layers(style: dict[str, Any]) -> str:
+    brand_system = style.get("brand_system") if isinstance(style.get("brand_system"), dict) else {}
+    if not brand_system:
+        return ""
+    texture = str(brand_system.get("texture_effect") or "").lower()
+    cta = str(brand_system.get("cta_overlay") or "").lower()
+    layers: list[str] = []
+    if "grain" in texture:
+        layers.append('<div class="template-layer brand-grain" aria-hidden="true"></div>')
+    if "vignette" in texture or (texture and "grain" not in texture and "shimmer" not in texture):
+        layers.append('<div class="template-layer brand-vignette" aria-hidden="true"></div>')
+    if "shimmer" in texture:
+        layers.append('<div class="template-layer brand-shimmer" aria-hidden="true"></div>')
+    if cta:
+        label = "Follow"
+        mark = "●"
+        if "yt" in cta or "youtube" in cta:
+            label, mark = "Subscribe", "▶"
+        elif "instagram" in cta or cta.endswith("ig"):
+            label, mark = "Follow", "◎"
+        elif "tiktok" in cta:
+            label, mark = "Follow", "♪"
+        elif "x-" in cta or "twitter" in cta:
+            label, mark = "Post", "𝕏"
+        layers.append(
+            f'<div class="template-layer brand-social-pill" aria-hidden="true"><span>{html.escape(mark)}</span>{html.escape(label)}</div>'
+        )
+    return "\n    ".join(layers)
 
 
 def _render_shell(contract: dict[str, Any], template: dict[str, Any], layout: LayoutContext, duration_s: str) -> str:
@@ -284,9 +393,15 @@ def build_hyperframes_index_html(
     }
     text_color = _style_hex(caption_style.get("text_color"), "#ffffff")
     highlight_color = _style_hex(caption_style.get("highlight_word_color"), template["accent"])
-    accent = _style_hex(template.get("accent"), "#d8b45f")
+    if style.get("brand_system"):
+        accent = _style_hex(caption_style.get("highlight_word_color"), template["accent"])
+    else:
+        accent = _style_hex(template.get("accent"), "#d8b45f")
     secondary_accent = _style_hex(template.get("secondary_accent"), "#8ee6c8")
     caption_font_size = int(caption_style.get("font_size") or 54)
+    font_family = _css_font_family(caption_style.get("font_family") or template.get("font_family") or "Arial")
+    caption_background = _css_background(caption_style.get("background_color"))
+    stroke_width = float(caption_style.get("stroke_width") or 0)
     recipe = get_recipe(str(template.get("recipe_module") or template["id"]))
     layout = LayoutContext(
         width=width,
@@ -300,6 +415,7 @@ def build_hyperframes_index_html(
     )
     caption_nodes = _render_captions(contract, recipe, layout)
     template_overlay = _render_template_overlay(recipe, contract, template, layout)
+    brand_layers = _brand_system_layers(style)
     shell_body = _render_shell(contract, template, layout, duration_s)
     recipe_css = recipe.css_block(layout)
     cta_start_ms = max(0, duration_ms - 6500)
@@ -315,7 +431,7 @@ def build_hyperframes_index_html(
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{html.escape(str(contract.get("candidateId", "hyperframes-render")))}</title>
 {recipe.shell_extras_head()}  <style>
-{_shell_css(width, height, is_landscape, text_color, accent, secondary_accent, caption_font_size, recipe.video_filter())}
+{_shell_css(width, height, is_landscape, text_color, accent, secondary_accent, caption_font_size, recipe.video_filter(), font_family, caption_background, stroke_width)}
 {recipe_css}
   </style>
 </head>
@@ -323,6 +439,7 @@ def build_hyperframes_index_html(
   <div id="root" class="{root_class}" data-composition-id="premium-hyperframes" data-start="0" data-duration="{duration_s}" data-width="{width}" data-height="{height}">
 {shell_body}
     {template_overlay}
+    {brand_layers}
     {caption_nodes}
     <div id="cta" class="clip cta" data-start="{_attr(_seconds(cta_start_ms))}" data-duration="{_attr(_seconds(duration_ms - cta_start_ms))}" data-track-index="3">
       {html.escape(str(contract.get("ctaText", "")))}

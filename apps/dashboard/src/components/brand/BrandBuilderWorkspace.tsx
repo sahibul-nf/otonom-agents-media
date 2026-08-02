@@ -70,6 +70,7 @@ function hexFromColor(value: unknown, fallback: string) {
 function editorFromStyle(source: StyleProfile | null, starterTemplate = "spiritual_reflective"): EditorState {
   const caption = source?.caption || {};
   const brand = source?.brand || {};
+  const brandSystem = source?.brand_system || {};
   const watermark = String(brand.watermark_text || "").trim();
   return {
     fontFamily: String(caption.font_family || "Sora"),
@@ -79,13 +80,13 @@ function editorFromStyle(source: StyleProfile | null, starterTemplate = "spiritu
     backgroundColor: hexFromColor(caption.background_color, "#000000"),
     strokeWidth: Number(caption.stroke_width || 10),
     watermarkText: watermark && !/nourbit|nouraniyyah/i.test(watermark) ? watermark : "Brand Clips",
-    starterTemplate,
-    captionStyle: "caption-editorial-emphasis",
-    introLayout: "editorial-hook",
-    ctaOverlay: "yt-lower-third",
-    textureEffect: "vignette",
-    transitionFamily: "dissolve",
-    motionIntensity: "balanced",
+    starterTemplate: String(brandSystem.starter_template || starterTemplate || "spiritual_reflective"),
+    captionStyle: String(brandSystem.caption_style || "caption-editorial-emphasis"),
+    introLayout: String(brandSystem.intro_layout || "editorial-hook"),
+    ctaOverlay: String(brandSystem.cta_overlay || "yt-lower-third"),
+    textureEffect: String(brandSystem.texture_effect || "vignette"),
+    transitionFamily: String(brandSystem.transition_family || "dissolve"),
+    motionIntensity: String(brandSystem.motion_intensity || "balanced"),
   };
 }
 
@@ -153,6 +154,10 @@ export function BrandBuilderWorkspace({
   const [dockTab, setDockTab] = useState<DockTab>("identity");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activePresetId, setActivePresetId] = useState(initialPreset || "");
+  const [editingPath, setEditingPath] = useState<string | undefined>(() =>
+    validInitialBase && validInitialBase !== defaultTemplate && /custom_/i.test(validInitialBase) ? validInitialBase : undefined,
+  );
+  const [savedHandoff, setSavedHandoff] = useState<{path: string; brandId: string} | null>(null);
   const starterTemplates = hyperframesTemplates.length
     ? hyperframesTemplates
     : ([{id: "spiritual_reflective", label: "Spiritual Reflective", best_for: "Reflective clips"}] as HyperframesTemplate[]);
@@ -193,11 +198,13 @@ export function BrandBuilderWorkspace({
 
   const updateEditor = (patch: Partial<EditorState>) => {
     setActivePresetId("");
+    setSavedHandoff(null);
     setEditor((current) => ({...current, ...patch}));
   };
 
   function applyPreset(presetId: string) {
     setActivePresetId(presetId);
+    setSavedHandoff(null);
     setEditor((current) => applyPresetToEditor(current, presetId));
   }
 
@@ -214,11 +221,18 @@ export function BrandBuilderWorkspace({
       const loaded = await apiGet<StyleProfile>(`style?path=${encodeURIComponent(path)}`);
       const nextEditor = editorFromStyle(loaded, editor.starterTemplate);
       const template = templates.find((item) => item.path === path);
-      const nextLabel = template?.label ? `${template.label} Copy` : "Custom Workspace Template";
+      const isCustom = /custom_/i.test(path);
+      const nextLabel =
+        loaded.label ||
+        template?.label ||
+        (isCustom ? "Custom Workspace Template" : "Custom Workspace Template");
+      const editLabel = isCustom ? nextLabel : `${nextLabel} Copy`;
       setEditor(nextEditor);
-      setLabel(nextLabel);
+      setLabel(isCustom ? nextLabel : editLabel);
       setActivePresetId("");
-      if (markClean) setCleanSnapshot(snapshot(nextLabel, path, nextEditor));
+      setEditingPath(isCustom ? path : undefined);
+      setSavedHandoff(null);
+      if (markClean) setCleanSnapshot(snapshot(isCustom ? nextLabel : editLabel, path, nextEditor));
       setSaveState("Loaded");
     } catch (error) {
       setSaveState(error instanceof Error ? error.message : "Load failed");
@@ -238,7 +252,7 @@ export function BrandBuilderWorkspace({
     setSaveBusy(true);
     setSaveState("Saving…");
     try {
-      await apiPost("brand-system-templates", {
+      const saved = await apiPost<{id: string; label: string; path: string}>("brand-system-templates", {
         label,
         style: {
           caption: {
@@ -261,7 +275,12 @@ export function BrandBuilderWorkspace({
           motion_intensity: editor.motionIntensity,
         },
         base_template: selectedTemplate,
+        path: editingPath || undefined,
       });
+      const nextPath = saved.path;
+      const brandId = `brand:${nextPath.split("/").pop()?.replace(/\.json$/, "") || saved.id}`;
+      setEditingPath(nextPath);
+      setSavedHandoff({path: nextPath, brandId});
       setCleanSnapshot(snapshot(label, selectedTemplate, editor));
       setSaveState("Saved");
       await onTemplateSaved();
@@ -270,6 +289,20 @@ export function BrandBuilderWorkspace({
     } finally {
       setSaveBusy(false);
     }
+  }
+
+  function useInCreate() {
+    if (!savedHandoff) return;
+    window.localStorage.setItem(
+      "otonom.generateBrandHandoff",
+      JSON.stringify({
+        brandTemplate: savedHandoff.path,
+        hyperframesTemplate: savedHandoff.brandId,
+        brandSystemTemplateId: savedHandoff.brandId,
+        renderer: "hyperframes",
+      }),
+    );
+    router.push("/?section=generate");
   }
 
   return (
@@ -297,17 +330,26 @@ export function BrandBuilderWorkspace({
         </div>
         <div className="flex shrink-0 items-center gap-2.5">
           <span className={`hidden text-[11px] font-medium sm:inline ${dirty ? "text-warning" : "text-zinc-500"}`} title={!dirty ? "No changes to save" : undefined}>
-            {dirty ? "Unsaved changes" : saveState}
+            {dirty ? "Unsaved changes" : editingPath ? "Editing saved style" : saveState}
           </span>
+          {savedHandoff && !dirty ? (
+            <button
+              type="button"
+              onClick={useInCreate}
+              className="hidden h-9 items-center rounded-full border border-cyan/35 px-3.5 text-[11px] font-semibold text-cyan sm:inline-flex"
+            >
+              Use in Create
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={!dirty || saveBusy || templateBusy}
             onClick={() => void saveTemplate()}
-            title={!dirty ? "No changes to save" : "Save brand template"}
+            title={!dirty ? "No changes to save" : editingPath ? "Update brand template" : "Save brand template"}
             className="inline-flex h-9 items-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             {saveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {saveBusy ? "Saving…" : "Save"}
+            {saveBusy ? "Saving…" : editingPath ? "Update" : "Save"}
           </button>
         </div>
       </header>
@@ -465,7 +507,7 @@ export function BrandBuilderWorkspace({
             ) : (
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4">
                 <p className="mb-4 text-[11px] leading-relaxed text-zinc-500">
-                  Optional render pack settings. Identity colors and type still drive the preview.
+                  Changes update the stage as approximate stubs. Final look applies on clip render.
                 </p>
                 <div className="space-y-3">
                   <InspectorSelect
@@ -474,6 +516,7 @@ export function BrandBuilderWorkspace({
                     options={starterSelectOptions}
                     onChange={(starterTemplate) => updateEditor({starterTemplate})}
                   />
+                  {selectedStarter ? <StarterRecipeReference template={selectedStarter} /> : null}
                   <InspectorSelect
                     label="Captions"
                     value={editor.captionStyle}
@@ -540,7 +583,7 @@ export function BrandBuilderWorkspace({
         </aside>
 
         <section
-          className="order-1 relative flex min-h-[min(52dvh,28rem)] items-center justify-center overflow-hidden bg-canvas-deep px-4 py-5 lg:order-2 lg:min-h-0 lg:px-8 lg:py-8"
+          className="order-1 relative flex min-h-[min(52dvh,28rem)] items-center justify-center overflow-hidden bg-canvas-deep px-4 py-5 lg:order-2 lg:min-h-0 lg:h-full lg:px-8 lg:py-7"
           style={{
             backgroundImage: `
               radial-gradient(ellipse 55% 50% at 50% 42%, ${editor.highlightColor}14, transparent 62%),
@@ -548,7 +591,19 @@ export function BrandBuilderWorkspace({
             `,
           }}
         >
-          <BrandStudioPreview look={editor} />
+          <div className="flex h-full max-h-full w-full items-center justify-center">
+            <BrandStudioPreview
+              look={editor}
+              effects={{
+                starterId: editor.starterTemplate,
+                captionStyle: editor.captionStyle,
+                textureEffect: editor.textureEffect,
+                ctaOverlay: editor.ctaOverlay,
+                introLayout: editor.introLayout,
+                transitionFamily: editor.transitionFamily,
+              }}
+            />
+          </div>
         </section>
       </div>
 
@@ -633,6 +688,34 @@ function Swatch({label, value, onChange}: {label: string; value: string; onChang
       </span>
       <span className="text-[11px] font-semibold text-zinc-400">{label}</span>
     </label>
+  );
+}
+
+function StarterRecipeReference({template}: {template: HyperframesTemplate}) {
+  const previewSrc = template.preview_urls?.short_9_16 || template.preview_video_urls?.short_9_16;
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
+      <div className="relative h-14 w-9 shrink-0 overflow-hidden rounded-md border border-white/10 bg-black/40">
+        {previewSrc ? (
+          <video
+            key={previewSrc}
+            src={previewSrc}
+            muted
+            playsInline
+            loop
+            autoPlay
+            preload="metadata"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="grid h-full place-items-center text-[9px] font-semibold text-zinc-600">HF</div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[11px] font-semibold text-zinc-200">{template.label}</p>
+        <p className="truncate text-[10px] text-zinc-500">{template.best_for || "Recipe reference"}</p>
+      </div>
+    </div>
   );
 }
 

@@ -188,17 +188,29 @@ export type CredentialStatus = {
 };
 
 export type StyleProfile = {
+  id?: string;
+  label?: string;
   layout?: Record<string, string>;
   caption?: Record<string, string | number | boolean | Record<string, string | number | boolean>>;
   brand?: Record<string, string | number | boolean>;
   ai?: Record<string, string | number | boolean>;
   overlay?: Record<string, string | number | boolean>;
+  brand_system?: {
+    starter_template?: string;
+    caption_style?: string;
+    intro_layout?: string;
+    cta_overlay?: string;
+    texture_effect?: string;
+    transition_family?: string;
+    motion_intensity?: string;
+  };
 };
 
 export type BrandTemplate = {
   id: string;
   label: string;
   path: string;
+  has_brand_system?: string;
 };
 
 export type HyperframesTemplate = {
@@ -216,6 +228,7 @@ export type HyperframesTemplate = {
   components_used?: string[];
   blocks_used?: string[];
   brand_template_path?: string;
+  starter_template?: string;
   preview_seconds?: number;
   preview_status?: string;
   preview_urls?: Record<string, string>;

@@ -187,6 +187,11 @@ def build_premium_render_contract(
     validate_premium_duration(duration_ms)
     style = style or load_style()
     caption_style = style["caption"]
+    brand = style.get("brand") if isinstance(style.get("brand"), dict) else {}
+    watermark_text = str(brand.get("watermark_text") or "").strip() or str(profile.get("watermark_text") or "")
+    cta_text = str(profile.get("cta_text") or "")
+    if brand.get("cta_enabled") is False:
+        cta_text = ""
     raw_captions = candidate.get("timed_captions") or []
     if not raw_captions:
         raise ValueError(
@@ -229,8 +234,8 @@ def build_premium_render_contract(
             {"type": "caption_emphasis", "startMs": 5500, "endMs": max(6500, duration_ms - 9000)},
             {"type": "cta", "startMs": max(0, duration_ms - 6500), "endMs": duration_ms},
         ],
-        "watermarkText": profile["watermark_text"],
-        "ctaText": profile["cta_text"],
+        "watermarkText": watermark_text,
+        "ctaText": cta_text,
         "stylePreset": PREMIUM_PRESET,
         "style": style,
         "cropStrategy": "speaker_aware_or_center_crop",

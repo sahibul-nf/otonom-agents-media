@@ -455,6 +455,15 @@ def dimensions_for_format(value: Any) -> tuple[int, int, str]:
     return 1080, 1920, "short_9_16" if normalized == "auto" else normalized
 
 
+def resolve_starter_template_id(value: Any) -> str:
+    """Map a Brand Studio starter id (including aliases) to a builtin template id."""
+    raw = str(value or "").strip() or DEFAULT_TEMPLATE_ID
+    mapped = ALIASES.get(raw, raw)
+    if mapped in TEMPLATE_BY_ID:
+        return mapped
+    return DEFAULT_TEMPLATE_ID
+
+
 def resolve_hyperframes_template(
     value: Any = AUTO_TEMPLATE_ID,
     genres: list[str] | tuple[str, ...] | None = None,
@@ -463,14 +472,21 @@ def resolve_hyperframes_template(
     template_id = normalize_hyperframes_template(value)
     saved = _saved_brand_template_by_id(template_id)
     if saved:
-        base = TEMPLATE_BY_ID[DEFAULT_TEMPLATE_ID].renderer_dict()
+        starter_id = resolve_starter_template_id(saved.get("starter_template"))
+        base = TEMPLATE_BY_ID[starter_id].renderer_dict()
         return {
             **base,
             **saved,
             "version": TEMPLATE_VERSION,
+            "starter_template": starter_id,
+            "recipe_module": base.get("recipe_module") or starter_id,
             "accent": base["accent"],
             "secondary_accent": base["secondary_accent"],
             "overlay_class": base["overlay_class"],
+            "font_family": base.get("font_family") or "",
+            "motion_preset": base.get("motion_preset") or "",
+            "color_grade": base.get("color_grade") or "",
+            "preview_source_video": base.get("preview_source_video") or saved.get("preview_source_video"),
         }
     if template_id != AUTO_TEMPLATE_ID:
         return TEMPLATE_BY_ID[template_id].renderer_dict()
@@ -498,10 +514,15 @@ def _saved_brand_system_templates() -> list[dict[str, Any]]:
         if _contains_private_legacy_branding(raw):
             continue
         brand_system = payload.get("brand_system") if isinstance(payload.get("brand_system"), dict) else {}
+        if not brand_system:
+            continue
         template_id = str(payload.get("id") or path.stem)
         label = str(payload.get("label") or path.stem.replace("_", " ").title())
         formats = ["short_9_16", "long_16_9"]
         public_id = f"brand:{template_id}"
+        relative_path = str(path.relative_to(ROOT))
+        starter_id = resolve_starter_template_id(brand_system.get("starter_template"))
+        starter = TEMPLATE_BY_ID[starter_id]
         templates.append(
             {
                 "id": public_id,
@@ -524,10 +545,14 @@ def _saved_brand_system_templates() -> list[dict[str, Any]]:
                     str(brand_system.get("texture_effect") or "vignette"),
                 ],
                 "blocks_used": [str(brand_system.get("cta_overlay") or "yt-lower-third")],
+                "brand_template_path": relative_path,
+                "starter_template": starter_id,
+                "recipe_module": starter.recipe_module or starter_id,
+                "preview_source_video": starter.preview_source_video,
                 "preview_seconds": PREVIEW_SECONDS,
                 "preview_status": "ready",
                 "preview_urls": _preview_urls(public_id, formats),
-                "preview_video_urls": _official_preview_urls(public_id, formats),
+                "preview_video_urls": _official_preview_urls(starter_id, formats) or _official_preview_urls(public_id, formats),
                 "production_checks": {
                     "lint": "required",
                     "inspect": "required",

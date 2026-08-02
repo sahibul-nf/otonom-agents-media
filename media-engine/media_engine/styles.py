@@ -53,16 +53,37 @@ def _slug(value: str) -> str:
     return text or "custom_template"
 
 
-def save_style_template(label: str, style: dict[str, Any], base_style_path: str | Path | None = None) -> dict[str, str]:
+def _profiles_relative(path: Path) -> str:
+    return str(path.resolve().relative_to(ROOT.resolve()))
+
+
+def _resolve_save_path(label: str, target_path: str | Path | None = None) -> tuple[Path, str]:
+    """Return (absolute path, template id) for a brand style write."""
+    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+    if target_path:
+        path = resolve_style_path(target_path)
+        if path.parent.resolve() != PROFILES_DIR.resolve():
+            raise ValueError("target path must be inside profiles/")
+        if not path.name.startswith("custom_") or path.suffix != ".json":
+            raise ValueError("can only overwrite custom_*.json brand templates")
+        return path, path.stem
+    template_id = f"custom_{_slug(label)}"
+    return PROFILES_DIR / f"{template_id}.json", template_id
+
+
+def save_style_template(
+    label: str,
+    style: dict[str, Any],
+    base_style_path: str | Path | None = None,
+    target_path: str | Path | None = None,
+) -> dict[str, str]:
     clean_label = str(label or "").strip() or "Custom Brand Template"
     payload = deep_merge(load_style(base_style_path), style)
     payload["label"] = clean_label
-    template_id = f"custom_{_slug(clean_label)}"
+    path, template_id = _resolve_save_path(clean_label, target_path)
     payload["id"] = template_id
-    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
-    path = PROFILES_DIR / f"{template_id}.json"
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    relative = str(path.relative_to(ROOT))
+    relative = _profiles_relative(path)
     return {"id": relative, "label": clean_label, "path": relative}
 
 
@@ -71,6 +92,7 @@ def save_brand_system_template(
     style: dict[str, Any],
     brand_system: dict[str, Any],
     base_style_path: str | Path | None = None,
+    target_path: str | Path | None = None,
 ) -> dict[str, str]:
     payload = deep_merge(style, {"brand_system": brand_system})
-    return save_style_template(label, payload, base_style_path)
+    return save_style_template(label, payload, base_style_path, target_path=target_path)
