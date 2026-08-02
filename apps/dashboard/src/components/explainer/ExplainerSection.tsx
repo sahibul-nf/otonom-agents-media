@@ -149,8 +149,8 @@ export function ExplainerSection({
     const explainerItems = jobs.map((job) => ({
       key: `expl-${job.job_id}`,
       kind: "plan" as const,
-      title: job.topic || "Hybrid plan",
-      subtitle: job.status === "planned" ? "Plan ready — stitch when fixtures are in" : undefined,
+      title: job.topic || "Scene plan",
+      subtitle: job.status === "planned" ? "Plan ready — finish when scenes are assembled" : undefined,
       status: job.status,
       error: job.error,
       candidateId: job.candidate_id || undefined,
@@ -259,7 +259,7 @@ export function ExplainerSection({
         >
           <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
             Advanced
-            <span className="ml-2 text-xs font-medium text-zinc-500">import file · hybrid plan · style</span>
+            <span className="ml-2 text-xs font-medium text-zinc-500">import existing video</span>
           </summary>
 
           <div className="mt-5 space-y-6 border-t border-white/[0.06] pt-5">
@@ -297,52 +297,57 @@ export function ExplainerSection({
               </button>
             </div>
 
-            <div>
-              <p className="text-sm font-medium text-zinc-200">Hybrid plan (avatar + cards)</p>
-              <p className="mt-1 text-xs text-zinc-500">Optional local plan/stitch workflow for operators assembling fixtures.</p>
-              <input
-                value={topic}
-                onChange={(event) => setTopic(event.target.value)}
-                placeholder="Topic for scene plan"
-                className="mt-3 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
-              />
-              <textarea
-                value={sources}
-                onChange={(event) => setSources(event.target.value)}
-                rows={2}
-                placeholder="Sources (optional, one per line)"
-                className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
-              />
-              <select
-                value={activeTemplateId}
-                onChange={(event) => setTemplateId(event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none"
-              >
-                {templateOptions.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.label}
-                  </option>
-                ))}
-              </select>
-              <label className="mt-3 flex items-center gap-3 text-sm text-zinc-300">
+            <details className="rounded-2xl border border-white/[0.06] bg-black/25 p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-400">
+                Labs
+                <span className="ml-2 text-xs font-medium text-zinc-600">local scene plan</span>
+              </summary>
+              <div className="mt-4 space-y-3 border-t border-white/[0.06] pt-4">
+                <p className="text-xs text-zinc-500">Optional local plan for operators who assemble scenes offline. Most people can ignore this.</p>
                 <input
-                  type="checkbox"
-                  checked={ffmpegOnly}
-                  onChange={(event) => setFfmpegOnly(event.target.checked)}
-                  className="h-4 w-4 rounded border-white/20 bg-black/40"
+                  value={topic}
+                  onChange={(event) => setTopic(event.target.value)}
+                  placeholder="Topic for scene plan"
+                  className="w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
                 />
-                Prefer reliable local stitch
-              </label>
-              <button
-                type="button"
-                disabled={!topic.trim() || actionState?.status === "running"}
-                onClick={() => void onCreate({topic: topic.trim(), sources, hyperframes_template: activeTemplateId})}
-                className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-200 disabled:opacity-50"
-              >
-                {actionState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Create plan
-              </button>
-            </div>
+                <textarea
+                  value={sources}
+                  onChange={(event) => setSources(event.target.value)}
+                  rows={2}
+                  placeholder="Sources (optional, one per line)"
+                  className="w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
+                />
+                <select
+                  value={activeTemplateId}
+                  onChange={(event) => setTemplateId(event.target.value)}
+                  className="w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none"
+                >
+                  {templateOptions.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.label}
+                    </option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-3 text-sm text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={ffmpegOnly}
+                    onChange={(event) => setFfmpegOnly(event.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-black/40"
+                  />
+                  Prefer reliable local finish
+                </label>
+                <button
+                  type="button"
+                  disabled={!topic.trim() || actionState?.status === "running"}
+                  onClick={() => void onCreate({topic: topic.trim(), sources, hyperframes_template: activeTemplateId})}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-zinc-200 disabled:opacity-50"
+                >
+                  {actionState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Create plan
+                </button>
+              </div>
+            </details>
           </div>
         </details>
       </section>
@@ -372,7 +377,7 @@ export function ExplainerSection({
                           onClick={() => void onRun(item.jobId!, ffmpegOnly)}
                           className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1.5 text-xs font-semibold text-cyan disabled:opacity-50"
                         >
-                          Stitch
+                          Finish plan
                         </button>
                       ) : null}
                       {"agentUrl" in item && item.agentUrl ? (

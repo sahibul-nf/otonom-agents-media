@@ -162,21 +162,29 @@ function publicAccountLabel(target: PublishTarget) {
   return raw;
 }
 
-const nav = [
+const primaryNav = [
   {id: "dashboard", label: "Home", icon: LayoutDashboard},
   {id: "generate", label: "Create", icon: Wand2},
-  {id: "explainer", label: "Long video", icon: BookOpen},
-  {id: "templates", label: "Templates", icon: Sparkles},
   {id: "review", label: "Review", icon: Clapperboard},
   {id: "calendar", label: "Schedule", icon: CalendarDays},
   {id: "publish", label: "Publish", icon: Send},
+] as const;
+
+const secondaryNav = [
+  {id: "explainer", label: "Long video", icon: BookOpen},
+  {id: "templates", label: "Templates", icon: Sparkles},
   {id: "brand", label: "Brand", icon: Settings},
 ] as const;
 
+const nav = [...primaryNav, ...secondaryNav] as const;
+
+const mobilePrimaryNav = primaryNav.filter((item) => item.id !== "dashboard");
+
+
 const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   dashboard: {
-    title: "Command Center",
-    subtitle: "One clear next step to keep publishing moving.",
+    title: "Home",
+    subtitle: "One clear next step: Create → Review → Schedule → Publish.",
   },
   generate: {
     title: "Create",
@@ -208,11 +216,26 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
 };
 
+function nextActionToneLabel(tone: NextAction["tone"]) {
+  switch (tone) {
+    case "warning":
+      return "Needs attention";
+    case "ready":
+      return "Ready";
+    case "primary":
+      return "Next";
+    default: {
+      const _exhaustive: never = tone;
+      return _exhaustive;
+    }
+  }
+}
+
 function renderEditorialTitle(title: string) {
-  if (title === "Command Center") {
+  if (title === "Home") {
     return (
       <>
-        <span className="font-editorial italic font-normal text-cyan">Command</span> Center
+        <span className="font-editorial italic font-normal text-cyan">Home</span>
       </>
     );
   }
@@ -350,24 +373,24 @@ function getNextAction({
 }): NextAction {
   const reviewCount = clips.filter((clip) => ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status)).length;
   if (!engineReady) {
-    return {label: "Check render readiness", detail: "The clip renderer needs a quick health check before you generate.", section: "generate", tone: "warning"};
+    return {label: "Check Create readiness", detail: "Make sure the media engine is running before you create clips.", section: "generate", tone: "warning"};
   }
   if (!hasTemplate) {
     return {label: "Choose a visual style", detail: "Pick a template so new clips match your brand look.", section: "templates", tone: "primary"};
   }
   if (!clips.length) {
-    return {label: "Generate first clips", detail: "Start from a long YouTube video and land candidates in Review.", section: "generate", tone: "primary"};
+    return {label: "Generate first clips", detail: "Paste a long YouTube video and land candidates in Review.", section: "generate", tone: "primary"};
   }
   if (reviewCount > 0) {
-    return {label: `Review ${reviewCount} clips`, detail: "Approve the strongest candidates or open repair tools for blocked clips.", section: "review", tone: "primary"};
+    return {label: `Review ${reviewCount} clips`, detail: "Approve the strongest candidates, or fix anything blocked.", section: "review", tone: "primary"};
   }
   if (approvedCount > 0 && scheduledCount === 0) {
-    return {label: `Schedule ${approvedCount} approved clips`, detail: "Move approved clips into the next guarded publishing slots.", section: "calendar", tone: "ready"};
+    return {label: `Schedule ${approvedCount} approved clips`, detail: "Place approved clips into the next publishing slots.", section: "calendar", tone: "ready"};
   }
   if (targetCount > 0 && readyPlatforms < targetCount) {
-    return {label: `Connect ${targetCount - readyPlatforms} publish accounts`, detail: "Finish platform readiness so scheduled clips can publish.", section: "publish", tone: "warning"};
+    return {label: `Connect ${targetCount - readyPlatforms} publish accounts`, detail: "Connect the remaining accounts so scheduled clips can go live.", section: "publish", tone: "warning"};
   }
-  return {label: "Generate next batch", detail: "The current pipeline is clear enough to create the next set of candidates.", section: "generate", tone: "primary"};
+  return {label: "Generate next batch", detail: "Queue is clear — create the next set of clips when you’re ready.", section: "generate", tone: "primary"};
 }
 
 function buildWorkflowSteps({
@@ -389,12 +412,12 @@ function buildWorkflowSteps({
 }): WorkflowStep[] {
   const reviewCount = clips.filter((clip) => ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status)).length;
   return [
-    {id: "brand", label: "Brand", status: hasTemplate ? "ready" : "active", detail: hasTemplate ? "Template available" : "Pick a preset", section: "brand"},
-    {id: "template", label: "Template", status: hasTemplate ? "ready" : "blocked", detail: hasTemplate ? "Style ready" : "Choose first", section: "templates"},
     {id: "generate", label: "Create", status: clips.length ? "ready" : engineReady && hasTemplate ? "active" : "blocked", detail: clips.length ? `${clips.length} clips` : "No batch yet", section: "generate"},
     {id: "review", label: "Review", status: reviewCount ? "active" : approvedCount || scheduledCount ? "ready" : "idle", detail: reviewCount ? `${reviewCount} need action` : approvedCount ? `${approvedCount} approved` : "Waiting", section: "review"},
     {id: "schedule", label: "Schedule", status: scheduledCount ? "ready" : approvedCount ? "active" : "idle", detail: scheduledCount ? `${scheduledCount} queued` : approvedCount ? "Ready to slot" : "Waiting", section: "calendar"},
     {id: "publish", label: "Publish", status: readyPlatforms ? "ready" : targetCount ? "active" : "idle", detail: targetCount ? `${readyPlatforms}/${targetCount} channels` : "No targets", section: "publish"},
+    {id: "brand", label: "Brand", status: hasTemplate ? "ready" : "active", detail: hasTemplate ? "Style ready" : "Pick a preset", section: "brand"},
+    {id: "template", label: "Templates", status: hasTemplate ? "ready" : "blocked", detail: hasTemplate ? "Available" : "Choose first", section: "templates"},
   ];
 }
 
@@ -429,6 +452,7 @@ export function MediaStudioApp() {
   profileIdRef.current = profileId;
   const [profiles, setProfiles] = useState<MediaProfile[]>([]);
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [watchChannels, setWatchChannels] = useState<WatchChannel[]>([]);
   const [clips, setClips] = useState<ClipCandidate[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -1100,7 +1124,7 @@ export function MediaStudioApp() {
             <h1 className="text-base font-semibold leading-5 font-sans">
               <span className="font-editorial italic font-normal text-cyan">Otonom</span> Media
             </h1>
-            <p className="text-xs text-zinc-400">Guided production OS</p>
+            <p className="text-xs text-zinc-400">Create · Review · Publish</p>
           </div>
         </div>
 
@@ -1113,8 +1137,9 @@ export function MediaStudioApp() {
           />
         </div>
 
-        <nav className="mt-6 grid min-h-0 flex-1 auto-rows-min content-start gap-3 overflow-y-auto pr-1">
-          {nav.map((item, index) => {
+        <nav className="mt-6 grid min-h-0 flex-1 auto-rows-min content-start gap-1 overflow-y-auto pr-1">
+          <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">Loop</p>
+          {primaryNav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
             const step = workflowSteps.find((workflowStep) => workflowStep.section === item.id);
@@ -1122,7 +1147,7 @@ export function MediaStudioApp() {
               <button
                 key={item.id}
                 onClick={() => setSection(item.id)}
-                className={`group relative flex min-h-[56px] items-center gap-3 overflow-hidden rounded-[18px] border px-3.5 py-2 text-left text-sm font-medium transition ${
+                className={`group relative flex min-h-[52px] items-center gap-3 overflow-hidden rounded-[18px] border px-3.5 py-2 text-left text-sm font-medium transition ${
                   active
                     ? "border-cyan/[0.30] bg-cyan/[0.09] text-cyan shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
                     : "border-transparent text-zinc-500 hover:bg-white/[0.035] hover:text-zinc-100"
@@ -1133,9 +1158,34 @@ export function MediaStudioApp() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-semibold">{item.label}</span>
-                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{step?.detail || `Step ${index + 1}`}</span>
+                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{step?.detail || "—"}</span>
                 </span>
                 {step ? <span className={`h-1.5 w-1.5 rounded-full ${step.status === "ready" ? "bg-teal" : step.status === "active" ? "bg-cyan" : step.status === "blocked" ? "bg-warning" : "bg-white/[0.16]"}`} /> : null}
+              </button>
+            );
+          })}
+          <p className="mt-3 px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">More</p>
+          {secondaryNav.map((item) => {
+            const Icon = item.icon;
+            const active = section === item.id;
+            const step = workflowSteps.find((workflowStep) => workflowStep.section === item.id);
+            return (
+              <button
+                key={item.id}
+                onClick={() => setSection(item.id)}
+                className={`group relative flex min-h-[48px] items-center gap-3 overflow-hidden rounded-[18px] border px-3.5 py-2 text-left text-sm font-medium transition ${
+                  active
+                    ? "border-cyan/[0.30] bg-cyan/[0.09] text-cyan shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    : "border-transparent text-zinc-500 hover:bg-white/[0.035] hover:text-zinc-100"
+                }`}
+              >
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-2xl transition ${active ? "bg-cyan text-ink" : "bg-white/[0.035] text-zinc-500 group-hover:text-zinc-200"}`}>
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold">{item.label}</span>
+                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{step?.detail || "—"}</span>
+                </span>
               </button>
             );
           })}
@@ -1145,7 +1195,9 @@ export function MediaStudioApp() {
           <div className="rounded-[22px] border border-white/[0.07] bg-white/[0.035] p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold">Next action</span>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${nextAction.tone === "warning" ? "bg-warning/[0.10] text-warning" : "bg-teal/[0.10] text-teal"}`}>{nextAction.tone}</span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${nextAction.tone === "warning" ? "bg-warning/[0.10] text-warning" : "bg-teal/[0.10] text-teal"}`}>
+                {nextActionToneLabel(nextAction.tone)}
+              </span>
             </div>
             <button type="button" onClick={() => setSection(nextAction.section)} className="w-full rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-3 text-left transition hover:border-cyan/[0.20]">
               <span className="block text-sm font-semibold text-cyan">{nextAction.label}</span>
@@ -1224,16 +1276,24 @@ export function MediaStudioApp() {
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
               renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
             />
-            <WatchChannelsSection
-              channels={watchChannels}
-              workspaceName={profiles.find((profile) => profile.id === profileId)?.name || profileId}
-              actionStates={actionStates}
-              onAdd={addWatchChannel}
-              onToggle={toggleWatchChannel}
-              onPoll={pollWatchChannelNow}
-              onDelete={deleteWatchChannel}
-              renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
-            />
+            <details className="rounded-[28px] border border-white/[0.08] bg-surface/30 p-5">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-300">
+                Watch YouTube sources
+                <span className="ml-2 text-xs font-medium text-zinc-600">optional auto-clip</span>
+              </summary>
+              <div className="mt-4 border-t border-white/[0.06] pt-4">
+                <WatchChannelsSection
+                  channels={watchChannels}
+                  workspaceName={profiles.find((profile) => profile.id === profileId)?.name || profileId}
+                  actionStates={actionStates}
+                  onAdd={addWatchChannel}
+                  onToggle={toggleWatchChannel}
+                  onPoll={pollWatchChannelNow}
+                  onDelete={deleteWatchChannel}
+                  renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
+                />
+              </div>
+            </details>
             </div>
           )}
 
@@ -1379,18 +1439,74 @@ export function MediaStudioApp() {
           )}
         </div>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 border-t border-white/[0.08] bg-surface/[0.95] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
-          {nav.map((item) => {
+        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-white/[0.08] bg-surface/[0.95] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+          {mobilePrimaryNav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
             return (
-              <button key={item.id} onClick={() => setSection(item.id)} className={`grid h-14 min-w-0 place-items-center content-center gap-1 px-1 text-[9px] ${active ? "text-cyan" : "text-zinc-500"}`}>
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setMobileMoreOpen(false);
+                  setSection(item.id);
+                }}
+                className={`grid h-14 min-w-0 place-items-center content-center gap-1 px-1 text-[9px] ${active ? "text-cyan" : "text-zinc-500"}`}
+              >
                 <Icon className="h-4 w-4" />
-                <span className="max-w-full truncate">{item.label.split(" ")[0]}</span>
+                <span className="max-w-full truncate">{item.label}</span>
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setMobileMoreOpen((open) => !open)}
+            className={`grid h-14 min-w-0 place-items-center content-center gap-1 px-1 text-[9px] ${
+              mobileMoreOpen || secondaryNav.some((item) => item.id === section) || section === "dashboard" ? "text-cyan" : "text-zinc-500"
+            }`}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="max-w-full truncate">More</span>
+          </button>
         </nav>
+        {mobileMoreOpen ? (
+          <div className="fixed inset-x-0 bottom-14 z-40 border-t border-white/[0.08] bg-surface/[0.98] p-3 backdrop-blur-xl lg:hidden">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSection("dashboard");
+                  setMobileMoreOpen(false);
+                }}
+                className={`rounded-2xl border px-3 py-3 text-left text-sm font-semibold ${
+                  section === "dashboard" ? "border-cyan/30 bg-cyan/10 text-cyan" : "border-white/[0.08] text-zinc-300"
+                }`}
+              >
+                Home
+              </button>
+              {secondaryNav.map((item) => {
+                const Icon = item.icon;
+                const active = section === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setSection(item.id);
+                      setMobileMoreOpen(false);
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-3 text-left text-sm font-semibold ${
+                      active ? "border-cyan/30 bg-cyan/10 text-cyan" : "border-white/[0.08] text-zinc-300"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         <ToastStack toasts={toasts} onDismiss={(id) => setToasts((items) => items.filter((item) => item.id !== id))} />
         <ActionMonitor actionStates={actionStates} />
         <WorkspaceManagerModal
