@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Brand Studio SaaS polish (#48): Identity / Style / Effects IA; tokenized chrome with editable template name; phone-bezel preview where caption plate, grain, and accents react to Effects; baseline style demoted under Advanced; no recipe-demo MP4 stacking.
+- Brand Studio SaaS polish (#48): Identity / Style / Effects IA; tokenized chrome with editable template name; simple caption preview; Effects as quiet inspector rows (not chip walls); baseline under Advanced; no recipe-demo MP4 stacking.
 - Create clips polish (#44): Generate batch is primary; Watch sources quieter and lower in the same `max-w-4xl` column; workspace display name (no “Workspace workspace”); `1 clip` pluralization; human failed-run copy; CLI moved under Advanced.
 - Publish connect-first UX (#42): OAuth platforms show **Connect account** as the primary CTA; Telegram opens a connect dialog for bot token + channel; quieter cards; Auto publish only after connect; sidebar is logs-only.
 - Publish destinations UI: fixed workspace hydrate race that left Publish empty (0/0) while the sidebar showed 0/4; sync now waits for the stored workspace and Load destinations re-fetches/seeds rows.

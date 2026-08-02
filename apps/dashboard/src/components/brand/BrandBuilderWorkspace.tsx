@@ -5,7 +5,6 @@ import {useRouter} from "next/navigation";
 import {ArrowLeft, ChevronDown, Loader2} from "lucide-react";
 import {useEffect, useState} from "react";
 import {BrandStudioPreview} from "@/components/brand/BrandStudioPreview";
-import {getRecipeTheme} from "@/components/templates/recipes";
 import {
   apiGet,
   apiPost,
@@ -59,7 +58,6 @@ type WorkspaceProps = {
 
 const fontOptions = ["Sora", "Inter", "Montserrat", "Poppins", "Roboto", "Arial", "system-ui"] as const;
 type DockTab = "identity" | "style" | "effects";
-type RecipeLayer = "captions" | "texture" | "social" | "transition" | "intro";
 
 function hexFromColor(value: unknown, fallback: string) {
   const text = String(value || "").trim();
@@ -120,7 +118,7 @@ function catalogOptions(catalog: HyperframesCatalog | null, category: string, fa
   return items.length
     ? items.map((item) => ({
         value: item.id,
-        label: item.status === "production-ready" ? item.label : `${item.label} · ${item.status}`,
+        label: item.status === "production-ready" || item.status === "beta" ? item.label : `${item.label} (${item.status})`,
       }))
     : fallback.map((value) => ({value, label: value}));
 }
@@ -153,7 +151,6 @@ export function BrandBuilderWorkspace({
   const [templateBusy, setTemplateBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [dockTab, setDockTab] = useState<DockTab>("identity");
-  const [recipeLayer, setRecipeLayer] = useState<RecipeLayer>("captions");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activePresetId, setActivePresetId] = useState(initialPreset || "");
   const starterTemplates = hyperframesTemplates.length
@@ -178,13 +175,7 @@ export function BrandBuilderWorkspace({
     {id: defaultTemplate, label: "Default style baseline", path: defaultTemplate},
     ...templates.filter((template) => template.path !== defaultTemplate),
   ].map((template) => ({value: template.path, label: template.label}));
-  const layerRows: {id: RecipeLayer; label: string; value: string; options: {value: string; label: string}[]}[] = [
-    {id: "captions", label: "Captions", value: editor.captionStyle, options: captionOptions},
-    {id: "texture", label: "Texture", value: editor.textureEffect, options: textureOptions},
-    {id: "social", label: "Social", value: editor.ctaOverlay, options: socialOptions},
-    {id: "transition", label: "Transition", value: editor.transitionFamily, options: transitionOptions},
-    {id: "intro", label: "Intro", value: editor.introLayout, options: introOptions},
-  ];
+  const starterSelectOptions = starterTemplates.map((template) => ({value: template.id, label: template.label}));
   const [cleanSnapshot, setCleanSnapshot] = useState(() => snapshot(label, selectedTemplate, initialEditor));
   const currentSnapshot = snapshot(label, selectedTemplate, editor);
   const dirty = currentSnapshot !== cleanSnapshot;
@@ -472,149 +463,69 @@ export function BrandBuilderWorkspace({
                 ) : null}
               </div>
             ) : (
-              <>
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4">
-                  <div className="space-y-5">
-                    <div>
-                      <div className="mb-2.5 flex items-end justify-between gap-2">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Base style</p>
-                          <p className="mt-0.5 text-[11px] text-zinc-500">Style pack for overlays & motion defaults</p>
-                        </div>
-                        <span className="truncate text-[11px] font-medium text-zinc-400">{selectedStarter?.label || "Custom"}</span>
-                      </div>
-                      <div className="grid max-h-[13.5rem] grid-cols-2 gap-2 overflow-y-auto overscroll-contain pr-0.5">
-                        {starterTemplates.map((template) => {
-                          const active = editor.starterTemplate === template.id;
-                          const theme = getRecipeTheme(template.id);
-                          return (
-                            <button
-                              key={template.id}
-                              type="button"
-                              onClick={() => updateEditor({starterTemplate: template.id})}
-                              className={`relative overflow-hidden rounded-2xl border p-2.5 text-left transition ${
-                                active ? "border-white/25 ring-1 ring-cyan/35" : "border-white/[0.07] hover:border-white/[0.14]"
-                              }`}
-                              style={{
-                                background: `linear-gradient(145deg, ${theme.accent}33 0%, rgba(12,13,16,.92) 55%)`,
-                              }}
-                            >
-                              <span className="mb-2 flex h-8 items-end gap-1" aria-hidden>
-                                <span className="h-2 w-8 rounded-full" style={{background: theme.accent}} />
-                                <span className="h-2 w-4 rounded-full opacity-70" style={{background: theme.secondary}} />
-                              </span>
-                              <span className="block truncate text-[11px] font-semibold leading-tight text-white">{template.label}</span>
-                              {active ? <span className="mt-1 block text-[10px] font-medium text-cyan">Selected</span> : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Layers</p>
-                      <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-black/20">
-                        {layerRows.map((row) => {
-                          const open = recipeLayer === row.id;
-                          const selectedLabel = displayOptionLabel(row.options.find((option) => option.value === row.value)?.label || row.value);
-                          return (
-                            <div key={row.id} className="border-b border-white/[0.06] last:border-b-0">
-                              <button
-                                type="button"
-                                onClick={() => setRecipeLayer(row.id)}
-                                className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-white/[0.03]"
-                                aria-expanded={open}
-                              >
-                                <span className="text-xs font-semibold text-zinc-300">{row.label}</span>
-                                <span className="flex min-w-0 items-center gap-1.5">
-                                  <span className="truncate text-[11px] text-zinc-500">{selectedLabel.clean}</span>
-                                  {selectedLabel.beta ? (
-                                    <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-zinc-500">Beta</span>
-                                  ) : null}
-                                  <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-zinc-600 transition-transform ${open ? "rotate-180" : ""}`} />
-                                </span>
-                              </button>
-                              {open ? (
-                                <div className="flex flex-wrap gap-1.5 px-3 pb-3">
-                                  {row.options.map((option) => {
-                                    const meta = displayOptionLabel(option.label);
-                                    const active = row.value === option.value;
-                                    return (
-                                      <button
-                                        key={option.value}
-                                        type="button"
-                                        onClick={() => {
-                                          switch (row.id) {
-                                            case "captions":
-                                              updateEditor({captionStyle: option.value});
-                                              break;
-                                            case "texture":
-                                              updateEditor({textureEffect: option.value});
-                                              break;
-                                            case "social":
-                                              updateEditor({ctaOverlay: option.value});
-                                              break;
-                                            case "transition":
-                                              updateEditor({transitionFamily: option.value});
-                                              break;
-                                            case "intro":
-                                              updateEditor({introLayout: option.value});
-                                              break;
-                                            default: {
-                                              const _exhaustive: never = row.id;
-                                              void _exhaustive;
-                                              break;
-                                            }
-                                          }
-                                        }}
-                                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
-                                          active
-                                            ? "border-cyan/40 bg-cyan/[0.12] text-white"
-                                            : "border-white/[0.08] text-zinc-400 hover:border-white/[0.14] hover:text-zinc-200"
-                                        }`}
-                                      >
-                                        {meta.clean}
-                                        {meta.beta ? <span className="text-[9px] uppercase tracking-wide text-zinc-500">β</span> : null}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4">
+                <p className="mb-4 text-[11px] leading-relaxed text-zinc-500">
+                  Optional render pack settings. Identity colors and type still drive the preview.
+                </p>
+                <div className="space-y-3">
+                  <InspectorSelect
+                    label="Base style"
+                    value={editor.starterTemplate}
+                    options={starterSelectOptions}
+                    onChange={(starterTemplate) => updateEditor({starterTemplate})}
+                  />
+                  <InspectorSelect
+                    label="Captions"
+                    value={editor.captionStyle}
+                    options={captionOptions}
+                    onChange={(captionStyle) => updateEditor({captionStyle})}
+                  />
+                  <InspectorSelect
+                    label="Texture"
+                    value={editor.textureEffect}
+                    options={textureOptions}
+                    onChange={(textureEffect) => updateEditor({textureEffect})}
+                  />
+                  <InspectorSelect
+                    label="Social"
+                    value={editor.ctaOverlay}
+                    options={socialOptions}
+                    onChange={(ctaOverlay) => updateEditor({ctaOverlay})}
+                  />
+                  <InspectorSelect
+                    label="Transition"
+                    value={editor.transitionFamily}
+                    options={transitionOptions}
+                    onChange={(transitionFamily) => updateEditor({transitionFamily})}
+                  />
+                  <InspectorSelect
+                    label="Intro"
+                    value={editor.introLayout}
+                    options={introOptions}
+                    onChange={(introLayout) => updateEditor({introLayout})}
+                  />
                 </div>
 
-                <div className="shrink-0 border-t border-white/[0.08] bg-surface/60 px-3 py-3 sm:px-4">
-                  <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Save as</p>
-                  <input
-                    value={label}
-                    onChange={(event) => setLabel(event.target.value)}
-                    placeholder="Template name"
-                    className="mb-2 h-10 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3 text-sm font-semibold text-white outline-none placeholder:text-zinc-600 focus:border-cyan/35"
-                  />
+                <div className="mt-6 border-t border-white/[0.06] pt-4">
                   <button
                     type="button"
                     disabled={saveBusy || templateBusy}
                     onClick={() => void loadTemplate(selectedTemplate, true)}
-                    className="mb-1 h-9 w-full rounded-full text-[11px] font-semibold text-zinc-500 transition hover:text-zinc-300 disabled:opacity-45"
+                    className="h-9 w-full rounded-full text-[11px] font-semibold text-zinc-500 transition hover:text-zinc-300 disabled:opacity-45"
                   >
                     Reset to baseline
                   </button>
                   <details
                     open={advancedOpen}
                     onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-                    className="mt-1"
+                    className="mt-2"
                   >
                     <summary className="cursor-pointer list-none text-[11px] font-semibold text-zinc-500 hover:text-zinc-300">
                       Advanced
                     </summary>
-                    <div className="mt-2">
-                      <FieldSelect
-                        label="Baseline style file"
+                    <div className="mt-3">
+                      <InspectorSelect
+                        label="Baseline file"
                         value={selectedTemplate}
                         disabled={templateBusy}
                         options={baselineOptions}
@@ -623,7 +534,7 @@ export function BrandBuilderWorkspace({
                     </div>
                   </details>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </aside>
@@ -637,16 +548,7 @@ export function BrandBuilderWorkspace({
             `,
           }}
         >
-          <BrandStudioPreview
-            look={editor}
-            effects={{
-              starterId: editor.starterTemplate,
-              captionStyle: editor.captionStyle,
-              textureEffect: editor.textureEffect,
-              ctaOverlay: editor.ctaOverlay,
-              introLayout: editor.introLayout,
-            }}
-          />
+          <BrandStudioPreview look={editor} />
         </section>
       </div>
 
@@ -734,13 +636,8 @@ function Swatch({label, value, onChange}: {label: string; value: string; onChang
   );
 }
 
-function displayOptionLabel(label: string) {
-  const beta = /\bbeta\b/i.test(label);
-  const clean = label.replace(/\s*[·\-–]\s*beta\b/i, "").trim();
-  return {clean, beta};
-}
-
-function FieldSelect({
+/** Quiet inspector row: label left, value select right — Figma-like, not chip walls. */
+function InspectorSelect({
   label,
   value,
   options,
@@ -754,22 +651,22 @@ function FieldSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-      {label}
-      <span className="relative flex items-center">
+    <label className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
+      <span className="w-[5.5rem] shrink-0 text-[11px] font-semibold text-zinc-500">{label}</span>
+      <span className="relative min-w-0 flex-1">
         <select
           value={value}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
-          className="h-10 w-full appearance-none rounded-xl border border-white/[0.08] bg-black/30 pl-3 pr-9 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/35 disabled:opacity-50"
+          className="h-8 w-full appearance-none truncate bg-transparent pr-7 text-right text-[12px] font-semibold text-zinc-200 outline-none focus:text-white disabled:opacity-50"
         >
           {options.map((option) => (
-            <option key={option.value} value={option.value} className="bg-[#17171a]">
+            <option key={option.value} value={option.value} className="bg-[#17171a] text-left text-white">
               {option.label}
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-zinc-500" />
+        <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-600" />
       </span>
     </label>
   );
