@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Workspace switcher placement (#50): move switch + Manage into the desktop sidebar under the product mark; mobile keeps a compact header control; remove the cramped Guided Studio OS breadcrumb above section titles.
 - Brand library page polish (#48): drop competing HyperFrames hero panel; quieter Brand kit header; keep Starter preset cards; clearer Saved styles + demoted autonomy.
 - Brand Studio closed loop (#48): reopen restores `brand_system` Effects; Update overwrites the same custom file; post-save **Use in Create** handoff; saved brand templates expose `brand_template_path` + starter recipe for HyperFrames; Create auto-wires style path; render uses style watermark/font/stroke/plate plus texture/CTA stubs.
 - Brand Studio SaaS polish (#48): Identity / Style / Effects IA; tokenized chrome with editable template name; Effects as quiet inspector rows; baseline under Advanced.
