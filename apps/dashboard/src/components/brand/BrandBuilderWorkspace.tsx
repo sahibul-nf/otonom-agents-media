@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import {useRouter} from "next/navigation";
-import {ArrowLeft, Loader2, SlidersHorizontal, X} from "lucide-react";
-import {useEffect, useState, type ReactNode} from "react";
+import {ArrowLeft, ChevronDown, Loader2} from "lucide-react";
+import {useEffect, useState} from "react";
 import {BrandStudioPreview} from "@/components/brand/BrandStudioPreview";
 import {
   apiGet,
@@ -57,7 +57,7 @@ type WorkspaceProps = {
 };
 
 const fontOptions = ["Sora", "Inter", "Montserrat", "Poppins", "Roboto", "Arial", "system-ui"] as const;
-type DockTab = "look" | "type" | "more";
+type DockTab = "look" | "type" | "motion" | "recipe";
 
 function hexFromColor(value: unknown, fallback: string) {
   const text = String(value || "").trim();
@@ -151,8 +151,18 @@ export function BrandBuilderWorkspace({
   const [templateBusy, setTemplateBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [dockTab, setDockTab] = useState<DockTab>("look");
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [activePresetId, setActivePresetId] = useState(initialPreset || "");
+  const starterOptions = (hyperframesTemplates.length
+    ? hyperframesTemplates
+    : [{id: "spiritual_reflective", label: "Spiritual Reflective"} as HyperframesTemplate]
+  ).map((template) => ({value: template.id, label: template.label}));
+  const captionOptions = catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"]);
+  const textureOptions = catalogOptions(hyperframesCatalog, "Texture/effects", ["vignette", "grain-overlay", "shimmer-sweep"]);
+  const socialOptions = catalogOptions(hyperframesCatalog, "Social overlays", ["yt-lower-third", "instagram-follow", "tiktok-follow"]);
+  const baselineOptions = [
+    {id: defaultTemplate, label: "Default style baseline", path: defaultTemplate},
+    ...templates.filter((template) => template.path !== defaultTemplate),
+  ].map((template) => ({value: template.path, label: template.label}));
   const [cleanSnapshot, setCleanSnapshot] = useState(() => snapshot(label, selectedTemplate, initialEditor));
   const currentSnapshot = snapshot(label, selectedTemplate, editor);
   const dirty = currentSnapshot !== cleanSnapshot;
@@ -272,14 +282,6 @@ export function BrandBuilderWorkspace({
           </span>
           <button
             type="button"
-            onClick={() => setSheetOpen(true)}
-            className="grid h-9 w-9 place-items-center rounded-full border border-white/[0.08] text-zinc-300 transition hover:border-white/[0.16] hover:text-white"
-            aria-label="More settings"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
             disabled={!dirty || saveBusy || templateBusy}
             onClick={() => void saveTemplate()}
             className="inline-flex h-9 items-center gap-2 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink disabled:cursor-not-allowed disabled:opacity-40"
@@ -291,21 +293,22 @@ export function BrandBuilderWorkspace({
       </header>
 
       {/* Two-pane: tools | preview (stacked on small screens) */}
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(280px,380px)_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(300px,400px)_minmax(0,1fr)]">
         <aside className="order-2 flex min-h-0 flex-col border-t border-white/[0.07] bg-[#101114] lg:order-1 lg:border-r lg:border-t-0">
-          <div className="flex shrink-0 gap-1 border-b border-white/[0.06] px-3 pt-2.5 pb-2">
+          <div className="flex shrink-0 gap-0.5 overflow-x-auto border-b border-white/[0.06] px-2 pt-2.5 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:px-3">
             {(
               [
                 {id: "look" as const, label: "Look"},
                 {id: "type" as const, label: "Type"},
-                {id: "more" as const, label: "Motion"},
+                {id: "motion" as const, label: "Motion"},
+                {id: "recipe" as const, label: "Recipe"},
               ] as const
             ).map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setDockTab(tab.id)}
-                className={`flex-1 rounded-full py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${
+                className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider transition ${
                   dockTab === tab.id ? "bg-white/[0.1] text-white" : "text-zinc-500 hover:text-zinc-300"
                 }`}
               >
@@ -407,38 +410,83 @@ export function BrandBuilderWorkspace({
               </div>
             ) : null}
 
-            {dockTab === "more" ? (
+            {dockTab === "motion" ? (
               <div className="space-y-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Caption pace</p>
-                <div className="flex flex-wrap gap-2">
-                  {(
-                    [
-                      {value: "calm", label: "Calm"},
-                      {value: "balanced", label: "Balanced"},
-                      {value: "energetic", label: "Energetic"},
-                    ] as const
-                  ).map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => updateEditor({motionIntensity: option.value})}
-                      className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition ${
-                        editor.motionIntensity === option.value
-                          ? "border-cyan/45 bg-cyan/[0.12] text-white"
-                          : "border-white/[0.08] text-zinc-400 hover:border-white/[0.16]"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[11px] leading-relaxed text-zinc-500">
-                  Highlight pace follows motion. Recipe overlays & save name live in{" "}
-                  <button type="button" onClick={() => setSheetOpen(true)} className="font-semibold text-cyan hover:underline">
-                    More settings
+                <ChipGroup
+                  label="Caption pace"
+                  value={editor.motionIntensity}
+                  options={[
+                    {value: "calm", label: "Calm"},
+                    {value: "balanced", label: "Balanced"},
+                    {value: "energetic", label: "Energetic"},
+                  ]}
+                  onChange={(motionIntensity) => updateEditor({motionIntensity})}
+                />
+                <p className="text-[11px] leading-relaxed text-zinc-500">Highlight word pace in the preview follows this setting.</p>
+              </div>
+            ) : null}
+
+            {dockTab === "recipe" ? (
+              <div className="space-y-5">
+                <ChipGroup
+                  label="Starter"
+                  value={editor.starterTemplate}
+                  options={starterOptions}
+                  onChange={(starterTemplate) => updateEditor({starterTemplate})}
+                  scrollable
+                />
+                <ChipGroup label="Captions" value={editor.captionStyle} options={captionOptions} onChange={(captionStyle) => updateEditor({captionStyle})} />
+                <ChipGroup label="Texture" value={editor.textureEffect} options={textureOptions} onChange={(textureEffect) => updateEditor({textureEffect})} />
+                <ChipGroup label="Social callout" value={editor.ctaOverlay} options={socialOptions} onChange={(ctaOverlay) => updateEditor({ctaOverlay})} />
+                <ChipGroup
+                  label="Transition"
+                  value={editor.transitionFamily}
+                  options={[
+                    {value: "dissolve", label: "Dissolve"},
+                    {value: "push", label: "Push"},
+                    {value: "zoom", label: "Zoom"},
+                    {value: "whip-pan", label: "Whip Pan"},
+                  ]}
+                  onChange={(transitionFamily) => updateEditor({transitionFamily})}
+                />
+                <ChipGroup
+                  label="Intro"
+                  value={editor.introLayout}
+                  options={[
+                    {value: "editorial-hook", label: "Editorial hook"},
+                    {value: "lower-third-hook", label: "Lower-third hook"},
+                    {value: "data-callout", label: "Data callout"},
+                    {value: "headline-slam", label: "Headline slam"},
+                  ]}
+                  onChange={(introLayout) => updateEditor({introLayout})}
+                />
+
+                <div className="border-t border-white/[0.06] pt-4">
+                  <p className="mb-3 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Save as</p>
+                  <label className="mb-3 grid gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    Template name
+                    <input
+                      value={label}
+                      onChange={(event) => setLabel(event.target.value)}
+                      className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/35"
+                    />
+                  </label>
+                  <FieldSelect
+                    label="Baseline style"
+                    value={selectedTemplate}
+                    disabled={templateBusy}
+                    options={baselineOptions}
+                    onChange={(path) => void loadTemplate(path)}
+                  />
+                  <button
+                    type="button"
+                    disabled={saveBusy || templateBusy}
+                    onClick={() => void loadTemplate(selectedTemplate, true)}
+                    className="mt-3 h-10 w-full rounded-full border border-white/[0.1] text-xs font-bold uppercase tracking-wider text-zinc-300 disabled:opacity-45"
+                  >
+                    Reset to baseline
                   </button>
-                  .
-                </p>
+                </div>
               </div>
             ) : null}
           </div>
@@ -457,136 +505,6 @@ export function BrandBuilderWorkspace({
           <BrandStudioPreview look={editor} />
         </section>
       </div>
-
-      {sheetOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label="Recipe and save">
-          <button type="button" className="absolute inset-0 cursor-default" aria-label="Close" onClick={() => setSheetOpen(false)} />
-          <div className="relative z-10 flex max-h-[min(90dvh,720px)] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-white/[0.1] bg-[#121316] shadow-2xl sm:rounded-[28px]">
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/[0.06] px-5 py-4">
-              <div>
-                <h2 className="text-base font-semibold text-white">Recipe & save</h2>
-                <p className="mt-0.5 text-[12px] text-zinc-500">Pick overlays for renders. Look colors stay on the main stage.</p>
-              </div>
-              <button type="button" onClick={() => setSheetOpen(false)} className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-white/[0.06] hover:text-white" aria-label="Close">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
-              <SheetSection title="Starter recipe" hint={selectedStarter?.best_for || "Base HyperFrames look for this brand"}>
-                <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {(hyperframesTemplates.length ? hyperframesTemplates : [{id: "spiritual_reflective", label: "Spiritual Reflective", best_for: ""} as HyperframesTemplate]).map((template) => {
-                    const active = editor.starterTemplate === template.id;
-                    return (
-                      <button
-                        key={template.id}
-                        type="button"
-                        onClick={() => updateEditor({starterTemplate: template.id})}
-                        className={`w-[9.5rem] shrink-0 rounded-2xl border px-3 py-3 text-left transition ${
-                          active ? "border-cyan/45 bg-cyan/[0.1]" : "border-white/[0.08] bg-white/[0.03] hover:border-white/[0.14]"
-                        }`}
-                      >
-                        <span className="block truncate text-[12px] font-semibold text-white">{template.label}</span>
-                        <span className="mt-1 line-clamp-2 text-[10px] leading-snug text-zinc-500">{template.best_for || template.category || "Recipe"}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </SheetSection>
-
-              <SheetSection title="Caption style">
-                <ChipGroup
-                  value={editor.captionStyle}
-                  options={catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"])}
-                  onChange={(captionStyle) => updateEditor({captionStyle})}
-                />
-              </SheetSection>
-
-              <SheetSection title="Texture">
-                <ChipGroup
-                  value={editor.textureEffect}
-                  options={catalogOptions(hyperframesCatalog, "Texture/effects", ["vignette", "grain-overlay", "shimmer-sweep"])}
-                  onChange={(textureEffect) => updateEditor({textureEffect})}
-                />
-              </SheetSection>
-
-              <SheetSection title="Social callout">
-                <ChipGroup
-                  value={editor.ctaOverlay}
-                  options={catalogOptions(hyperframesCatalog, "Social overlays", ["yt-lower-third", "instagram-follow", "tiktok-follow"])}
-                  onChange={(ctaOverlay) => updateEditor({ctaOverlay})}
-                />
-              </SheetSection>
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <SheetSection title="Transition">
-                  <ChipGroup
-                    value={editor.transitionFamily}
-                    options={[
-                      {value: "dissolve", label: "Dissolve"},
-                      {value: "push", label: "Push"},
-                      {value: "zoom", label: "Zoom"},
-                      {value: "whip-pan", label: "Whip Pan"},
-                    ]}
-                    onChange={(transitionFamily) => updateEditor({transitionFamily})}
-                  />
-                </SheetSection>
-                <SheetSection title="Intro">
-                  <ChipGroup
-                    value={editor.introLayout}
-                    options={[
-                      {value: "editorial-hook", label: "Editorial"},
-                      {value: "lower-third-hook", label: "Lower-third"},
-                      {value: "data-callout", label: "Data"},
-                      {value: "headline-slam", label: "Headline"},
-                    ]}
-                    onChange={(introLayout) => updateEditor({introLayout})}
-                  />
-                </SheetSection>
-              </div>
-
-              <SheetSection title="Save as" hint="Name stored in your Brand library">
-                <input
-                  value={label}
-                  onChange={(event) => setLabel(event.target.value)}
-                  placeholder="Template name"
-                  className="h-11 w-full rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3.5 text-sm font-semibold text-white outline-none placeholder:text-zinc-600 focus:border-cyan/35"
-                />
-                <div className="mt-3">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Baseline</p>
-                  <ChipGroup
-                    value={selectedTemplate}
-                    disabled={templateBusy}
-                    options={[{id: defaultTemplate, label: "Default baseline", path: defaultTemplate}, ...templates.filter((template) => template.path !== defaultTemplate)].map((template) => ({
-                      value: template.path,
-                      label: template.label,
-                    }))}
-                    onChange={(path) => void loadTemplate(path)}
-                  />
-                </div>
-              </SheetSection>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2 border-t border-white/[0.06] bg-[#121316]/95 px-5 py-3 backdrop-blur">
-              <button
-                type="button"
-                disabled={saveBusy || templateBusy}
-                onClick={() => void loadTemplate(selectedTemplate, true)}
-                className="h-10 flex-1 rounded-full border border-white/[0.1] text-xs font-bold uppercase tracking-wider text-zinc-300 disabled:opacity-45"
-              >
-                Reset baseline
-              </button>
-              <button
-                type="button"
-                onClick={() => setSheetOpen(false)}
-                className="h-10 flex-1 rounded-full bg-cyan text-xs font-bold uppercase tracking-wider text-ink"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <Link
         href="/?section=brand"
@@ -672,49 +590,84 @@ function Swatch({label, value, onChange}: {label: string; value: string; onChang
   );
 }
 
-function SheetSection({title, hint, children}: {title: string; hint?: string; children: ReactNode}) {
+function ChipGroup({
+  label,
+  value,
+  options,
+  onChange,
+  scrollable = false,
+}: {
+  label: string;
+  value: string;
+  options: {value: string; label: string}[];
+  onChange: (value: string) => void;
+  scrollable?: boolean;
+}) {
   return (
-    <section>
-      <div className="mb-2.5">
-        <h3 className="text-[11px] font-bold uppercase tracking-widest text-zinc-500">{title}</h3>
-        {hint ? <p className="mt-0.5 text-[11px] leading-snug text-zinc-600">{hint}</p> : null}
+    <div>
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500">{label}</p>
+      <div
+        className={
+          scrollable
+            ? "flex max-h-36 flex-col gap-1.5 overflow-y-auto overscroll-contain pr-1"
+            : "flex flex-wrap gap-1.5"
+        }
+      >
+        {options.map((option) => {
+          const active = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={`rounded-full border px-3 py-1.5 text-left text-xs font-semibold transition ${
+                scrollable ? "w-full" : ""
+              } ${
+                active
+                  ? "border-cyan/45 bg-cyan/[0.12] text-white"
+                  : "border-white/[0.08] text-zinc-400 hover:border-white/[0.16] hover:text-zinc-200"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
       </div>
-      {children}
-    </section>
+    </div>
   );
 }
 
-function ChipGroup({
+function FieldSelect({
+  label,
   value,
   options,
   disabled = false,
   onChange,
 }: {
+  label: string;
   value: string;
   options: {value: string; label: string}[];
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((option) => {
-        const active = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            disabled={disabled}
-            onClick={() => onChange(option.value)}
-            className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition disabled:opacity-45 ${
-              active
-                ? "border-cyan/45 bg-cyan/[0.12] text-white"
-                : "border-white/[0.08] text-zinc-400 hover:border-white/[0.16] hover:text-zinc-200"
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
+    <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+      {label}
+      <span className="relative flex items-center">
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-10 w-full appearance-none rounded-xl border border-white/[0.08] bg-black/30 pl-3 pr-9 text-sm font-semibold normal-case tracking-normal text-white outline-none focus:border-cyan/35 disabled:opacity-50"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value} className="bg-[#17171a]">
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-zinc-500" />
+      </span>
+    </label>
   );
 }
