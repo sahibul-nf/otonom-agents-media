@@ -166,16 +166,31 @@ def list_brand_templates() -> list[dict[str, str]]:
     for path in sorted(profiles.glob("*.json")):
         if "nourbit" in path.name.lower():
             continue
+        # Brand library: default baseline + saved custom brand systems only.
+        if path.name != "default_workspace_style.json" and not path.name.startswith("custom_"):
+            continue
         label = path.stem.replace("_", " ").replace("-", " ").title()
+        has_brand_system = False
         try:
-            label = str(json.loads(path.read_text(encoding="utf-8")).get("label") or label)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            label = str(payload.get("label") or label)
+            has_brand_system = isinstance(payload.get("brand_system"), dict) and bool(payload.get("brand_system"))
         except (OSError, json.JSONDecodeError):
-            pass
+            payload = {}
+        if path.name.startswith("custom_") and not has_brand_system:
+            continue
         if path.name == "default_workspace_style.json":
             label = "Default Workspace Style"
-        templates.append({"id": str(path.relative_to(ROOT)), "label": label, "path": str(path.relative_to(ROOT))})
+        templates.append(
+            {
+                "id": str(path.relative_to(ROOT)),
+                "label": label,
+                "path": str(path.relative_to(ROOT)),
+                "has_brand_system": "1" if has_brand_system else "0",
+            }
+        )
     if not templates:
-        templates.append({"id": "profiles/default_workspace_style.json", "label": "Default Workspace Style", "path": "profiles/default_workspace_style.json"})
+        templates.append({"id": "profiles/default_workspace_style.json", "label": "Default Workspace Style", "path": "profiles/default_workspace_style.json", "has_brand_system": "0"})
     return templates
 
 
@@ -218,6 +233,26 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not source_url:
         raise ValueError("source_url is required")
     brand_template = str(payload.get("brand_template") or "profiles/default_workspace_style.json").strip()
+    brand_system_template_id = str(payload.get("brand_system_template_id") or "").strip()
+    hyperframes_template = normalize_hyperframes_template(payload.get("hyperframes_template"))
+
+    # Closed loop: brand:* selection carries its style file + starter recipe.
+    if brand_system_template_id.startswith("brand:") or hyperframes_template.startswith("brand:"):
+        brand_id = brand_system_template_id if brand_system_template_id.startswith("brand:") else hyperframes_template
+        from .hyperframes_templates import _saved_brand_template_by_id
+
+        saved = _saved_brand_template_by_id(brand_id)
+        if saved:
+            hyperframes_template = brand_id
+            brand_system_template_id = brand_id
+            style_path = str(saved.get("brand_template_path") or "").strip()
+            if style_path and (
+                not brand_template
+                or brand_template == "profiles/default_workspace_style.json"
+                or not (ROOT / brand_template).exists()
+            ):
+                brand_template = style_path
+
     template_path = (ROOT / brand_template).resolve()
     if ROOT.resolve() not in template_path.parents or not template_path.exists():
         raise ValueError("brand_template not found")
@@ -233,8 +268,8 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "clip_max_seconds": max_seconds,
         "genres": genres,
         "brand_template": brand_template,
-        "hyperframes_template": normalize_hyperframes_template(payload.get("hyperframes_template")),
-        "brand_system_template_id": str(payload.get("brand_system_template_id") or "").strip(),
+        "hyperframes_template": hyperframes_template,
+        "brand_system_template_id": brand_system_template_id,
         "hyperframes_format": _choice(payload.get("hyperframes_format"), VALID_HYPERFRAMES_FORMATS, "auto"),
         "renderer": _choice(payload.get("renderer"), VALID_RENDERERS, "hyperframes"),
         "quality": _choice(payload.get("quality"), VALID_QUALITIES, "production"),

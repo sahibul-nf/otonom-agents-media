@@ -887,7 +887,13 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "brand_system is required"}, status=400)
                 return
             try:
-                template = save_brand_system_template(label, style, brand_system, str(payload.get("base_template") or "") or None)
+                template = save_brand_system_template(
+                    label,
+                    style,
+                    brand_system,
+                    str(payload.get("base_template") or "") or None,
+                    target_path=str(payload.get("path") or payload.get("target_path") or "") or None,
+                )
             except (OSError, ValueError, json.JSONDecodeError) as exc:
                 self._send_json({"error": str(exc)}, status=400)
                 return

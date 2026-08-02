@@ -203,7 +203,7 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
   brand: {
     title: "Brand",
-    subtitle: "Tune colors, captions, and reusable brand presets.",
+    subtitle: "Pick a direction, save a style, refine it in Brand Builder.",
   },
 };
 
@@ -260,7 +260,7 @@ function renderEditorialTitle(title: string) {
   if (title === "Brand") {
     return (
       <>
-        <span className="font-editorial italic font-normal text-cyan">Brand</span> customizer
+        Brand <span className="font-editorial italic font-normal text-cyan">kit</span>
       </>
     );
   }
@@ -1023,9 +1023,35 @@ export function MediaStudioApp() {
 
   useEffect(() => {
     const savedTemplate = window.localStorage.getItem("otonom.hyperframesTemplateDefault");
-    if (!savedTemplate) return;
+    const brandHandoffRaw = window.localStorage.getItem("otonom.generateBrandHandoff");
     const frame = window.requestAnimationFrame(() => {
-      setGenerateConfig((current) => ({...current, hyperframesTemplate: savedTemplate}));
+      setGenerateConfig((current) => {
+        let next = current;
+        if (savedTemplate) {
+          next = {...next, hyperframesTemplate: savedTemplate};
+        }
+        if (brandHandoffRaw) {
+          try {
+            const handoff = JSON.parse(brandHandoffRaw) as {
+              brandTemplate?: string;
+              hyperframesTemplate?: string;
+              brandSystemTemplateId?: string;
+              renderer?: string;
+            };
+            window.localStorage.removeItem("otonom.generateBrandHandoff");
+            next = {
+              ...next,
+              brandTemplate: handoff.brandTemplate || next.brandTemplate,
+              hyperframesTemplate: handoff.hyperframesTemplate || next.hyperframesTemplate,
+              brandSystemTemplateId: handoff.brandSystemTemplateId || next.brandSystemTemplateId,
+              renderer: handoff.renderer === "hyperframes" ? "hyperframes" : next.renderer,
+            };
+          } catch {
+            window.localStorage.removeItem("otonom.generateBrandHandoff");
+          }
+        }
+        return next;
+      });
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -1268,10 +1294,14 @@ export function MediaStudioApp() {
                 pushToast("Default template saved in this browser", "success");
               }}
               onCustomize={(templateId) => {
-                window.localStorage.setItem("otonom.brandBuilderStarterTemplate", templateId);
-                setGenerateConfig((current) => ({...current, hyperframesTemplate: templateId, renderer: "hyperframes"}));
-                setSection("brand");
-                pushToast("Opening Brand System builder from this template", "success");
+                const selectedTemplate = hyperframesTemplates.find((template) => template.id === templateId);
+                if (selectedTemplate?.brand_template_path) {
+                  window.location.href = `/brand/builder?base=${encodeURIComponent(selectedTemplate.brand_template_path)}`;
+                  return;
+                }
+                const starter = selectedTemplate?.starter_template || templateId;
+                window.localStorage.setItem("otonom.brandBuilderStarterTemplate", starter);
+                window.location.href = `/brand/builder?starter=${encodeURIComponent(starter)}`;
               }}
               renderStatusPill={(busy, status) => <StatusPill busy={busy} status={status} />}
               renderSettingTile={(label, value) => <SettingTile label={label} value={value} />}

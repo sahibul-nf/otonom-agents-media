@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Brand library page polish (#48): drop competing HyperFrames hero panel; quieter Brand kit header; keep Starter preset cards; clearer Saved styles + demoted autonomy.
+- Brand Studio closed loop (#48): reopen restores `brand_system` Effects; Update overwrites the same custom file; post-save **Use in Create** handoff; saved brand templates expose `brand_template_path` + starter recipe for HyperFrames; Create auto-wires style path; render uses style watermark/font/stroke/plate plus texture/CTA stubs.
+- Brand Studio SaaS polish (#48): Identity / Style / Effects IA; tokenized chrome with editable template name; Effects as quiet inspector rows; baseline under Advanced.
+- Brand Studio Effects live stubs (#48): caption style / texture / CTA / intro flash / transition micro-anim update the stage as approximate previews; starter recipe stays a small panel reference (not stacked on canvas).
 - Create clips polish (#44): Generate batch is primary; Watch sources quieter and lower in the same `max-w-4xl` column; workspace display name (no “Workspace workspace”); `1 clip` pluralization; human failed-run copy; CLI moved under Advanced.
 - Publish connect-first UX (#42): OAuth platforms show **Connect account** as the primary CTA; Telegram opens a connect dialog for bot token + channel; quieter cards; Auto publish only after connect; sidebar is logs-only.
 - Publish destinations UI: fixed workspace hydrate race that left Publish empty (0/0) while the sidebar showed 0/4; sync now waits for the stored workspace and Load destinations re-fetches/seeds rows.

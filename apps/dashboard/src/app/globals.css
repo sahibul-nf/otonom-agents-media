@@ -194,6 +194,47 @@ video {
   animation: template-preview-progress var(--preview-duration, 20s) linear infinite;
 }
 
+@keyframes brand-studio-shimmer {
+  0% { transform: translateX(-120%) skewX(-12deg); }
+  100% { transform: translateX(320%) skewX(-12deg); }
+}
+
+@keyframes brand-studio-intro-in {
+  0% { opacity: 0; transform: translateY(8px); }
+  18%, 72% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes brand-studio-dissolve {
+  0% { opacity: 0; }
+  35% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes brand-studio-push {
+  0% { opacity: 1; transform: translateX(-100%); }
+  55% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(100%); }
+}
+
+@keyframes brand-studio-zoom {
+  0% { opacity: 0.9; transform: scale(1.35); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+@keyframes brand-studio-whip {
+  0% { opacity: 1; transform: translateX(-40%) skewX(-18deg); }
+  100% { opacity: 0; transform: translateX(110%) skewX(-8deg); }
+}
+
+.brand-studio-shimmer {
+  animation: brand-studio-shimmer 2.8s ease-in-out infinite;
+}
+
+.brand-studio-intro-in {
+  animation: brand-studio-intro-in 1.5s ease-out both;
+}
+
 .template-card .template-preview-hover *,
 .template-card .template-preview-hover::before,
 .template-card .template-preview-hover::after {
