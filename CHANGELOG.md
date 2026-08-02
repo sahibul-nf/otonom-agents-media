@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- SaaS UX finish (#22): Home reframed as weekly Create→Review→Schedule→Publish loop (no Command Center / Continue Pipeline); Create Advanced keeps product controls and buries CLI/model under Developer options; Schedule recovery tools demoted; Explainer hybrid plan under Labs; sidebar Loop/More groups + mobile 4+More nav; quieter workspace manage copy.
 - Workspace switcher placement (#50): move switch + Manage into the desktop sidebar under the product mark; mobile keeps a compact header control; remove the cramped Guided Studio OS breadcrumb above section titles.
 - Brand library page polish (#48): drop competing HyperFrames hero panel; quieter Brand kit header; keep Starter preset cards; clearer Saved styles + demoted autonomy.
 - Brand Studio closed loop (#48): reopen restores `brand_system` Effects; Update overwrites the same custom file; post-save **Use in Create** handoff; saved brand templates expose `brand_template_path` + starter recipe for HyperFrames; Create auto-wires style path; render uses style watermark/font/stroke/plate plus texture/CTA stubs.

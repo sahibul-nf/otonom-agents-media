@@ -173,10 +173,10 @@ export function WorkspaceManagerModal({
     mode === "create"
       ? "Create a new scoped workspace for clips, channels, and publish credentials."
       : mode === "edit"
-        ? "Rename display fields without changing the workspace id."
+        ? "Rename the display name. The internal name stays the same."
         : mode === "delete"
           ? "Built-in workspaces stay protected. Custom workspaces need an explicit confirm."
-          : "Add, rename, or remove workspaces without editing seed JSON.";
+          : "Add, rename, or remove workspaces from the dashboard.";
 
   return (
     <FocusModal open={open} title="Manage workspaces" subtitle={subtitle} width="default" onClose={onClose}>
@@ -255,7 +255,7 @@ export function WorkspaceManagerModal({
               />
             </label>
             <label className="block space-y-1.5">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Workspace id</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">Internal name</span>
               <input
                 value={id}
                 disabled={mode === "edit"}
@@ -267,7 +267,7 @@ export function WorkspaceManagerModal({
                 placeholder="acme_clips"
               />
               <span className="text-xs text-zinc-500">
-                {mode === "edit" ? "Id is permanent after create." : "Lowercase slug used for credentials and clip scope."}
+                {mode === "edit" ? "Can’t change after create." : "Auto-filled from the display name. Used behind the scenes."}
               </span>
             </label>
             <label className="block space-y-1.5">

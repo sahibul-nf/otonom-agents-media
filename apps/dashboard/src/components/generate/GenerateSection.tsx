@@ -76,7 +76,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   config,
   templates,
   hyperframesTemplates,
-  hyperframesCatalog,
+  hyperframesCatalog: _hyperframesCatalog,
   durationPresets,
   genres,
   jobs,
@@ -125,13 +125,11 @@ export function GenerateSection<T extends GenerateConfigLike>({
     {id: "advice", label: "Advice", description: "Practical reminders."},
   ];
   const selectedPreset = presetOptions.find((item) => item.id === config.clipLength) || presetOptions[0];
-  const hyperframesReady = Boolean(engineHealth?.hyperframes.ready);
   const hyperframesTemplateOptions = [
     {value: "auto", label: "Auto by niche"},
     ...hyperframesTemplates.map((template) => ({value: template.id, label: template.label})),
   ];
   const selectedTemplate = hyperframesTemplates.find((template) => template.id === config.hyperframesTemplate);
-  const productionReadyCount = hyperframesCatalog?.items.filter((item) => item.status === "production-ready").length || 0;
   const latestProgress = Math.max(0, Math.min(100, latest?.progress || 0));
   const selectedGenreCount = genreOptions.filter((genre) => config.genres.includes(genre.id)).length;
   const toggleGenre = (id: string) => {
@@ -253,7 +251,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
             <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
               Advanced
               <span className="ml-2 text-xs font-medium text-zinc-500">
-                style · duration · genres · captions · CLI
+                style · duration · genres · brand
               </span>
             </summary>
 
@@ -295,11 +293,6 @@ export function GenerateSection<T extends GenerateConfigLike>({
                     ]}
                     onChange={(value) => update({hyperframesFormat: value})}
                   />
-                </div>
-                <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
-                  {renderReadinessLine({ready: hyperframesReady, label: "Renderer", detail: hyperframesReady ? "Ready" : "Check required"})}
-                  {renderReadinessLine({ready: Boolean(selectedTemplate || config.hyperframesTemplate === "auto"), label: "Template", detail: selectedTemplate?.label || "Auto"})}
-                  {renderReadinessLine({ready: productionReadyCount > 0, label: "Library", detail: `${productionReadyCount} ready`})}
                 </div>
               </div>
 
@@ -387,26 +380,45 @@ export function GenerateSection<T extends GenerateConfigLike>({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <SelectTile label="Captions" value={config.captionSource} options={["whisper", "hybrid", "youtube"]} onChange={(value) => update({captionSource: value})} />
-                <SelectTile label="Speech language" value={config.speechLanguage} options={["id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
-                <SelectTile label="Transcripts" value={config.transcriptLanguages} options={["id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
-                <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
-                <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
-              </div>
-
-              <div className="rounded-[20px] border border-white/[0.06] bg-black/20 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-semibold text-white">Run outside the app</h4>
-                    <p className="mt-1 text-xs text-zinc-500">Copy the CLI command only if you need it.</p>
+              <details className="rounded-[20px] border border-white/[0.06] bg-black/20 p-4">
+                <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-400">
+                  Developer options
+                  <span className="ml-2 text-xs font-medium text-zinc-600">captions · model · CLI</span>
+                </summary>
+                <div className="mt-4 grid gap-4 border-t border-white/[0.06] pt-4">
+                  <div className="grid gap-2 text-xs sm:grid-cols-2">
+                    {renderReadinessLine({
+                      ready: Boolean(engineHealth?.hyperframes.ready),
+                      label: "Visual engine",
+                      detail: engineHealth?.hyperframes.ready ? "Ready" : "Check required",
+                    })}
+                    {renderReadinessLine({
+                      ready: Boolean(selectedTemplate || config.hyperframesTemplate === "auto"),
+                      label: "Template",
+                      detail: selectedTemplate?.label || "Auto",
+                    })}
                   </div>
-                  <button type="button" onClick={onCopy} className="inline-flex w-fit rounded-full border border-white/[0.10] bg-white/[0.04] px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-cyan/30 hover:text-cyan">
-                    <Copy className="mr-2 h-4 w-4" /> Copy
-                  </button>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <SelectTile label="Captions" value={config.captionSource} options={["whisper", "hybrid", "youtube"]} onChange={(value) => update({captionSource: value})} />
+                    <SelectTile label="Speech language" value={config.speechLanguage} options={["id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
+                    <SelectTile label="Transcripts" value={config.transcriptLanguages} options={["id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
+                    <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
+                    <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
+                  </div>
+                  <div className="rounded-[16px] border border-white/[0.06] bg-canvas-deep/60 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-white">Run outside the app</h4>
+                        <p className="mt-1 text-xs text-zinc-500">Copy the CLI command only if you need it.</p>
+                      </div>
+                      <button type="button" onClick={onCopy} className="inline-flex w-fit rounded-full border border-white/[0.10] bg-white/[0.04] px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-cyan/30 hover:text-cyan">
+                        <Copy className="mr-2 h-4 w-4" /> Copy
+                      </button>
+                    </div>
+                    <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-white/[0.06] bg-black/40 p-3 text-[11px] leading-5 text-zinc-500">{command}</pre>
+                  </div>
                 </div>
-                <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-white/[0.06] bg-canvas-deep p-3 text-[11px] leading-5 text-zinc-400">{command}</pre>
-              </div>
+              </details>
             </div>
           </details>
         </div>

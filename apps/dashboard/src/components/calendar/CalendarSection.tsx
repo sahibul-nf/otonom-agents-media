@@ -131,7 +131,7 @@ export function CalendarSection({
               </button>
             </div>
           )) : (
-            renderEmptyState("No approved clips ready", "Proceed to Review Workspace to sign off active clips.")
+            renderEmptyState("No approved clips ready", "Approve clips in Review, then schedule their next slot here.")
           )}
         </div>
       </div>
@@ -144,38 +144,41 @@ export function CalendarSection({
               Schedule <span className="font-editorial italic font-normal text-cyan">queue</span>
             </h3>
             <p className="mt-1.5 text-sm text-zinc-400 max-w-xl leading-relaxed">
-              Approved production-ready clips waiting for queued publication slots. Cadence is locked to twice daily (09:00 & 19:30 WIB).
+              Approved clips waiting for their publishing slots. Cadence is twice daily (09:00 & 19:30 WIB).
             </p>
           </div>
         </div>
 
         <details className="group mb-5 rounded-[20px] border border-white/[0.06] bg-black/15">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold text-zinc-400 transition hover:text-white">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold text-zinc-500 transition hover:text-zinc-300">
             <span className="inline-flex items-center gap-2">
-              <Settings2 className="h-4 w-4 text-zinc-500" />
-              Operator controls
+              <Settings2 className="h-4 w-4 text-zinc-600" />
+              Recovery tools
             </span>
             <span className="text-[10px] uppercase tracking-wider text-zinc-600 group-open:hidden">Show</span>
             <span className="hidden text-[10px] uppercase tracking-wider text-zinc-600 group-open:inline">Hide</span>
           </summary>
           <div className="flex flex-wrap gap-2 border-t border-white/[0.06] p-4">
+            <p className="mb-1 w-full text-[11px] leading-relaxed text-zinc-500">
+              Rare manual catch-up if automation missed a due slot.
+            </p>
             <button
               type="button"
               disabled={dueBusy}
               onClick={onDryRunDue}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/[0.10] bg-black/24 px-4 text-xs font-bold uppercase tracking-wider text-zinc-300 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/[0.10] bg-black/24 px-4 text-xs font-semibold text-zinc-400 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {dryRunState?.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              <span>Dry Run Due</span>
+              <span>Preview due posts</span>
             </button>
             <button
               type="button"
               disabled={dueBusy}
               onClick={onPublishDue}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink transition-all hover:shadow-[0_8px_20px_-4px_rgba(102,232,249,0.3)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-full border border-white/[0.10] bg-black/24 px-4 text-xs font-semibold text-zinc-300 transition-all hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {publishDueState?.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 fill-current" />}
-              <span>{publishDueState?.status === "running" ? "Publishing..." : "Publish Due"}</span>
+              {publishDueState?.status === "running" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              <span>{publishDueState?.status === "running" ? "Publishing..." : "Publish due now"}</span>
             </button>
           </div>
         </details>
@@ -247,7 +250,7 @@ export function CalendarSection({
               </div>
             </div>
           )) : (
-            renderEmptyState("No scheduled posts found", "Approve pending clips inside the Workspace deck first, then assign them a release slot.")
+            renderEmptyState("No scheduled posts yet", "Approve clips in Review, then assign them a release slot.")
           )}
         </div>
       </div>
