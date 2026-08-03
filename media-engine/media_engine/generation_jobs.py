@@ -258,10 +258,34 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("brand_template not found")
     min_seconds, max_seconds, preset_id = _duration_seconds(payload)
     genres = normalize_genres(payload.get("genres"))
+    profile_id = str(payload.get("profile_id") or "workspace").strip()
+    source_id = str(payload.get("source_id") or "").strip()
+    source_metadata = payload.get("source_metadata")
+    if not isinstance(source_metadata, dict):
+        source_metadata = {}
+    video_id = str(source_metadata.get("video_id") or "").strip()
+    # Prefer per-video source ids so Review can group siblings (#58).
+    if not source_id or source_id in {"workspace_source", f"{profile_id}_source"}:
+        if video_id:
+            source_id = f"{profile_id}_{video_id}"
+        else:
+            source_id = f"{profile_id}_source"
+    canonical_url = str(source_metadata.get("canonical_url") or source_metadata.get("source_url") or "").strip()
+    if canonical_url:
+        source_url = canonical_url
     return {
-        "profile_id": str(payload.get("profile_id") or "workspace").strip(),
-        "source_id": str(payload.get("source_id") or "workspace_source").strip(),
+        "profile_id": profile_id,
+        "source_id": source_id,
         "source_url": source_url,
+        "source_metadata": {
+            "video_id": video_id,
+            "title": str(source_metadata.get("title") or "").strip(),
+            "channel": str(source_metadata.get("channel") or "").strip(),
+            "duration_seconds": source_metadata.get("duration_seconds"),
+            "thumbnail_url": str(source_metadata.get("thumbnail_url") or "").strip(),
+            "canonical_url": source_url,
+            "provider": str(source_metadata.get("provider") or "youtube").strip() or "youtube",
+        },
         "count": _int_range(payload.get("count"), 5, 1, 10),
         "clip_length_preset": preset_id,
         "clip_min_seconds": min_seconds,
@@ -361,14 +385,15 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
             source_id=config["source_id"],
             source_url=config["source_url"],
         )
+        seed_result = {"source_metadata": config.get("source_metadata") or {}}
         conn.execute(
             """
             INSERT INTO generation_jobs
               (id, profile_id, source_id, source_url, count, clip_length_preset, clip_min_seconds,
                clip_max_seconds, genres_json, brand_template, hyperframes_template,
                brand_system_template_id, hyperframes_format, renderer, quality, caption_source, asr_model, speech_language, transcript_languages,
-               llm_provider, status, progress, command)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               llm_provider, status, progress, command, result_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -394,6 +419,7 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
                 "queued",
                 0,
                 _shell_command(command),
+                json.dumps(seed_result, ensure_ascii=False),
             ),
         )
         conn.commit()
@@ -533,6 +559,15 @@ def run_generation_job(job_id: str, command: list[str]) -> None:
             append_job_log(conn, job_id, line, progress)
         code = process.wait()
         result = _extract_json(output)
+        existing_row = conn.execute("SELECT result_json FROM generation_jobs WHERE id = ?", (job_id,)).fetchone()
+        try:
+            existing_result = json.loads((existing_row["result_json"] if existing_row else None) or "{}")
+        except (TypeError, json.JSONDecodeError, KeyError):
+            existing_result = {}
+        if isinstance(existing_result, dict) and existing_result.get("source_metadata") and isinstance(result, dict):
+            result = {**result, "source_metadata": existing_result.get("source_metadata")}
+        elif isinstance(existing_result, dict) and existing_result.get("source_metadata") and not result:
+            result = {"source_metadata": existing_result.get("source_metadata")}
         if code != 0:
             conn.execute(
                 """
