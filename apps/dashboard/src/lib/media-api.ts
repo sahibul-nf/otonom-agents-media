@@ -19,6 +19,15 @@ export type CaptionSegment = {
 export type ClipCandidate = {
   id: string;
   profile_id?: string;
+  source_id?: string;
+  source?: {
+    id: string;
+    url?: string;
+    title?: string;
+    channel?: string;
+    thumbnail_url?: string;
+    groupable?: boolean;
+  };
   status: ClipStatus;
   title_hook: string;
   hook_subtitle?: string;

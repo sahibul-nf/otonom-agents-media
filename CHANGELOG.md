@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Review groups multi-clip batches by source (#58): shared `source_id` shows a collapsible header (title/thumb/count/progress); single-clip results stay flat cards; Create per-video ids from #59 enable grouping.
 - Create YouTube validate + metadata (#59): debounced `/api/resolve-source` via yt-dlp shows title/channel/duration/thumbnail before generate; invalid links block Slide to Generate; soft duration warnings; metadata stored on the generation job for Review groups (#58).
 - Brand Advanced autonomy labels (#54): Off / Assisted / Full auto with short help text; Advanced summary drops `.json` path basename.
 - Templates copy/CTA (#53): “Styles ready” language (no Template engine); **Use in Create** is the only primary CTA; Inspect demoted to View details / Details; card badges use friendly status labels.
