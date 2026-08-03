@@ -22,6 +22,34 @@ type Props = {
 
 const STARTER_STORAGE_KEY = "otonom.brandBuilderStarterTemplate";
 
+type AutonomyModeId = "off" | "assisted" | "full";
+
+const AUTONOMY_MODES: Array<{id: AutonomyModeId; label: string; summary: string; detail: string}> = [
+  {
+    id: "off",
+    label: "Off",
+    summary: "Manual only",
+    detail: "You schedule every approved clip yourself.",
+  },
+  {
+    id: "assisted",
+    label: "Assisted",
+    summary: "Confirm first",
+    detail: "Waits for a review window, then can auto-queue.",
+  },
+  {
+    id: "full",
+    label: "Full auto",
+    summary: "Hands-off",
+    detail: "Approved clips can schedule without waiting on you.",
+  },
+];
+
+function autonomyModeMeta(mode?: string | null) {
+  const id = (mode || "off") as AutonomyModeId;
+  return AUTONOMY_MODES.find((item) => item.id === id) || AUTONOMY_MODES[0];
+}
+
 function presetIcon(presetId: string) {
   if (presetId === "editorial" || presetId === "ember_sunset" || presetId === "align_minimal") {
     return <Sparkles className="h-5 w-5" />;
@@ -39,12 +67,14 @@ export function BrandSection({
   hyperframesCatalog,
   autonomy,
   actionStates,
-  defaultTemplate,
+  defaultTemplate: _defaultTemplate,
   onAutonomyMode,
   onTemplateSaved,
 }: Props) {
   const router = useRouter();
   const autonomyBusy = Object.entries(actionStates).find(([key, state]) => key.startsWith("autonomy:") && state.status === "running")?.[1];
+  const currentAutonomy = autonomyModeMeta(autonomy?.autonomy_mode);
+  const graceHours = autonomy?.review_grace_hours || 12;
   const currentFont = String(style?.caption?.font_family || "Sora");
   const savedStyles = templates.filter((template) => /custom_/i.test(template.path));
   const catalogReady = hyperframesCatalog?.items.filter((item) => item.status === "production-ready").length || 0;
@@ -187,39 +217,43 @@ export function BrandSection({
             </span>
             <span>
               <span className="block text-[13px] font-semibold text-zinc-400 group-open:text-zinc-200">Advanced · publishing autonomy</span>
-              <span className="mt-0.5 block text-[11px] text-zinc-600">Mode: {autonomy?.autonomy_mode || "off"} · base {defaultTemplate.split("/").pop()}</span>
+              <span className="mt-0.5 block text-[11px] text-zinc-600">
+                {currentAutonomy.label} · {currentAutonomy.summary}
+              </span>
             </span>
           </div>
           <span className="text-[11px] font-semibold text-zinc-600 transition-colors group-open:text-cyan">Configure</span>
         </summary>
         <div className="mt-4 max-w-lg pl-11">
           <p className="text-xs leading-relaxed text-zinc-500">
-            Control how aggressively automation schedules approved content. Assisted waits {autonomy?.review_grace_hours || 12}h for confirmation.
+            Choose how automation schedules approved clips. Assisted waits {graceHours}h for confirmation before queueing.
           </p>
-          <div className="mt-3 grid grid-cols-3 rounded-full border border-white/[0.08] bg-black/30 p-1">
-            {["off", "assisted", "full"].map((mode) => {
-              const active = autonomy?.autonomy_mode === mode;
+          <div className="mt-3 grid grid-cols-3 gap-1 rounded-[18px] border border-white/[0.08] bg-black/30 p-1">
+            {AUTONOMY_MODES.map((mode) => {
+              const active = (autonomy?.autonomy_mode || "off") === mode.id;
               return (
                 <button
-                  key={mode}
+                  key={mode.id}
                   type="button"
                   disabled={Boolean(autonomyBusy)}
-                  onClick={() => onAutonomyMode(mode)}
-                  className={`relative rounded-full py-2 text-[11px] font-bold uppercase tracking-wider transition ${
+                  onClick={() => onAutonomyMode(mode.id)}
+                  title={mode.detail}
+                  className={`relative rounded-[14px] px-2 py-2.5 text-center transition ${
                     active ? "bg-cyan text-ink" : "text-zinc-500 hover:text-zinc-200"
                   }`}
                 >
-                  {actionStates[`autonomy:${mode}`]?.status === "running" ? (
-                    <span className="absolute inset-0 grid place-items-center rounded-full bg-cyan">
+                  {actionStates[`autonomy:${mode.id}`]?.status === "running" ? (
+                    <span className="absolute inset-0 grid place-items-center rounded-[14px] bg-cyan">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-ink" />
                     </span>
                   ) : null}
-                  {mode}
+                  <span className="block text-[11px] font-bold">{mode.label}</span>
                 </button>
               );
             })}
           </div>
-          <p className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-zinc-600">
+          <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">{currentAutonomy.detail}</p>
+          <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-zinc-600">
             <CheckCircle2 className="h-3.5 w-3.5 text-cyan/70" />
             Autonomy is separate from brand look tokens.
           </p>
