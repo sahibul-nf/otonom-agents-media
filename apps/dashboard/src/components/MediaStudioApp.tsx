@@ -196,7 +196,7 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
   templates: {
     title: "Templates",
-    subtitle: "Pick a visual style before you generate clips.",
+    subtitle: "Pick a look, then use it in Create.",
   },
   review: {
     title: "Review",
