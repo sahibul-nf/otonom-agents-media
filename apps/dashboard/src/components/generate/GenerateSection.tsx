@@ -1,10 +1,11 @@
 "use client";
 
-import {ArrowRight, BadgeCheck, CheckCircle2, ChevronDown, Copy, Sparkles, Youtube} from "lucide-react";
-import {useState, type Dispatch, type ReactNode, type SetStateAction} from "react";
+import {ArrowRight, BadgeCheck, CheckCircle2, ChevronDown, Copy, Loader2, Sparkles, Youtube} from "lucide-react";
+import {useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction} from "react";
 import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
 import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
+import {apiGet, type SourceResolveResult} from "@/lib/media-api";
 import {
   type ActionUiState,
   type BrandTemplate,
@@ -72,6 +73,23 @@ function runStatusLabel(status: string) {
   }
 }
 
+function formatSourceDuration(seconds?: number | null) {
+  if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return "";
+  const total = Math.round(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${rest}s`;
+  return `${rest}s`;
+}
+
+function looksLikeYoutubeUrl(value: string) {
+  const raw = value.trim().toLowerCase();
+  if (!raw) return false;
+  return raw.includes("youtube.com") || raw.includes("youtu.be");
+}
+
 export function GenerateSection<T extends GenerateConfigLike>({
   config,
   templates,
@@ -106,7 +124,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   command: string;
   defaultTemplatePath: string;
   statusTone: (status: string) => string;
-  onGenerate: () => void;
+  onGenerate: (source?: SourceResolveResult | null) => void;
   onOpenReview: () => void;
   onCopy: () => void;
   renderReadinessLine: ReadinessLineComponent;
@@ -117,7 +135,57 @@ export function GenerateSection<T extends GenerateConfigLike>({
   const isStarting = actionState?.status === "running";
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [resolveState, setResolveState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [resolvedSource, setResolvedSource] = useState<SourceResolveResult | null>(null);
+  const [resolveError, setResolveError] = useState("");
+  const resolveRequestId = useRef(0);
   const update = (patch: Partial<GenerateConfigLike>) => setConfig((current) => ({...current, ...patch}));
+
+  useEffect(() => {
+    const url = config.sourceUrl.trim();
+    if (!url) {
+      setResolveState("idle");
+      setResolvedSource(null);
+      setResolveError("");
+      return;
+    }
+    if (!looksLikeYoutubeUrl(url)) {
+      setResolveState("error");
+      setResolvedSource(null);
+      setResolveError("Paste a full YouTube video link (youtube.com or youtu.be).");
+      return;
+    }
+
+    const requestId = ++resolveRequestId.current;
+    setResolveState("loading");
+    setResolveError("");
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const payload = await apiGet<SourceResolveResult>(`resolve-source?url=${encodeURIComponent(url)}`);
+          if (requestId !== resolveRequestId.current) return;
+          if (!payload?.ok) {
+            setResolveState("error");
+            setResolvedSource(null);
+            setResolveError(payload?.error || "Couldn’t validate this YouTube link.");
+            return;
+          }
+          setResolvedSource(payload);
+          setResolveState("ready");
+          setResolveError("");
+        } catch (error) {
+          if (requestId !== resolveRequestId.current) return;
+          setResolveState("error");
+          setResolvedSource(null);
+          setResolveError(error instanceof Error ? error.message : "Couldn’t validate this YouTube link.");
+        }
+      })();
+    }, 550);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-resolve when the pasted URL changes
+  }, [config.sourceUrl]);
+
+  const canGenerate = Boolean(config.sourceUrl.trim()) && resolveState === "ready" && Boolean(resolvedSource?.ok);
   const presetOptions = durationPresets.length ? durationPresets : [{id: "auto", label: "Auto (0-3 min)", detail: "20-180s", range_label: "0-3 min", best_for: "General use", min_ms: 20_000, target_ms: 90_000, max_ms: 180_000, intent: "Automatic duration"}];
   const genreOptions = genres.length ? genres : [
     {id: "kajian", label: "Kajian", description: "Religious teaching and reflection."},
@@ -168,6 +236,46 @@ export function GenerateSection<T extends GenerateConfigLike>({
                 </span>
               </div>
             </label>
+
+            {resolveState === "loading" ? (
+              <div className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-zinc-400">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan" />
+                Checking video…
+              </div>
+            ) : null}
+
+            {resolveState === "error" && resolveError ? (
+              <p className="mt-3 text-sm leading-6 text-danger">{resolveError}</p>
+            ) : null}
+
+            {resolveState === "ready" && resolvedSource ? (
+              <div className="mt-3 flex gap-3 rounded-[18px] border border-white/[0.08] bg-black/25 p-3">
+                {resolvedSource.thumbnail_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={resolvedSource.thumbnail_url}
+                    alt=""
+                    className="h-16 w-28 shrink-0 rounded-xl object-cover bg-black/40"
+                  />
+                ) : (
+                  <div className="grid h-16 w-28 shrink-0 place-items-center rounded-xl bg-black/40 text-zinc-600">
+                    <Youtube className="h-5 w-5" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-white">{resolvedSource.title || "YouTube video"}</p>
+                  <p className="mt-1 truncate text-xs text-zinc-400">
+                    {[resolvedSource.channel, formatSourceDuration(resolvedSource.duration_seconds)].filter(Boolean).join(" · ")}
+                  </p>
+                  {resolvedSource.warnings?.length ? (
+                    <p className="mt-2 text-xs leading-5 text-warning">{resolvedSource.warnings[0]}</p>
+                  ) : (
+                    <p className="mt-2 text-xs text-teal">Ready to generate</p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-4">
               <span className="text-sm font-medium text-zinc-300">How many clips?</span>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -194,10 +302,13 @@ export function GenerateSection<T extends GenerateConfigLike>({
               <SlideToConfirm
                 label="Slide to generate"
                 activeLabel="Starting…"
-                onConfirm={onGenerate}
+                onConfirm={() => onGenerate(resolvedSource)}
                 isLoading={isStarting}
-                disabled={!config.sourceUrl.trim()}
+                disabled={!canGenerate || isStarting}
               />
+              {resolveState === "loading" ? (
+                <p className="text-xs text-zinc-500">Validate the link before generating.</p>
+              ) : null}
               {renderActionStatus(actionState)}
             </div>
           </div>

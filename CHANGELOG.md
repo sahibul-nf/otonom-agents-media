@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Create YouTube validate + metadata (#59): debounced `/api/resolve-source` via yt-dlp shows title/channel/duration/thumbnail before generate; invalid links block Slide to Generate; soft duration warnings; metadata stored on the generation job for Review groups (#58).
 - Brand Advanced autonomy labels (#54): Off / Assisted / Full auto with short help text; Advanced summary drops `.json` path basename.
 - Templates copy/CTA (#53): “Styles ready” language (no Template engine); **Use in Create** is the only primary CTA; Inspect demoted to View details / Details; card badges use friendly status labels.
 - SaaS UX finish (#22): Home reframed as weekly Create→Review→Schedule→Publish loop (no Command Center / Continue Pipeline); Create Advanced keeps product controls and buries CLI/model under Developer options; Schedule recovery tools demoted; Explainer hybrid plan under Labs; sidebar Loop/More groups + mobile 4+More nav; quieter workspace manage copy.

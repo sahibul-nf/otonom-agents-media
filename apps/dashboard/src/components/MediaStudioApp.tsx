@@ -56,6 +56,7 @@ import {
   PublishTarget,
   ScheduledPost,
   scoreValue,
+  SourceResolveResult,
   StyleProfile,
   WatchChannel,
 } from "@/lib/media-api";
@@ -699,14 +700,27 @@ export function MediaStudioApp() {
     }
   }
 
-  async function startGeneration() {
+  async function startGeneration(source?: SourceResolveResult | null) {
     const key = "generate:start";
+    if (!source?.ok || !source.video_id) {
+      setStatus("Validate the YouTube link before generating.");
+      return;
+    }
     try {
       setStatus("Generation job queued...");
       const job = await runAction(key, "Starting generation batch...", () => apiPost<GenerationJob>("generation-jobs", {
-          source_url: generateConfig.sourceUrl,
+          source_url: source.canonical_url || source.source_url || generateConfig.sourceUrl,
           profile_id: profileId,
-          source_id: `${profileId}_source`,
+          source_id: `${profileId}_${source.video_id}`,
+          source_metadata: {
+            provider: source.provider || "youtube",
+            video_id: source.video_id,
+            title: source.title || "",
+            channel: source.channel || "",
+            duration_seconds: source.duration_seconds ?? null,
+            thumbnail_url: source.thumbnail_url || "",
+            canonical_url: source.canonical_url || source.source_url || generateConfig.sourceUrl,
+          },
           count: generateConfig.count,
           clip_length_preset: generateConfig.clipLength,
           clip_min_seconds: generateConfig.clipMinSeconds,

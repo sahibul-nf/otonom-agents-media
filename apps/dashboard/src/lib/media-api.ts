@@ -275,10 +275,25 @@ export type GenreOption = {
   description: string;
 };
 
+export type SourceResolveResult = {
+  ok: boolean;
+  provider?: string;
+  video_id?: string;
+  title?: string;
+  channel?: string;
+  duration_seconds?: number | null;
+  thumbnail_url?: string;
+  canonical_url?: string;
+  source_url?: string;
+  warnings?: string[];
+  error?: string;
+};
+
 export type GenerationJob = {
   id: string;
   profile_id: string;
   source_url: string;
+  source_id?: string;
   count: number;
   clip_length_preset: string;
   clip_min_seconds?: number;
@@ -302,7 +317,11 @@ export type GenerationJob = {
   error: string;
   created_at: string;
   updated_at: string;
-  result?: {count?: number; renders?: unknown[]};
+  result?: {
+    count?: number;
+    renders?: unknown[];
+    source_metadata?: SourceResolveResult;
+  };
 };
 
 export type RerenderJob = {

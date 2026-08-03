@@ -36,6 +36,7 @@ from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_gene
 from .cursor_cloud import CursorCloudError
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .genres import genre_options
+from .source_resolve import resolve_youtube_source
 from .hyperframes_catalog import list_hyperframes_catalog
 from .hyperframes_previews import ensure_hyperframes_template_preview, list_hyperframes_preview_status, prewarm_hyperframes_template_previews
 from .hyperframes_renderer import check_hyperframes_runtime
@@ -543,6 +544,19 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=500)
                 return
             self._send_json({"results": results})
+            return
+        if parsed.path == "/api/resolve-source":
+            query = parse_qs(parsed.query)
+            raw_url = (query.get("url", [""])[0] or "").strip()
+            if not raw_url:
+                self._send_json({"error": "url is required", "ok": False}, status=400)
+                return
+            try:
+                self._send_json(resolve_youtube_source(raw_url))
+            except ValueError as exc:
+                self._send_json({"error": str(exc), "ok": False}, status=400)
+            except Exception as exc:  # noqa: BLE001
+                self._send_json({"error": str(exc), "ok": False}, status=502)
             return
         if parsed.path == "/api/publish-attempts":
             conn = connect(DEFAULT_DB)
