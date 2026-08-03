@@ -37,6 +37,7 @@ from .cursor_cloud import CursorCloudError
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .genres import genre_options
 from .source_resolve import resolve_youtube_source
+from .review_grouping import enrich_review_rows_with_source
 from .hyperframes_catalog import list_hyperframes_catalog
 from .hyperframes_previews import ensure_hyperframes_template_preview, list_hyperframes_preview_status, prewarm_hyperframes_template_previews
 from .hyperframes_renderer import check_hyperframes_runtime
@@ -376,6 +377,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 row["render_metadata"] = _loads(row.get("render_metadata_json"), {})
                 row["captions"] = row["caption_corrections"].get("edited_captions") or row["render_metadata"].get("captions") or []
                 row["post_caption"] = build_post_caption(row, {"metadata_json": row.get("render_metadata_json") or "{}"})
+            enrich_review_rows_with_source(conn, rows)
             rows.sort(key=lambda row: row.get("score", {}).get("overall_score", 0), reverse=True)
             payload = json.dumps(rows, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
