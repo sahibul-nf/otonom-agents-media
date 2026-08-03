@@ -954,6 +954,33 @@ export function MediaStudioApp() {
     });
   }
 
+  function deleteClip(clip: ClipCandidate) {
+    setConfirmDialog({
+      title: "Delete this clip?",
+      message: `Remove “${clip.title_hook}” and its rendered files from this workspace.`,
+      confirmLabel: "Delete clip",
+      tone: "danger",
+      onConfirm: () => void performDeleteClip(clip.id),
+    });
+  }
+
+  async function performDeleteClip(candidateId: string) {
+    const key = `clip:${candidateId}:delete`;
+    try {
+      await runAction(key, "Deleting clip...", async () => {
+        await apiPost("delete-candidate", {candidate_id: candidateId, delete_artifacts: true});
+        setClips((items) => items.filter((item) => item.id !== candidateId));
+        setSchedule((items) => items.filter((item) => item.candidate_id !== candidateId));
+      }, "Clip deleted");
+      setStatus("Clip deleted");
+      pushToast("Clip deleted", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Delete failed";
+      setStatus(message);
+      pushToast(message, "error");
+    }
+  }
+
   async function performClearQueue() {
     const key = "queue:clear";
     try {
@@ -1396,6 +1423,7 @@ export function MediaStudioApp() {
               setShowPublished={setShowPublished}
               statusTone={statusTone}
               onClear={clearQueue}
+              onDeleteClip={deleteClip}
             />
           )}
 

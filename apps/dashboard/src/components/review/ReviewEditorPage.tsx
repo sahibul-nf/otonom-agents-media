@@ -249,7 +249,7 @@ export function ReviewEditorPage({clipId}: {clipId: string}) {
       <header className="z-40 shrink-0 bg-gradient-to-b from-canvas-deep/80 via-canvas/40 to-transparent px-3 py-2.5 sm:px-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <button type="button" onClick={() => dirty ? navigate("/?section=review") : router.back()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="Back to Review"><ArrowLeft className="h-4 w-4" /></button>
+            <button type="button" onClick={() => navigate("/?section=review")} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="Back to Review"><ArrowLeft className="h-4 w-4" /></button>
             <div className="min-w-0">
               <h1 className="truncate text-sm font-semibold tracking-tight text-white">{draftPlan?.title || clip.title_hook}</h1>
               <p className="truncate text-[11px] text-zinc-600">{clipIndex + 1}/{clips.length} · canvas</p>
