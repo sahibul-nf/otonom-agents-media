@@ -10,6 +10,31 @@ import type {EngineHealth, HyperframesCatalog, HyperframesTemplate} from "@/lib/
 const templateFilters = ["All", "Spiritual", "Podcast", "Data", "News", "Promo", "Official", "Brand"] as const;
 type TemplateFrame = "short" | "long";
 
+function friendlyTemplateStatus(status?: string) {
+  switch (status) {
+    case "ready":
+    case "production-ready":
+      return "Ready";
+    case "draft":
+      return "Draft";
+    case "experimental":
+    case "beta":
+      return "Beta";
+    case "unavailable":
+    case "error":
+      return "Unavailable";
+    default:
+      return status ? "Available" : "Ready";
+  }
+}
+
+function stylesReadyLabel(ready: boolean, reason?: string) {
+  if (ready) return "Styles ready";
+  const cleaned = (reason || "").trim();
+  if (!cleaned) return "Styles unavailable";
+  return cleaned.replace(/template engine/gi, "styles").replace(/\bhyperframes\b/gi, "styles");
+}
+
 export function TemplatesSection({
   templates,
   catalog,
@@ -58,16 +83,6 @@ export function TemplatesSection({
   const frameLabelShort = frame === "long" ? "16:9 landscape" : "9:16 portrait";
   const framePreviewKey = frame === "long" ? "long_16_9" : "short_9_16";
   const detailFrameLabel = frame === "long" ? "Long/Landscape 16:9" : "Short/Reels 9:16";
-  const customizationGroups = [
-    {label: "Captions", items: catalog?.groups["Captions"] || []},
-    {label: "Texture/effects", items: catalog?.groups["Texture/effects"] || []},
-    {label: "Social overlays", items: catalog?.groups["Social overlays"] || []},
-    {label: "Data", items: catalog?.groups["Data"] || []},
-    {label: "Maps", items: catalog?.groups["Maps"] || []},
-    {label: "Product", items: catalog?.groups["Product"] || []},
-    {label: "Transitions", items: catalog?.groups["Transitions"] || []},
-    {label: "Shader transitions", items: catalog?.groups["Shader transitions"] || []},
-  ].filter((group) => group.items.length);
   const gridClass =
     frame === "long"
       ? "grid-cols-[repeat(auto-fill,minmax(21rem,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(23rem,1fr))]"
@@ -102,38 +117,38 @@ export function TemplatesSection({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <p className="text-sm leading-6 text-zinc-400">
-              Browse video styles, inspect the preview and details, then use your choice in Create.
+              Pick a look, then use it in Create. Preview details stay optional.
             </p>
           </div>
-          {renderStatusPill(false, ready ? "Template engine ready" : engineHealth?.hyperframes.reason || "Template engine unavailable")}
+          {renderStatusPill(false, stylesReadyLabel(ready, engineHealth?.hyperframes.reason))}
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <InsightTile label="Templates" value={String(templates.length)} detail={`${readyTemplateCount} ready to use`} />
+          <InsightTile label="Styles" value={String(templates.length)} detail={`${readyTemplateCount} ready to use`} />
           <InsightTile label="Format" value={frame === "short" ? "9:16" : "16:9"} detail={frameLabelShort} />
           <InsightTile
             label="Using in Create"
             value={activeInCreate?.label ? "Set" : "None"}
-            detail={activeInCreate?.label || "Choose a template below"}
+            detail={activeInCreate?.label || "Choose a style below"}
             highlight={Boolean(activeInCreate)}
           />
-          <InsightTile label="Building blocks" value={String(catalogReady)} detail="available for customization" />
+          <InsightTile label="Custom parts" value={String(catalogReady)} detail="available if you customize" />
         </div>
 
         {selected ? (
           <div className="mt-4 flex flex-col gap-3 rounded-[20px] border border-cyan/[0.18] bg-teal/[0.07] p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan">Selected template</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-cyan">Selected style</p>
               <p className="mt-1 truncate text-base font-semibold text-white">{selected.label}</p>
               <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">{selected.best_for}</p>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => openTemplateDetail(selected.id)}
-                className="inline-flex h-10 items-center justify-center rounded-full border border-white/[0.12] bg-black/20 px-4 text-sm font-semibold text-zinc-200 transition hover:border-cyan/[0.24] hover:text-white"
+                className="text-sm font-medium text-zinc-500 underline-offset-4 transition hover:text-zinc-300 hover:underline"
               >
-                Inspect
+                View details
               </button>
               <button
                 type="button"
@@ -150,7 +165,7 @@ export function TemplatesSection({
 
         {!ready ? (
           <div className="mt-4 rounded-[18px] border border-warning/[0.22] bg-warning/[0.08] px-4 py-3 text-sm leading-6 text-warning">
-            Template previews may still be inspected, but using a template is unavailable until the template engine reconnects.
+            You can still browse previews, but Use in Create needs styles to reconnect first.
           </div>
         ) : null}
 
@@ -223,7 +238,7 @@ export function TemplatesSection({
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.06] pt-3">
             <p className="text-xs text-zinc-500">
-              <span className="font-semibold text-zinc-300">{visible.length}</span> template{visible.length === 1 ? "" : "s"}
+              <span className="font-semibold text-zinc-300">{visible.length}</span> style{visible.length === 1 ? "" : "s"}
               {filter !== "All" ? (
                 <>
                   {" "}
@@ -231,7 +246,7 @@ export function TemplatesSection({
                 </>
               ) : null}
               <span className="text-zinc-600"> · </span>
-              Tap or hover preview
+              Tap a card to select · details optional
             </p>
             {filter !== "All" ? (
               <button
@@ -250,53 +265,64 @@ export function TemplatesSection({
           <div className={`mt-4 grid gap-2.5 sm:gap-3 ${gridClass}`}>
             {visible.map((template) => {
               const isActiveInCreate = currentTemplate === template.id;
-              const statusLabel = isActiveInCreate ? "in Create" : template.status;
+              const isSelected = selected?.id === template.id;
+              const statusLabel = isActiveInCreate ? "In Create" : friendlyTemplateStatus(template.status);
               return (
                 <article
                   key={template.id}
-                  className={`template-card group min-w-0 rounded-[20px] border text-left ${
+                  className={`template-card group min-w-0 rounded-[20px] border text-left transition ${
                     isPortraitGrid ? "p-2.5 sm:p-3" : "p-3 sm:p-3.5"
                   } ${
                     isActiveInCreate
                       ? "border-cyan/[0.50] bg-teal/[0.12] shadow-glow"
-                      : "border-white/[0.08] bg-canvas-deep hover:border-cyan/[0.22] hover:bg-teal/[0.05]"
+                      : isSelected
+                        ? "border-cyan/[0.28] bg-teal/[0.06]"
+                        : "border-white/[0.08] bg-canvas-deep hover:border-cyan/[0.22] hover:bg-teal/[0.05]"
                   }`}
                 >
-                  <TemplatePreview
-                    template={template}
-                    compact
-                    gridCard
-                    hideFooterLabel
-                    frame={frame}
-                    hoverToPlay
-                  />
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-cyan">{template.category}</p>
-                      <TemplateStatusBadge status={template.status} label={statusLabel} active={isActiveInCreate} />
-                    </div>
-                    <h4 className="line-clamp-1 text-sm font-semibold leading-5 text-white">{template.label}</h4>
-                    <p className={`text-zinc-400 ${isPortraitGrid ? "line-clamp-1 text-xs leading-4" : "line-clamp-2 text-xs leading-5"}`}>
-                      {template.best_for}
-                    </p>
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                      <div className="flex min-w-0 flex-wrap gap-1">
-                        {template.effects.slice(0, isPortraitGrid ? 2 : 3).map((effect) => (
-                          <span key={effect} className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[10px] leading-4 text-zinc-400">
-                            {effect}
-                          </span>
-                        ))}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(template.id)}
+                    className="block w-full text-left"
+                    aria-pressed={isSelected}
+                    aria-label={`Select ${template.label}`}
+                  >
+                    <TemplatePreview
+                      template={template}
+                      compact
+                      gridCard
+                      hideFooterLabel
+                      frame={frame}
+                      hoverToPlay
+                    />
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-cyan">{template.category}</p>
+                        <TemplateStatusBadge status={template.status} label={statusLabel} active={isActiveInCreate} />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => openTemplateDetail(template.id)}
-                        className="template-card-open-hint inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full border border-cyan/[0.18] bg-teal/[0.08] px-3 text-xs font-semibold text-cyan transition hover:border-cyan/[0.35] hover:bg-teal/[0.14]"
-                        aria-label={`Inspect ${template.label}`}
-                      >
-                        Inspect
-                        <ChevronRight className="h-3 w-3" />
-                      </button>
+                      <h4 className="line-clamp-1 text-sm font-semibold leading-5 text-white">{template.label}</h4>
+                      <p className={`text-zinc-400 ${isPortraitGrid ? "line-clamp-1 text-xs leading-4" : "line-clamp-2 text-xs leading-5"}`}>
+                        {template.best_for}
+                      </p>
                     </div>
+                  </button>
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                    <div className="flex min-w-0 flex-wrap gap-1">
+                      {template.effects.slice(0, isPortraitGrid ? 2 : 3).map((effect) => (
+                        <span key={effect} className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[10px] leading-4 text-zinc-400">
+                          {effect}
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openTemplateDetail(template.id)}
+                      className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full px-2.5 text-xs font-medium text-zinc-500 transition hover:text-zinc-300"
+                      aria-label={`View details for ${template.label}`}
+                    >
+                      Details
+                      <ChevronRight className="h-3 w-3" />
+                    </button>
                   </div>
                 </article>
               );
@@ -305,10 +331,12 @@ export function TemplatesSection({
         ) : (
           <div className="mt-4">
             {renderEmptyState(
-              templates.length ? `No ${filter} templates` : ready ? "No templates available" : "Template engine unavailable",
+              templates.length ? `No ${filter} styles` : ready ? "No styles available" : "Styles unavailable",
               templates.length
-                ? "Try another category or switch back to All to browse the full template library."
-                : engineHealth?.hyperframes.reason || "Reconnect or restart the media engine, then refresh this page.",
+                ? "Try another category or switch back to All to browse the full library."
+                : stylesReadyLabel(false, engineHealth?.hyperframes.reason) === "Styles unavailable"
+                  ? "Reconnect or restart the media engine, then refresh this page."
+                  : stylesReadyLabel(false, engineHealth?.hyperframes.reason),
             )}
             {templates.length && filter !== "All" ? (
               <button
@@ -316,7 +344,7 @@ export function TemplatesSection({
                 onClick={() => setFilter("All")}
                 className="mt-3 inline-flex h-10 items-center justify-center rounded-full border border-cyan/[0.22] bg-teal/[0.08] px-4 text-sm font-semibold text-cyan"
               >
-                Show all templates
+                Show all styles
               </button>
             ) : null}
           </div>
@@ -325,8 +353,8 @@ export function TemplatesSection({
 
       <FocusModal
         open={detailOpen && Boolean(selected)}
-        title={selected?.label || "Template"}
-        subtitle={`${selected?.category || "Template"} · ${detailFrameLabel}`}
+        title={selected?.label || "Style"}
+        subtitle={`${selected?.category || "Style"} · ${detailFrameLabel}`}
         width="max"
         onClose={() => setDetailOpen(false)}
       >
@@ -341,7 +369,7 @@ export function TemplatesSection({
                   </div>
                   <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${selected.status === "ready" ? "border-teal/[0.25] bg-teal/[0.10] text-teal" : "border-warning/[0.25] bg-warning/[0.10] text-warning"}`}>
                     <BadgeCheck className="h-3.5 w-3.5" />
-                    {selected.status === "ready" ? "Ready" : selected.status}
+                    {friendlyTemplateStatus(selected.status)}
                   </span>
                 </div>
                 <div>
@@ -409,8 +437,8 @@ export function TemplatesSection({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {renderSettingTile("Caption", selected.caption_style)}
-                  {renderSettingTile("Engine", ready ? "Ready" : "Unavailable")}
-                  {renderSettingTile("Blocks", `${catalogReady} available`)}
+                  {renderSettingTile("Styles", ready ? "Ready" : "Unavailable")}
+                  {renderSettingTile("Parts", `${catalogReady} available`)}
                   {renderSettingTile("Format", frame === "long" ? "16:9" : "9:16")}
                 </div>
               </aside>
@@ -425,7 +453,7 @@ export function TemplatesSection({
                 <ChevronRight className="h-4 w-4 text-zinc-500 transition-transform group-open:rotate-90" />
               </summary>
               <div className="border-t border-white/[0.06] p-5">
-                <p className="text-xs text-zinc-500">Fonts, motion, effects, and content modules used by this template.</p>
+                <p className="text-xs text-zinc-500">Fonts, motion, effects, and content modules used by this style.</p>
                 {selectedRecipe ? (
                   <dl className="mt-4 grid gap-2 rounded-[18px] border border-white/[0.08] bg-black/20 p-3 text-xs text-zinc-300 sm:grid-cols-2">
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Font</dt><dd className="text-right font-semibold text-white">{selected.font_family || selectedRecipe.fontFamily}</dd></div>
@@ -445,7 +473,7 @@ export function TemplatesSection({
                     ))}
                   </div>
                 </div>
-                
+
                 <div>
                   <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Modules</p>
                   <div className="flex flex-wrap gap-1.5">
@@ -456,7 +484,7 @@ export function TemplatesSection({
                     ))}
                   </div>
                 </div>
-                
+
                 <div>
                   <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Content types</p>
                   <div className="flex flex-wrap gap-1.5">
@@ -472,7 +500,7 @@ export function TemplatesSection({
             </details>
           </div>
         ) : (
-          renderEmptyState("No templates loaded", "Refresh after restarting the media engine backend.")
+          renderEmptyState("No styles loaded", "Refresh after restarting the media engine backend.")
         )}
       </FocusModal>
     </section>
@@ -504,7 +532,7 @@ function TemplateStatusBadge({status, label, active}: {status: string; label: st
   return (
     <span
       className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${
-        status === "ready"
+        status === "ready" || status === "production-ready"
           ? "border-teal/[0.25] bg-teal/[0.10] text-teal"
           : "border-warning/[0.25] bg-warning/[0.10] text-warning"
       }`}
