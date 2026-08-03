@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Brand Advanced autonomy labels (#54): Off / Assisted / Full auto with short help text; Advanced summary drops `.json` path basename.
 - Templates copy/CTA (#53): “Styles ready” language (no Template engine); **Use in Create** is the only primary CTA; Inspect demoted to View details / Details; card badges use friendly status labels.
 - SaaS UX finish (#22): Home reframed as weekly Create→Review→Schedule→Publish loop (no Command Center / Continue Pipeline); Create Advanced keeps product controls and buries CLI/model under Developer options; Schedule recovery tools demoted; Explainer hybrid plan under Labs; sidebar Loop/More groups + mobile 4+More nav; quieter workspace manage copy.
 - Workspace switcher placement (#50): move switch + Manage into the desktop sidebar under the product mark; mobile keeps a compact header control; remove the cramped Guided Studio OS breadcrumb above section titles.

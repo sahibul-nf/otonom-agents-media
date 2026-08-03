@@ -683,10 +683,17 @@ export function MediaStudioApp() {
   async function updateAutonomyMode(mode: string) {
     if (!autonomy) return;
     const key = `autonomy:${mode}`;
+    const label =
+      mode === "off" ? "Off" : mode === "assisted" ? "Assisted" : mode === "full" ? "Full auto" : mode;
     try {
-      const next = await runAction(key, `Switching autonomy to ${mode}...`, () => apiPost<AutonomySettings>("autonomy-settings", {...autonomy, profile_id: profileId, autonomy_mode: mode}), `Autonomy set to ${mode}`);
+      const next = await runAction(
+        key,
+        `Switching autonomy to ${label}...`,
+        () => apiPost<AutonomySettings>("autonomy-settings", {...autonomy, profile_id: profileId, autonomy_mode: mode}),
+        `Autonomy set to ${label}`,
+      );
       setAutonomy(next);
-      setStatus(`Autonomy mode set to ${mode}`);
+      setStatus(`Autonomy mode set to ${label}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Autonomy update failed");
     }
