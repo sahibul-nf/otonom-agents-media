@@ -7,14 +7,25 @@ import type {ReviewClipGroup} from "@/lib/review-groups";
 export function ReviewSourceGroup({
   group,
   statusTone,
+  actionStates,
+  onDelete,
 }: {
   group: ReviewClipGroup;
   statusTone: (status: string) => string;
+  actionStates?: Record<string, {status: "running" | "done" | "failed"; message: string}>;
+  onDelete?: (clip: ReviewClipGroup["clips"][number]) => void;
 }) {
   if (!group.showHeader) {
     const clip = group.clips[0];
     if (!clip) return null;
-    return <ReviewQueueCard clip={clip} statusTone={statusTone} />;
+    return (
+      <ReviewQueueCard
+        clip={clip}
+        statusTone={statusTone}
+        deleting={actionStates?.[`clip:${clip.id}:delete`]?.status === "running"}
+        onDelete={onDelete}
+      />
+    );
   }
 
   const total = group.clips.length;
@@ -43,7 +54,13 @@ export function ReviewSourceGroup({
       </summary>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {group.clips.map((clip) => (
-          <ReviewQueueCard key={clip.id} clip={clip} statusTone={statusTone} />
+          <ReviewQueueCard
+            key={clip.id}
+            clip={clip}
+            statusTone={statusTone}
+            deleting={actionStates?.[`clip:${clip.id}:delete`]?.status === "running"}
+            onDelete={onDelete}
+          />
         ))}
       </div>
     </details>

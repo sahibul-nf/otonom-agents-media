@@ -24,6 +24,7 @@ export type ReviewStudioSectionProps = {
   setShowPublished: (value: boolean) => void;
   statusTone: (status: string) => string;
   onClear: () => void;
+  onDeleteClip: (clip: ClipCandidate) => void;
 };
 
 export function ReviewStudioSection({
@@ -35,6 +36,7 @@ export function ReviewStudioSection({
   setFilter,
   setShowPublished,
   onClear,
+  onDeleteClip,
   statusTone,
 }: ReviewStudioSectionProps) {
   const clearState = actionStates["queue:clear"];
@@ -69,7 +71,13 @@ export function ReviewStudioSection({
       {clips.length ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {groups.map((group) => (
-            <ReviewSourceGroup key={group.key} group={group} statusTone={statusTone} />
+            <ReviewSourceGroup
+              key={group.key}
+              group={group}
+              statusTone={statusTone}
+              actionStates={actionStates}
+              onDelete={onDeleteClip}
+            />
           ))}
         </div>
       ) : (
