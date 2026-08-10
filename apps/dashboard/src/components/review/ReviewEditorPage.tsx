@@ -19,11 +19,22 @@ import {
   type PublishTarget,
   type SaveScenePlanResponse,
 } from "@/lib/media-api";
+import {reviewBatchHref, reviewEditorHref} from "@/lib/review-groups";
 
 type ScenePlanResult = Partial<SaveScenePlanResponse> & {plan: ExplainerScenePlan};
 
-export function ReviewEditorPage({clipId}: {clipId: string}) {
+export function ReviewEditorPage({
+  clipId,
+  fromBatch = false,
+  batchSourceId = "",
+}: {
+  clipId: string;
+  fromBatch?: boolean;
+  batchSourceId?: string;
+}) {
   const router = useRouter();
+  const backHref = fromBatch && batchSourceId ? reviewBatchHref(batchSourceId) : "/?section=review";
+  const backLabel = fromBatch && batchSourceId ? "Back to batch" : "Back to Review";
   const [clip, setClip] = useState<ClipCandidate | null>();
   const [clips, setClips] = useState<ClipCandidate[]>([]);
   const [context, setContext] = useState<EditorContext | null>();
@@ -240,25 +251,30 @@ export function ReviewEditorPage({clipId}: {clipId: string}) {
   if (clip === undefined || context === undefined) return <div className="grid min-h-screen place-items-center bg-canvas-deep"><Loader2 className="h-6 w-6 animate-spin text-cyan" /></div>;
   if (!clip || !context) return <Unavailable />;
 
-  const clipIndex = clips.findIndex((item) => item.id === clip.id);
-  const previousClip = clips[clipIndex - 1];
-  const nextClip = clips[clipIndex + 1];
+  const navClips =
+    fromBatch && batchSourceId
+      ? clips.filter((item) => (item.source_id || item.source?.id || "").trim() === batchSourceId.trim())
+      : clips;
+  const clipIndex = navClips.findIndex((item) => item.id === clip.id);
+  const previousClip = navClips[clipIndex - 1];
+  const nextClip = navClips[clipIndex + 1];
+  const editorLink = (id: string) => (fromBatch && batchSourceId ? reviewEditorHref(id, batchSourceId) : `/review/${encodeURIComponent(id)}`);
 
   return (
     <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-canvas text-zinc-100">
       <header className="z-40 shrink-0 bg-gradient-to-b from-canvas-deep/80 via-canvas/40 to-transparent px-3 py-2.5 sm:px-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
-            <button type="button" onClick={() => navigate("/?section=review")} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="Back to Review"><ArrowLeft className="h-4 w-4" /></button>
+            <button type="button" onClick={() => navigate(backHref)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label={backLabel}><ArrowLeft className="h-4 w-4" /></button>
             <div className="min-w-0">
               <h1 className="truncate text-sm font-semibold tracking-tight text-white">{draftPlan?.title || clip.title_hook}</h1>
-              <p className="truncate text-[11px] text-zinc-600">{clipIndex + 1}/{clips.length} · canvas</p>
+              <p className="truncate text-[11px] text-zinc-600">{Math.max(clipIndex, 0) + 1}/{navClips.length || 1} · canvas</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden items-center rounded-full border border-white/[0.05] bg-black/20 p-0.5 backdrop-blur-md md:flex">
-              <button type="button" disabled={!previousClip} onClick={() => navigate(previousClip ? `/review/${encodeURIComponent(previousClip.id)}` : undefined)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-500 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-25" aria-label="Previous review item"><ChevronLeft className="h-4 w-4" /></button>
-              <button type="button" disabled={!nextClip} onClick={() => navigate(nextClip ? `/review/${encodeURIComponent(nextClip.id)}` : undefined)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-500 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-25" aria-label="Next review item"><ChevronRight className="h-4 w-4" /></button>
+              <button type="button" disabled={!previousClip} onClick={() => navigate(previousClip ? editorLink(previousClip.id) : undefined)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-500 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-25" aria-label="Previous review item"><ChevronLeft className="h-4 w-4" /></button>
+              <button type="button" disabled={!nextClip} onClick={() => navigate(nextClip ? editorLink(nextClip.id) : undefined)} className="grid h-8 w-8 place-items-center rounded-full text-zinc-500 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-25" aria-label="Next review item"><ChevronRight className="h-4 w-4" /></button>
             </div>
             <EditorHeaderActions
               clip={clip}
@@ -275,7 +291,7 @@ export function ReviewEditorPage({clipId}: {clipId: string}) {
               <button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="More review actions" aria-expanded={menuOpen}><MoreHorizontal className="h-4 w-4" /></button>
               {menuOpen ? <div className="absolute right-0 top-11 z-50 w-48 overflow-hidden rounded-2xl border border-white/[0.06] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl">
                 <button type="button" onClick={() => { setMenuOpen(false); void runAction(`clip:${clip.id}:hold`, "Holding…", () => apiPost("hold", {candidate_id: clip.id}), "Held"); }} className="w-full rounded-xl px-3 py-2 text-left text-sm text-warning hover:bg-warning/[0.08]">Hold for later</button>
-                <button type="button" onClick={() => { setMenuOpen(false); if (window.confirm("Delete this item and rendered files?")) void runAction(`clip:${clip.id}:delete`, "Deleting…", async () => { await apiPost("delete-candidate", {candidate_id: clip.id, delete_artifacts: true}); router.push("/?section=review"); }, "Deleted", false); }} className="w-full rounded-xl px-3 py-2 text-left text-sm text-danger hover:bg-danger/[0.08]">Delete item</button>
+                <button type="button" onClick={() => { setMenuOpen(false); if (window.confirm("Delete this item and rendered files?")) void runAction(`clip:${clip.id}:delete`, "Deleting…", async () => { await apiPost("delete-candidate", {candidate_id: clip.id, delete_artifacts: true}); router.push(backHref); }, "Deleted", false); }} className="w-full rounded-xl px-3 py-2 text-left text-sm text-danger hover:bg-danger/[0.08]">Delete item</button>
               </div> : null}
             </div>
           </div>
