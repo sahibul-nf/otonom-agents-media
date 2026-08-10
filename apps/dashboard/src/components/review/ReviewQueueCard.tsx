@@ -18,11 +18,13 @@ export function ReviewQueueCard({
   clip,
   statusTone,
   deleting = false,
+  editHref,
   onDelete,
 }: {
   clip: ClipCandidate;
   statusTone: (status: string) => string;
   deleting?: boolean;
+  editHref?: string;
   onDelete?: (clip: ClipCandidate) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -33,6 +35,7 @@ export function ReviewQueueCard({
   const output = clip.output_path || clip.render_quality?.output_path;
   const source = output ? apiPath(`artifact?path=${encodeURIComponent(output)}`) : null;
   const duration = clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms;
+  const editorHref = editHref || `/review/${encodeURIComponent(clip.id)}`;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -61,7 +64,7 @@ export function ReviewQueueCard({
   }
 
   return (
-    <article className="group min-w-0 rounded-[24px] border border-white/[0.08] bg-surface p-3 transition duration-200 hover:-translate-y-0.5 hover:border-cyan/[0.20] hover:shadow-glow motion-reduce:transform-none motion-reduce:transition-none">
+    <article className="group w-full min-w-0 rounded-[24px] border border-white/[0.08] bg-surface p-3 transition duration-200 hover:-translate-y-0.5 hover:border-cyan/[0.20] hover:shadow-glow motion-reduce:transform-none motion-reduce:transition-none">
       <div className="relative">
         <MediaPreviewFrame
           aspect={isExplainerClip(clip) ? "landscape" : "portrait"}
@@ -146,7 +149,7 @@ export function ReviewQueueCard({
             </span>
           </div>
           <Link
-            href={`/review/${encodeURIComponent(clip.id)}`}
+            href={editorHref}
             className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.30] hover:text-cyan focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
           >
             Edit <ArrowUpRight className="h-3.5 w-3.5" />

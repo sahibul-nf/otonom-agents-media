@@ -1,6 +1,7 @@
 "use client";
 
 import {AlertTriangle} from "lucide-react";
+import {useMemo} from "react";
 import {ReviewSourceGroup} from "@/components/review/ReviewSourceGroup";
 import type {ClipCandidate} from "@/lib/media-api";
 import {groupReviewClips} from "@/lib/review-groups";
@@ -40,19 +41,19 @@ export function ReviewStudioSection({
   statusTone,
 }: ReviewStudioSectionProps) {
   const clearState = actionStates["queue:clear"];
-  const groups = groupReviewClips(clips);
+  const groups = useMemo(() => groupReviewClips(clips), [clips]);
   const batchCount = groups.filter((group) => group.showHeader).length;
 
   return (
     <section className="mx-auto grid w-full max-w-[1180px] gap-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-sm leading-6 text-zinc-400">Open an item to review, reconstruct scenes, or prepare it for publishing.</p>
+          <div>
+          <p className="text-sm leading-6 text-zinc-400">Open a batch to review siblings from one source, or edit a single clip.</p>
           <p className="mt-1 text-xs font-medium text-zinc-600">
             {clips.length} result{clips.length === 1 ? "" : "s"} in this view
             {batchCount ? ` · ${batchCount} source batch${batchCount === 1 ? "" : "es"}` : ""}
           </p>
-        </div>
+          </div>
         <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
           {reviewFilters.map((item) => (
             <button
@@ -64,26 +65,27 @@ export function ReviewStudioSection({
               className={`h-9 shrink-0 rounded-full px-3.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan ${filter === item.id ? "bg-cyan text-ink" : "border border-white/[0.08] bg-surface text-zinc-400 hover:text-white"}`}
             >
               {item.label}
-            </button>
-          ))}
+                  </button>
+                ))}
         </div>
       </div>
       {clips.length ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">
           {groups.map((group) => (
-            <ReviewSourceGroup
-              key={group.key}
-              group={group}
-              statusTone={statusTone}
-              actionStates={actionStates}
-              onDelete={onDeleteClip}
-            />
+            <div key={group.key} className="mb-4 break-inside-avoid">
+              <ReviewSourceGroup
+                group={group}
+          statusTone={statusTone}
+                actionStates={actionStates}
+                onDelete={onDeleteClip}
+              />
+                </div>
           ))}
         </div>
       ) : (
         <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center text-sm text-zinc-500">
-          <div>
-            <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-zinc-600" />
+      <div>
+        <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-zinc-600" />
             No results in this view. Generate a batch or choose another filter.
           </div>
         </div>
