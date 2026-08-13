@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Review gallery preview audio (#68): Play on Review/batch cards starts with sound; mute toggle on the thumbnail; starting another card pauses the previous one.
+- Local dashboard default port is `3100` (#67) so it can run next to Postiz on `:3000` / `:4200`; override with `DASHBOARD_PORT`. Media engine stays on `8765`.
 - Review source batch page (#65): multi-clip sources open `/review/batch/[sourceId]`; inbox uses a staggered (masonry) grid so 9:16 clips and 16:9 batch/long-form cards pack without gaps; Editor back returns to the batch; singles stay flat.
 - Review queue Delete + Editor back (#62): quiet ⋯ on gallery card media (top-right) for delete (confirm → `delete-candidate`); Editor back always returns to `/?section=review` (dirty leave still confirms).
 - Review groups multi-clip batches by source (#58): shared `source_id` shows a collapsible header (title/thumb/count/progress); single-clip results stay flat cards; Create per-video ids from #59 enable grouping.
