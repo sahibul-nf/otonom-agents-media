@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import {ArrowUpRight, Loader2, MoreHorizontal, Pause, Play, Trash2} from "lucide-react";
-import {useEffect, useId, useRef, useState} from "react";
+import {ArrowUpRight, Loader2, MoreHorizontal, Pause, Play, Trash2, Volume2, VolumeX} from "lucide-react";
+import {useCallback, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent} from "react";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {apiPath, type ClipCandidate, formatDuration, isExplainerClip} from "@/lib/media-api";
+import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
 
 function readinessLabel(clip: ClipCandidate) {
   if (clip.status === "held") return "Needs a fix";
@@ -31,11 +32,22 @@ export function ReviewQueueCard({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
   const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const output = clip.output_path || clip.render_quality?.output_path;
   const source = output ? apiPath(`artifact?path=${encodeURIComponent(output)}`) : null;
   const duration = clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms;
   const editorHref = editHref || `/review/${encodeURIComponent(clip.id)}`;
+
+  const pauseThisPreview = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.paused) return;
+    video.pause();
+  }, []);
+
+  useEffect(() => {
+    return () => releaseReviewPreviewPlayback(pauseThisPreview);
+  }, [pauseThisPreview]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -57,10 +69,26 @@ export function ReviewQueueCard({
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      await video.play();
+      claimReviewPreviewPlayback(pauseThisPreview);
+      video.muted = muted;
+      try {
+        await video.play();
+      } catch {
+        video.muted = true;
+        setMuted(true);
+        await video.play().catch(() => undefined);
+      }
       return;
     }
     video.pause();
+  }
+
+  function toggleMuted(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    const video = videoRef.current;
+    const next = !muted;
+    setMuted(next);
+    if (video) video.muted = next;
   }
 
   return (
@@ -70,16 +98,25 @@ export function ReviewQueueCard({
           aspect={isExplainerClip(clip) ? "landscape" : "portrait"}
           src={source}
           videoRef={videoRef}
-          muted
+          muted={muted}
           loop
           preload="metadata"
           spacing="none"
           rounded="panel"
           showPlayHint={false}
           showVignette
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
+          onPlay={() => {
+            claimReviewPreviewPlayback(pauseThisPreview);
+            setPlaying(true);
+          }}
+          onPause={() => {
+            setPlaying(false);
+            releaseReviewPreviewPlayback(pauseThisPreview);
+          }}
+          onEnded={() => {
+            setPlaying(false);
+            releaseReviewPreviewPlayback(pauseThisPreview);
+          }}
           ariaLabel={`Preview ${clip.title_hook}`}
           emptyState={<div className="absolute inset-0 grid place-items-center text-sm text-zinc-600">Preview unavailable</div>}
         />
@@ -138,6 +175,16 @@ export function ReviewQueueCard({
         <span className="pointer-events-none absolute bottom-3 left-3 z-[4] rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white backdrop-blur-md">
           {formatDuration(duration)}
         </span>
+        {source ? (
+          <button
+            type="button"
+            onClick={toggleMuted}
+            className="absolute bottom-3 right-3 z-[6] grid h-8 w-8 place-items-center rounded-full border border-white/10 bg-black/55 text-white/90 shadow-md backdrop-blur-md transition hover:bg-black/70 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            aria-label={muted ? `Unmute ${clip.title_hook}` : `Mute ${clip.title_hook}`}
+          >
+            {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+          </button>
+        ) : null}
       </div>
 
       <div className="px-1 pb-1 pt-4">
