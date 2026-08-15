@@ -562,9 +562,11 @@ def llm_rank_suggestions(entries: list[TranscriptEntry], count: int, provider: s
         "Setiap clip berisi start_time, end_time, title_hook, hook_subtitle, viral_reason."
     )
     user_prompt = (
-        f"Pilih {count} momen terbaik berdurasi {duration_prompt_phrase(duration_preset)} untuk short/reels dari transcript ini. "
+        f"Pilih hingga {count} momen terbaik (jangan lebih dari {count}) "
+        f"berdurasi {duration_prompt_phrase(duration_preset)} untuk short/reels dari transcript ini. "
         f"Prioritaskan genre batch: {genre_prompt_phrase(genres)}. "
-        "Utamakan konteks utuh, hook spiritual/reflektif, dan bahasa Indonesia natural. "
+        "Lebih sedikit clip yang utuh lebih baik daripada memaksa kuota. "
+        "Utamakan konteks utuh dan bahasa Indonesia natural. "
         "hook_subtitle harus terasa hangat, singkat, tidak kaku, maksimal 18 kata.\n\n"
         f"{transcript}"
     )
@@ -577,11 +579,20 @@ def llm_rank_suggestions(entries: list[TranscriptEntry], count: int, provider: s
 
 
 def timecode_to_ms(value: str) -> int:
-    parts = value.strip().split(":")
-    if len(parts) != 3:
+    """Parse LLM timestamps: `HH:MM:SS`, `H:MM:SS`, `MM:SS`, or `M:SS`."""
+    raw = (value or "").strip()
+    parts = raw.split(":")
+    if not raw or len(parts) not in (2, 3):
         raise ValueError(f"invalid timecode: {value}")
-    hours, minutes, seconds = parts
-    return (int(hours) * 3600 + int(minutes) * 60 + int(float(seconds))) * 1000
+    try:
+        if len(parts) == 2:
+            minutes, seconds = parts
+            hours = "0"
+        else:
+            hours, minutes, seconds = parts
+        return int((int(hours) * 3600 + int(minutes) * 60 + float(seconds)) * 1000)
+    except ValueError as exc:
+        raise ValueError(f"invalid timecode: {value}") from exc
 
 
 def choose_nourbit_premium_candidates(
@@ -603,9 +614,6 @@ def choose_nourbit_premium_candidates(
     genres = normalize_genres(genres)
     corrected_entries = correct_transcript_entries(entries)
     llm_suggestions = llm_rank_suggestions(corrected_entries, count, llm_provider, preset, genres)
-    llm_required = (llm_provider or "none").strip().lower() != "none"
-    if llm_required and not llm_suggestions:
-        raise ValueError("curation failed: LLM returned no valid clip suggestions")
     selected: list[dict[str, Any]] = []
 
     for suggestion in llm_suggestions:
@@ -625,9 +633,6 @@ def choose_nourbit_premium_candidates(
         selected.append(candidate)
         if len(selected) >= count:
             return selected
-
-    if llm_required and len(selected) < count:
-        raise ValueError("curation failed: LLM suggestions did not produce enough valid, non-overlapping clips")
 
     windows: list[tuple[int, int, int, str]] = []
     step = max(1, len(corrected_entries) // 80)
@@ -656,7 +661,10 @@ def choose_nourbit_premium_candidates(
             break
 
     if not selected:
-        raise ValueError("no candidate windows found")
+        raise ValueError(
+            "Couldn't find a usable clip in this video. "
+            "Try a longer source or a looser duration range. Clip count is a maximum, not a quota."
+        )
     selected.sort(key=lambda candidate: candidate["score"]["overall_score"], reverse=True)
     for rank, candidate in enumerate(selected, start=1):
         candidate["curation_metadata"]["rank"] = rank
@@ -698,28 +706,99 @@ def find_ytdlp() -> str:
     return ytdlp
 
 
+def humanize_youtube_download_error(stderr: str) -> str:
+    """Operator-facing download failure (Create UI), not raw ffmpeg/yt-dlp noise."""
+    text = (stderr or "").strip()
+    lower = text.lower()
+    if "403" in lower or "forbidden" in lower or "access denied" in lower:
+        return (
+            "YouTube blocked the clip download (HTTP 403). "
+            "Update yt-dlp in media-engine/.venv-tools, or set MEDIA_ENGINE_YTDLP_COOKIES "
+            "to a cookies.txt export from a signed-in browser, then retry."
+        )
+    if "sign in" in lower or "confirm your age" in lower or "age-restricted" in lower:
+        return (
+            "This video is restricted. Set MEDIA_ENGINE_YTDLP_COOKIES to a signed-in "
+            "browser cookies.txt and retry."
+        )
+    if "private video" in lower:
+        return "This video is private, so it can’t be downloaded."
+    if "video unavailable" in lower:
+        return "This video is unavailable."
+    cleaned = re.sub(r"\s+", " ", text)[-400:]
+    if cleaned:
+        return f"YouTube clip download failed: {cleaned}"
+    return "YouTube clip download failed."
+
+
+def _ytdlp_cookies_path() -> str:
+    return (
+        os.environ.get("MEDIA_ENGINE_YTDLP_COOKIES", "").strip()
+        or os.environ.get("YTDLP_COOKIES", "").strip()
+    )
+
+
+def _download_section_attempts() -> list[dict[str, str]]:
+    """Formats / player clients that often recover from CDN 403 on section downloads."""
+    return [
+        {
+            "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+            "extractor_args": "youtube:player_client=android,ios,web",
+        },
+        {
+            "format": "best[height<=720]/best",
+            "extractor_args": "youtube:player_client=android,mweb",
+        },
+        {
+            "format": "bv*[height<=720]+ba/b[height<=720]/b",
+            "extractor_args": "youtube:player_client=tv,android",
+        },
+    ]
+
+
 def download_youtube_section(url: str, profile_id: str, candidate: dict[str, Any]) -> str:
     ytdlp = find_ytdlp()
     out_dir = ARTIFACTS_DIR / profile_id / candidate["id"] / "source"
     out_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_dir.glob("source_*.*"):
+        try:
+            stale.unlink()
+        except OSError:
+            pass
     output_template = out_dir / "source_%(id)s.%(ext)s"
     section = f"*{ms_to_timecode(candidate['start_ms'])}-{ms_to_timecode(candidate['end_ms'])}"
-    cmd = [
-        ytdlp,
-        "--download-sections",
-        section,
-        "-f",
-        "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-        "--merge-output-format",
-        "mp4",
-        "-o",
-        str(output_template),
-        url,
-    ]
-    result = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"yt-dlp partial download failed: {result.stderr[-1600:] or result.stdout[-1600:]}")
-    matches = sorted(out_dir.glob("source_*.mp4"))
-    if not matches:
-        raise RuntimeError("yt-dlp finished but no mp4 source clip was produced")
-    return str(matches[-1])
+    cookies = _ytdlp_cookies_path()
+    last_stderr = ""
+    for attempt in _download_section_attempts():
+        cmd = [
+            ytdlp,
+            "--no-update",
+            "--download-sections",
+            section,
+            "-f",
+            attempt["format"],
+            "--extractor-args",
+            attempt["extractor_args"],
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            str(output_template),
+        ]
+        if cookies and Path(cookies).is_file():
+            cmd.extend(["--cookies", cookies])
+        cmd.append(url)
+        result = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        combined = f"{result.stderr or ''}\n{result.stdout or ''}"
+        last_stderr = combined
+        if result.returncode == 0:
+            matches = sorted(out_dir.glob("source_*.mp4"))
+            if matches:
+                return str(matches[-1])
+            last_stderr = combined + "\nyt-dlp finished but no mp4 source clip was produced"
+            continue
+        lower = combined.lower()
+        # Retry only when YouTube CDN / client selection is the likely cause.
+        if "403" in lower or "forbidden" in lower or "access denied" in lower:
+            continue
+        break
+    raise RuntimeError(humanize_youtube_download_error(last_stderr))

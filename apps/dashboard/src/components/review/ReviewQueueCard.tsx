@@ -8,7 +8,7 @@ import {apiPath, type ClipCandidate, formatDuration, isExplainerClip} from "@/li
 import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
 
 function readinessLabel(clip: ClipCandidate) {
-  if (clip.status === "held") return "Needs a fix";
+  if (clip.status === "held") return "Captions unusable";
   if (clip.status === "approved") return "Approved";
   if (clip.status === "scheduled" || clip.status === "ready_to_publish") return "Scheduled";
   if (clip.status === "published") return "Published";
@@ -191,7 +191,7 @@ export function ReviewQueueCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-white">{clip.title_hook}</h3>
-            <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusTone(clip.status === "held" ? "failed" : clip.status)}`}>
+            <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusTone(clip.status)}`}>
               {readinessLabel(clip)}
             </span>
           </div>

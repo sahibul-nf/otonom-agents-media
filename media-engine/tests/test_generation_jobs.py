@@ -38,7 +38,7 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["genres"], ["kajian", "spiritual_reflection", "advice"])
         self.assertEqual(payload["renderer"], "hyperframes")
         self.assertEqual(payload["hyperframes_format"], "auto")
-        self.assertEqual(payload["caption_source"], "whisper")
+        self.assertEqual(payload["caption_source"], "hybrid")
         self.assertEqual(payload["speech_language"], "id")
         self.assertEqual(payload["transcript_languages"], "id,en")
         self.assertEqual(payload["llm_provider"], "deepseek")
@@ -215,6 +215,13 @@ class GenerationJobTests(unittest.TestCase):
             ]
         )
         self.assertIn("transcript is too short", _failure_summary(output, 1))
+        self.assertNotIn("ValueError:", _failure_summary(output, 1))
+
+    def test_failure_summary_humanizes_old_curation_undershoot(self):
+        output = "ValueError: curation failed: LLM suggestions did not produce enough valid, non-overlapping clips"
+        summary = _failure_summary(output, 1)
+        self.assertIn("maximum, not a quota", summary)
+        self.assertNotIn("non-overlapping", summary)
 
 
 if __name__ == "__main__":

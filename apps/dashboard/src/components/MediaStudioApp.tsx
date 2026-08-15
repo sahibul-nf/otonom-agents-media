@@ -343,8 +343,8 @@ type GenerateConfig = {
 
 const reviewFilters = [
   {id: "all", label: "All", hint: "Every clip that is still visible in this workspace.", statuses: []},
-  {id: "review", label: "Review", hint: "Clips that need approval, can still be held, or are waiting for assisted auto-queue.", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
-  {id: "repair", label: "Repair", hint: "Clips blocked by caption confidence or quality gates before they can be scheduled.", statuses: ["held"]},
+  {id: "review", label: "Review", hint: "Clips waiting for approve or skip — not caption copy-edit.", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
+  {id: "repair", label: "Repair", hint: "Rare: captions too broken to auto-queue.", statuses: ["held"]},
   {id: "scheduled", label: "Scheduled", hint: "Approved clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
   {id: "published", label: "Published", hint: "Clips already sent to a live channel.", statuses: ["published"]},
 ] as const;
@@ -383,7 +383,15 @@ function getNextAction({
     return {label: "Generate first clips", detail: "Paste a long YouTube video and land candidates in Review.", section: "generate", tone: "primary"};
   }
   if (reviewCount > 0) {
-    return {label: `Review ${reviewCount} clips`, detail: "Approve the strongest candidates, or fix anything blocked.", section: "review", tone: "primary"};
+    const heldCount = clips.filter((clip) => clip.status === "held").length;
+    return {
+      label: `Review ${reviewCount} clips`,
+      detail: heldCount
+        ? `Approve or skip the clips. ${heldCount} have unusable captions.`
+        : "Approve or skip the strongest candidates.",
+      section: "review",
+      tone: "primary",
+    };
   }
   if (approvedCount > 0 && scheduledCount === 0) {
     return {label: `Schedule ${approvedCount} approved clips`, detail: "Place approved clips into the next publishing slots.", section: "calendar", tone: "ready"};
@@ -468,6 +476,7 @@ export function MediaStudioApp() {
   const [engineHealth, setEngineHealth] = useState<EngineHealth | null>(null);
   const [autonomy, setAutonomy] = useState<AutonomySettings | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  const generateInFlightRef = useRef(false);
   const [explainerJobs, setExplainerJobs] = useState<ExplainerJob[]>([]);
   const [pathAJobs, setPathAJobs] = useState<PathAJob[]>([]);
   const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
@@ -493,7 +502,7 @@ export function MediaStudioApp() {
     hyperframesFormat: "short_9_16",
     renderer: "hyperframes",
     quality: "production",
-    captionSource: "whisper",
+    captionSource: "hybrid",
     asrModel: "medium",
     speechLanguage: "id",
     transcriptLanguages: "id,en",
@@ -706,6 +715,12 @@ export function MediaStudioApp() {
       setStatus("Validate the YouTube link before generating.");
       return;
     }
+    if (generateInFlightRef.current) return;
+    if (jobs.some((job) => (!job.profile_id || job.profile_id === profileId) && (job.status === "queued" || job.status === "running"))) {
+      setStatus("A generation batch is already running.");
+      return;
+    }
+    generateInFlightRef.current = true;
     try {
       setStatus("Generation job queued...");
       const job = await runAction(key, "Starting generation batch...", () => apiPost<GenerationJob>("generation-jobs", {
@@ -744,6 +759,8 @@ export function MediaStudioApp() {
       window.setTimeout(() => void refreshAll(), 1600);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Generation failed");
+    } finally {
+      generateInFlightRef.current = false;
     }
   }
 
@@ -1310,7 +1327,7 @@ export function MediaStudioApp() {
               hyperframesCatalog={hyperframesCatalog}
               durationPresets={durationPresets}
               genres={genres}
-              jobs={jobs}
+              jobs={jobs.filter((job) => !job.profile_id || job.profile_id === profileId)}
               engineHealth={engineHealth}
               actionState={actionStates["generate:start"]}
               setConfig={setGenerateConfig}

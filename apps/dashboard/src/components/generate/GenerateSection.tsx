@@ -44,11 +44,24 @@ function clipCountLabel(count: number) {
   return `${count} ${count === 1 ? "clip" : "clips"}`;
 }
 
+function producedClipCount(job: GenerationJob) {
+  const produced = job.result?.count;
+  return typeof produced === "number" && produced >= 0 ? produced : job.count;
+}
+
 function humanizeGenerationError(error?: string) {
   if (!error) return "";
   const lower = error.toLowerCase();
   if (lower.includes("transcript is too short")) {
     return "This video’s transcript is too short to pick strong clip candidates. Try a longer source video.";
+  }
+  if (
+    lower.includes("did not produce enough valid") ||
+    lower.includes("no valid clip suggestions") ||
+    lower.includes("no candidate windows") ||
+    lower.includes("couldn't find a usable clip")
+  ) {
+    return "Couldn’t find a usable clip in this video. Try a longer source or a looser duration. How many clips is a maximum — one clip is still a successful run.";
   }
   if (lower.includes("no transcript") || lower.includes("captions unavailable")) {
     return "No usable captions or transcript were found for this video. Try another source or enable captions.";
@@ -132,7 +145,8 @@ export function GenerateSection<T extends GenerateConfigLike>({
   renderEmptyState: (title: string, text: string) => ReactNode;
 }) {
   const latest = jobs[0];
-  const isStarting = actionState?.status === "running";
+  const hasActiveJob = jobs.some((job) => job.status === "queued" || job.status === "running");
+  const isStarting = actionState?.status === "running" || hasActiveJob;
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [resolveState, setResolveState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -278,6 +292,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
 
             <div className="mt-4">
               <span className="text-sm font-medium text-zinc-300">How many clips?</span>
+              <p className="mt-1 text-xs text-zinc-500">Maximum for this batch. Fewer clips still succeed.</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {[1, 2, 3, 5, 8, 10].map((val) => {
                   const active = config.count === val;
@@ -300,13 +315,15 @@ export function GenerateSection<T extends GenerateConfigLike>({
             </div>
             <div className="mt-5 grid gap-3">
               <SlideToConfirm
-                label="Slide to generate"
+                label={hasActiveJob ? "Generating…" : "Slide to generate"}
                 activeLabel="Starting…"
                 onConfirm={() => onGenerate(resolvedSource)}
                 isLoading={isStarting}
                 disabled={!canGenerate || isStarting}
               />
-              {resolveState === "loading" ? (
+              {hasActiveJob ? (
+                <p className="text-xs text-zinc-500">Wait for the current batch to finish before starting another.</p>
+              ) : resolveState === "loading" ? (
                 <p className="text-xs text-zinc-500">Validate the link before generating.</p>
               ) : null}
               {renderActionStatus(actionState)}
@@ -318,7 +335,13 @@ export function GenerateSection<T extends GenerateConfigLike>({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Current run</p>
-                  <p className="mt-1 text-sm font-semibold text-white">{clipCountLabel(latest.count)}</p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {latest.status === "completed"
+                      ? producedClipCount(latest) < latest.count
+                        ? `${clipCountLabel(producedClipCount(latest))} of ${latest.count} requested`
+                        : clipCountLabel(producedClipCount(latest))
+                      : `Up to ${clipCountLabel(latest.count)}`}
+                  </p>
                 </div>
                 <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(latest.status)}`}>
                   {runStatusLabel(latest.status)}
@@ -510,7 +533,16 @@ export function GenerateSection<T extends GenerateConfigLike>({
                     })}
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <SelectTile label="Captions" value={config.captionSource} options={["whisper", "hybrid", "youtube"]} onChange={(value) => update({captionSource: value})} />
+                    <SelectTile
+                      label="Captions"
+                      value={config.captionSource}
+                      options={[
+                        {value: "hybrid", label: "YouTube + Whisper"},
+                        {value: "whisper", label: "Whisper only"},
+                        {value: "youtube", label: "YouTube only"},
+                      ]}
+                      onChange={(value) => update({captionSource: value})}
+                    />
                     <SelectTile label="Speech language" value={config.speechLanguage} options={["id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
                     <SelectTile label="Transcripts" value={config.transcriptLanguages} options={["id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
                     <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />

@@ -30,6 +30,7 @@ from .explainer_stitch import (
     stitch_segments,
     write_stitch_manifest,
 )
+from .autonomy import reconcile_caption_holds
 from .hyperframes_templates import normalize_hyperframes_template
 
 
@@ -606,6 +607,7 @@ def run_explainer(
 def list_review_queue(*, db_path: str | Path = DEFAULT_DB, limit: int = 50) -> list[dict[str, Any]]:
     conn = connect(db_path)
     initialize(conn)
+    reconcile_caption_holds(conn)
     rows = conn.execute(
         """
         SELECT c.id, c.profile_id, c.title_hook, c.status, c.created_at,

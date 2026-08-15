@@ -22,16 +22,36 @@ export function SlideToConfirm({
 }: SlideToConfirmProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<HTMLDivElement>(null);
+  const confirmedRef = useRef(false);
+  const onConfirmRef = useRef(onConfirm);
+  onConfirmRef.current = onConfirm;
   const [isDragging, setIsDragging] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [progressPercent, setProgressPercent] = useState(0);
   const [hasConfirmed, setHasConfirmed] = useState(false);
   const wasLoadingRef = useRef(isLoading);
 
-  // Maximum drag distance calculation
   const getMaxTravel = () => {
     if (!containerRef.current || !handleRef.current) return 0;
-    return containerRef.current.clientWidth - handleRef.current.clientWidth - 8; // 8px for margins/padding
+    return containerRef.current.clientWidth - handleRef.current.clientWidth - 8;
+  };
+
+  const resetSlide = () => {
+    confirmedRef.current = false;
+    setHasConfirmed(false);
+    setDragX(0);
+    setProgressPercent(0);
+  };
+
+  const completeSlide = (maxTravel: number) => {
+    // Sync guard: React state alone can let multiple move events fire onConfirm.
+    if (confirmedRef.current || disabled || isLoading) return;
+    confirmedRef.current = true;
+    setIsDragging(false);
+    setHasConfirmed(true);
+    setDragX(maxTravel);
+    setProgressPercent(100);
+    onConfirmRef.current();
   };
 
   useEffect(() => {
@@ -39,9 +59,7 @@ export function SlideToConfirm({
     wasLoadingRef.current = isLoading;
     if (finishedLoading) {
       const frame = window.requestAnimationFrame(() => {
-        setHasConfirmed(false);
-        setDragX(0);
-        setProgressPercent(0);
+        resetSlide();
       });
       return () => window.cancelAnimationFrame(frame);
     }
@@ -49,30 +67,25 @@ export function SlideToConfirm({
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || hasConfirmed || disabled) return;
+      if (!isDragging || confirmedRef.current || disabled || isLoading) return;
       const container = containerRef.current;
       if (!container) return;
 
       const rect = container.getBoundingClientRect();
       const maxTravel = getMaxTravel();
-      const currentX = e.clientX - rect.left - 24; // offset to center handle
+      const currentX = e.clientX - rect.left - 24;
 
       const clampedX = Math.max(0, Math.min(maxTravel, currentX));
       setDragX(clampedX);
       setProgressPercent(maxTravel > 0 ? (clampedX / maxTravel) * 100 : 0);
 
-      // Trigger if reached near the very end
       if (clampedX >= maxTravel * 0.98) {
-        setIsDragging(false);
-        setHasConfirmed(true);
-        setDragX(maxTravel);
-        setProgressPercent(100);
-        onConfirm();
+        completeSlide(maxTravel);
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (!isDragging || hasConfirmed || disabled) return;
+      if (!isDragging || confirmedRef.current || disabled || isLoading) return;
       const container = containerRef.current;
       if (!container) return;
 
@@ -87,11 +100,7 @@ export function SlideToConfirm({
       setProgressPercent(maxTravel > 0 ? (clampedX / maxTravel) * 100 : 0);
 
       if (clampedX >= maxTravel * 0.98) {
-        setIsDragging(false);
-        setHasConfirmed(true);
-        setDragX(maxTravel);
-        setProgressPercent(100);
-        onConfirm();
+        completeSlide(maxTravel);
       }
     };
 
@@ -100,8 +109,7 @@ export function SlideToConfirm({
       setIsDragging(false);
 
       const maxTravel = getMaxTravel();
-      if (dragX < maxTravel * 0.98) {
-        // Reset position with smooth css transition
+      if (!confirmedRef.current && dragX < maxTravel * 0.98) {
         setDragX(0);
         setProgressPercent(0);
       }
@@ -120,27 +128,27 @@ export function SlideToConfirm({
       window.removeEventListener("touchmove", handleTouchMove);
       window.removeEventListener("touchend", handleMouseUp);
     };
-  }, [isDragging, dragX, hasConfirmed, disabled, onConfirm]);
+  }, [isDragging, dragX, disabled, isLoading]);
 
   const handleStart = () => {
-    if (disabled || hasConfirmed) return;
+    if (disabled || hasConfirmed || confirmedRef.current || isLoading) return;
     setIsDragging(true);
   };
+
+  const locked = disabled || isLoading || hasConfirmed;
 
   return (
     <div
       ref={containerRef}
       className={`relative flex h-12 w-full items-center rounded-full border border-white/[0.08] bg-black/32 p-1 select-none overflow-hidden ${
-        disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+        locked ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
       } ${className}`}
     >
-      {/* Premium glowing fill trail */}
       <div
         className="absolute left-0 top-0 bottom-0 rounded-full bg-gradient-to-r from-cyan/10 to-cyan/35 transition-all duration-75"
         style={{width: `${dragX + 44}px`}}
       />
 
-      {/* Label Text */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-12">
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
           {isLoading ? (
@@ -156,7 +164,6 @@ export function SlideToConfirm({
         </span>
       </div>
 
-      {/* Draggable Knob */}
       <div
         ref={handleRef}
         onMouseDown={handleStart}

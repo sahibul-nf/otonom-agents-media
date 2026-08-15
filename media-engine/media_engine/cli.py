@@ -9,9 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .asr import load_or_create_asr_words
 from .autonomy import evaluate_quality_gate, get_autonomy_settings
-from .caption_composer import compose_caption_groups
+from .caption_pipeline import build_production_captions
 from .costs import estimate_clip_cost
 from .credentials import credential_status
 from .curation import SAMPLE_NOURBIT_TRANSCRIPT, curate_dry_run
@@ -31,7 +30,6 @@ from .rerender import rerender_from_args
 from .schedule_publisher import process_due_publishes
 from .silence_trim import apply_silence_trim_for_render
 from .styles import load_style
-from .transcript_quality import correct_asr_words
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
 
 
@@ -314,7 +312,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     bar.step("auto-trimming silence on source clip")
     source_clip = apply_silence_trim_for_render(source_clip, candidate)
     bar.step(f"preparing captions with {args.caption_source}")
-    prepare_production_captions(candidate, source_clip, args, style)
+    prepare_production_captions(candidate, source_clip, args, style, profile=profile)
     attribution = args.source_attribution or "Source: Channel clip"
     renderer, renderer_note = resolve_renderer(args.renderer, args.quality)
     if renderer_note:
@@ -410,7 +408,7 @@ def render_premium_candidate(
     (bar.step if bar else progress)(f"{prefix}auto-trimming silence")
     source_clip = apply_silence_trim_for_render(source_clip, candidate)
     (bar.step if bar else progress)(f"{prefix}preparing captions with {getattr(args, 'caption_source', 'youtube')}")
-    prepare_production_captions(candidate, source_clip, args, style)
+    prepare_production_captions(candidate, source_clip, args, style, profile=profile)
     renderer, renderer_note = resolve_renderer(renderer, args.quality)
     if renderer_note:
         (bar.step if bar else progress)(f"{prefix}{renderer_note}")
@@ -485,35 +483,25 @@ def _render_not_ready(renderer: str) -> RuntimeError:
     )
 
 
-def prepare_production_captions(candidate: dict[str, Any], source_clip: str, args: argparse.Namespace, style: dict[str, Any]) -> None:
-    caption_source = getattr(args, "caption_source", "youtube")
-    if caption_source not in {"whisper", "hybrid"}:
-        candidate["caption_source"] = caption_source
-        return
-    asr_path = Path(source_clip).resolve().parents[1] / f"{Path(source_clip).stem}_{args.asr_model}_asr.json"
-    prompt = "Allah, Rasulullah, dzikir, zikir, qalbu, sholawat, istighfar, ma'rifat, taubat, syukur"
-    words, asr_metadata = load_or_create_asr_words(
+def prepare_production_captions(
+    candidate: dict[str, Any],
+    source_clip: str,
+    args: argparse.Namespace,
+    style: dict[str, Any],
+    profile: dict[str, Any] | None = None,
+) -> None:
+    build_production_captions(
+        candidate,
         source_clip,
-        str(asr_path),
-        model_name=args.asr_model,
-        language=getattr(args, "speech_language", "id"),
-        initial_prompt=prompt,
+        caption_source=getattr(args, "caption_source", "youtube"),
+        asr_model=getattr(args, "asr_model", "medium"),
+        speech_language=getattr(args, "speech_language", "id"),
+        style=style,
+        youtube_url=getattr(args, "youtube_url", "") or "",
+        transcript_languages=getattr(args, "transcript_languages", "id,en"),
+        llm_provider=getattr(args, "llm_provider", "none"),
+        niche=str((profile or {}).get("niche") or ""),
     )
-    words, correction_metadata = correct_asr_words(words)
-    captions, composer_metadata = compose_caption_groups(
-        words,
-        max_words_per_caption=int(style.get("caption", {}).get("max_words_per_caption", 3)),
-    )
-    if captions:
-        candidate["timed_captions"] = captions
-        candidate["caption_source"] = "whisper"
-        candidate["asr_metadata"] = {**asr_metadata, **correction_metadata, "caption_composer": {**composer_metadata, "low_confidence_word_count": correction_metadata["low_confidence_word_count"]}}
-        candidate["caption_corrections"] = correction_metadata
-        candidate["score"] = {
-            **candidate.get("score", {}),
-            "asr_confidence": int(round((composer_metadata.get("avg_word_confidence") or 0.82) * 100)),
-            "caption_sync_score": 95 if composer_metadata.get("caption_count", 0) else 0,
-        }
 
 
 def finalize_candidate_metadata(candidate: dict[str, Any], contract: dict[str, Any], output_path: str, args: argparse.Namespace, renderer: str) -> None:
@@ -866,7 +854,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--brand-system-template-id", default="", help="Saved Brand System template id")
     premium_batch.add_argument("--hyperframes-format", choices=["auto", "short_9_16", "long_16_9"], default="auto")
     premium_batch.add_argument("--quality", choices=["draft", "production"], default="draft")
-    premium_batch.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
+    premium_batch.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="hybrid")
     premium_batch.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
     premium_batch.add_argument("--speech-language", default="id", help="Spoken language hint for Whisper/faster-whisper, e.g. id, ar, en")
     premium_batch.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")

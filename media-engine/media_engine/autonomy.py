@@ -30,6 +30,15 @@ DEFAULT_SETTINGS = {
     "boundary_threshold": 80,
 }
 
+# Caption hold vs auto-schedule (#70). Whisper token probability < 0.65 is common
+# on 1–3 min Indonesian/Arabic speech (dozens of words). That is not a render
+# failure. Review is Approve/skip the clip — not per-word caption QA.
+# Hold only when captions are unusable. Auto-schedule still needs high scores.
+CATASTROPHIC_CAPTION_AVG = 55
+CATASTROPHIC_LOW_WORD_RATIO = 0.40
+AUTO_SCHEDULE_LOW_WORD_RATIO = 0.08
+MANUAL_HOLD_REASON = "manual"
+
 
 def _now(now: datetime | None = None) -> datetime:
     value = now or datetime.now(DEFAULT_TZ)
@@ -159,6 +168,35 @@ def is_duplicate_candidate(candidate: dict[str, Any], selected: list[dict[str, A
     return False
 
 
+def _json_obj(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _asr_word_stats(asr: dict[str, Any]) -> tuple[int, int, float]:
+    composer = asr.get("caption_composer") if isinstance(asr.get("caption_composer"), dict) else {}
+    low = int(composer.get("low_confidence_word_count") or asr.get("low_confidence_word_count") or 0)
+    words = int(composer.get("word_count") or asr.get("word_count") or 0)
+    ratio = (low / words) if words else 0.0
+    return low, words, ratio
+
+
+def caption_hold_reason(caption: int, word_count: int, low_ratio: float) -> str:
+    """Empty unless captions are unusable (catastrophic ASR), not routine Whisper doubt."""
+    if caption > 0 and caption < CATASTROPHIC_CAPTION_AVG:
+        return "catastrophic_asr"
+    if word_count > 0 and low_ratio > CATASTROPHIC_LOW_WORD_RATIO:
+        return "catastrophic_uncertain_ratio"
+    return ""
+
+
 def evaluate_quality_gate(
     candidate: dict[str, Any],
     settings: dict[str, Any],
@@ -171,13 +209,16 @@ def evaluate_quality_gate(
     hook = int(score.get("hook_score") or 0)
     caption = int(score.get("asr_confidence") or score.get("caption_confidence") or 0)
     boundary = int(metadata.get("boundary_confidence") or 0)
-    low_confidence_words = int(asr.get("caption_composer", {}).get("low_confidence_word_count") or asr.get("low_confidence_word_count") or 0)
+    low_confidence_words, word_count, low_ratio = _asr_word_stats(asr)
+    low_words_ok = True if word_count <= 0 else low_ratio <= AUTO_SCHEDULE_LOW_WORD_RATIO
+    hold_reason = caption_hold_reason(caption, word_count, low_ratio)
     checks = {
         "overall": overall >= int(settings["overall_threshold"]),
         "hook": hook >= int(settings["hook_threshold"]),
         "caption": caption >= int(settings["caption_threshold"]),
         "boundary": boundary >= int(settings["boundary_threshold"]),
-        "low_confidence_words": low_confidence_words <= 4,
+        "low_confidence_words": low_words_ok,
+        "captions_usable": not hold_reason,
     }
     passed = all(checks.values())
     mode = settings.get("autonomy_mode", AUTONOMY_ASSISTED)
@@ -185,18 +226,18 @@ def evaluate_quality_gate(
     if passed and mode == AUTONOMY_ASSISTED:
         deadline = _iso(_now(now) + timedelta(hours=int(settings["review_grace_hours"])))
     elif passed and mode == AUTONOMY_FULL:
-        # Full autonomy schedules as soon as process_due_auto_schedule runs.
         deadline = _iso(_now(now))
     status = "rendered"
     if mode == AUTONOMY_OFF:
         status = "rendered"
-    elif not checks["caption"] or not checks["low_confidence_words"]:
+    elif hold_reason:
         status = "held"
     elif passed:
         status = STATUS_PENDING_AUTO_SCHEDULE
     return {
         "passed": passed,
         "status": status,
+        "hold_reason": hold_reason,
         "review_deadline_at": deadline,
         "checks": checks,
         "scores": {
@@ -205,6 +246,8 @@ def evaluate_quality_gate(
             "caption": caption,
             "boundary": boundary,
             "low_confidence_words": low_confidence_words,
+            "word_count": word_count,
+            "low_word_ratio": round(low_ratio, 3),
         },
         "settings": {
             "autonomy_mode": mode,
@@ -212,3 +255,54 @@ def evaluate_quality_gate(
             "auto_schedule_enabled": bool(settings["auto_schedule_enabled"]),
         },
     }
+
+
+def reconcile_caption_holds(conn: sqlite3.Connection) -> int:
+    """Release clips held only by the old absolute 4-word caption cap."""
+    rows = conn.execute(
+        """
+        SELECT id, profile_id, caption_source, score_json, asr_metadata_json,
+               curation_metadata_json
+        FROM clip_candidates
+        WHERE status = 'held'
+        """
+    ).fetchall()
+    updated = 0
+    settings_by_profile: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        item = dict(row)
+        metadata = _json_obj(item.get("curation_metadata_json"))
+        if metadata.get("hold_reason") == MANUAL_HOLD_REASON:
+            continue
+        if str(item.get("caption_source") or "") in {"explainer", "ingest_longform"}:
+            continue
+        profile_id = str(item.get("profile_id") or "nourbit")
+        if profile_id not in settings_by_profile:
+            settings_by_profile[profile_id] = get_autonomy_settings(conn, profile_id)
+        gate = evaluate_quality_gate(
+            {
+                "score": _json_obj(item.get("score_json")),
+                "curation_metadata": metadata,
+                "asr_metadata": _json_obj(item.get("asr_metadata_json")),
+            },
+            settings_by_profile[profile_id],
+        )
+        if gate["status"] == "held":
+            continue
+        conn.execute(
+            """
+            UPDATE clip_candidates
+            SET status = ?, quality_gate_json = ?, review_deadline_at = ?
+            WHERE id = ?
+            """,
+            (
+                gate["status"],
+                json.dumps(gate, ensure_ascii=False),
+                gate.get("review_deadline_at") or "",
+                item["id"],
+            ),
+        )
+        updated += 1
+    if updated:
+        conn.commit()
+    return updated

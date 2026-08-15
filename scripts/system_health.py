@@ -39,7 +39,7 @@ def fetch_text(url: str) -> tuple[bool, str]:
 
 def collect_status() -> dict[str, Any]:
     backend_port = int(os.environ.get("MEDIA_ENGINE_PORT", "8765"))
-    frontend_port = int(os.environ.get("DASHBOARD_PORT", "3000"))
+    frontend_port = int(os.environ.get("DASHBOARD_PORT", "3100"))
     backend_base = f"http://127.0.0.1:{backend_port}"
     frontend_base = f"http://127.0.0.1:{frontend_port}"
 

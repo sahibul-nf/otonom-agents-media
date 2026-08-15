@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Create clip count is a **maximum** (#73): curation no longer fails when the LLM finds fewer than N valid windows; remaining slots fill from the heuristic scorer. Create copy says “fewer clips still succeed”; timestamps like `1:23` parse.
+- Create double-submit guard (#72): Slide to Generate locks synchronously on confirm and stays disabled while a batch is queued/running, so one slide cannot spawn twin jobs.
+- YouTube clip download: retry alternate player clients/formats on HTTP 403; optional `MEDIA_ENGINE_YTDLP_COOKIES`; Create failure message names YouTube block instead of bare `ffmpeg exited with code 8`.
+- Production captions (#71): generate default is **YouTube + Whisper** (`hybrid` is real — YT text on Whisper timings, glossary, then LLM polish on uncertain tokens only). Review stays Approve/skip; no per-word editor loop.
+- Caption gate (#70): typical Whisper doubt no longer holds every clip (old ≤4 uncertain-word cap). Review is Approve/skip; `held` only for unusable captions. Existing false holds reconcile on the next Review load.
+
 - Review gallery preview audio (#68): Play on Review/batch cards starts with sound; mute toggle on the thumbnail; starting another card pauses the previous one.
 - Local dashboard default port is `3100` (#67) so it can run next to Postiz on `:3000` / `:4200`; override with `DASHBOARD_PORT`. Media engine stays on `8765`.
 - Review source batch page (#65): multi-clip sources open `/review/batch/[sourceId]`; inbox uses a staggered (masonry) grid so 9:16 clips and 16:9 batch/long-form cards pack without gaps; Editor back returns to the batch; singles stay flat.

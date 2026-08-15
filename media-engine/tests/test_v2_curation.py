@@ -3,6 +3,7 @@ import sqlite3
 import unittest
 from contextlib import redirect_stderr
 from io import StringIO
+from unittest.mock import patch
 
 from media_engine.db import ensure_schema_upgrades
 from media_engine.autonomy import is_duplicate_candidate, token_jaccard
@@ -21,6 +22,7 @@ from media_engine.youtube_pipeline import (
     opening_strength,
     refine_end_boundary,
     refine_start_boundary,
+    timecode_to_ms,
     title_for_span,
     _transcript_cache_path,
 )
@@ -425,6 +427,81 @@ class V2CurationTests(unittest.TestCase):
         self.assertEqual(json.loads(row["render_quality_json"])["quality_score"], 91)
         self.assertEqual(json.loads(row["cost_json"])["estimated_total"], 0.01)
         conn.close()
+
+    def test_timecode_accepts_flexible_llm_formats(self):
+        self.assertEqual(timecode_to_ms("00:01:05"), 65_000)
+        self.assertEqual(timecode_to_ms("0:01:05"), 65_000)
+        self.assertEqual(timecode_to_ms("1:05"), 65_000)
+        self.assertEqual(timecode_to_ms("1:05.5"), 65_500)
+        with self.assertRaises(ValueError):
+            timecode_to_ms("nope")
+
+    def test_llm_undershoot_fills_from_heuristic_instead_of_failing(self):
+        entries = [
+            TranscriptEntry(index * 1000, (index + 1) * 1000, "nasihat pasar AI bisnis builder investor")
+            for index in range(240)
+        ]
+        style = {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}}
+        one_clip = [
+            {
+                "start_time": "0:20",
+                "end_time": "1:20",
+                "title_hook": "Kenapa builder salah baca pasar",
+                "hook_subtitle": "Satu momen utuh dari sumber ini.",
+                "viral_reason": "Hook opini yang jelas.",
+            }
+        ]
+
+        with patch("media_engine.youtube_pipeline.llm_rank_suggestions", return_value=one_clip):
+            candidates = choose_nourbit_premium_candidates(
+                "nourbit",
+                "source",
+                entries,
+                style,
+                count=3,
+                llm_provider="deepseek",
+            )
+
+        self.assertGreaterEqual(len(candidates), 1)
+        self.assertLessEqual(len(candidates), 3)
+
+    def test_empty_llm_list_falls_back_to_heuristic(self):
+        entries = [
+            TranscriptEntry(index * 1000, (index + 1) * 1000, "nasihat pasar AI bisnis builder investor")
+            for index in range(240)
+        ]
+        style = {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}}
+
+        with patch("media_engine.youtube_pipeline.llm_rank_suggestions", return_value=[]):
+            candidates = choose_nourbit_premium_candidates(
+                "nourbit",
+                "source",
+                entries,
+                style,
+                count=3,
+                llm_provider="deepseek",
+            )
+
+        self.assertGreaterEqual(len(candidates), 1)
+        self.assertLessEqual(len(candidates), 3)
+
+    def test_zero_valid_windows_raises_operator_message(self):
+        entries = [TranscriptEntry(index * 100, (index + 1) * 100, "hi") for index in range(12)]
+        style = {"caption": {"max_words_per_caption": 3}, "ai": {"remove_filler_words": False}}
+
+        with patch("media_engine.youtube_pipeline.llm_rank_suggestions", return_value=[]):
+            with self.assertRaises(ValueError) as raised:
+                choose_nourbit_premium_candidates(
+                    "nourbit",
+                    "source",
+                    entries,
+                    style,
+                    count=3,
+                    llm_provider="deepseek",
+                    duration_preset="standard_short",
+                )
+
+        self.assertIn("maximum, not a quota", str(raised.exception))
 
 
 if __name__ == "__main__":

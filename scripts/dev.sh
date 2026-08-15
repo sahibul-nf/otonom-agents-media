@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_PORT="${MEDIA_ENGINE_PORT:-8765}"
-FRONTEND_PORT="${DASHBOARD_PORT:-3000}"
+FRONTEND_PORT="${DASHBOARD_PORT:-3100}"
 # Default: free ports and start fresh. Set DEV_REUSE=1 to keep healthy existing processes.
 DEV_REUSE="${DEV_REUSE:-0}"
 

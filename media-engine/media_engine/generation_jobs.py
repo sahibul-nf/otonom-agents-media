@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -297,7 +298,7 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "hyperframes_format": _choice(payload.get("hyperframes_format"), VALID_HYPERFRAMES_FORMATS, "auto"),
         "renderer": _choice(payload.get("renderer"), VALID_RENDERERS, "hyperframes"),
         "quality": _choice(payload.get("quality"), VALID_QUALITIES, "production"),
-        "caption_source": _choice(payload.get("caption_source"), VALID_CAPTION_SOURCES, "whisper"),
+        "caption_source": _choice(payload.get("caption_source"), VALID_CAPTION_SOURCES, "hybrid"),
         "asr_model": _choice(payload.get("asr_model"), VALID_ASR_MODELS, "medium"),
         "speech_language": _language(payload.get("speech_language"), "id"),
         "transcript_languages": _language_list(payload.get("transcript_languages"), "id,en"),
@@ -499,20 +500,53 @@ def _heartbeat_generation_job(job_id: str, stop_event: threading.Event) -> None:
         touch_generation_job(job_id)
 
 
+def _humanize_engine_exception(line: str) -> str:
+    """Strip traceback class prefixes and map known curation fails to operator copy."""
+    cleaned = re.sub(r"^(ValueError|RuntimeError|FileNotFoundError):\s*", "", line.strip(), flags=re.I)
+    lower = cleaned.lower()
+    if "did not produce enough valid" in lower or "returned no valid clip" in lower or "no candidate windows" in lower:
+        return (
+            "Couldn't find a usable clip in this video. "
+            "Try a longer source or a looser duration range. Clip count is a maximum, not a quota."
+        )
+    if "transcript is too short" in lower:
+        return "This video’s transcript is too short to pick clip candidates. Try a longer source video."
+    return cleaned
+
+
 def _failure_summary(output: str, code: int) -> str:
     """Prefer the last actionable exception/message over a bare exit code."""
     text = (output or "").strip()
     if not text:
         return f"premium-batch exited with code {code}"
 
+    lower_full = text.lower()
+    # Prefer operator-facing download blocks over "ERROR: ffmpeg exited with code 8".
+    if "youtube blocked the clip download" in lower_full or (
+        ("403" in lower_full or "forbidden" in lower_full) and ("googlevideo" in lower_full or "yt-dlp" in lower_full or "download" in lower_full)
+    ):
+        for line in text.splitlines():
+            stripped = line.strip()
+            if "YouTube blocked the clip download" in stripped:
+                return stripped[:500]
+        return (
+            "YouTube blocked the clip download (HTTP 403). "
+            "Update yt-dlp or set MEDIA_ENGINE_YTDLP_COOKIES, then retry."
+        )
+
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     for line in reversed(lines):
         lower = line.lower()
         if lower.startswith("traceback"):
             continue
-        if "error:" in lower or line.startswith("ValueError:") or line.startswith("RuntimeError:"):
-            return line[:500]
-        if lower.startswith("valueerror:") or lower.startswith("filenotfounderror:"):
+        # Bare ffmpeg exit is usually a symptom of a CDN/yt-dlp failure above.
+        if "ffmpeg exited with code" in lower and ("403" in lower_full or "forbidden" in lower_full):
+            continue
+        if line.startswith("RuntimeError:") or line.startswith("ValueError:") or line.startswith("FileNotFoundError:"):
+            return _humanize_engine_exception(line)[:500]
+        if lower.startswith("runtimeerror:") or lower.startswith("valueerror:") or lower.startswith("filenotfounderror:"):
+            return _humanize_engine_exception(line)[:500]
+        if "error:" in lower and "ffmpeg exited" not in lower:
             return line[:500]
     # Fall back to last non-progress line
     for line in reversed(lines):

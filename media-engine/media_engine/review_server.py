@@ -14,7 +14,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .autonomy import get_autonomy_settings, update_autonomy_settings
+from .autonomy import MANUAL_HOLD_REASON, get_autonomy_settings, reconcile_caption_holds, update_autonomy_settings
 from .caption_edits import merge_caption_corrections
 from .clip_boundaries import update_clip_boundary
 from .db import ARTIFACTS_DIR, DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, fetch_all, initialize
@@ -348,6 +348,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/review":
             conn = connect(DEFAULT_DB)
             initialize(conn)
+            reconcile_caption_holds(conn)
             process_due_auto_schedule(conn)
             rows = fetch_all(
                 conn,
@@ -666,11 +667,24 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "candidate_id is required"}, status=400)
                 return
             conn = connect(DEFAULT_DB)
-            result = conn.execute("UPDATE clip_candidates SET status = 'held', review_deadline_at = '' WHERE id = ?", (candidate_id,))
-            conn.commit()
-            if result.rowcount == 0:
+            row = conn.execute(
+                "SELECT curation_metadata_json FROM clip_candidates WHERE id = ?",
+                (candidate_id,),
+            ).fetchone()
+            if not row:
                 self._send_json({"error": "candidate not found"}, status=404)
                 return
+            metadata = _loads(row["curation_metadata_json"], {})
+            metadata["hold_reason"] = MANUAL_HOLD_REASON
+            conn.execute(
+                """
+                UPDATE clip_candidates
+                SET status = 'held', review_deadline_at = '', curation_metadata_json = ?
+                WHERE id = ?
+                """,
+                (json.dumps(metadata, ensure_ascii=False), candidate_id),
+            )
+            conn.commit()
             self._send_json({"candidate_id": candidate_id, "status": "held"})
             return
 

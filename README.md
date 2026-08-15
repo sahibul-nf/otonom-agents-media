@@ -45,7 +45,7 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:3000`. The dashboard proxies local engine calls through `MEDIA_ENGINE_API_BASE`, defaulting to `http://127.0.0.1:8765`.
+Open `http://127.0.0.1:3100`. The dashboard proxies local engine calls through `MEDIA_ENGINE_API_BASE`, defaulting to `http://127.0.0.1:8765`. Port `3100` avoids colliding with Postiz (`:3000` / `:4200`) on the same machine.
 
 ## PM2 Auto-Restart
 

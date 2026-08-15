@@ -10,15 +10,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .autonomy import evaluate_quality_gate, get_autonomy_settings
-from .asr import load_or_create_asr_words
-from .caption_composer import compose_caption_groups
+from .caption_pipeline import build_production_captions
 from .costs import estimate_clip_cost
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_one, initialize, load_json, seed_profile
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .silence_trim import apply_silence_trim_for_render, remap_caption_groups
 from .styles import load_style
-from .transcript_quality import correct_asr_words
 from .youtube_pipeline import download_youtube_section
 
 
@@ -111,42 +109,34 @@ def _update_candidate_after_rerender(conn, candidate: dict[str, Any]) -> None:
     conn.commit()
 
 
-def _regenerate_captions(candidate: dict[str, Any], source_clip: str, style: dict[str, Any], model_name: str = "medium") -> None:
-    asr_path = Path(source_clip).resolve().parents[1] / f"{Path(source_clip).stem}_{model_name}_asr.json"
-    prompt = "Allah, Rasulullah, dzikir, zikir, qalbu, sholawat, istighfar, ma'rifat, taubat, syukur"
-    words, asr_metadata = load_or_create_asr_words(
+def _regenerate_captions(
+    candidate: dict[str, Any],
+    source_clip: str,
+    style: dict[str, Any],
+    model_name: str = "medium",
+    youtube_url: str = "",
+    niche: str = "",
+    llm_provider: str = "none",
+) -> None:
+    caption_source = str(candidate.get("caption_source") or "hybrid")
+    if caption_source not in {"whisper", "hybrid"}:
+        caption_source = "hybrid"
+    build_production_captions(
+        candidate,
         source_clip,
-        str(asr_path),
-        model_name=model_name,
-        language="id",
-        initial_prompt=prompt,
+        caption_source=caption_source,
+        asr_model=model_name,
+        speech_language="id",
+        style=style,
+        youtube_url=youtube_url,
+        llm_provider=llm_provider,
+        niche=niche,
     )
-    words, correction_metadata = correct_asr_words(words)
-    captions, composer_metadata = compose_caption_groups(
-        words,
-        max_words_per_caption=int(style.get("caption", {}).get("max_words_per_caption", 3)),
-    )
-    if not captions:
-        return
-    candidate["timed_captions"] = captions
-    candidate["caption_source"] = "whisper"
-    candidate["asr_metadata"] = {
-        **asr_metadata,
-        **correction_metadata,
-        "caption_composer": {
-            **composer_metadata,
-            "low_confidence_word_count": correction_metadata.get("low_confidence_word_count", 0),
-        },
-    }
+    corrections = candidate.get("caption_corrections") if isinstance(candidate.get("caption_corrections"), dict) else {}
     candidate["caption_corrections"] = {
-        **correction_metadata,
+        **corrections,
         "manual_edit_stale": False,
         "regenerated_after_boundary_edit": True,
-    }
-    candidate["score"] = {
-        **candidate.get("score", {}),
-        "asr_confidence": int(round((composer_metadata.get("avg_word_confidence") or 0.82) * 100)),
-        "caption_sync_score": 95 if composer_metadata.get("caption_count", 0) else 0,
     }
 
 
@@ -201,6 +191,9 @@ def rerender_candidate(
             source_clip,
             style,
             model_name=str(candidate.get("asr_metadata", {}).get("model") or "medium"),
+            youtube_url=source_url,
+            niche=str(profile.get("niche") or ""),
+            llm_provider=str(candidate.get("cost", {}).get("llm_provider") or "none"),
         )
     elif isinstance(edited, list) and edited and not edited_is_stale:
         # Prefer already-remapped manual captions when Remove Pause queued a keep plan.
