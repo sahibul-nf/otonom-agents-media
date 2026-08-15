@@ -17,7 +17,7 @@ from .autonomy import is_duplicate_candidate
 from .captions import build_word_timeline, group_word_captions
 from .db import ARTIFACTS_DIR, ROOT
 from .duration_presets import DurationPreset, duration_prompt_phrase, resolve_duration_strategy
-from .genres import genre_prompt_phrase, normalize_genres
+from .genres import genre_prompt_phrase, normalize_genres, uses_devotional_tone, workspace_curation_context
 from .llm import LLMError, call_llm_json
 from .rendering import ms_to_timecode
 from .scoring import score_candidate_text
@@ -551,23 +551,41 @@ def build_candidate(
     }
 
 
-def llm_rank_suggestions(entries: list[TranscriptEntry], count: int, provider: str, duration_preset: DurationPreset | None = None, genres: list[str] | str | None = None) -> list[dict[str, Any]]:
+def llm_rank_suggestions(
+    entries: list[TranscriptEntry],
+    count: int,
+    provider: str,
+    duration_preset: DurationPreset | None = None,
+    genres: list[str] | str | None = None,
+    profile_id: str | None = None,
+    niche: str | None = None,
+    workspace_name: str | None = None,
+) -> list[dict[str, Any]]:
     if provider == "none":
         return []
     duration_preset = duration_preset or resolve_duration_strategy("auto")
-    genres = normalize_genres(genres)
+    genres = normalize_genres(genres, profile_id=profile_id, niche=niche)
     transcript = "\n".join(f"{ms_to_timecode(entry.start_ms)} {entry.text}" for entry in entries[:600])
     system_prompt = (
-        "Anda adalah kurator video pendek Nourbit. Balas hanya JSON murni dengan key clips. "
-        "Setiap clip berisi start_time, end_time, title_hook, hook_subtitle, viral_reason."
+        "Anda adalah kurator clip pendek. Balas hanya JSON murni dengan key clips. "
+        "Setiap clip berisi start_time, end_time, title_hook, hook_subtitle, viral_reason. "
+        "Niche dan brand voice datang dari workspace, bukan dari daftar genre kustom."
+    )
+    angle_line = genre_prompt_phrase(genres)
+    context = workspace_curation_context(workspace_name, niche)
+    tone = (
+        "Utamakan konteks utuh dan hook spiritual/reflektif bila sesuai niche dan sumber. "
+        if uses_devotional_tone(genres, profile_id, niche)
+        else "Utamakan konteks utuh, opini yang jelas, dan bahasa natural sesuai sumber. Jangan memaksa hook iman/devotional."
     )
     user_prompt = (
         f"Pilih hingga {count} momen terbaik (jangan lebih dari {count}) "
         f"berdurasi {duration_prompt_phrase(duration_preset)} untuk short/reels dari transcript ini. "
-        f"Prioritaskan genre batch: {genre_prompt_phrase(genres)}. "
-        "Lebih sedikit clip yang utuh lebih baik daripada memaksa kuota. "
-        "Utamakan konteks utuh dan bahasa Indonesia natural. "
-        "hook_subtitle harus terasa hangat, singkat, tidak kaku, maksimal 18 kata.\n\n"
+        + (f"{context} " if context else "")
+        + (f"Content angles for this batch: {angle_line}. " if angle_line else "")
+        + "Lebih sedikit clip yang utuh lebih baik daripada memaksa kuota. "
+        + tone
+        + " hook_subtitle harus terasa hangat, singkat, tidak kaku, maksimal 18 kata.\n\n"
         f"{transcript}"
     )
     try:
@@ -606,14 +624,25 @@ def choose_nourbit_premium_candidates(
     clip_min_seconds: int | None = None,
     clip_max_seconds: int | None = None,
     genres: list[str] | str | None = None,
+    niche: str | None = None,
+    workspace_name: str | None = None,
 ) -> list[dict[str, Any]]:
     if len(entries) < 10:
         raise ValueError("transcript is too short for premium candidate selection")
     style = style or {}
     preset = resolve_duration_strategy(duration_preset, clip_min_seconds, clip_max_seconds)
-    genres = normalize_genres(genres)
+    genres = normalize_genres(genres, profile_id=profile_id, niche=niche)
     corrected_entries = correct_transcript_entries(entries)
-    llm_suggestions = llm_rank_suggestions(corrected_entries, count, llm_provider, preset, genres)
+    llm_suggestions = llm_rank_suggestions(
+        corrected_entries,
+        count,
+        llm_provider,
+        preset,
+        genres,
+        profile_id=profile_id,
+        niche=niche,
+        workspace_name=workspace_name,
+    )
     selected: list[dict[str, Any]] = []
 
     for suggestion in llm_suggestions:

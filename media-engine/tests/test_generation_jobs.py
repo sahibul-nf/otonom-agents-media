@@ -35,7 +35,7 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["clip_length_preset"], "auto")
         self.assertEqual(payload["clip_min_seconds"], 20)
         self.assertEqual(payload["clip_max_seconds"], 180)
-        self.assertEqual(payload["genres"], ["kajian", "spiritual_reflection", "advice"])
+        self.assertEqual(payload["genres"], ["story", "advice", "social_commentary"])
         self.assertEqual(payload["renderer"], "hyperframes")
         self.assertEqual(payload["hyperframes_format"], "auto")
         self.assertEqual(payload["caption_source"], "hybrid")
@@ -63,6 +63,12 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["clip_min_seconds"], 40)
         self.assertEqual(payload["clip_max_seconds"], 110)
         self.assertEqual(payload["genres"], ["story", "advice"])
+
+    def test_normalize_generation_payload_uses_nourbit_pack_when_empty(self):
+        payload = normalize_generation_payload(
+            {"source_url": "https://youtube.com/watch?v=test", "profile_id": "nourbit"}
+        )
+        self.assertEqual(payload["genres"], ["story", "advice", "social_commentary"])
 
     def test_normalize_generation_payload_clamps_count_and_choices(self):
         payload = normalize_generation_payload(
@@ -119,6 +125,8 @@ class GenerationJobTests(unittest.TestCase):
         self.assertIn("--clip-min-seconds", command)
         self.assertIn("--clip-max-seconds", command)
         self.assertIn("--genres", command)
+        self.assertIn("--niche", command)
+        self.assertIn("--workspace-name", command)
         self.assertIn("--hyperframes-template", command)
         self.assertIn("auto", command)
         self.assertIn("--speech-language", command)

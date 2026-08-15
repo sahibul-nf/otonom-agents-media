@@ -258,8 +258,12 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if ROOT.resolve() not in template_path.parents or not template_path.exists():
         raise ValueError("brand_template not found")
     min_seconds, max_seconds, preset_id = _duration_seconds(payload)
-    genres = normalize_genres(payload.get("genres"))
     profile_id = str(payload.get("profile_id") or "workspace").strip()
+    genres = normalize_genres(
+        payload.get("genres"),
+        profile_id=profile_id,
+        niche=str(payload.get("niche") or "").strip() or None,
+    )
     source_id = str(payload.get("source_id") or "").strip()
     source_metadata = payload.get("source_metadata")
     if not isinstance(source_metadata, dict):
@@ -304,6 +308,8 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "transcript_languages": _language_list(payload.get("transcript_languages"), "id,en"),
         "llm_provider": _choice(payload.get("llm_provider"), VALID_LLM_PROVIDERS, "deepseek"),
         "env_file": str(payload.get("env_file") or "../.env.local").strip(),
+        "niche": str(payload.get("niche") or "").strip(),
+        "workspace_name": str(payload.get("workspace_name") or "").strip(),
     }
 
 
@@ -352,6 +358,10 @@ def build_generation_command(config: dict[str, Any], validate_runtime: bool = Fa
         config["brand_template"],
         "--llm-provider",
         config["llm_provider"],
+        "--niche",
+        config.get("niche") or "",
+        "--workspace-name",
+        config.get("workspace_name") or "",
         "--env-file",
         config["env_file"],
     ]

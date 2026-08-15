@@ -110,6 +110,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   hyperframesCatalog: _hyperframesCatalog,
   durationPresets,
   genres,
+  genrePackLabel: _genrePackLabel,
   jobs,
   engineHealth,
   actionState,
@@ -130,6 +131,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   hyperframesCatalog: HyperframesCatalog | null;
   durationPresets: DurationPreset[];
   genres: GenreOption[];
+  genrePackLabel?: string;
   jobs: GenerationJob[];
   engineHealth: EngineHealth | null;
   actionState?: ActionUiState;
@@ -202,9 +204,9 @@ export function GenerateSection<T extends GenerateConfigLike>({
   const canGenerate = Boolean(config.sourceUrl.trim()) && resolveState === "ready" && Boolean(resolvedSource?.ok);
   const presetOptions = durationPresets.length ? durationPresets : [{id: "auto", label: "Auto (0-3 min)", detail: "20-180s", range_label: "0-3 min", best_for: "General use", min_ms: 20_000, target_ms: 90_000, max_ms: 180_000, intent: "Automatic duration"}];
   const genreOptions = genres.length ? genres : [
-    {id: "kajian", label: "Kajian", description: "Religious teaching and reflection."},
-    {id: "spiritual_reflection", label: "Spiritual reflection", description: "Heart-softening clips."},
-    {id: "advice", label: "Advice", description: "Practical reminders."},
+    {id: "story", label: "Story", description: "Narrative moments and analogies."},
+    {id: "advice", label: "Advice", description: "Practical takeaways."},
+    {id: "social_commentary", label: "Social commentary", description: "Culture and public habits."},
   ];
   const selectedPreset = presetOptions.find((item) => item.id === config.clipLength) || presetOptions[0];
   const hyperframesTemplateOptions = [
@@ -468,6 +470,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
                   <h4 className="font-semibold text-white">Content angles</h4>
                   <span className="text-xs text-zinc-500">{selectedGenreCount} selected</span>
                 </div>
+                <p className="mb-3 text-xs leading-5 text-zinc-500">How to cut this batch. Niche and brand voice come from the workspace, not extra chips.</p>
                 <div className="flex flex-wrap gap-2">
                   {genreOptions.map((genre) => {
                     const active = config.genres.includes(genre.id);

@@ -284,6 +284,39 @@ export type GenreOption = {
   description: string;
 };
 
+export type GenreCatalog = {
+  pack: string;
+  pack_label: string;
+  defaults: string[];
+  options: GenreOption[];
+};
+
+export function parseGenreCatalog(payload: GenreCatalog | GenreOption[] | null | undefined): GenreCatalog {
+  if (Array.isArray(payload)) {
+    const options = payload.filter((item) => item && item.id);
+    return {
+      pack: "general",
+      pack_label: "General",
+      defaults: options.slice(0, 3).map((item) => item.id),
+      options,
+    };
+  }
+  if (payload && Array.isArray(payload.options)) {
+    return {
+      pack: payload.pack || "general",
+      pack_label: payload.pack_label || "General",
+      defaults: payload.defaults?.length ? payload.defaults : payload.options.slice(0, 3).map((item) => item.id),
+      options: payload.options,
+    };
+  }
+  return {
+    pack: "general",
+    pack_label: "General",
+    defaults: ["story", "advice", "social_commentary"],
+    options: [],
+  };
+}
+
 export type SourceResolveResult = {
   ok: boolean;
   provider?: string;

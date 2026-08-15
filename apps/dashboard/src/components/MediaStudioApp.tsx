@@ -47,8 +47,10 @@ import {
   formatDuration,
   formatTimestamp,
   GenerationJob,
+  GenreCatalog,
   GenreOption,
   HyperframesCatalog,
+  parseGenreCatalog,
   HyperframesTemplate,
   MediaProfile,
   platformLabel,
@@ -473,6 +475,7 @@ export function MediaStudioApp() {
   const [hyperframesCatalog, setHyperframesCatalog] = useState<HyperframesCatalog | null>(null);
   const [durationPresets, setDurationPresets] = useState<DurationPreset[]>([]);
   const [genres, setGenres] = useState<GenreOption[]>([]);
+  const [genrePackLabel, setGenrePackLabel] = useState("General");
   const [engineHealth, setEngineHealth] = useState<EngineHealth | null>(null);
   const [autonomy, setAutonomy] = useState<AutonomySettings | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
@@ -495,7 +498,7 @@ export function MediaStudioApp() {
     clipLength: "auto",
     clipMinSeconds: 20,
     clipMaxSeconds: 180,
-    genres: ["kajian", "spiritual_reflection", "advice"],
+    genres: ["story", "advice", "social_commentary"],
     brandTemplate: defaultTemplate,
     hyperframesTemplate: "auto",
     brandSystemTemplateId: "",
@@ -621,7 +624,7 @@ export function MediaStudioApp() {
         apiGet<BrandTemplate[]>("brand-templates"),
         apiGet<HyperframesTemplate[]>("hyperframes-templates"),
         apiGet<DurationPreset[]>("duration-presets"),
-        apiGet<GenreOption[]>("genres"),
+        apiGet<GenreCatalog | GenreOption[]>(`genres?profile_id=${encodeURIComponent(activeProfile)}`),
         apiGet<EngineHealth>("engine-health"),
         apiGet<HyperframesCatalog>("hyperframes-catalog"),
         apiGet<GenerationJob[]>("generation-jobs"),
@@ -642,7 +645,14 @@ export function MediaStudioApp() {
       setTemplates(templateRows);
       setHyperframesTemplates(hyperframesTemplateRows);
       setDurationPresets(durationRows);
-      setGenres(genreRows);
+      const genreCatalog = parseGenreCatalog(genreRows);
+      setGenres(genreCatalog.options);
+      setGenrePackLabel(genreCatalog.pack_label);
+      setGenerateConfig((current) => {
+        const allowed = new Set(genreCatalog.options.map((item) => item.id));
+        const kept = current.genres.filter((id) => allowed.has(id));
+        return {...current, genres: kept.length ? kept : genreCatalog.defaults};
+      });
       setEngineHealth(engineRows);
       setHyperframesCatalog(catalogRows);
       setJobs(jobRows);
@@ -741,6 +751,8 @@ export function MediaStudioApp() {
           clip_min_seconds: generateConfig.clipMinSeconds,
           clip_max_seconds: generateConfig.clipMaxSeconds,
           genres: generateConfig.genres,
+          niche: profiles.find((profile) => profile.id === profileId)?.niche || "",
+          workspace_name: profiles.find((profile) => profile.id === profileId)?.name || "",
           brand_template: generateConfig.brandTemplate,
           hyperframes_template: generateConfig.hyperframesTemplate,
           brand_system_template_id: generateConfig.brandSystemTemplateId,
@@ -1327,6 +1339,7 @@ export function MediaStudioApp() {
               hyperframesCatalog={hyperframesCatalog}
               durationPresets={durationPresets}
               genres={genres}
+              genrePackLabel={genrePackLabel}
               jobs={jobs.filter((job) => !job.profile_id || job.profile_id === profileId)}
               engineHealth={engineHealth}
               actionState={actionStates["generate:start"]}

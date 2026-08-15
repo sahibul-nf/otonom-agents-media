@@ -304,7 +304,9 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
         duration_preset=args.clip_length_preset,
         clip_min_seconds=args.clip_min_seconds,
         clip_max_seconds=args.clip_max_seconds,
-        genres=parse_genres(args.genres),
+        genres=parse_genres(args.genres, args.profile),
+        niche=getattr(args, "niche", None) or profile.get("niche"),
+        workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
     )[0]
     insert_candidate(conn, candidate)
     bar.step(f"downloading source clip for {candidate['id']}")
@@ -318,7 +320,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     if renderer_note:
         bar.step(renderer_note)
     bar.step(f"rendering with {renderer}")
-    genre_ids = parse_genres(args.genres)
+    genre_ids = parse_genres(args.genres, args.profile)
     if renderer == "hyperframes":
         output_path, contract = render_premium_hyperframes(
             candidate,
@@ -413,7 +415,7 @@ def render_premium_candidate(
     if renderer_note:
         (bar.step if bar else progress)(f"{prefix}{renderer_note}")
     (bar.step if bar else progress)(f"{prefix}rendering {candidate['id']} with {renderer}")
-    genre_ids = parse_genres(getattr(args, "genres", ""))
+    genre_ids = parse_genres(getattr(args, "genres", ""), getattr(args, "profile", None) or (profile or {}).get("id"))
     if renderer == "hyperframes":
         output_path, contract = render_premium_hyperframes(
             candidate,
@@ -527,7 +529,7 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
     bar.step("loading environment and profile")
     load_env_file(args.env_file)
     conn = connect(args.db)
-    load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
+    profile, _source = load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
     bar.step("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
     style = load_style(args.style)
@@ -542,7 +544,9 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
         duration_preset=args.clip_length_preset,
         clip_min_seconds=args.clip_min_seconds,
         clip_max_seconds=args.clip_max_seconds,
-        genres=parse_genres(args.genres),
+        genres=parse_genres(args.genres, args.profile),
+        niche=getattr(args, "niche", None) or profile.get("niche"),
+        workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
     )
     for candidate in candidates:
         insert_candidate(conn, candidate)
@@ -570,7 +574,9 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         duration_preset=args.clip_length_preset,
         clip_min_seconds=args.clip_min_seconds,
         clip_max_seconds=args.clip_max_seconds,
-        genres=parse_genres(args.genres),
+        genres=parse_genres(args.genres, args.profile),
+        niche=getattr(args, "niche", None) or profile.get("niche"),
+        workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
     )
     attribution = args.source_attribution or "Source: Channel clip"
     renders = []
@@ -706,8 +712,8 @@ def parse_languages(value: str | None) -> list[str]:
     return languages or ["id", "en"]
 
 
-def parse_genres(value: str | None) -> list[str]:
-    return normalize_genres(value)
+def parse_genres(value: str | None, profile_id: str | None = None) -> list[str]:
+    return normalize_genres(value, profile_id=profile_id)
 
 
 def cmd_rerender(args: argparse.Namespace) -> None:
@@ -822,7 +828,9 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--clip-length-preset", choices=duration_choices, default="auto")
     premium_test.add_argument("--clip-min-seconds", type=int, default=20)
     premium_test.add_argument("--clip-max-seconds", type=int, default=180)
-    premium_test.add_argument("--genres", default="kajian,spiritual_reflection,advice")
+    premium_test.add_argument("--genres", default="", help="Comma-separated content angles; empty uses workspace defaults")
+    premium_test.add_argument("--niche", default="", help="Workspace niche for curation context")
+    premium_test.add_argument("--workspace-name", default="", help="Workspace display name for curation context")
     premium_test.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_test.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_test.add_argument("--env-file")
@@ -836,7 +844,9 @@ def build_parser() -> argparse.ArgumentParser:
     premium_curate.add_argument("--clip-length-preset", choices=duration_choices, default="auto")
     premium_curate.add_argument("--clip-min-seconds", type=int, default=20)
     premium_curate.add_argument("--clip-max-seconds", type=int, default=180)
-    premium_curate.add_argument("--genres", default="kajian,spiritual_reflection,advice")
+    premium_curate.add_argument("--genres", default="", help="Comma-separated content angles; empty uses workspace defaults")
+    premium_curate.add_argument("--niche", default="", help="Workspace niche for curation context")
+    premium_curate.add_argument("--workspace-name", default="", help="Workspace display name for curation context")
     premium_curate.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_curate.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
@@ -861,7 +871,9 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--clip-length-preset", choices=duration_choices, default="auto")
     premium_batch.add_argument("--clip-min-seconds", type=int, default=20)
     premium_batch.add_argument("--clip-max-seconds", type=int, default=180)
-    premium_batch.add_argument("--genres", default="kajian,spiritual_reflection,advice")
+    premium_batch.add_argument("--genres", default="", help="Comma-separated content angles; empty uses workspace defaults")
+    premium_batch.add_argument("--niche", default="", help="Workspace niche for curation context")
+    premium_batch.add_argument("--workspace-name", default="", help="Workspace display name for curation context")
     premium_batch.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_batch.add_argument("--env-file")

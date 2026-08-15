@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 from .autonomy import MANUAL_HOLD_REASON, get_autonomy_settings, reconcile_caption_holds, update_autonomy_settings
 from .caption_edits import merge_caption_corrections
 from .clip_boundaries import update_clip_boundary
-from .db import ARTIFACTS_DIR, DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, fetch_all, initialize
+from .db import ARTIFACTS_DIR, DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, fetch_all, fetch_one, initialize
 from .silence_trim import captions_duration_ms, remove_pause_from_captions, remove_pauses_batch_from_captions, word_pause_gaps
 from .credentials import credential_status
 from .credential_vault import ensure_default_migration, set_profile_secrets, unset_profile_secrets
@@ -35,7 +35,7 @@ from .ingest_longform import ingest_longform
 from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_generate
 from .cursor_cloud import CursorCloudError
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
-from .genres import genre_options
+from .genres import genre_catalog
 from .source_resolve import resolve_youtube_source
 from .review_grouping import enrich_review_rows_with_source
 from .hyperframes_catalog import list_hyperframes_catalog
@@ -448,7 +448,13 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(list_hyperframes_preview_status(include_brand=include_brand))
             return
         if parsed.path == "/api/genres":
-            self._send_json(genre_options())
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", [DEFAULT_WORKSPACE_PROFILE_ID])[0] or DEFAULT_WORKSPACE_PROFILE_ID).strip()
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            row = fetch_one(conn, "SELECT niche FROM media_profiles WHERE id = ?", (profile_id,))
+            niche = str((row or {}).get("niche") or "")
+            self._send_json(genre_catalog(profile_id=profile_id, niche=niche))
             return
         if parsed.path == "/api/duration-presets":
             self._send_json(duration_preset_options())
