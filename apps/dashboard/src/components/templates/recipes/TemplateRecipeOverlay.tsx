@@ -82,6 +82,44 @@ export function TemplateRecipeOverlay({templateId, theme, compact}: RecipeOverla
           <CaptionMock theme={theme} compact={compact} />
         </>
       );
+    case "byline_trust_quote":
+      return (
+        <>
+          <div className="absolute inset-x-6 top-[34%] z-[4] border-y border-white/20 py-4 text-center" style={{fontFamily: theme.fontFamily}}>
+            <p className="text-lg font-semibold italic text-white">“Trust the process”</p>
+          </div>
+          <CaptionMock theme={theme} compact={compact} />
+        </>
+      );
+    case "quintessence_serif":
+      return (
+        <>
+          <p className="absolute left-6 top-16 z-[4] text-3xl font-semibold text-white" style={{fontFamily: theme.fontFamily}}>
+            More clarity
+          </p>
+          <CaptionMock theme={theme} compact={compact} />
+        </>
+      );
+    case "velocity_business_promo":
+      return (
+        <>
+          <div className="absolute left-4 top-20 z-[4] space-y-1" style={{fontFamily: theme.fontFamily}}>
+            <p className="text-2xl font-black text-yellow-300">BOOST</p>
+            <p className="text-lg font-bold text-white">YOUR BUSINESS</p>
+          </div>
+          <CaptionMock theme={theme} compact={compact} />
+        </>
+      );
+    case "techtalk_intel_brief":
+      return (
+        <>
+          <div className="absolute inset-x-4 bottom-[38%] z-[4] rounded-xl border border-teal-400/40 bg-black/55 px-3 py-2" style={{fontFamily: theme.fontFamily}}>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-teal-300">Intel brief</p>
+            <p className="mt-1 text-sm font-semibold text-white">Key takeaway · edu-finance</p>
+          </div>
+          <CaptionMock theme={theme} compact={compact} />
+        </>
+      );
     default:
       return (
         <>

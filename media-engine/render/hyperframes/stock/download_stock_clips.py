@@ -55,6 +55,7 @@ TEMPLATE_PEXELS: dict[str, dict[str, str]] = {
     "sketch_post_it": {"query": "creative team brainstorming office", "orientation": "landscape"},
     "prism_pro_pricing": {"query": "laptop saas product demo", "orientation": "landscape"},
     "chalk_word_emphasis": {"query": "teacher classroom talking", "orientation": "portrait"},
+    "techtalk_intel_brief": {"query": "business presenter finance news talking", "orientation": "portrait"},
 }
 
 TEMPLATE_MIXKIT_PAGES: dict[str, str] = {
@@ -77,6 +78,7 @@ TEMPLATE_MIXKIT_PAGES: dict[str, str] = {
     "sketch_post_it": "work-team-planning-meeting-21247",
     "prism_pro_pricing": "man-working-on-his-laptop-308",
     "chalk_word_emphasis": "a-middle-age-man-teacher-wearing-glasses-talking-to-a-50117",
+    "techtalk_intel_brief": "business-man-exposing-graphs-42648",
 }
 
 LEGACY_POOL_PAGES: dict[str, str] = {

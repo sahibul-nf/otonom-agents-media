@@ -3,7 +3,7 @@
 import {useRef, useState, useEffect, type MouseEvent} from "react";
 import {Play, Pause, Volume2, VolumeX} from "lucide-react";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
-import {HyperframesTemplate} from "@/lib/media-api";
+import {HyperframesTemplate, fetchHyperframesPreviewStatus, prewarmHyperframesTemplatePreview} from "@/lib/media-api";
 import {getRecipeTheme, TemplateRecipeOverlay} from "@/components/templates/recipes";
 import {recipeThemes} from "@/components/templates/recipes/recipeThemes";
 
@@ -54,11 +54,16 @@ export function TemplatePreview({
   const theme = getRecipeTheme(template.id);
   const isLong = frame === "long";
   const previewKey = isLong ? "long_16_9" : "short_9_16";
-  const previewUrl = template.preview_video_urls?.[previewKey] || template.preview_urls?.[previewKey];
+  const hasInstantVideo = Boolean(template.preview_video_urls?.[previewKey]);
+  const apiPreviewUrl = template.preview_urls?.[previewKey];
+  const initiallyCached = hasInstantVideo || Boolean(template.preview_cache_ready?.[previewKey]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [shouldLoadPreview, setShouldLoadPreview] = useState(!hoverToPlay);
+  const [cacheReady, setCacheReady] = useState(initiallyCached);
+  const [generatingPreview, setGeneratingPreview] = useState(false);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const previewUrl = template.preview_video_urls?.[previewKey] || (cacheReady ? apiPreviewUrl : undefined);
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(true);
@@ -66,6 +71,46 @@ export function TemplatePreview({
   const [currentTime, setCurrentTime] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    setCacheReady(initiallyCached);
+    setVideoLoaded(false);
+    setVideoError(false);
+  }, [template.id, previewKey, initiallyCached]);
+
+  useEffect(() => {
+    if (!shouldLoadPreview || cacheReady || hasInstantVideo || !apiPreviewUrl) return;
+    let cancelled = false;
+
+    async function warmPreview() {
+      setGeneratingPreview(true);
+      try {
+        const status = await fetchHyperframesPreviewStatus(template.id, previewKey);
+        if (cancelled) return;
+        if (status.ready) {
+          setCacheReady(true);
+          return;
+        }
+        void prewarmHyperframesTemplatePreview(template.id, template.id.startsWith("brand:")).catch(() => undefined);
+        for (let attempt = 0; attempt < 45 && !cancelled; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+          const next = await fetchHyperframesPreviewStatus(template.id, previewKey);
+          if (cancelled) return;
+          if (next.ready) {
+            setCacheReady(true);
+            return;
+          }
+        }
+      } finally {
+        if (!cancelled) setGeneratingPreview(false);
+      }
+    }
+
+    void warmPreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiPreviewUrl, cacheReady, hasInstantVideo, previewKey, shouldLoadPreview, template.id]);
 
   useEffect(() => {
     if (shouldLoadPreview) {
@@ -228,9 +273,19 @@ export function TemplatePreview({
           </div>
         ) : (
           <div className="absolute inset-0 z-[3] grid place-items-center bg-black/28">
-            <div className="rounded-full border border-white/[0.14] bg-black/65 px-4 py-2 text-xs font-semibold text-zinc-100">Loading preview...</div>
+            <div className="max-w-[85%] rounded-full border border-white/[0.14] bg-black/65 px-4 py-2 text-center text-xs font-semibold text-zinc-100">
+              {generatingPreview ? "Generating preview…" : "Loading preview…"}
+            </div>
           </div>
         )
+      ) : null}
+      {!previewUrl && shouldLoadPreview && generatingPreview && !videoError ? (
+        <div className="absolute inset-0 z-[3] grid place-items-center bg-black/35 px-6 text-center">
+          <div className="rounded-[18px] border border-white/[0.14] bg-black/70 px-4 py-3 text-xs font-semibold leading-5 text-zinc-100">
+            Generating HyperFrames preview…
+            <span className="mt-1 block font-normal text-zinc-400">First open for custom styles can take up to a minute. Recipe overlay stays visible meanwhile.</span>
+          </div>
+        </div>
       ) : null}
       {!flush ? (
         <>

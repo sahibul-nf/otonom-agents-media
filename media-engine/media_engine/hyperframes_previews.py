@@ -68,9 +68,15 @@ def list_hyperframes_preview_status(include_brand: bool = True) -> dict[str, Any
     }
 
 
-def prewarm_hyperframes_template_previews(include_brand: bool = False) -> dict[str, Any]:
+def prewarm_hyperframes_template_previews(
+    include_brand: bool = False,
+    template_id: str | None = None,
+) -> dict[str, Any]:
     results: list[dict[str, Any]] = []
+    normalized_filter = (template_id or "").strip().replace("__", ":")
     for template in list_hyperframes_templates():
+        if normalized_filter and str(template["id"]) != normalized_filter:
+            continue
         if not include_brand and template.get("source") == "brand_system":
             continue
         for hyperframes_format in template.get("formats") or ["short_9_16"]:

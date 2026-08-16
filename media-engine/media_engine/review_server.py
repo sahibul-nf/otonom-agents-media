@@ -39,7 +39,7 @@ from .genres import genre_catalog
 from .source_resolve import resolve_youtube_source
 from .review_grouping import enrich_review_rows_with_source
 from .hyperframes_catalog import list_hyperframes_catalog
-from .hyperframes_previews import ensure_hyperframes_template_preview, list_hyperframes_preview_status, prewarm_hyperframes_template_previews
+from .hyperframes_previews import ensure_hyperframes_template_preview, list_hyperframes_preview_status, preview_status, prewarm_hyperframes_template_previews
 from .hyperframes_renderer import check_hyperframes_runtime
 from .hyperframes_templates import list_hyperframes_templates
 from .live_publishers import (
@@ -444,6 +444,11 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/hyperframes-template-preview-status":
             query = parse_qs(parsed.query)
+            template_id = (query.get("template", [""])[0] or "").strip().replace("__", ":")
+            hyperframes_format = (query.get("format", ["short_9_16"])[0] or "short_9_16").strip()
+            if template_id:
+                self._send_json(preview_status(template_id, hyperframes_format))
+                return
             include_brand = (query.get("include_brand", ["1"])[0] or "1") not in {"0", "false", "False"}
             self._send_json(list_hyperframes_preview_status(include_brand=include_brand))
             return
@@ -938,8 +943,9 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/hyperframes-template-preview-prewarm":
             include_brand = bool(payload.get("include_brand", False))
+            template_id = str(payload.get("template_id") or payload.get("template") or "").strip() or None
             try:
-                result = prewarm_hyperframes_template_previews(include_brand=include_brand)
+                result = prewarm_hyperframes_template_previews(include_brand=include_brand, template_id=template_id)
             except RuntimeError as exc:
                 self._send_json({"error": str(exc)}, status=503)
                 return

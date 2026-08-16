@@ -53,8 +53,21 @@ class HyperframesTemplateTests(unittest.TestCase):
 
         self.assertEqual(template["preview_seconds"], 15)
         self.assertIn("short_9_16", template["preview_urls"])
+        self.assertIn("short_9_16", template["preview_cache_ready"])
+        self.assertIn(template["preview_status"], {"ready", "partial", "generating"})
         self.assertIn("lint", template["production_checks"])
         self.assertIn("/api/media/hyperframes-template-preview", template["preview_urls"]["short_9_16"])
+
+    def test_spot_check_recipes_have_distinct_style_meta(self):
+        from media_engine.hyperframes_recipes import recipe_style_meta
+
+        checked = ("byline_trust_quote", "energy_warm_question", "neon_seize_future", "grit_training_stamp", "quintessence_serif")
+        metas = [recipe_style_meta(template_id) for template_id in checked]
+        font_families = {meta.font_family for meta in metas}
+        motion_presets = {meta.motion_preset for meta in metas}
+
+        self.assertEqual(len(font_families), len(checked))
+        self.assertEqual(len(motion_presets), len(checked))
 
     def test_format_dimensions(self):
         self.assertEqual(normalize_hyperframes_format("bad"), "auto")

@@ -92,7 +92,8 @@ class HyperframesTemplate:
             "motion_preset": self.motion_preset or recipe_meta.motion_preset,
             "color_grade": self.color_grade or recipe_meta.color_grade,
             "preview_seconds": PREVIEW_SECONDS,
-            "preview_status": "ready",
+            "preview_status": _aggregate_preview_status(self.id, formats),
+            "preview_cache_ready": _preview_cache_ready(self.id, formats),
             "preview_urls": _preview_urls(self.id, formats),
             "preview_video_urls": _official_preview_urls(self.id, formats),
             "production_checks": {
@@ -420,6 +421,26 @@ TEMPLATES: tuple[HyperframesTemplate, ...] = (
 TEMPLATE_BY_ID = {template.id: template for template in TEMPLATES}
 
 
+def _preview_cache_ready(template_id: str, formats: list[str]) -> dict[str, bool]:
+    from .hyperframes_previews import PREVIEW_ROOT
+
+    safe_template = template_id.replace(":", "__")
+    ready: dict[str, bool] = {}
+    for item in formats:
+        path = PREVIEW_ROOT / safe_template / item / "preview.mp4"
+        ready[item] = path.exists() and path.stat().st_size > 0
+    return ready
+
+
+def _aggregate_preview_status(template_id: str, formats: list[str]) -> str:
+    ready = _preview_cache_ready(template_id, formats)
+    if all(ready.values()):
+        return "ready"
+    if any(ready.values()):
+        return "partial"
+    return "generating"
+
+
 def preview_stock_path(template_id: str) -> Path | None:
     template = TEMPLATE_BY_ID.get(template_id)
     if not template:
@@ -550,7 +571,8 @@ def _saved_brand_system_templates() -> list[dict[str, Any]]:
                 "recipe_module": starter.recipe_module or starter_id,
                 "preview_source_video": starter.preview_source_video,
                 "preview_seconds": PREVIEW_SECONDS,
-                "preview_status": "ready",
+                "preview_status": _aggregate_preview_status(public_id, formats),
+                "preview_cache_ready": _preview_cache_ready(public_id, formats),
                 "preview_urls": _preview_urls(public_id, formats),
                 "preview_video_urls": _official_preview_urls(starter_id, formats) or _official_preview_urls(public_id, formats),
                 "production_checks": {

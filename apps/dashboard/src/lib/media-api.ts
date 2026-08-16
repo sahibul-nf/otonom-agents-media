@@ -240,6 +240,7 @@ export type HyperframesTemplate = {
   starter_template?: string;
   preview_seconds?: number;
   preview_status?: string;
+  preview_cache_ready?: Record<string, boolean>;
   preview_urls?: Record<string, string>;
   preview_video_urls?: Record<string, string>;
   production_checks?: Record<string, string>;
@@ -498,6 +499,26 @@ export async function apiPost<T>(path: string, payload: Record<string, unknown>)
   const json = await readJsonResponse(response);
   if (!response.ok) throw new Error(json.error || "Request failed");
   return json as T;
+}
+
+export type HyperframesPreviewStatus = {
+  template: string;
+  format: string;
+  ready: boolean;
+  path?: string;
+  size?: number;
+};
+
+export async function fetchHyperframesPreviewStatus(templateId: string, format: string): Promise<HyperframesPreviewStatus> {
+  const safeId = encodeURIComponent(templateId.replace(":", "__"));
+  return apiGet<HyperframesPreviewStatus>(`hyperframes-template-preview-status?template=${safeId}&format=${encodeURIComponent(format)}`);
+}
+
+export async function prewarmHyperframesTemplatePreview(templateId: string, includeBrand = false): Promise<void> {
+  await apiPost("hyperframes-template-preview-prewarm", {
+    template_id: templateId,
+    include_brand: includeBrand,
+  });
 }
 
 export function formatDuration(ms?: number) {

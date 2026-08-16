@@ -375,6 +375,9 @@ export function TemplatesSection({
                 <div>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Live preview</p>
+                    {selected.preview_status === "generating" ? (
+                      <p className="text-[11px] font-medium text-amber-300/90">First open may generate a 15s HyperFrames clip</p>
+                    ) : null}
                     <div className="inline-flex items-center rounded-[14px] border border-white/[0.10] bg-black/30 p-0.5">
                       <button
                         type="button"
@@ -411,7 +414,7 @@ export function TemplatesSection({
               <aside className="grid gap-4 rounded-[26px] border border-white/[0.08] bg-canvas-deep p-4 xl:sticky xl:top-6">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Best for</p>
-                  <p className="mt-2 text-sm leading-6 text-zinc-300">{selected.best_for}</p>
+                  <p className="mt-2 text-base leading-7 text-zinc-200">{selected.best_for}</p>
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Tone</p>
