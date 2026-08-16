@@ -65,6 +65,16 @@ class HyperframesPreviewTests(unittest.TestCase):
         self.assertEqual(result["total"], 2)
         self.assertTrue(all(item["template"] == "byline_trust_quote" for item in result["items"]))
 
+    def test_preview_copy_varies_by_template_category(self):
+        spiritual = hyperframes_previews._preview_copy_for_template({"category": "Spiritual", "label": "Spiritual Reflective", "best_for": "Devotional"})
+        data = hyperframes_previews._preview_copy_for_template({"category": "Data", "label": "Velocity Business Promo", "best_for": "Finance"})
+        promo = hyperframes_previews._preview_copy_for_template({"category": "Promo", "label": "Energy Warm Question", "best_for": "Creator"})
+
+        self.assertNotEqual(spiritual["captionText"], data["captionText"])
+        self.assertNotEqual(data["captionText"], promo["captionText"])
+        self.assertEqual(spiritual["captions"][0]["text"], "Allah selalu dekat")
+        self.assertIn("Fed", data["captions"][0]["text"])
+
 
 if __name__ == "__main__":
     unittest.main()

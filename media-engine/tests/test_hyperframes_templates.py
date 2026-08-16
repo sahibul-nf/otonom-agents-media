@@ -69,6 +69,26 @@ class HyperframesTemplateTests(unittest.TestCase):
         self.assertEqual(len(font_families), len(checked))
         self.assertEqual(len(motion_presets), len(checked))
 
+    def test_recipes_expose_distinct_shell_css(self):
+        from media_engine.hyperframes_recipes import get_recipe
+        from media_engine.hyperframes_recipes._base import LayoutContext
+
+        layout = LayoutContext(
+            width=1080,
+            height=1920,
+            is_landscape=False,
+            caption_font_size=54,
+            text_color="#ffffff",
+            highlight_color="#d8b45f",
+            accent="#d8b45f",
+            secondary_accent="#8ee6c8",
+        )
+        spiritual = get_recipe("spiritual_reflective").shell_css(layout)
+        neon = get_recipe("neon_seize_future").shell_css(layout)
+        self.assertIn(".cta", spiritual)
+        self.assertIn(".cta", neon)
+        self.assertNotEqual(spiritual, neon)
+
     def test_format_dimensions(self):
         self.assertEqual(normalize_hyperframes_format("bad"), "auto")
         self.assertEqual(dimensions_for_format("short_9_16"), (1080, 1920, "short_9_16"))

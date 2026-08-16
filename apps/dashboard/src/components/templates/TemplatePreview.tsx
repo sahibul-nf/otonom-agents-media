@@ -211,6 +211,8 @@ export function TemplatePreview({
   };
 
   const showVideo = Boolean(previewUrl && shouldLoadPreview && !videoError);
+  const showLoadingChrome =
+    shouldLoadPreview && !videoError && (generatingPreview || (Boolean(previewUrl) && !videoLoaded));
   const showRecipeOverlay =
     !isStudio && (!showVideo || (shouldLoadPreview && !videoLoaded && !videoError));
   const rounded = flush ? "none" : gridCard ? "panel" : compact ? "detail" : "detail";
@@ -264,26 +266,13 @@ export function TemplatePreview({
           </div>
         </div>
       ) : null}
-      {previewUrl && shouldLoadPreview && !videoError && !videoLoaded ? (
-        isStudio ? (
-          <div className="pointer-events-none absolute inset-0 z-[3] bg-black/15" aria-hidden>
-            <div className="absolute bottom-4 left-1/2 h-1 w-16 -translate-x-1/2 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full w-1/2 animate-pulse rounded-full bg-white/35" />
-            </div>
+      {showLoadingChrome ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[3]" aria-hidden>
+          <div className="h-0.5 bg-white/10">
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--preview-accent)]/70" style={previewStyle} />
           </div>
-        ) : (
-          <div className="absolute inset-0 z-[3] grid place-items-center bg-black/28">
-            <div className="max-w-[85%] rounded-full border border-white/[0.14] bg-black/65 px-4 py-2 text-center text-xs font-semibold text-zinc-100">
-              {generatingPreview ? "Generating preview…" : "Loading preview…"}
-            </div>
-          </div>
-        )
-      ) : null}
-      {!previewUrl && shouldLoadPreview && generatingPreview && !videoError ? (
-        <div className="absolute inset-0 z-[3] grid place-items-center bg-black/35 px-6 text-center">
-          <div className="rounded-[18px] border border-white/[0.14] bg-black/70 px-4 py-3 text-xs font-semibold leading-5 text-zinc-100">
-            Generating HyperFrames preview…
-            <span className="mt-1 block font-normal text-zinc-400">First open for custom styles can take up to a minute. Recipe overlay stays visible meanwhile.</span>
+          <div className={`absolute ${gridCard ? "bottom-2 right-2" : "bottom-3 right-3"} rounded-full border border-white/[0.12] bg-black/55 px-2 py-0.5 text-[9px] font-semibold text-zinc-200`}>
+            {generatingPreview ? "Generating…" : "Loading…"}
           </div>
         </div>
       ) : null}

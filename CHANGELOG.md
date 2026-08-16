@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Per-template distinct visuals (#77): renderer shell hook/CTA/watermark styling delegated to recipe modules; dashboard preview loading uses a subtle bottom bar so recipe mocks stay readable; all 20 template overlays have distinct caption mocks; preview dummy copy varies by niche category.
 - Auto speech-language detection (#75): Whisper defaults to **auto** (detect from audio); workspace niche only shapes YouTube transcript fallback order. Create Advanced still lets operators pin `id` / `en` / `ar` / `ms`.
 - Hybrid caption quality (#76): glossary and LLM polish follow workspace genre pack (devotional vs tech/finance vs general); YouTube token replacement uses anchor/length guards so high-confidence Whisper words are not overwritten by misaligned cues.
 - Template catalog QA (#3): built-in previews expose cache-ready status; uncached/brand styles show a generating state instead of a frozen modal; recipe overlays/themes polished for TechTalk + spot-check templates. Sanity: `python3 -m unittest tests.test_hyperframes_templates tests.test_hyperframes_previews`.

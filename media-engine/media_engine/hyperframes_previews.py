@@ -159,47 +159,112 @@ def _write_preview_source(path: Path, width: int, height: int, template_id: str)
         raise RuntimeError(f"ffmpeg preview source failed: {result.stderr[-1200:]}")
 
 
+def _preview_copy_for_template(template: dict[str, Any]) -> dict[str, Any]:
+    category = str(template.get("category") or "Official")
+    label = str(template.get("label") or "Template preview")
+    niche_copy: dict[str, dict[str, Any]] = {
+    "Spiritual": {
+      "captions": [
+        {"text": "Allah selalu dekat", "words": ["Allah", "selalu", "dekat"]},
+        {"text": "Tenangkan hati dengan dzikir", "words": ["Tenangkan", "hati", "dengan", "dzikir"]},
+        {"text": "Simpan pesan ini", "words": ["Simpan", "pesan", "ini"]},
+      ],
+      "watermark": "Reflect",
+      "cta": "Ikuti untuk pengingat harian",
+      "source": "Kajian singkat",
+    },
+    "Data": {
+      "captions": [
+        {"text": "Fed pivot changes the tape", "words": ["Fed", "pivot", "changes", "the", "tape"]},
+        {"text": "NVDA earnings set the tone", "words": ["NVDA", "earnings", "set", "the", "tone"]},
+        {"text": "Watch the next catalyst", "words": ["Watch", "the", "next", "catalyst"]},
+      ],
+      "watermark": "Intel Brief",
+      "cta": "Follow for weekly market notes",
+      "source": "Edu-finance clip",
+    },
+    "News": {
+      "captions": [
+        {"text": "Breaking context in 30 seconds", "words": ["Breaking", "context", "in", "30", "seconds"]},
+        {"text": "Source checked before publish", "words": ["Source", "checked", "before", "publish"]},
+        {"text": "Stay with the verified angle", "words": ["Stay", "with", "the", "verified", "angle"]},
+      ],
+      "watermark": "Verified brief",
+      "cta": "Subscribe for daily context",
+      "source": "Regional desk",
+    },
+    "Promo": {
+      "captions": [
+        {"text": "Hook them in frame one", "words": ["Hook", "them", "in", "frame", "one"]},
+        {"text": "Make the offer impossible to miss", "words": ["Make", "the", "offer", "impossible", "to", "miss"]},
+        {"text": "Tap before the scroll", "words": ["Tap", "before", "the", "scroll"]},
+      ],
+      "watermark": "Creator promo",
+      "cta": "Save this template",
+      "source": "Short-form promo",
+    },
+    "Podcast": {
+      "captions": [
+        {"text": "The guest drops the real line", "words": ["The", "guest", "drops", "the", "real", "line"]},
+        {"text": "Train the takeaway not the noise", "words": ["Train", "the", "takeaway", "not", "the", "noise"]},
+        {"text": "Clip the moment worth replaying", "words": ["Clip", "the", "moment", "worth", "replaying"]},
+      ],
+      "watermark": "Podcast clip",
+      "cta": "Follow for the next episode",
+      "source": "Interview cut",
+    },
+    "Official": {
+      "captions": [
+        {"text": "Open with editorial clarity", "words": ["Open", "with", "editorial", "clarity"]},
+        {"text": "Layer context without clutter", "words": ["Layer", "context", "without", "clutter"]},
+        {"text": "Close with a confident point", "words": ["Close", "with", "a", "confident", "point"]},
+      ],
+      "watermark": "Editorial",
+      "cta": "Use this look in Create",
+      "source": "Template preview fixture",
+    },
+    "Brand": {
+      "captions": [
+        {"text": "Your brand voice stays consistent", "words": ["Your", "brand", "voice", "stays", "consistent"]},
+        {"text": "Reuse the same visual system", "words": ["Reuse", "the", "same", "visual", "system"]},
+        {"text": "Ship clips without rework", "words": ["Ship", "clips", "without", "rework"]},
+      ],
+      "watermark": "Brand system",
+      "cta": "Use in Create",
+      "source": "Saved brand style",
+    },
+    }
+    pack = niche_copy.get(category, niche_copy["Official"])
+    caption_windows = [(1200, 3600), (5200, 8500), (10100, 13200)]
+    captions = []
+    for line, (start_ms, end_ms) in zip(pack["captions"], caption_windows):
+        words = line["words"]
+        span = max(1, end_ms - start_ms)
+        step = span // max(1, len(words))
+        word_rows = []
+        cursor = start_ms
+        for word_index, word in enumerate(words):
+            word_end = end_ms if word_index == len(words) - 1 else cursor + step
+            word_rows.append({"text": word, "startMs": cursor, "endMs": word_end})
+            cursor = word_end
+        captions.append({"text": line["text"], "startMs": start_ms, "endMs": end_ms, "words": word_rows})
+    caption_text = ". ".join(line["text"] for line in pack["captions"]) + "."
+    return {
+        "captions": captions,
+        "captionText": caption_text,
+        "watermarkText": pack["watermark"],
+        "ctaText": pack["cta"],
+        "sourceAttribution": pack["source"],
+        "titleHook": label,
+        "subtitle": str(template.get("best_for") or ""),
+    }
+
+
 def _preview_contract(template_id: str, hyperframes_format: str, width: int, height: int) -> dict[str, Any]:
     template = resolve_hyperframes_template(template_id)
     duration_ms = PREVIEW_SECONDS * 1000
-    captions = [
-        {
-            "text": "Start with a sharp hook",
-            "startMs": 1200,
-            "endMs": 3600,
-            "words": [
-                {"text": "Start", "startMs": 1200, "endMs": 1700},
-                {"text": "with", "startMs": 1700, "endMs": 2100},
-                {"text": "a", "startMs": 2100, "endMs": 2350},
-                {"text": "sharp", "startMs": 2350, "endMs": 3000},
-                {"text": "hook", "startMs": 3000, "endMs": 3600},
-            ],
-        },
-        {
-            "text": "Add context without losing pace",
-            "startMs": 5200,
-            "endMs": 8500,
-            "words": [
-                {"text": "Add", "startMs": 5200, "endMs": 5700},
-                {"text": "context", "startMs": 5700, "endMs": 6600},
-                {"text": "without", "startMs": 6600, "endMs": 7350},
-                {"text": "losing", "startMs": 7350, "endMs": 7950},
-                {"text": "pace", "startMs": 7950, "endMs": 8500},
-            ],
-        },
-        {
-            "text": "Close with a clear action",
-            "startMs": 10100,
-            "endMs": 13200,
-            "words": [
-                {"text": "Close", "startMs": 10100, "endMs": 10700},
-                {"text": "with", "startMs": 10700, "endMs": 11200},
-                {"text": "a", "startMs": 11200, "endMs": 11500},
-                {"text": "clear", "startMs": 11500, "endMs": 12300},
-                {"text": "action", "startMs": 12300, "endMs": 13200},
-            ],
-        },
-    ]
+    copy = _preview_copy_for_template(template)
+    captions = copy["captions"]
     return {
         "composition": "HyperFramesTemplatePreview",
         "width": width,
@@ -209,20 +274,20 @@ def _preview_contract(template_id: str, hyperframes_format: str, width: int, hei
         "candidateId": f"preview_{template['id']}",
         "sourceVideoPath": "media/source.mp4",
         "sourceUrl": "preview://template-fixture",
-        "sourceAttribution": "Template preview fixture",
+        "sourceAttribution": copy["sourceAttribution"],
         "startMs": 0,
         "endMs": duration_ms,
         "startTimecode": "00:00:00",
         "endTimecode": "00:00:15",
-        "titleHook": template["label"],
-        "subtitle": template["best_for"],
-        "captionText": "Start with a sharp hook. Add context without losing pace. Close with a clear action.",
+        "titleHook": copy["titleHook"],
+        "subtitle": copy["subtitle"],
+        "captionText": copy["captionText"],
         "captions": captions,
         "captionEvents": [],
         "captionDiagnostics": {"eventCount": 0, "maxConcurrentEvents": 0, "overlapCount": 0},
         "visualBeats": [],
-        "watermarkText": "Brand System",
-        "ctaText": "Use this template",
+        "watermarkText": copy["watermarkText"],
+        "ctaText": copy["ctaText"],
         "stylePreset": "hyperframes_template_preview",
         "style": {
             "caption": {

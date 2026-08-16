@@ -157,6 +157,11 @@ def _shell_css(
       font-family: {font_family};
       --template-accent: {accent};
       --template-secondary: {secondary_accent};
+      --shell-cta-border: var(--template-accent);
+      --shell-cta-color: var(--template-accent);
+      --shell-cta-bg: rgba(0, 0, 0, 0.68);
+      --shell-source-color: var(--template-secondary);
+      --shell-hook-subtitle: rgba(255,255,255,0.84);
     }}
     video {{ width: 100%; height: 100%; object-fit: cover; filter: {video_filter}; }}
     .shade {{
@@ -183,7 +188,7 @@ def _shell_css(
       text-shadow: 0 5px 24px rgba(0,0,0,0.72);
     }}
     .hook h1 {{ margin: 0; font-size: {62 if is_landscape else 74}px; line-height: 0.98; font-weight: 900; letter-spacing: 0; font-family: {font_family}; }}
-    .hook p {{ margin: 22px 0 0; font-size: {26 if is_landscape else 30}px; line-height: 1.18; color: rgba(255,255,255,0.84); font-weight: 650; }}
+    .hook p {{ margin: 22px 0 0; font-size: {26 if is_landscape else 30}px; line-height: 1.18; color: var(--shell-hook-subtitle); font-weight: 650; }}
     .caption-clip {{
       position: absolute;
       left: 0;
@@ -233,7 +238,7 @@ def _shell_css(
       font-weight: 700;
       text-shadow: 0 2px 10px rgba(0,0,0,0.8);
     }}
-    .source {{ color: #9be7b0; text-align: right; }}
+    .source {{ color: var(--shell-source-color); text-align: right; }}
     .cta {{
       position: absolute;
       left: {90 if is_landscape else 62}px;
@@ -241,9 +246,9 @@ def _shell_css(
       bottom: {50 if is_landscape else 95}px;
       padding: 22px 26px;
       border-radius: 18px;
-      background: rgba(0, 0, 0, 0.68);
-      border: 2px solid #f4d35e;
-      color: #f4d35e;
+      background: var(--shell-cta-bg);
+      border: 2px solid var(--shell-cta-border);
+      color: var(--shell-cta-color);
       text-align: center;
       font-size: 34px;
       line-height: 1.12;
@@ -342,19 +347,8 @@ def _brand_system_layers(style: dict[str, Any]) -> str:
     return "\n    ".join(layers)
 
 
-def _render_shell(contract: dict[str, Any], template: dict[str, Any], layout: LayoutContext, duration_s: str) -> str:
-    return f"""
-    <video id="source-video" class="clip" data-start="0" data-duration="{duration_s}" data-track-index="0" src="media/source.mp4" muted playsinline></video>
-    <audio id="source-audio" class="clip" data-start="0" data-duration="{duration_s}" data-track-index="4" src="media/source.mp4" data-volume="1"></audio>
-    <div class="shade"></div>
-    <div id="hook" class="clip hook" data-start="0" data-duration="{_attr(_seconds(min(4800, int(contract['durationMs']))))}" data-track-index="1">
-      <h1>{html.escape(str(contract.get("titleHook", "")))}</h1>
-      <p>{html.escape(str(contract.get("subtitle", "")))}</p>
-    </div>
-    <div class="brand-row">
-      <span>{html.escape(str(contract.get("watermarkText", "")))}</span>
-      <span class="source">{html.escape(str(contract.get("sourceAttribution", "")))}</span>
-    </div>"""
+def _render_shell(contract: dict[str, Any], recipe, template: dict[str, Any], layout: LayoutContext, duration_s: str) -> str:
+    return recipe.render_shell_html(contract, template, layout, duration_s, _seconds, _attr)
 
 
 def _render_captions(contract: dict[str, Any], recipe, layout: LayoutContext) -> str:
@@ -416,8 +410,9 @@ def build_hyperframes_index_html(
     caption_nodes = _render_captions(contract, recipe, layout)
     template_overlay = _render_template_overlay(recipe, contract, template, layout)
     brand_layers = _brand_system_layers(style)
-    shell_body = _render_shell(contract, template, layout, duration_s)
+    shell_body = _render_shell(contract, recipe, template, layout, duration_s)
     recipe_css = recipe.css_block(layout)
+    shell_recipe_css = recipe.shell_css(layout)
     cta_start_ms = max(0, duration_ms - 6500)
     hook_exit_s = max(0.2, min(4.5, (duration_ms / 1000) - 0.5))
     cta_start_s = max(0, (duration_ms / 1000) - 6.5)
@@ -432,6 +427,7 @@ def build_hyperframes_index_html(
   <title>{html.escape(str(contract.get("candidateId", "hyperframes-render")))}</title>
 {recipe.shell_extras_head()}  <style>
 {_shell_css(width, height, is_landscape, text_color, accent, secondary_accent, caption_font_size, recipe.video_filter(), font_family, caption_background, stroke_width)}
+{shell_recipe_css}
 {recipe_css}
   </style>
 </head>

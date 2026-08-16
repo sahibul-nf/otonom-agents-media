@@ -120,3 +120,32 @@ class TemplateRecipe(ABC):
         if not meta.google_fonts_href:
             return ""
         return f'  <link rel="stylesheet" href="{escape_attr(meta.google_fonts_href)}" />\n'
+
+    def shell_css(self, layout: LayoutContext) -> str:
+        """Recipe-specific shell overrides for hook, CTA, watermark, and shade."""
+        return ""
+
+    def render_shell_html(
+        self,
+        contract: dict[str, Any],
+        template: dict[str, Any],
+        layout: LayoutContext,
+        duration_s: str,
+        seconds_fn,
+        attr_fn,
+    ) -> str:
+        hook_duration = seconds_fn(min(4800, int(contract["durationMs"])))
+        return (
+            f"""
+    <video id="source-video" class="clip" data-start="0" data-duration="{duration_s}" data-track-index="0" src="media/source.mp4" muted playsinline></video>
+    <audio id="source-audio" class="clip" data-start="0" data-duration="{duration_s}" data-track-index="4" src="media/source.mp4" data-volume="1"></audio>
+    <div class="shade"></div>
+    <div id="hook" class="clip hook" data-start="0" data-duration="{attr_fn(hook_duration)}" data-track-index="1">
+      <h1>{escape_text(contract.get("titleHook", ""))}</h1>
+      <p>{escape_text(contract.get("subtitle", ""))}</p>
+    </div>
+    <div class="brand-row">
+      <span>{escape_text(contract.get("watermarkText", ""))}</span>
+      <span class="source">{escape_text(contract.get("sourceAttribution", ""))}</span>
+    </div>"""
+        )

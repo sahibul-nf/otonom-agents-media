@@ -50,6 +50,12 @@ class SpecTemplateRecipe(TemplateRecipe):
         extra = str(self._spec.get("motion_extra") or "")
         return extra
 
+    def shell_css(self, layout: LayoutContext) -> str:
+        builder = self._spec.get("shell_css_builder")
+        if callable(builder):
+            return builder(layout)
+        return str(self._spec.get("shell_css") or "")
+
 
 def recipe_from_spec(spec: dict[str, Any]) -> TemplateRecipe:
     return SpecTemplateRecipe(spec)
