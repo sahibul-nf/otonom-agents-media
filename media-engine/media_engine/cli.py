@@ -504,6 +504,7 @@ def prepare_production_captions(
         llm_provider=getattr(args, "llm_provider", "none"),
         niche=str((profile or {}).get("niche") or getattr(args, "niche", "") or ""),
         profile_id=str(getattr(args, "profile", "") or (profile or {}).get("id") or ""),
+        profile=profile,
     )
 
 

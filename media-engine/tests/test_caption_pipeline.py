@@ -1,7 +1,12 @@
 import unittest
 from unittest.mock import patch
 
-from media_engine.caption_pipeline import apply_youtube_text, asr_initial_prompt, polish_uncertain_words
+from media_engine.caption_pipeline import (
+    apply_youtube_text,
+    asr_initial_prompt,
+    build_polish_system_prompt,
+    polish_uncertain_words,
+)
 from media_engine.youtube_pipeline import TranscriptEntry
 
 
@@ -29,6 +34,19 @@ class CaptionPipelineTests(unittest.TestCase):
         self.assertEqual(words[0]["endMs"], 400)
         self.assertGreaterEqual(words[0]["confidence"], 0.92)
         self.assertEqual(meta["youtube_replaced"], 1)
+
+    def test_youtube_skips_misaligned_high_confidence_token(self):
+        whisper = [
+            {"text": "Bitcoin", "startMs": 0, "endMs": 400, "confidence": 0.95},
+            {"text": "naik", "startMs": 400, "endMs": 800, "confidence": 0.9},
+        ]
+        entries = [TranscriptEntry(0, 2000, "the market is rising")]
+
+        words, meta = apply_youtube_text(whisper, entries, clip_start_ms=0)
+
+        self.assertEqual(words[0]["text"], "Bitcoin")
+        self.assertGreater(meta.get("youtube_skipped", 0), 0)
+        self.assertEqual(meta["youtube_replaced"], 0)
 
     def test_youtube_absent_leaves_whisper_words(self):
         whisper = [{"text": "wang", "startMs": 0, "endMs": 400, "confidence": 0.4}]
@@ -62,6 +80,17 @@ class CaptionPipelineTests(unittest.TestCase):
 
         self.assertEqual(next_words[0]["text"], "bitkon")
         self.assertTrue(meta["llm_skipped"])
+
+    def test_polish_prompt_uses_tech_domain_for_finance_niche(self):
+        prompt = build_polish_system_prompt(detected_language="en", niche="markets", profile_id="workspace")
+
+        self.assertIn("tech, finance", prompt.lower())
+        self.assertNotIn("indonesian/arabic asr captions", prompt.lower())
+
+    def test_polish_prompt_uses_devotional_domain_for_nourbit(self):
+        prompt = build_polish_system_prompt(detected_language="id", profile_id="nourbit")
+
+        self.assertIn("devotional", prompt.lower())
 
 
 if __name__ == "__main__":

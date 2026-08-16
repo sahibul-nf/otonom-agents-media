@@ -21,7 +21,7 @@ from .genres import genre_prompt_phrase, normalize_genres, uses_devotional_tone,
 from .llm import LLMError, call_llm_json
 from .rendering import ms_to_timecode
 from .scoring import score_candidate_text
-from .transcript_quality import correct_transcript_entries
+from .transcript_quality import correct_transcript_entries, resolve_glossary
 
 
 @dataclass(frozen=True)
@@ -632,7 +632,7 @@ def choose_nourbit_premium_candidates(
     style = style or {}
     preset = resolve_duration_strategy(duration_preset, clip_min_seconds, clip_max_seconds)
     genres = normalize_genres(genres, profile_id=profile_id, niche=niche)
-    corrected_entries = correct_transcript_entries(entries)
+    corrected_entries = correct_transcript_entries(entries, resolve_glossary(profile_id=profile_id, niche=niche or ""))
     llm_suggestions = llm_rank_suggestions(
         corrected_entries,
         count,

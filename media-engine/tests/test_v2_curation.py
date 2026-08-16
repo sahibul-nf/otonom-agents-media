@@ -12,7 +12,7 @@ from media_engine.db import initialize
 from media_engine.env_loader import load_env_file
 from media_engine.llm import build_chat_payload, parse_strict_json, provider_config
 from media_engine.scoring import score_candidate_text
-from media_engine.transcript_quality import correct_text_with_glossary
+from media_engine.transcript_quality import correct_text_with_glossary, resolve_glossary
 from media_engine.youtube_pipeline import (
     TranscriptEntry,
     build_candidate,
@@ -93,7 +93,10 @@ class V2CurationTests(unittest.TestCase):
         self.assertNotIn("UNSAFE_VALUE", loaded)
 
     def test_nourbit_glossary_fixes_arabic_indonesian_typos(self):
-        text = correct_text_with_glossary("Alloh mengingatkan qolbu untuk jikir dan istigfar kepada rosulullah.")
+        text = correct_text_with_glossary(
+            "Alloh mengingatkan qolbu untuk jikir dan istigfar kepada rosulullah.",
+            resolve_glossary(profile_id="nourbit"),
+        )
 
         self.assertIn("Allah", text)
         self.assertIn("qalbu", text)

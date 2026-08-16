@@ -12,7 +12,7 @@ from media_engine.autonomy import (
 )
 from media_engine.db import initialize
 from media_engine.scheduler import DEFAULT_TZ, process_due_auto_schedule
-from media_engine.transcript_quality import correct_asr_words
+from media_engine.transcript_quality import correct_asr_words, resolve_glossary
 
 
 class AutonomyTests(unittest.TestCase):
@@ -205,7 +205,7 @@ class AutonomyTests(unittest.TestCase):
             {"text": "qolbu", "startMs": 220, "endMs": 500, "confidence": 0.5},
         ]
 
-        corrected, metadata = correct_asr_words(words)
+        corrected, metadata = correct_asr_words(words, glossary=resolve_glossary(profile_id="nourbit"))
 
         self.assertEqual([word["text"] for word in corrected], ["Allah", "qalbu"])
         self.assertEqual(corrected[0]["startMs"], 0)

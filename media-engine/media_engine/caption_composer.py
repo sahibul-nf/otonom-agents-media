@@ -12,8 +12,8 @@ KEYWORD_HIGHLIGHTS = {"allah", "hati", "dzikir", "zikir", "tenang", "taubat", "s
 FILLERS = {"eee", "ee", "em", "emm", "anu"}
 
 
-def clean_caption_word(word: dict[str, Any], remove_fillers: bool = True) -> dict[str, Any] | None:
-    text = correct_text_with_glossary(str(word.get("text", "")).strip())
+def clean_caption_word(word: dict[str, Any], remove_fillers: bool = True, glossary: dict[str, str] | None = None) -> dict[str, Any] | None:
+    text = correct_text_with_glossary(str(word.get("text", "")).strip(), glossary)
     if not text:
         return None
     normalized = "".join(ch for ch in text.lower() if ch.isalnum())
@@ -27,8 +27,9 @@ def compose_caption_groups(
     max_words_per_caption: int = 3,
     max_gap_ms: int = 520,
     max_duration_ms: int = 2200,
+    glossary: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    clean_words = [clean_caption_word(word) for word in normalize_word_timeline(words)]
+    clean_words = [clean_caption_word(word, glossary=glossary) for word in normalize_word_timeline(words)]
     clean_words = [word for word in clean_words if word is not None]
     groups: list[dict[str, Any]] = []
     current: list[dict[str, Any]] = []

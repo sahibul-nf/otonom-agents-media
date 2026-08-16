@@ -8,22 +8,41 @@ from typing import Any
 from .asr import asr_cache_path, load_or_create_asr_words
 from .caption_composer import compose_caption_groups
 from .captions import split_words
+from .genres import resolve_genre_pack
 from .llm import LLMError, call_llm_json
 from .speech_language import AUTO_LANGUAGE, build_transcript_language_list
-from .transcript_quality import correct_asr_words
+from .transcript_quality import correct_asr_words, resolve_glossary
 from .youtube_pipeline import TranscriptEntry, fetch_youtube_transcript
 
 UNCERTAIN_THRESHOLD = 0.65
 CONFIRMED_CONFIDENCE = 0.92
+HIGH_CONFIDENCE_STRICT_RATIO = 0.85
 MAX_LLM_TARGETS = 40
 LLM_TOKEN_MAX_WORDS = 3
+MAX_TOKEN_LENGTH_RATIO = 2.5
 
-POLISH_SYSTEM = (
-    "You fix Indonesian/Arabic ASR captions. Reply JSON only: "
-    '{"replacements":[{"index":0,"text":"word"}]}. '
-    "Change only uncertain tokens that are clearly wrong. Keep meaning. "
-    "Each text is 1-3 words. Do not invent clauses."
-)
+_POLISH_DOMAINS = {
+    "devotional": "Indonesian and Arabic Islamic devotional speech",
+    "tech_finance": "Indonesian and English tech, finance, and business speech",
+    "general": "Indonesian and English mixed short-form speech",
+}
+
+
+def build_polish_system_prompt(
+    *,
+    detected_language: str | None = None,
+    niche: str = "",
+    profile_id: str = "",
+) -> str:
+    pack = resolve_genre_pack(profile_id, niche)
+    domain = _POLISH_DOMAINS.get(pack, _POLISH_DOMAINS["general"])
+    language_hint = (detected_language or "auto-detected").strip() or "auto-detected"
+    return (
+        f"You fix {domain} ASR captions (spoken language: {language_hint}). Reply JSON only: "
+        '{"replacements":[{"index":0,"text":"word"}]}. '
+        "Change only uncertain tokens that are clearly wrong. Keep meaning and timing words short. "
+        "Each text is 1-3 words. Do not invent clauses."
+    )
 
 
 def asr_initial_prompt(
@@ -54,21 +73,24 @@ def apply_youtube_text(
     if not whisper_words or not entries:
         return list(whisper_words), {"youtube_replaced": 0, "youtube_cues": len(entries)}
     replaced = 0
+    skipped = 0
     next_words: list[dict[str, Any]] = []
-    for word in whisper_words:
+    for index, word in enumerate(whisper_words):
         abs_start = clip_start_ms + int(word.get("startMs") or 0)
         abs_end = clip_start_ms + int(word.get("endMs") or abs_start + 80)
-        token = _youtube_token_at(entries, abs_start, abs_end)
+        token, entry_tokens, token_index = _youtube_token_context(entries, abs_start, abs_end)
         item = dict(word)
-        if token and _should_take_youtube_token(word, token):
+        if token and _should_take_youtube_token(word, token, whisper_words, index, entry_tokens, token_index):
             original = str(word.get("text") or "").strip()
             if token.lower() != original.lower():
                 item["text"] = token
                 replaced += 1
             item["caption_text_source"] = "youtube"
             item = _mark_confirmed(item)
+        elif token:
+            skipped += 1
         next_words.append(item)
-    return next_words, {"youtube_replaced": replaced, "youtube_cues": len(entries)}
+    return next_words, {"youtube_replaced": replaced, "youtube_skipped": skipped, "youtube_cues": len(entries)}
 
 
 def polish_uncertain_words(
@@ -76,6 +98,9 @@ def polish_uncertain_words(
     provider: str,
     *,
     context: str = "",
+    detected_language: str | None = None,
+    niche: str = "",
+    profile_id: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if provider in {"", "none"} or not words:
         return list(words), {"llm_replacements": 0, "llm_skipped": True}
@@ -93,8 +118,13 @@ def polish_uncertain_words(
             for index in targets
         ],
     }
+    system_prompt = build_polish_system_prompt(
+        detected_language=detected_language,
+        niche=niche,
+        profile_id=profile_id,
+    )
     try:
-        result = call_llm_json(provider, POLISH_SYSTEM, str(payload), timeout_seconds=30)
+        result = call_llm_json(provider, system_prompt, str(payload), timeout_seconds=30)
     except (LLMError, TypeError, ValueError):
         return list(words), {"llm_replacements": 0, "llm_error": True}
     allowed = set(targets)
@@ -135,12 +165,14 @@ def build_production_captions(
     llm_provider: str = "none",
     niche: str = "",
     profile_id: str = "",
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Mutate candidate timed captions. Returns pipeline metadata."""
     if caption_source not in {"whisper", "hybrid"}:
         candidate["caption_source"] = caption_source
         return {"skipped": True, "caption_source": caption_source}
 
+    glossary = resolve_glossary(profile_id=profile_id, niche=niche, profile=profile)
     asr_path = asr_cache_path(source_clip, asr_model, speech_language)
     prompt = asr_initial_prompt(candidate, niche=niche)
     words, asr_metadata = load_or_create_asr_words(
@@ -163,16 +195,20 @@ def build_production_captions(
         "speech_language": speech_language,
         "detected_language": detected_language,
         "transcript_languages": transcript_lang_list,
+        "glossary_pack": resolve_genre_pack(profile_id, niche),
     }
     if caption_source == "hybrid":
         words, youtube_meta = _try_youtube_text(words, candidate, youtube_url, transcript_lang_list)
         pipeline["youtube"] = youtube_meta
-    words, glossary_meta = correct_asr_words(words)
+    words, glossary_meta = correct_asr_words(words, glossary=glossary)
     words = _confirm_glossary_corrections(words, glossary_meta)
     words, llm_meta = polish_uncertain_words(
         words,
         llm_provider,
         context=asr_initial_prompt(candidate, niche=niche),
+        detected_language=detected_language,
+        niche=niche,
+        profile_id=profile_id,
     )
     pipeline["glossary"] = {"correction_count": glossary_meta.get("correction_count", 0)}
     pipeline["llm"] = llm_meta
@@ -180,6 +216,7 @@ def build_production_captions(
     captions, composer_metadata = compose_caption_groups(
         words,
         max_words_per_caption=int(style.get("caption", {}).get("max_words_per_caption", 3)),
+        glossary=glossary,
     )
     low_confidence = _low_confidence_count(words)
     if not captions:
@@ -221,14 +258,30 @@ def _try_youtube_text(
     return next_words, meta
 
 
-def _should_take_youtube_token(word: dict[str, Any], token: str) -> bool:
+def _should_take_youtube_token(
+    word: dict[str, Any],
+    token: str,
+    whisper_words: list[dict[str, Any]],
+    word_index: int,
+    entry_tokens: list[str],
+    token_index: int,
+) -> bool:
     original = str(word.get("text") or "").strip()
-    if not original or token.lower() == original.lower():
-        return True
-    if _similar_token(original, token):
+    if not original:
+        return False
+    if token.lower() == original.lower():
         return True
     confidence = word.get("confidence")
-    return isinstance(confidence, (int, float)) and float(confidence) < UNCERTAIN_THRESHOLD
+    confidence_value = float(confidence) if isinstance(confidence, (int, float)) else 0.0
+    ratio = SequenceMatcher(None, original.lower(), token.lower()).ratio()
+    similar = _similar_token(original, token)
+    if confidence_value >= UNCERTAIN_THRESHOLD:
+        return similar and ratio >= HIGH_CONFIDENCE_STRICT_RATIO
+    if not _length_sane(original, token) and ratio < HIGH_CONFIDENCE_STRICT_RATIO:
+        return False
+    if not _youtube_anchors_align(whisper_words, word_index, entry_tokens, token_index):
+        return False
+    return similar or confidence_value < UNCERTAIN_THRESHOLD
 
 
 def _similar_token(left: str, right: str) -> bool:
@@ -238,7 +291,44 @@ def _similar_token(left: str, right: str) -> bool:
     return SequenceMatcher(None, a, b).ratio() >= 0.72
 
 
-def _youtube_token_at(entries: list[TranscriptEntry], abs_start: int, abs_end: int) -> str | None:
+def _length_sane(left: str, right: str) -> bool:
+    left_len = len(left.strip())
+    right_len = len(right.strip())
+    if left_len == 0 or right_len == 0:
+        return False
+    return max(left_len, right_len) / min(left_len, right_len) <= MAX_TOKEN_LENGTH_RATIO
+
+
+def _youtube_anchors_align(
+    whisper_words: list[dict[str, Any]],
+    word_index: int,
+    entry_tokens: list[str],
+    token_index: int,
+) -> bool:
+    if token_index < 0 or not entry_tokens:
+        return True
+    if token_index > 0 and word_index > 0:
+        prev_whisper = str(whisper_words[word_index - 1].get("text") or "").strip()
+        prev_youtube = entry_tokens[token_index - 1]
+        prev_conf = whisper_words[word_index - 1].get("confidence")
+        if prev_whisper and isinstance(prev_conf, (int, float)) and float(prev_conf) >= UNCERTAIN_THRESHOLD:
+            if not _similar_token(prev_whisper, prev_youtube):
+                return False
+    if token_index < len(entry_tokens) - 1 and word_index < len(whisper_words) - 1:
+        next_whisper = str(whisper_words[word_index + 1].get("text") or "").strip()
+        next_youtube = entry_tokens[token_index + 1]
+        next_conf = whisper_words[word_index + 1].get("confidence")
+        if next_whisper and isinstance(next_conf, (int, float)) and float(next_conf) >= UNCERTAIN_THRESHOLD:
+            if not _similar_token(next_whisper, next_youtube):
+                return False
+    return True
+
+
+def _youtube_token_context(
+    entries: list[TranscriptEntry],
+    abs_start: int,
+    abs_end: int,
+) -> tuple[str | None, list[str], int]:
     mid = (abs_start + abs_end) / 2
     for entry in entries:
         if entry.end_ms <= abs_start or entry.start_ms >= abs_end:
@@ -249,8 +339,8 @@ def _youtube_token_at(entries: list[TranscriptEntry], abs_start: int, abs_end: i
         duration = max(1, entry.end_ms - entry.start_ms)
         rel = (mid - entry.start_ms) / duration
         index = min(len(tokens) - 1, max(0, int(rel * len(tokens))))
-        return tokens[index]
-    return None
+        return tokens[index], tokens, index
+    return None, [], -1
 
 
 def _confirm_glossary_corrections(words: list[dict[str, Any]], glossary_meta: dict[str, Any]) -> list[dict[str, Any]]:
