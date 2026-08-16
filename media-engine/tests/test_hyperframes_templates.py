@@ -136,6 +136,93 @@ class HyperframesTemplateTests(unittest.TestCase):
         self.assertIn("techtalk-bars", broll_html)
         self.assertIn("Signal snapshot", broll_html)
 
+    def test_templates_expose_shell_component_defaults(self):
+        byline = next(template for template in list_hyperframes_templates() if template["id"] == "byline_trust_quote")
+        velocity = next(template for template in list_hyperframes_templates() if template["id"] == "velocity_business_promo")
+        spiritual = next(template for template in list_hyperframes_templates() if template["id"] == "spiritual_reflective")
+
+        self.assertEqual(byline["shell_components"], {"hook": False, "watermark": True, "source": True, "cta": False})
+        self.assertEqual(velocity["shell_components"], {"hook": False, "watermark": True, "source": True, "cta": False})
+        self.assertEqual(spiritual["shell_components"], {"hook": False, "watermark": True, "source": False, "cta": True})
+
+    def test_renderer_omits_disabled_shell_nodes(self):
+        from media_engine.hyperframes_renderer import build_hyperframes_index_html
+        from media_engine.rendering import build_premium_render_contract
+
+        candidate = {
+            "id": "clip_shell",
+            "start_ms": 0,
+            "end_ms": 60_000,
+            "title_hook": "Headline",
+            "viral_reason": "Reason",
+            "transcript_span": "word one two",
+            "timed_captions": [
+                {
+                    "text": "word one two",
+                    "startMs": 0,
+                    "endMs": 25_000,
+                    "words": [
+                        {"text": "word", "startMs": 0, "endMs": 8_000},
+                        {"text": "one", "startMs": 8_000, "endMs": 16_000},
+                        {"text": "two", "startMs": 16_000, "endMs": 25_000},
+                    ],
+                }
+            ],
+        }
+        profile = {"id": "nourbit", "watermark_text": "Brand", "cta_text": "Follow for more"}
+        contract = build_premium_render_contract(candidate, profile, "source.mp4", "https://youtu.be/test", "Source: Channel")
+        contract = {
+            **contract,
+            "style": {
+                **contract["style"],
+                "shell_components": {"hook": False, "watermark": True, "source": False, "cta": False},
+            },
+        }
+
+        html = build_hyperframes_index_html(contract, hyperframes_template="spiritual_reflective")
+
+        self.assertNotIn('id="hook"', html)
+        self.assertNotIn('id="cta"', html)
+        self.assertIn("brand-row", html)
+        self.assertNotIn('class="source"', html)
+
+    def test_renderer_honors_shell_component_overrides(self):
+        from media_engine.hyperframes_renderer import build_hyperframes_index_html
+        from media_engine.rendering import build_premium_render_contract
+
+        candidate = {
+            "id": "clip_shell_override",
+            "start_ms": 0,
+            "end_ms": 60_000,
+            "title_hook": "Override Hook",
+            "viral_reason": "Reason",
+            "transcript_span": "alpha beta",
+            "timed_captions": [
+                {
+                    "text": "alpha beta",
+                    "startMs": 0,
+                    "endMs": 25_000,
+                    "words": [
+                        {"text": "alpha", "startMs": 0, "endMs": 12_000},
+                        {"text": "beta", "startMs": 12_000, "endMs": 25_000},
+                    ],
+                }
+            ],
+        }
+        profile = {"id": "nourbit", "watermark_text": "Brand", "cta_text": "Subscribe"}
+        contract = build_premium_render_contract(candidate, profile, "source.mp4", "https://youtu.be/test", "Source: Channel")
+        contract = {
+            **contract,
+            "shellComponents": {"hook": True, "watermark": False, "source": True, "cta": True},
+        }
+
+        html = build_hyperframes_index_html(contract, hyperframes_template="byline_trust_quote")
+
+        self.assertIn('id="hook"', html)
+        self.assertIn("Override Hook", html)
+        self.assertIn('id="cta"', html)
+        self.assertIn('<div class="brand-row"><span class="source">', html)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -261,10 +261,13 @@ def _preview_copy_for_template(template: dict[str, Any]) -> dict[str, Any]:
 
 
 def _preview_contract(template_id: str, hyperframes_format: str, width: int, height: int) -> dict[str, Any]:
+    from .hyperframes_recipes import get_recipe
+
     template = resolve_hyperframes_template(template_id)
     duration_ms = PREVIEW_SECONDS * 1000
     copy = _preview_copy_for_template(template)
     captions = copy["captions"]
+    shell_components = get_recipe(str(template.get("recipe_module") or template["id"])).default_shell_components()
     return {
         "composition": "HyperFramesTemplatePreview",
         "width": width,
@@ -295,8 +298,10 @@ def _preview_contract(template_id: str, hyperframes_format: str, width: int, hei
                 "highlight_word_color": template.get("accent", "#d8b45f"),
                 "font_size": 54 if height > width else 42,
                 "preset": template["caption_style"],
-            }
+            },
+            "shell_components": shell_components,
         },
+        "shellComponents": shell_components,
         "cropStrategy": "template_preview",
         "captionStyle": template["caption_style"],
         "genres": [],

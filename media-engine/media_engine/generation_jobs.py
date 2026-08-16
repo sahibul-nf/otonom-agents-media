@@ -19,6 +19,7 @@ from .duration_presets import resolve_duration_strategy
 from .genres import normalize_genres
 from .hyperframes_renderer import check_hyperframes_runtime
 from .hyperframes_templates import normalize_hyperframes_template
+from .shell_components import normalize_shell_components
 
 
 VALID_RENDERERS = {"ffmpeg", "remotion", "hyperframes"}
@@ -313,12 +314,13 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "env_file": str(payload.get("env_file") or "../.env.local").strip(),
         "niche": str(payload.get("niche") or "").strip(),
         "workspace_name": str(payload.get("workspace_name") or "").strip(),
+        "shell_components": normalize_shell_components(payload.get("shell_components")),
     }
 
 
 def build_generation_command(config: dict[str, Any], validate_runtime: bool = False) -> list[str]:
     python_bin = resolve_generation_python(config) if validate_runtime else _preferred_python_for_command()
-    return [
+    command = [
         python_bin,
         "-m",
         "media_engine.cli",
@@ -368,6 +370,11 @@ def build_generation_command(config: dict[str, Any], validate_runtime: bool = Fa
         "--env-file",
         config["env_file"],
     ]
+    if config.get("shell_components"):
+        command.extend(
+            ["--shell-components", json.dumps(config["shell_components"], separators=(",", ":"))]
+        )
+    return command
 
 
 def _shell_command(command: list[str]) -> str:

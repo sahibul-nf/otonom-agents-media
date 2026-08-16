@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+from ..shell_components import FALLBACK_SHELL_DEFAULTS, merge_shell_components
+
 
 def escape_attr(value: Any) -> str:
     return html.escape(str(value), quote=True)
@@ -125,6 +127,58 @@ class TemplateRecipe(ABC):
         """Recipe-specific shell overrides for hook, CTA, watermark, and shade."""
         return ""
 
+    def default_shell_components(self) -> dict[str, bool]:
+        return dict(FALLBACK_SHELL_DEFAULTS)
+
+    def resolved_shell_components(self, contract: dict[str, Any]) -> dict[str, bool]:
+        style = contract.get("style") if isinstance(contract.get("style"), dict) else {}
+        return merge_shell_components(
+            self.default_shell_components(),
+            style.get("shell_components"),
+            contract.get("shellComponents"),
+            contract.get("shell_components"),
+        )
+
+    def render_hook_html(
+        self,
+        contract: dict[str, Any],
+        layout: LayoutContext,
+        seconds_fn,
+        attr_fn,
+    ) -> str:
+        hook_duration = seconds_fn(min(4800, int(contract["durationMs"])))
+        return (
+            f'<div id="hook" class="clip hook" data-start="0" data-duration="{attr_fn(hook_duration)}" data-track-index="1">'
+            f"<h1>{escape_text(contract.get('titleHook', ''))}</h1>"
+            f"<p>{escape_text(contract.get('subtitle', ''))}</p>"
+            "</div>"
+        )
+
+    def render_brand_row_html(self, contract: dict[str, Any], components: dict[str, bool]) -> str:
+        parts: list[str] = []
+        if components.get("watermark"):
+            parts.append(f"<span>{escape_text(contract.get('watermarkText', ''))}</span>")
+        if components.get("source"):
+            parts.append(f'<span class="source">{escape_text(contract.get("sourceAttribution", ""))}</span>')
+        if not parts:
+            return ""
+        return f'<div class="brand-row">{"".join(parts)}</div>'
+
+    def render_cta_html(
+        self,
+        contract: dict[str, Any],
+        cta_start_ms: int,
+        duration_ms: int,
+        seconds_fn,
+        attr_fn,
+    ) -> str:
+        return (
+            f'<div id="cta" class="clip cta" data-start="{attr_fn(seconds_fn(cta_start_ms))}" '
+            f'data-duration="{attr_fn(seconds_fn(max(1, duration_ms - cta_start_ms)))}" data-track-index="3">'
+            f"{escape_text(contract.get('ctaText', ''))}"
+            "</div>"
+        )
+
     def render_shell_html(
         self,
         contract: dict[str, Any],
@@ -134,18 +188,16 @@ class TemplateRecipe(ABC):
         seconds_fn,
         attr_fn,
     ) -> str:
-        hook_duration = seconds_fn(min(4800, int(contract["durationMs"])))
-        return (
+        components = self.resolved_shell_components(contract)
+        layers = [
             f"""
     <video id="source-video" class="clip" data-start="0" data-duration="{duration_s}" data-track-index="0" src="media/source.mp4" muted playsinline></video>
     <audio id="source-audio" class="clip" data-start="0" data-duration="{duration_s}" data-track-index="4" src="media/source.mp4" data-volume="1"></audio>
-    <div class="shade"></div>
-    <div id="hook" class="clip hook" data-start="0" data-duration="{attr_fn(hook_duration)}" data-track-index="1">
-      <h1>{escape_text(contract.get("titleHook", ""))}</h1>
-      <p>{escape_text(contract.get("subtitle", ""))}</p>
-    </div>
-    <div class="brand-row">
-      <span>{escape_text(contract.get("watermarkText", ""))}</span>
-      <span class="source">{escape_text(contract.get("sourceAttribution", ""))}</span>
-    </div>"""
-        )
+    <div class="shade"></div>"""
+        ]
+        if components.get("hook"):
+            layers.append(self.render_hook_html(contract, layout, seconds_fn, attr_fn))
+        brand_row = self.render_brand_row_html(contract, components)
+        if brand_row:
+            layers.append(brand_row)
+        return "".join(layers)

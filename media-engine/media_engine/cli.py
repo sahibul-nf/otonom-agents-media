@@ -28,6 +28,7 @@ from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .rerender import rerender_from_args
 from .schedule_publisher import process_due_publishes
+from .shell_components import normalize_shell_components
 from .silence_trim import apply_silence_trim_for_render
 from .styles import load_style
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
@@ -565,6 +566,13 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
     bar.step("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
     style = load_style(args.style)
+    shell_components_raw = str(getattr(args, "shell_components", "") or "").strip()
+    if shell_components_raw:
+        try:
+            parsed_shell = json.loads(shell_components_raw)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"invalid --shell-components JSON: {exc}") from exc
+        style = {**style, "shell_components": normalize_shell_components(parsed_shell)}
     bar.step(f"selecting top {args.count} candidates with llm_provider={args.llm_provider}")
     candidates = choose_nourbit_premium_candidates(
         args.profile,
@@ -883,6 +891,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--niche", default="", help="Workspace niche for curation context")
     premium_batch.add_argument("--workspace-name", default="", help="Workspace display name for curation context")
     premium_batch.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
+    premium_batch.add_argument("--shell-components", default="", help="JSON toggles for hook, watermark, source, cta shell layers")
     premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
     premium_batch.add_argument("--env-file")
     premium_batch.set_defaults(func=cmd_premium_batch)

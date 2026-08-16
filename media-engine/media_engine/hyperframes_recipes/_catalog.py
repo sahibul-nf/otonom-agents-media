@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
+from ..shell_components import category_shell_defaults
 from ._factory import recipe_from_spec
 
 _FONTS = {
@@ -32,6 +33,30 @@ _LAYER = ".template-layer{position:absolute;z-index:5;pointer-events:none}"
 
 def _e(value: Any) -> str:
     return html.escape(str(value))
+
+
+_RECIPE_CATEGORY: dict[str, str] = {
+    "spiritual_reflective": "Spiritual",
+    "energy_warm_question": "Promo",
+    "arion_pink_callout": "Promo",
+    "quintessence_serif": "Official",
+    "archive_magazine": "Official",
+    "story_handwritten": "Official",
+    "kai_mustard_uppercase": "Promo",
+    "byline_trust_quote": "News",
+    "sonnet_botanical": "Spiritual",
+    "rocket_glitch": "Promo",
+    "grit_training_stamp": "Podcast",
+    "cove_callout_pill": "Promo",
+    "pulse_remember_overlay": "News",
+    "neon_seize_future": "Promo",
+    "velocity_business_promo": "Data",
+    "blueprint_grid_paper": "Official",
+    "sketch_post_it": "Official",
+    "prism_pro_pricing": "Promo",
+    "chalk_word_emphasis": "News",
+    "techtalk_intel_brief": "Data",
+}
 
 
 def _cap_bottom(layout) -> int:
@@ -79,6 +104,7 @@ def _spec(
         "css": _LAYER + css,
         "motion_extra": motion_extra,
         "shell_css": default_shell,
+        "shell_components": category_shell_defaults(_RECIPE_CATEGORY.get(template_id, "Official")),
     }
 
 

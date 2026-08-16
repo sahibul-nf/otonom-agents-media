@@ -397,6 +397,8 @@ def build_hyperframes_index_html(
     caption_background = _css_background(caption_style.get("background_color"))
     stroke_width = float(caption_style.get("stroke_width") or 0)
     recipe = get_recipe(str(template.get("recipe_module") or template["id"]))
+    shell_components = recipe.resolved_shell_components(contract)
+    contract = {**contract, "shellComponents": shell_components}
     layout = LayoutContext(
         width=width,
         height=height,
@@ -417,6 +419,23 @@ def build_hyperframes_index_html(
     hook_exit_s = max(0.2, min(4.5, (duration_ms / 1000) - 0.5))
     cta_start_s = max(0, (duration_ms / 1000) - 6.5)
     motion_extra = recipe.motion_block(contract, layout, hook_exit_s, cta_start_s)
+    cta_html = (
+        recipe.render_cta_html(contract, cta_start_ms, duration_ms, _seconds, _attr)
+        if shell_components.get("cta") and str(contract.get("ctaText") or "").strip()
+        else ""
+    )
+    hook_motion = (
+        f"""    tl.from("#hook", {{ y: 36, opacity: 0, scale: 0.96, duration: 0.5, ease: "power3.out" }}, 0);
+    tl.to("#hook", {{ y: -18, opacity: 0, duration: 0.28, ease: "power2.in" }}, {hook_exit_s:.3f});
+"""
+        if shell_components.get("hook")
+        else ""
+    )
+    cta_motion = (
+        f'    tl.from("#cta", {{ y: 28, opacity: 0, scale: 0.97, duration: 0.35, ease: "power3.out" }}, {cta_start_s:.3f});\n'
+        if shell_components.get("cta") and cta_html
+        else ""
+    )
     root_class = f"{_attr(template['overlay_class'])} {_attr(recipe.overlay_class())}"
     contract_json = json.dumps(contract, ensure_ascii=False).replace("</", "<\\/")
     return f"""<!doctype html>
@@ -437,9 +456,7 @@ def build_hyperframes_index_html(
     {template_overlay}
     {brand_layers}
     {caption_nodes}
-    <div id="cta" class="clip cta" data-start="{_attr(_seconds(cta_start_ms))}" data-duration="{_attr(_seconds(duration_ms - cta_start_ms))}" data-track-index="3">
-      {html.escape(str(contract.get("ctaText", "")))}
-    </div>
+    {cta_html}
   </div>
   <script id="render-contract" type="application/json">{contract_json}</script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
@@ -450,9 +467,7 @@ def build_hyperframes_index_html(
     const totalSeconds = contract.durationMs / 1000;
     tl.from("#source-video", {{ scale: 1.03, duration: totalSeconds, ease: "none" }}, 0);
     tl.from(".template-layer", {{ y: 18, opacity: 0, duration: 0.45, ease: "power2.out", stagger: 0.08 }}, 0.18);
-    tl.from("#hook", {{ y: 36, opacity: 0, scale: 0.96, duration: 0.5, ease: "power3.out" }}, 0);
-    tl.to("#hook", {{ y: -18, opacity: 0, duration: 0.28, ease: "power2.in" }}, {hook_exit_s:.3f});
-    for (let i = 0; i < contract.captions.length; i += 1) {{
+{hook_motion}    for (let i = 0; i < contract.captions.length; i += 1) {{
       const caption = contract.captions[i];
       const start = caption.startMs / 1000;
       const end = caption.endMs / 1000;
@@ -467,8 +482,7 @@ def build_hyperframes_index_html(
         tl.to(`#cap-${{i}}-word-${{j}}`, {{ color: "{text_color}", scale: 1, y: 0, duration: 0.06, ease: "power1.in" }}, Math.max(wordStart + 0.08, wordEnd));
       }}
     }}
-    tl.from("#cta", {{ y: 28, opacity: 0, scale: 0.97, duration: 0.35, ease: "power3.out" }}, {cta_start_s:.3f});
-    {motion_extra}
+{cta_motion}    {motion_extra}
     window.__timelines["premium-hyperframes"] = tl;
   </script>
 </body>

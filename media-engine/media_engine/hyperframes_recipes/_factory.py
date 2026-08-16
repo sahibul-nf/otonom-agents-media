@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..shell_components import normalize_shell_components
 from ._base import LayoutContext, RecipeStyleMeta, TemplateRecipe
 
 
@@ -24,6 +25,9 @@ class SpecTemplateRecipe(TemplateRecipe):
 
     def video_filter(self) -> str:
         return str(self._spec.get("video_filter") or super().video_filter())
+
+    def default_shell_components(self) -> dict[str, bool]:
+        return normalize_shell_components(self._spec.get("shell_components"))
 
     def render_overlay(self, contract: dict[str, Any], template: dict[str, Any], layout: LayoutContext) -> str:
         builder = self._spec.get("overlay_builder")

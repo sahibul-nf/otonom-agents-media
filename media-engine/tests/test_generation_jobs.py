@@ -132,6 +132,20 @@ class GenerationJobTests(unittest.TestCase):
         self.assertIn("--speech-language", command)
         self.assertIn("--transcript-languages", command)
 
+    def test_build_generation_command_passes_shell_components(self):
+        payload = normalize_generation_payload(
+            {
+                "source_url": "https://youtube.com/watch?v=test",
+                "shell_components": {"hook": True, "watermark": False, "source": True, "cta": False},
+            }
+        )
+        command = build_generation_command(payload)
+
+        self.assertIn("--shell-components", command)
+        shell_index = command.index("--shell-components")
+        self.assertIn('"hook":true', command[shell_index + 1])
+        self.assertIn('"watermark":false', command[shell_index + 1])
+
     def test_brand_templates_include_default_workspace_style(self):
         templates = list_brand_templates()
         self.assertTrue(any(item["path"] == "profiles/default_workspace_style.json" for item in templates))

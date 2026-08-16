@@ -5,7 +5,7 @@ import {useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStat
 import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
 import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
-import {apiGet, type SourceResolveResult} from "@/lib/media-api";
+import {apiGet, type ShellComponents, DEFAULT_SHELL_COMPONENTS, type SourceResolveResult} from "@/lib/media-api";
 import {
   type ActionUiState,
   type BrandTemplate,
@@ -34,7 +34,43 @@ type GenerateConfigLike = {
   transcriptLanguages: string;
   llmProvider: string;
   quality: string;
+  shellComponents: ShellComponents;
 };
+
+function shellComponentsFromTemplate(template?: HyperframesTemplate): ShellComponents {
+  return template?.shell_components
+    ? {...DEFAULT_SHELL_COMPONENTS, ...template.shell_components}
+    : {...DEFAULT_SHELL_COMPONENTS};
+}
+
+function ShellComponentToggle({
+  label,
+  detail,
+  enabled,
+  onChange,
+}: {
+  label: string;
+  detail: string;
+  enabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!enabled)}
+      className={`flex flex-col rounded-xl border px-4 py-3 text-left transition ${
+        enabled ? "border-cyan bg-cyan/[0.05] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
+      }`}
+      aria-pressed={enabled}
+    >
+      <span className="text-xs font-semibold">{label}</span>
+      <span className="mt-1 text-[11px] leading-4 text-zinc-500">{detail}</span>
+      <span className={`mt-2 w-fit rounded-full px-2 py-0.5 text-[10px] font-bold ${enabled ? "bg-cyan text-ink" : "bg-white/[0.08] text-zinc-500"}`}>
+        {enabled ? "On" : "Off"}
+      </span>
+    </button>
+  );
+}
 
 type ReadinessLineComponent = (props: {ready: boolean; label: string; detail: string}) => ReactNode;
 
@@ -416,6 +452,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
                         hyperframesTemplate: value,
                         brandSystemTemplateId: picked?.source === "brand_system" ? value : "",
                         brandTemplate: picked?.brand_template_path || config.brandTemplate,
+                        shellComponents: shellComponentsFromTemplate(picked),
                       });
                     }}
                   />
@@ -514,6 +551,42 @@ export function GenerateSection<T extends GenerateConfigLike>({
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <h4 className="font-semibold text-white">Shell layers</h4>
+                  <span className="text-xs text-zinc-500">Per-template defaults; override for this batch</span>
+                </div>
+                <p className="mb-3 text-xs leading-5 text-zinc-500">
+                  Hook and CTA are optional shell nodes. Most templates keep the hook inside the recipe overlay instead.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <ShellComponentToggle
+                    label="Hook"
+                    detail="Title + subtitle card in the shell"
+                    enabled={config.shellComponents.hook}
+                    onChange={(hook) => update({shellComponents: {...config.shellComponents, hook}})}
+                  />
+                  <ShellComponentToggle
+                    label="Watermark"
+                    detail="Brand name in the corner"
+                    enabled={config.shellComponents.watermark}
+                    onChange={(watermark) => update({shellComponents: {...config.shellComponents, watermark}})}
+                  />
+                  <ShellComponentToggle
+                    label="Source"
+                    detail="Attribution line under the watermark"
+                    enabled={config.shellComponents.source}
+                    onChange={(source) => update({shellComponents: {...config.shellComponents, source}})}
+                  />
+                  <ShellComponentToggle
+                    label="CTA"
+                    detail="End-card follow / subscribe prompt"
+                    enabled={config.shellComponents.cta}
+                    onChange={(cta) => update({shellComponents: {...config.shellComponents, cta}})}
+                  />
                 </div>
               </div>
 

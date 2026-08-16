@@ -222,6 +222,20 @@ export type BrandTemplate = {
   has_brand_system?: string;
 };
 
+export type ShellComponents = {
+  hook: boolean;
+  watermark: boolean;
+  source: boolean;
+  cta: boolean;
+};
+
+export const DEFAULT_SHELL_COMPONENTS: ShellComponents = {
+  hook: false,
+  watermark: true,
+  source: false,
+  cta: true,
+};
+
 export type HyperframesTemplate = {
   id: string;
   label: string;
@@ -249,6 +263,7 @@ export type HyperframesTemplate = {
   font_family?: string;
   motion_preset?: string;
   color_grade?: string;
+  shell_components?: ShellComponents;
 };
 
 export type HyperframesCatalogItem = {

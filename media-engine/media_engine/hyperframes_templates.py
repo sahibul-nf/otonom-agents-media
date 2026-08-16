@@ -72,6 +72,9 @@ class HyperframesTemplate:
 
         formats = list(self.formats)
         recipe_meta = recipe_style_meta(self.id)
+        from .hyperframes_recipes import get_recipe
+
+        shell_components = get_recipe(self.id).default_shell_components()
         return {
             "id": self.id,
             "label": self.label,
@@ -91,6 +94,7 @@ class HyperframesTemplate:
             "font_family": self.font_family or recipe_meta.font_family,
             "motion_preset": self.motion_preset or recipe_meta.motion_preset,
             "color_grade": self.color_grade or recipe_meta.color_grade,
+            "shell_components": shell_components,
             "preview_seconds": PREVIEW_SECONDS,
             "preview_status": _aggregate_preview_status(self.id, formats),
             "preview_cache_ready": _preview_cache_ready(self.id, formats),

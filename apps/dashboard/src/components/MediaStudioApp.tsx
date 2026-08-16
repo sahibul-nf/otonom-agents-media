@@ -40,6 +40,7 @@ import {
   BrandTemplate,
   ClipCandidate,
   CredentialStatus,
+  DEFAULT_SHELL_COMPONENTS,
   DurationPreset,
   EngineHealth,
   ExplainerJob,
@@ -58,6 +59,7 @@ import {
   PublishTarget,
   ScheduledPost,
   scoreValue,
+  ShellComponents,
   SourceResolveResult,
   StyleProfile,
   WatchChannel,
@@ -341,6 +343,7 @@ type GenerateConfig = {
   speechLanguage: string;
   transcriptLanguages: string;
   llmProvider: string;
+  shellComponents: ShellComponents;
 };
 
 const reviewFilters = [
@@ -432,7 +435,13 @@ function buildWorkflowSteps({
   ];
 }
 
+function shellComponentsForTemplate(templates: HyperframesTemplate[], templateId: string): ShellComponents {
+  const template = templates.find((item) => item.id === templateId);
+  return template?.shell_components ? {...DEFAULT_SHELL_COMPONENTS, ...template.shell_components} : {...DEFAULT_SHELL_COMPONENTS};
+}
+
 function productionCommand(config: GenerateConfig) {
+  const shellJson = JSON.stringify(config.shellComponents);
   return `cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
 MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPATH=. "\${MEDIA_ENGINE_PYTHON}" -m media_engine.cli premium-batch \\
   --youtube-url "${config.sourceUrl}" \\
@@ -451,6 +460,7 @@ MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPA
   --speech-language ${config.speechLanguage} \\
   --transcript-languages ${config.transcriptLanguages} \\
   --style ${config.brandTemplate} \\
+  --shell-components '${shellJson}' \\
   --llm-provider ${config.llmProvider} \\
   --env-file ../.env.local`;
 }
@@ -510,6 +520,7 @@ export function MediaStudioApp() {
     speechLanguage: "auto",
     transcriptLanguages: "auto",
     llmProvider: "deepseek",
+    shellComponents: {...DEFAULT_SHELL_COMPONENTS},
   });
 
   useEffect(() => {
@@ -764,6 +775,7 @@ export function MediaStudioApp() {
           speech_language: generateConfig.speechLanguage,
           transcript_languages: generateConfig.transcriptLanguages,
           llm_provider: generateConfig.llmProvider,
+          shell_components: generateConfig.shellComponents,
           env_file: "../.env.local",
         }), "Generation batch started");
       setJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
@@ -1417,6 +1429,7 @@ export function MediaStudioApp() {
                   hyperframesTemplate: templateId,
                   brandSystemTemplateId: selectedTemplate?.source === "brand_system" ? templateId : "",
                   brandTemplate: selectedTemplate?.brand_template_path || current.brandTemplate,
+                  shellComponents: shellComponentsForTemplate(hyperframesTemplates, templateId),
                 }));
                 setSection("generate");
                 pushToast("Template selected for Create", "success");
