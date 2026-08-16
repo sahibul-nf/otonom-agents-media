@@ -507,8 +507,8 @@ export function MediaStudioApp() {
     quality: "production",
     captionSource: "hybrid",
     asrModel: "medium",
-    speechLanguage: "id",
-    transcriptLanguages: "id,en",
+    speechLanguage: "auto",
+    transcriptLanguages: "auto",
     llmProvider: "deepseek",
   });
 

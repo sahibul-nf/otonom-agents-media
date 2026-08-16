@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from difflib import SequenceMatcher
-from pathlib import Path
 from typing import Any
 
-from .asr import load_or_create_asr_words
+from .asr import asr_cache_path, load_or_create_asr_words
 from .caption_composer import compose_caption_groups
 from .captions import split_words
 from .llm import LLMError, call_llm_json
+from .speech_language import AUTO_LANGUAGE, build_transcript_language_list
 from .transcript_quality import correct_asr_words
 from .youtube_pipeline import TranscriptEntry, fetch_youtube_transcript
 
@@ -43,7 +43,7 @@ def asr_initial_prompt(
         str(payload.get("transcript_span") or "").strip()[:160],
     ]
     hint = ". ".join(part for part in parts if part)
-    return (hint or "Indonesian speech, names, numbers, Bitcoin, Allah").strip()[:400]
+    return (hint or "Multilingual speech, names, numbers, technical terms").strip()[:400]
 
 
 def apply_youtube_text(
@@ -128,19 +128,20 @@ def build_production_captions(
     *,
     caption_source: str,
     asr_model: str,
-    speech_language: str = "id",
+    speech_language: str = AUTO_LANGUAGE,
     style: dict[str, Any] | None = None,
     youtube_url: str = "",
     transcript_languages: str | list[str] | None = None,
     llm_provider: str = "none",
     niche: str = "",
+    profile_id: str = "",
 ) -> dict[str, Any]:
     """Mutate candidate timed captions. Returns pipeline metadata."""
     if caption_source not in {"whisper", "hybrid"}:
         candidate["caption_source"] = caption_source
         return {"skipped": True, "caption_source": caption_source}
 
-    asr_path = Path(source_clip).resolve().parents[1] / f"{Path(source_clip).stem}_{asr_model}_asr.json"
+    asr_path = asr_cache_path(source_clip, asr_model, speech_language)
     prompt = asr_initial_prompt(candidate, niche=niche)
     words, asr_metadata = load_or_create_asr_words(
         source_clip,
@@ -149,9 +150,22 @@ def build_production_captions(
         language=speech_language,
         initial_prompt=prompt,
     )
-    pipeline: dict[str, Any] = {"caption_source": caption_source, "asr_prompt": prompt}
+    detected_language = str(asr_metadata.get("detected_language") or asr_metadata.get("language") or "").strip() or None
+    transcript_lang_list = build_transcript_language_list(
+        detected_language,
+        niche=niche,
+        profile_id=profile_id,
+        explicit=transcript_languages,
+    )
+    pipeline: dict[str, Any] = {
+        "caption_source": caption_source,
+        "asr_prompt": prompt,
+        "speech_language": speech_language,
+        "detected_language": detected_language,
+        "transcript_languages": transcript_lang_list,
+    }
     if caption_source == "hybrid":
-        words, youtube_meta = _try_youtube_text(words, candidate, youtube_url, transcript_languages)
+        words, youtube_meta = _try_youtube_text(words, candidate, youtube_url, transcript_lang_list)
         pipeline["youtube"] = youtube_meta
     words, glossary_meta = correct_asr_words(words)
     words = _confirm_glossary_corrections(words, glossary_meta)

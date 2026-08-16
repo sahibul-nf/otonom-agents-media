@@ -126,11 +126,12 @@ def _regenerate_captions(
         source_clip,
         caption_source=caption_source,
         asr_model=model_name,
-        speech_language="id",
+        speech_language="auto",
         style=style,
         youtube_url=youtube_url,
         llm_provider=llm_provider,
         niche=niche,
+        profile_id=str(candidate.get("profile_id") or ""),
     )
     corrections = candidate.get("caption_corrections") if isinstance(candidate.get("caption_corrections"), dict) else {}
     candidate["caption_corrections"] = {

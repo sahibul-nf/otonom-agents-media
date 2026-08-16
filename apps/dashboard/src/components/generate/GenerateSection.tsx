@@ -546,8 +546,8 @@ export function GenerateSection<T extends GenerateConfigLike>({
                       ]}
                       onChange={(value) => update({captionSource: value})}
                     />
-                    <SelectTile label="Speech language" value={config.speechLanguage} options={["id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
-                    <SelectTile label="Transcripts" value={config.transcriptLanguages} options={["id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
+                    <SelectTile label="Speech language" value={config.speechLanguage} options={["auto", "id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
+                    <SelectTile label="Transcripts" value={config.transcriptLanguages} options={["auto", "id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
                     <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
                     <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
                   </div>

@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .speech_language import asr_cache_language_tag, is_auto_language, whisper_language_arg
+
 
 def extract_audio(source_video_path: str, output_audio_path: str) -> str:
     ffmpeg = shutil.which("ffmpeg")
@@ -55,25 +57,34 @@ def words_from_faster_whisper_segments(segments: Any) -> list[dict[str, Any]]:
     return words
 
 
-def transcribe_audio_words(audio_path: str, model_name: str = "medium", language: str = "id", initial_prompt: str = "") -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def transcribe_audio_words(
+    audio_path: str,
+    model_name: str = "medium",
+    language: str | None = None,
+    initial_prompt: str = "",
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
         raise RuntimeError("faster-whisper is required for --caption-source whisper") from exc
 
+    whisper_language = whisper_language_arg(language or "auto")
     model = WhisperModel(model_name, device="auto", compute_type="auto")
     segments, info = model.transcribe(
         audio_path,
-        language=language,
+        language=whisper_language,
         word_timestamps=True,
         vad_filter=True,
         initial_prompt=initial_prompt or None,
     )
     words = words_from_faster_whisper_segments(segments)
+    detected = getattr(info, "language", None) or whisper_language or "unknown"
     metadata = {
         "engine": "faster-whisper",
         "model": model_name,
-        "language": getattr(info, "language", language),
+        "requested_language": "auto" if is_auto_language(language or "auto") else str(language),
+        "language": detected,
+        "detected_language": detected,
         "language_probability": getattr(info, "language_probability", None),
         "word_count": len(words),
     }
@@ -84,7 +95,7 @@ def load_or_create_asr_words(
     source_video_path: str,
     cache_json_path: str,
     model_name: str = "medium",
-    language: str = "id",
+    language: str | None = None,
     initial_prompt: str = "",
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     cache = Path(cache_json_path)
@@ -93,6 +104,17 @@ def load_or_create_asr_words(
         return payload["words"], payload["metadata"]
     audio_path = str(cache.with_suffix(".wav"))
     extract_audio(source_video_path, audio_path)
-    words, metadata = transcribe_audio_words(audio_path, model_name=model_name, language=language, initial_prompt=initial_prompt)
+    words, metadata = transcribe_audio_words(
+        audio_path,
+        model_name=model_name,
+        language=language,
+        initial_prompt=initial_prompt,
+    )
     cache.write_text(json.dumps({"words": words, "metadata": metadata}, indent=2, ensure_ascii=False), encoding="utf-8")
     return words, metadata
+
+
+def asr_cache_path(source_clip: str, asr_model: str, speech_language: str | None) -> Path:
+    stem = Path(source_clip).stem
+    lang_tag = asr_cache_language_tag(speech_language or "auto")
+    return Path(source_clip).resolve().parents[1] / f"{stem}_{asr_model}_{lang_tag}_asr.json"

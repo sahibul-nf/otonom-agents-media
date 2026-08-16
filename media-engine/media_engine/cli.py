@@ -497,12 +497,13 @@ def prepare_production_captions(
         source_clip,
         caption_source=getattr(args, "caption_source", "youtube"),
         asr_model=getattr(args, "asr_model", "medium"),
-        speech_language=getattr(args, "speech_language", "id"),
+        speech_language=getattr(args, "speech_language", "auto"),
         style=style,
         youtube_url=getattr(args, "youtube_url", "") or "",
-        transcript_languages=getattr(args, "transcript_languages", "id,en"),
+        transcript_languages=getattr(args, "transcript_languages", "auto"),
         llm_provider=getattr(args, "llm_provider", "none"),
-        niche=str((profile or {}).get("niche") or ""),
+        niche=str((profile or {}).get("niche") or getattr(args, "niche", "") or ""),
+        profile_id=str(getattr(args, "profile", "") or (profile or {}).get("id") or ""),
     )
 
 
@@ -707,9 +708,15 @@ def cmd_publish_due(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
-def parse_languages(value: str | None) -> list[str]:
-    languages = [item.strip() for item in str(value or "id,en").split(",") if item.strip()]
-    return languages or ["id", "en"]
+def parse_languages(value: str | None, *, niche: str = "", profile_id: str = "") -> list[str]:
+    from .speech_language import build_transcript_language_list
+
+    return build_transcript_language_list(
+        None,
+        niche=niche,
+        profile_id=profile_id,
+        explicit=value,
+    )
 
 
 def parse_genres(value: str | None, profile_id: str | None = None) -> list[str]:
@@ -822,8 +829,8 @@ def build_parser() -> argparse.ArgumentParser:
     premium_test.add_argument("--quality", choices=["draft", "production"], default="draft")
     premium_test.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
     premium_test.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
-    premium_test.add_argument("--speech-language", default="id", help="Spoken language hint for Whisper/faster-whisper, e.g. id, ar, en")
-    premium_test.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
+    premium_test.add_argument("--speech-language", default="auto", help="Spoken language for Whisper: auto (detect), id, ar, en, …")
+    premium_test.add_argument("--transcript-languages", default="auto", help="YouTube transcript order: auto (detect+niche), or comma-separated e.g. id,en")
     duration_choices = ["auto", "under_30s", "seconds_30_60", "minutes_1_3", "minutes_3_plus", "custom", "quick_hit", "standard_short", "deep_context", "platform_max", "30-60s", "45-120s", "60-90s"]
     premium_test.add_argument("--clip-length-preset", choices=duration_choices, default="auto")
     premium_test.add_argument("--clip-min-seconds", type=int, default=20)
@@ -849,7 +856,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_curate.add_argument("--workspace-name", default="", help="Workspace display name for curation context")
     premium_curate.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
-    premium_curate.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
+    premium_curate.add_argument("--transcript-languages", default="auto", help="YouTube transcript order: auto (detect+niche), or comma-separated e.g. id,en")
     premium_curate.add_argument("--env-file")
     premium_curate.set_defaults(func=cmd_premium_curate)
 
@@ -866,8 +873,8 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--quality", choices=["draft", "production"], default="draft")
     premium_batch.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="hybrid")
     premium_batch.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
-    premium_batch.add_argument("--speech-language", default="id", help="Spoken language hint for Whisper/faster-whisper, e.g. id, ar, en")
-    premium_batch.add_argument("--transcript-languages", default="id,en", help="Comma-separated YouTube transcript preference order")
+    premium_batch.add_argument("--speech-language", default="auto", help="Spoken language for Whisper: auto (detect), id, ar, en, …")
+    premium_batch.add_argument("--transcript-languages", default="auto", help="YouTube transcript order: auto (detect+niche), or comma-separated e.g. id,en")
     premium_batch.add_argument("--clip-length-preset", choices=duration_choices, default="auto")
     premium_batch.add_argument("--clip-min-seconds", type=int, default=20)
     premium_batch.add_argument("--clip-max-seconds", type=int, default=180)

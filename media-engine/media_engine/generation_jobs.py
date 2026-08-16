@@ -218,15 +218,18 @@ def _duration_seconds(payload: dict[str, Any]) -> tuple[int, int, str]:
     return preset.min_ms // 1000, preset.max_ms // 1000, preset.id
 
 
-def _language(value: Any, default: str = "id") -> str:
+def _language(value: Any, default: str = "auto") -> str:
     text = str(value or default).strip().lower()
     return text if text in VALID_LANGUAGES else default
 
 
-def _language_list(value: Any, default: str = "id,en") -> str:
-    parts = [part.strip().lower() for part in str(value or default).split(",") if part.strip()]
+def _language_list(value: Any, default: str = "auto") -> str:
+    text = str(value or default).strip().lower()
+    if text in {"", "auto"}:
+        return "auto"
+    parts = [part.strip().lower() for part in text.split(",") if part.strip()]
     allowed = [part for part in parts if part in VALID_LANGUAGES and part != "auto"]
-    return ",".join(allowed or ["id", "en"])
+    return ",".join(allowed or ["auto"])
 
 
 def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -304,8 +307,8 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "quality": _choice(payload.get("quality"), VALID_QUALITIES, "production"),
         "caption_source": _choice(payload.get("caption_source"), VALID_CAPTION_SOURCES, "hybrid"),
         "asr_model": _choice(payload.get("asr_model"), VALID_ASR_MODELS, "medium"),
-        "speech_language": _language(payload.get("speech_language"), "id"),
-        "transcript_languages": _language_list(payload.get("transcript_languages"), "id,en"),
+        "speech_language": _language(payload.get("speech_language"), "auto"),
+        "transcript_languages": _language_list(payload.get("transcript_languages"), "auto"),
         "llm_provider": _choice(payload.get("llm_provider"), VALID_LLM_PROVIDERS, "deepseek"),
         "env_file": str(payload.get("env_file") or "../.env.local").strip(),
         "niche": str(payload.get("niche") or "").strip(),

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Create content angles are a **universal industry set** (#74): story / advice / opinion / explainer / commentary / history / tutorial. Niche and brand voice come from the workspace profile in the curation prompt — no custom chips, no kajian-only catalog.
+- Auto speech-language detection (#75): Whisper defaults to **auto** (detect from audio); workspace niche only shapes YouTube transcript fallback order. Create Advanced still lets operators pin `id` / `en` / `ar` / `ms`. story / advice / opinion / explainer / commentary / history / tutorial. Niche and brand voice come from the workspace profile in the curation prompt — no custom chips, no kajian-only catalog.
 - Create clip count is a **maximum** (#73): curation no longer fails when the LLM finds fewer than N valid windows; remaining slots fill from the heuristic scorer. Create copy says “fewer clips still succeed”; timestamps like `1:23` parse.
 - Create double-submit guard (#72): Slide to Generate locks synchronously on confirm and stays disabled while a batch is queued/running, so one slide cannot spawn twin jobs.
 - YouTube clip download: retry alternate player clients/formats on HTTP 403; optional `MEDIA_ENGINE_YTDLP_COOKIES`; Create failure message names YouTube block instead of bare `ffmpeg exited with code 8`.

@@ -39,8 +39,8 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["renderer"], "hyperframes")
         self.assertEqual(payload["hyperframes_format"], "auto")
         self.assertEqual(payload["caption_source"], "hybrid")
-        self.assertEqual(payload["speech_language"], "id")
-        self.assertEqual(payload["transcript_languages"], "id,en")
+        self.assertEqual(payload["speech_language"], "auto")
+        self.assertEqual(payload["transcript_languages"], "auto")
         self.assertEqual(payload["llm_provider"], "deepseek")
 
     def test_normalize_generation_payload_canonicalizes_legacy_clip_length(self):
@@ -87,7 +87,7 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["renderer"], "hyperframes")
         self.assertEqual(payload["quality"], "production")
         self.assertEqual(payload["llm_provider"], "deepseek")
-        self.assertEqual(payload["speech_language"], "id")
+        self.assertEqual(payload["speech_language"], "auto")
         self.assertEqual(payload["transcript_languages"], "ar,id")
 
     def test_normalize_generation_payload_accepts_hyperframes_renderer(self):
