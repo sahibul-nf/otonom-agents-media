@@ -20,8 +20,10 @@ from .hyperframes_templates import (
     resolve_hyperframes_template,
 )
 
-
 PREVIEW_ROOT = ARTIFACTS_DIR / "hyperframes_template_previews"
+PREVIEW_CONTRACT_VERSION = 2
+# Gallery previews show recipe overlay + captions only — no shared shell hook/brand/CTA chrome.
+PREVIEW_SHELL_COMPONENTS = {"hook": False, "watermark": False, "source": False, "cta": False}
 
 
 def preview_path(template_id: str, hyperframes_format: str) -> Path:
@@ -97,8 +99,14 @@ def prewarm_hyperframes_template_previews(
 
 def ensure_hyperframes_template_preview(template_id: str, hyperframes_format: str) -> Path:
     output = preview_path(template_id, hyperframes_format)
-    if output.exists() and output.stat().st_size > 0:
-        return output
+    metadata_path = output.parent / "preview-metadata.json"
+    if output.exists() and output.stat().st_size > 0 and metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if metadata.get("contract_version") == PREVIEW_CONTRACT_VERSION:
+                return output
+        except (OSError, json.JSONDecodeError):
+            pass
 
     require_hyperframes_runtime()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -117,7 +125,16 @@ def ensure_hyperframes_template_preview(template_id: str, hyperframes_format: st
     )
     checks = render_hyperframes_project(project_dir, output, quality="draft")
     (output.parent / "preview-metadata.json").write_text(
-        json.dumps({"template": contract["hyperframesTemplate"], "format": resolved_format, "checks": checks}, indent=2, ensure_ascii=False),
+        json.dumps(
+            {
+                "template": contract["hyperframesTemplate"],
+                "format": resolved_format,
+                "checks": checks,
+                "contract_version": PREVIEW_CONTRACT_VERSION,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     return output
@@ -221,7 +238,7 @@ def _preview_copy_for_template(template: dict[str, Any]) -> dict[str, Any]:
       ],
       "watermark": "Editorial",
       "cta": "Use this look in Create",
-      "source": "Template preview fixture",
+      "source": "Editorial sample",
     },
     "Brand": {
       "captions": [
@@ -249,25 +266,25 @@ def _preview_copy_for_template(template: dict[str, Any]) -> dict[str, Any]:
             cursor = word_end
         captions.append({"text": line["text"], "startMs": start_ms, "endMs": end_ms, "words": word_rows})
     caption_text = ". ".join(line["text"] for line in pack["captions"]) + "."
+    hook_line = pack["captions"][0]["text"] if pack["captions"] else label
+    subtitle_line = pack["captions"][1]["text"] if len(pack["captions"]) > 1 else ""
     return {
         "captions": captions,
         "captionText": caption_text,
         "watermarkText": pack["watermark"],
         "ctaText": pack["cta"],
         "sourceAttribution": pack["source"],
-        "titleHook": label,
-        "subtitle": str(template.get("best_for") or ""),
+        "titleHook": hook_line,
+        "subtitle": subtitle_line,
     }
 
 
 def _preview_contract(template_id: str, hyperframes_format: str, width: int, height: int) -> dict[str, Any]:
-    from .hyperframes_recipes import get_recipe
-
     template = resolve_hyperframes_template(template_id)
     duration_ms = PREVIEW_SECONDS * 1000
     copy = _preview_copy_for_template(template)
     captions = copy["captions"]
-    shell_components = get_recipe(str(template.get("recipe_module") or template["id"])).default_shell_components()
+    shell_components = dict(PREVIEW_SHELL_COMPONENTS)
     return {
         "composition": "HyperFramesTemplatePreview",
         "width": width,
@@ -277,7 +294,7 @@ def _preview_contract(template_id: str, hyperframes_format: str, width: int, hei
         "candidateId": f"preview_{template['id']}",
         "sourceVideoPath": "media/source.mp4",
         "sourceUrl": "preview://template-fixture",
-        "sourceAttribution": copy["sourceAttribution"],
+        "sourceAttribution": "",
         "startMs": 0,
         "endMs": duration_ms,
         "startTimecode": "00:00:00",
@@ -290,7 +307,8 @@ def _preview_contract(template_id: str, hyperframes_format: str, width: int, hei
         "captionDiagnostics": {"eventCount": 0, "maxConcurrentEvents": 0, "overlapCount": 0},
         "visualBeats": [],
         "watermarkText": copy["watermarkText"],
-        "ctaText": copy["ctaText"],
+        "ctaText": "",
+        "hookSubtitle": copy["subtitle"],
         "stylePreset": "hyperframes_template_preview",
         "style": {
             "caption": {

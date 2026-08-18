@@ -280,21 +280,21 @@ export function TemplatesSection({
                         : "border-white/[0.08] bg-canvas-deep hover:border-cyan/[0.22] hover:bg-teal/[0.05]"
                   }`}
                 >
+                  <TemplatePreview
+                    template={template}
+                    compact
+                    gridCard
+                    hideFooterLabel
+                    frame={frame}
+                    hoverToPlay
+                  />
                   <button
                     type="button"
                     onClick={() => setSelectedId(template.id)}
-                    className="block w-full text-left"
+                    className="mt-2 block w-full text-left"
                     aria-pressed={isSelected}
                     aria-label={`Select ${template.label}`}
                   >
-                    <TemplatePreview
-                      template={template}
-                      compact
-                      gridCard
-                      hideFooterLabel
-                      frame={frame}
-                      hoverToPlay
-                    />
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-cyan">{template.category}</p>
@@ -376,7 +376,7 @@ export function TemplatesSection({
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Live preview</p>
                     {selected.preview_status === "generating" ? (
-                      <p className="text-[11px] font-medium text-amber-300/90">First open may generate a 15s HyperFrames clip</p>
+                      <p className="text-[11px] font-medium text-amber-300/90">First open may generate a 15s sample clip</p>
                     ) : null}
                     <div className="inline-flex items-center rounded-[14px] border border-white/[0.10] bg-black/30 p-0.5">
                       <button

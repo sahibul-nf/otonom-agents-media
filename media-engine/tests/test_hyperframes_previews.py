@@ -74,6 +74,17 @@ class HyperframesPreviewTests(unittest.TestCase):
         self.assertNotEqual(data["captionText"], promo["captionText"])
         self.assertEqual(spiritual["captions"][0]["text"], "Allah selalu dekat")
         self.assertIn("Fed", data["captions"][0]["text"])
+        self.assertEqual(spiritual["titleHook"], "Allah selalu dekat")
+        self.assertNotEqual(spiritual["titleHook"], "Spiritual Reflective")
+
+    def test_preview_contract_strips_shared_shell_chrome(self):
+        contract = hyperframes_previews._preview_contract("spiritual_reflective", "short_9_16", 1080, 1920)
+
+        self.assertEqual(contract["shellComponents"], hyperframes_previews.PREVIEW_SHELL_COMPONENTS)
+        self.assertEqual(contract["ctaText"], "")
+        self.assertEqual(contract["sourceAttribution"], "")
+        self.assertNotEqual(contract["titleHook"], "Spiritual Reflective")
+        self.assertIn("Allah", contract["titleHook"])
 
 
 if __name__ == "__main__":

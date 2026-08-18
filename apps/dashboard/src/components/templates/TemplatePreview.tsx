@@ -135,8 +135,12 @@ export function TemplatePreview({
       : "h-full aspect-[9/16] w-auto max-w-full";
   const badgeInset = gridCard ? "left-2 right-2 top-2" : "left-3 right-3 top-3";
   const footerInset = gridCard ? "bottom-2 left-2 right-2" : "bottom-3 left-3 right-3";
-  const frameLabel = compact ? (isLong ? "15s · 16:9" : "15s · 9:16") : `${durationSeconds}s · ${isLong ? "Long 16:9" : "Short/Reels 9:16"}`;
-  const renderLabel = compact ? "HF render" : "HyperFrames render";
+  const frameLabelFull = compact
+    ? isLong
+      ? "15s · 16:9"
+      : "15s · 9:16"
+    : `${durationSeconds}s · ${isLong ? "Long 16:9" : "Short/Reels 9:16"}`;
+  const frameLabel = gridCard ? (isLong ? "16:9" : "9:16") : frameLabelFull;
   const previewPrompt = gridCard ? "Tap or hover" : compact && !isLong ? "Tap or hover to preview" : "Tap or hover to play preview";
   const previewStyle = {
     "--preview-accent": theme.accent,
@@ -250,7 +254,7 @@ export function TemplatePreview({
       onPlay={() => setIsPlaying(true)}
       onPause={() => setIsPlaying(false)}
       onEnded={() => setIsPlaying(false)}
-      ariaLabel={`${template.label} ${durationSeconds}s HyperFrames preview`}
+      ariaLabel={`${template.label} ${durationSeconds}s style preview`}
       emptyState={
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_45%_28%,rgba(255,255,255,0.16),transparent_25%),linear-gradient(160deg,rgba(18,22,26,1),rgba(4,5,7,1)_58%,rgba(0,0,0,1))]" style={previewStyle} />
       }
@@ -283,10 +287,14 @@ export function TemplatePreview({
         </>
       ) : null}
       {!flush ? (
-        <div className={`absolute ${badgeInset} z-[5] flex items-center justify-between gap-1.5`}>
-          <div className={`rounded-full border border-white/[0.12] bg-black/62 font-bold text-zinc-200 ${gridCard ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"}`}>{frameLabel}</div>
-          <div className={`rounded-full border border-[var(--preview-accent)]/30 bg-black/62 font-bold text-[var(--preview-accent)] ${gridCard ? "px-2 py-0.5 text-[9px]" : "px-2.5 py-1 text-[10px]"}`} style={previewStyle}>
-            {renderLabel}
+        <div className={`pointer-events-none absolute ${badgeInset} z-[5] max-w-[calc(100%-0.75rem)]`}>
+          <div
+            className={`inline-flex max-w-full items-center rounded-full border border-white/[0.12] bg-black/62 font-bold leading-none text-zinc-200 tabular-nums ${
+              gridCard ? "px-1.5 py-0.5 text-[8px] tracking-tight" : "px-2.5 py-1 text-[10px]"
+            }`}
+            title={gridCard ? frameLabelFull : undefined}
+          >
+            <span className="truncate">{frameLabel}</span>
           </div>
         </div>
       ) : null}

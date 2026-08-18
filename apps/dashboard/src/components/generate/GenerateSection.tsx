@@ -650,19 +650,9 @@ export function GenerateSection<T extends GenerateConfigLike>({
           {hyperframesTemplates.map((template) => {
             const active = config.hyperframesTemplate === template.id;
             return (
-              <button
+              <div
                 key={template.id}
-                type="button"
-                onClick={() => {
-                  update({
-                    renderer: "hyperframes",
-                    hyperframesTemplate: template.id,
-                    brandSystemTemplateId: template.source === "brand_system" ? template.id : "",
-                    brandTemplate: template.brand_template_path || config.brandTemplate,
-                  });
-                  setTemplatePickerOpen(false);
-                }}
-                className={`template-card min-w-0 rounded-[20px] border p-2.5 text-left transition sm:p-3 ${active ? "border-cyan/[0.45] bg-teal/[0.12] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-cyan/[0.22] hover:bg-teal/[0.05]"}`}
+                className={`template-card min-w-0 rounded-[20px] border text-left transition sm:p-3 ${active ? "border-cyan/[0.45] bg-teal/[0.12] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-cyan/[0.22] hover:bg-teal/[0.05]"} p-2.5`}
               >
                 <TemplatePreview
                   template={template}
@@ -672,15 +662,32 @@ export function GenerateSection<T extends GenerateConfigLike>({
                   frame={config.hyperframesFormat === "long_16_9" ? "long" : "short"}
                   hoverToPlay
                 />
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-cyan">{template.category}</p>
-                    <h4 className="mt-1 truncate text-lg font-semibold text-white">{template.label}</h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    update({
+                      renderer: "hyperframes",
+                      hyperframesTemplate: template.id,
+                      brandSystemTemplateId: template.source === "brand_system" ? template.id : "",
+                      brandTemplate: template.brand_template_path || config.brandTemplate,
+                      shellComponents: shellComponentsFromTemplate(template),
+                    });
+                    setTemplatePickerOpen(false);
+                  }}
+                  className="mt-2 block w-full text-left"
+                  aria-pressed={active}
+                  aria-label={`Use ${template.label}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-cyan">{template.category}</p>
+                      <h4 className="mt-1 truncate text-lg font-semibold text-white">{template.label}</h4>
+                    </div>
+                    {active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-cyan" /> : null}
                   </div>
-                  {active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-cyan" /> : null}
-                </div>
-                <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-400">{template.best_for}</p>
-              </button>
+                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-400">{template.best_for}</p>
+                </button>
+              </div>
             );
           })}
         </div>

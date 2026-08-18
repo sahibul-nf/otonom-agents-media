@@ -1,14 +1,14 @@
 import type {RecipeTheme} from "./types";
 
 const base = (partial: Partial<RecipeTheme> & Pick<RecipeTheme, "accent" | "secondary" | "caption" | "caption2">): RecipeTheme => ({
-  hook: "Template preview hook",
-  body: "HyperFrames recipe preview",
-  cta: "Use this template",
   fontFamily: "Inter, sans-serif",
   captionStyle: "Weighted captions",
   motionPreset: "fade-pop",
   colorGrade: "neutral grade",
   ...partial,
+  hook: partial.hook ?? partial.caption,
+  body: partial.body ?? "",
+  cta: partial.cta ?? "",
 });
 
 export const recipeThemes: Record<string, RecipeTheme> = {
