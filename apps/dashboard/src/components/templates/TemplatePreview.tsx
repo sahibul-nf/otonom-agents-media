@@ -61,6 +61,7 @@ export function TemplatePreview({
   const [shouldLoadPreview, setShouldLoadPreview] = useState(!hoverToPlay);
   const [cacheReady, setCacheReady] = useState(initiallyCached);
   const [generatingPreview, setGeneratingPreview] = useState(false);
+  const [previewUnavailable, setPreviewUnavailable] = useState(false);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const previewUrl = template.preview_video_urls?.[previewKey] || (cacheReady ? apiPreviewUrl : undefined);
@@ -76,10 +77,11 @@ export function TemplatePreview({
     setCacheReady(initiallyCached);
     setVideoLoaded(false);
     setVideoError(false);
+    setPreviewUnavailable(false);
   }, [template.id, previewKey, initiallyCached]);
 
   useEffect(() => {
-    if (!shouldLoadPreview || cacheReady || hasInstantVideo || !apiPreviewUrl) return;
+    if (!shouldLoadPreview || cacheReady || hasInstantVideo || previewUnavailable) return;
     let cancelled = false;
 
     async function warmPreview() {
@@ -91,6 +93,14 @@ export function TemplatePreview({
           setCacheReady(true);
           return;
         }
+        if (status.renderer_ready === false) {
+          setPreviewUnavailable(true);
+          return;
+        }
+        if (!apiPreviewUrl) {
+          setPreviewUnavailable(true);
+          return;
+        }
         void prewarmHyperframesTemplatePreview(template.id, template.id.startsWith("brand:")).catch(() => undefined);
         for (let attempt = 0; attempt < 45 && !cancelled; attempt += 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 2000));
@@ -100,7 +110,12 @@ export function TemplatePreview({
             setCacheReady(true);
             return;
           }
+          if (next.renderer_ready === false) {
+            setPreviewUnavailable(true);
+            return;
+          }
         }
+        if (!cancelled) setPreviewUnavailable(true);
       } finally {
         if (!cancelled) setGeneratingPreview(false);
       }
@@ -110,7 +125,7 @@ export function TemplatePreview({
     return () => {
       cancelled = true;
     };
-  }, [apiPreviewUrl, cacheReady, hasInstantVideo, previewKey, shouldLoadPreview, template.id]);
+  }, [apiPreviewUrl, cacheReady, hasInstantVideo, previewKey, previewUnavailable, shouldLoadPreview, template.id]);
 
   useEffect(() => {
     if (shouldLoadPreview) {
@@ -216,9 +231,9 @@ export function TemplatePreview({
 
   const showVideo = Boolean(previewUrl && shouldLoadPreview && !videoError);
   const showLoadingChrome =
-    shouldLoadPreview && !videoError && (generatingPreview || (Boolean(previewUrl) && !videoLoaded));
+    shouldLoadPreview && !videoError && !previewUnavailable && (generatingPreview || (Boolean(previewUrl) && !videoLoaded));
   const showRecipeOverlay =
-    !isStudio && (!showVideo || (shouldLoadPreview && !videoLoaded && !videoError));
+    !isStudio && (!showVideo || (shouldLoadPreview && !videoLoaded && !videoError) || previewUnavailable);
   const rounded = flush ? "none" : gridCard ? "panel" : compact ? "detail" : "detail";
 
   return (
@@ -277,6 +292,13 @@ export function TemplatePreview({
           </div>
           <div className={`absolute ${gridCard ? "bottom-2 right-2" : "bottom-3 right-3"} rounded-full border border-white/[0.12] bg-black/55 px-2 py-0.5 text-[9px] font-semibold text-zinc-200`}>
             {generatingPreview ? "Generating…" : "Loading…"}
+          </div>
+        </div>
+      ) : null}
+      {previewUnavailable && !showVideo && !videoError ? (
+        <div className={`pointer-events-none absolute ${gridCard ? "bottom-2 left-2" : "bottom-3 left-3"} z-[3]`}>
+          <div className="rounded-full border border-white/[0.12] bg-black/55 px-2 py-0.5 text-[9px] font-semibold text-zinc-300">
+            Recipe preview
           </div>
         </div>
       ) : null}

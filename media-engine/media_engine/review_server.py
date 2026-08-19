@@ -45,6 +45,7 @@ from .hyperframes_previews import (
     list_hyperframes_preview_status,
     preview_status,
     prewarm_hyperframes_template_previews,
+    schedule_builtin_preview_prewarm,
 )
 from .hyperframes_renderer import check_hyperframes_runtime
 from .hyperframes_templates import list_hyperframes_templates
@@ -432,6 +433,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(list_brand_templates())
             return
         if parsed.path == "/api/hyperframes-templates":
+            schedule_builtin_preview_prewarm()
             self._send_json(list_hyperframes_templates())
             return
         if parsed.path == "/api/hyperframes-catalog":
@@ -1913,6 +1915,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 def main() -> None:
     port = int(os.environ.get("MEDIA_ENGINE_PORT", "8765"))
     _safe_load_env()
+    schedule_builtin_preview_prewarm()
     server = ThreadingHTTPServer(("127.0.0.1", port), ReviewHandler)
     print(f"review UI: http://127.0.0.1:{port}/review.html")
     server.serve_forever()

@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 
 from .db import ARTIFACTS_DIR
-from .hyperframes_renderer import build_hyperframes_index_html, render_hyperframes_project, require_hyperframes_runtime
+from .hyperframes_renderer import build_hyperframes_index_html, check_hyperframes_runtime, render_hyperframes_project, require_hyperframes_runtime
 from .hyperframes_templates import (
     PREVIEW_SECONDS,
     dimensions_for_format,
@@ -24,6 +25,62 @@ PREVIEW_ROOT = ARTIFACTS_DIR / "hyperframes_template_previews"
 PREVIEW_CONTRACT_VERSION = 2
 # Gallery previews show recipe overlay + captions only — no shared shell hook/brand/CTA chrome.
 PREVIEW_SHELL_COMPONENTS = {"hook": False, "watermark": False, "source": False, "cta": False}
+
+_prewarm_lock = threading.Lock()
+_prewarm_scheduled = False
+
+
+def preview_renderer_ready() -> tuple[bool, str]:
+    checks = check_hyperframes_runtime(run_doctor=False)
+    if not checks.get("enabled"):
+        return False, "HYPERFRAMES_ENABLED is not true"
+    if not checks.get("node", {}).get("ok"):
+        return False, "Node 22+ is required for HyperFrames template previews"
+    if not checks.get("ffmpeg", {}).get("ok"):
+        return False, "ffmpeg is required for HyperFrames template previews"
+    if not checks.get("hyperframes", {}).get("ok"):
+        return False, "HyperFrames CLI is not available"
+    return True, ""
+
+
+def _preview_cache_valid(output: Path, metadata_path: Path) -> bool:
+    if not output.exists() or output.stat().st_size <= 0:
+        return False
+    if not metadata_path.exists():
+        return False
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return metadata.get("contract_version") == PREVIEW_CONTRACT_VERSION
+
+
+def schedule_builtin_preview_prewarm() -> None:
+    """Background prewarm for built-in templates missing a valid preview cache."""
+    global _prewarm_scheduled
+    with _prewarm_lock:
+        if _prewarm_scheduled:
+            return
+        _prewarm_scheduled = True
+
+    def _run() -> None:
+        renderer_ready, _ = preview_renderer_ready()
+        if not renderer_ready:
+            return
+        for template in list_hyperframes_templates():
+            if template.get("source") == "brand_system":
+                continue
+            template_id = str(template["id"])
+            for hyperframes_format in template.get("formats") or ["short_9_16"]:
+                status = preview_status(template_id, str(hyperframes_format))
+                if status["ready"]:
+                    continue
+                try:
+                    ensure_hyperframes_template_preview(template_id, str(hyperframes_format))
+                except Exception:
+                    continue
+
+    threading.Thread(target=_run, daemon=True, name="hf-preview-prewarm").start()
 
 
 def preview_path(template_id: str, hyperframes_format: str) -> Path:
@@ -55,10 +112,14 @@ def preview_status(template_id: str, hyperframes_format: str) -> dict[str, Any]:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             metadata = {}
+    ready = _preview_cache_valid(output, metadata_path)
+    renderer_ready, unavailable_reason = preview_renderer_ready()
     return {
         "template": template_id,
         "format": normalize_hyperframes_format(hyperframes_format),
-        "ready": output.exists() and output.stat().st_size > 0,
+        "ready": ready,
+        "renderer_ready": renderer_ready,
+        "unavailable_reason": "" if ready or renderer_ready else unavailable_reason,
         "path": str(output),
         "size": output.stat().st_size if output.exists() else 0,
         "metadata": metadata,

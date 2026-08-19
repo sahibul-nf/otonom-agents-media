@@ -2,7 +2,7 @@
 
 **Status:** Phase 0 + MCP + TechTalk pack + dashboard Explainer tab on `main` (see #5 #6 #8 #10)  
 **Related issue:** [#4 — Explainer Mode](https://github.com/sahibul-nf/otonom-agents-media/issues/4)  
-**Last updated:** 2026-07-23
+**Last updated:** 2026-08-19
 
 ---
 
@@ -185,6 +185,49 @@ Margin comes from orchestration and templates, not from reselling render minutes
 
 ---
 
+## Template architecture (multi-tenant)
+
+Keep **platform recipes**, **workspace defaults**, and **user-owned styles** in separate layers so we do not bake one operator brand into the global catalog.
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Platform builtin catalog (tenant-agnostic)               │
+│    ~20 HyperFrames recipes — stable ids, neutral labels     │
+│    Example: techtalk_intel_brief → label "Intel Brief"        │
+├─────────────────────────────────────────────────────────────┤
+│ 2. Workspace profile (per tenant / operator)                  │
+│    profiles/{workspace}_style.json                          │
+│    default_template, colors, watermark, glossary, niche     │
+│    Example: techtalk_style.json → default_template intel    │
+├─────────────────────────────────────────────────────────────┤
+│ 3. User saved styles (per workspace, deletable)             │
+│    profiles/custom_*.json → catalog id brand:custom_*       │
+│    Brand Builder save; inherits starter recipe + overrides  │
+├─────────────────────────────────────────────────────────────┤
+│ 4. LLM-generated styles (future — tracked on GitHub)         │
+│    Prompt → brand_system JSON → save as custom_*              │
+│    Not a new builtin per niche/channel                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Rules
+
+| Rule | Rationale |
+|------|-----------|
+| Builtin labels stay **generic** (genre/use-case, not channel name) | SaaS users should not see another tenant's brand in the catalog |
+| Workspace picks a **default builtin** or saved custom style | TechTalk can default to `techtalk_intel_brief` without renaming the recipe |
+| Aliases stay stable (`techtalk_explainer` → `techtalk_intel_brief`) | Jobs, profiles, and MCP configs keep working |
+| Delete only `custom_*` files (#79) | Builtins ship with the platform; user data is removable |
+| Gallery preview = recipe overlay when HF render unavailable | No infinite "Generating…" spinner; MP4 prewarm runs when `HYPERFRAMES_ENABLED=true` |
+
+### Preview pipeline
+
+1. Dashboard requests `/api/hyperframes-templates` → server schedules background prewarm for missing builtin caches.  
+2. `TemplatePreview` polls `/api/hyperframes-template-preview-status`; plays MP4 when `ready`.  
+3. If renderer is off or prewarm times out → static **recipe overlay** + "Recipe preview" badge (not a dead spinner).
+
+---
+
 ## Implementation phases
 
 ### Phase 0 — Foundation (no Direct API required)
@@ -193,7 +236,7 @@ Build Explainer Mode **around local assets**:
 
 1. `explainer_planner.py` — topic → scene JSON (`avatar` | `text` | `broll`)
 2. `explainer_stitch.py` — FFmpeg concat + audio bed
-3. HyperFrames recipes for text/b-roll scenes (default `techtalk_explainer` → `techtalk_intel_brief`; legacy alias `data_market_explainer` remains for short-form velocity packs)
+3. HyperFrames recipes for text/b-roll scenes (default workspace may set `techtalk_explainer` → builtin `techtalk_intel_brief` / label **Intel Brief**; legacy alias `data_market_explainer` remains for short-form velocity packs)
 4. CLI: `explainer run --scenes scenes.json --clips-dir ./fixtures/`
 5. Drop avatar MP4s from Cursor+MCP / web download into `fixtures/` (manual import step)
 

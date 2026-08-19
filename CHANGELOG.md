@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Multi-tenant template catalog: builtin `techtalk_intel_brief` label neutralized to **Intel Brief** (id + aliases unchanged); workspace default stays in `profiles/techtalk_style.json`.
+- Template gallery previews: background prewarm on server start/template list; status API exposes `renderer_ready`; UI falls back to recipe overlay with "Recipe preview" instead of infinite loading when HyperFrames is off or prewarm fails.
 - Delete saved brand styles (#79): remove `profiles/custom_*.json` and matching `brand:custom_*` catalog entries from Brand and Templates with confirm; Create config resets when the active style is deleted.
 - Optional shell layers (#78): each recipe defines default hook/watermark/source/CTA toggles; renderer omits disabled nodes; Create Advanced exposes per-batch overrides; generation jobs pass `shell_components` through CLI → style → contract.
 - Template gallery previews: drop shared shell hook/brand/CTA/source chrome and generic fixture copy; recipe overlay + niche captions only; stale preview cache auto-regenerates (`PREVIEW_CONTRACT_VERSION=2`).

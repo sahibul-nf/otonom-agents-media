@@ -520,6 +520,8 @@ export type HyperframesPreviewStatus = {
   template: string;
   format: string;
   ready: boolean;
+  renderer_ready?: boolean;
+  unavailable_reason?: string;
   path?: string;
   size?: number;
 };

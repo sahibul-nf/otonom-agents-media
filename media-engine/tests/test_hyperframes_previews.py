@@ -14,12 +14,38 @@ class HyperframesPreviewTests(unittest.TestCase):
                 path = hyperframes_previews.preview_path("spiritual_reflective", "short_9_16")
                 path.parent.mkdir(parents=True)
                 path.write_bytes(b"preview")
+                (path.parent / "preview-metadata.json").write_text(
+                    '{"contract_version": %d}' % hyperframes_previews.PREVIEW_CONTRACT_VERSION,
+                    encoding="utf-8",
+                )
 
                 status = hyperframes_previews.preview_status("spiritual_reflective", "short_9_16")
 
         self.assertTrue(status["ready"])
         self.assertEqual(status["size"], len(b"preview"))
         self.assertIn("spiritual_reflective", status["path"])
+        self.assertIn("renderer_ready", status)
+
+    def test_preview_status_marks_stale_contract_as_not_ready(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            preview_root = Path(tmp)
+            with patch.object(hyperframes_previews, "PREVIEW_ROOT", preview_root):
+                path = hyperframes_previews.preview_path("spiritual_reflective", "short_9_16")
+                path.parent.mkdir(parents=True)
+                path.write_bytes(b"preview")
+                (path.parent / "preview-metadata.json").write_text('{"contract_version": 1}', encoding="utf-8")
+
+                status = hyperframes_previews.preview_status("spiritual_reflective", "short_9_16")
+
+        self.assertFalse(status["ready"])
+
+    def test_schedule_builtin_preview_prewarm_skips_when_renderer_off(self):
+        hyperframes_previews._prewarm_scheduled = False
+        with patch.object(hyperframes_previews, "preview_renderer_ready", return_value=(False, "off")):
+            with patch.object(hyperframes_previews, "ensure_hyperframes_template_preview") as ensure:
+                hyperframes_previews.schedule_builtin_preview_prewarm()
+                hyperframes_previews.schedule_builtin_preview_prewarm()
+        ensure.assert_not_called()
 
     def test_prewarm_skips_brand_templates_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:

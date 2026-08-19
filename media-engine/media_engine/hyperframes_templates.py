@@ -406,11 +406,11 @@ TEMPLATES: tuple[HyperframesTemplate, ...] = (
     ),
     HyperframesTemplate(
         id="techtalk_intel_brief",
-        label="TechTalk Intel Brief",
+        label="Intel Brief",
         category="Data",
         best_for="Edu-finance explainers: clean key takeaways, bilingual tech/finance talking-head hybrids.",
         effects=("intel lower-third", "teal keyline", "takeaway card", "brand chip"),
-        caption_style="TechTalk weighted captions",
+        caption_style="Weighted edu-finance captions",
         default_genres=("explainer", "techtalk", "tech_edu", "tech_ai", "markets", "opinion", "business_impact"),
         status="ready",
         tone="Clean, confident, edu-finance",
@@ -426,13 +426,22 @@ TEMPLATE_BY_ID = {template.id: template for template in TEMPLATES}
 
 
 def _preview_cache_ready(template_id: str, formats: list[str]) -> dict[str, bool]:
-    from .hyperframes_previews import PREVIEW_ROOT
+    from .hyperframes_previews import PREVIEW_CONTRACT_VERSION, PREVIEW_ROOT
 
     safe_template = template_id.replace(":", "__")
     ready: dict[str, bool] = {}
     for item in formats:
         path = PREVIEW_ROOT / safe_template / item / "preview.mp4"
-        ready[item] = path.exists() and path.stat().st_size > 0
+        metadata_path = path.parent / "preview-metadata.json"
+        if not path.exists() or path.stat().st_size <= 0 or not metadata_path.exists():
+            ready[item] = False
+            continue
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            ready[item] = False
+            continue
+        ready[item] = metadata.get("contract_version") == PREVIEW_CONTRACT_VERSION
     return ready
 
 

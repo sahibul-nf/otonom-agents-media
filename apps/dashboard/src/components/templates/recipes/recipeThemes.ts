@@ -31,7 +31,7 @@ export const recipeThemes: Record<string, RecipeTheme> = {
   sketch_post_it: base({accent: "#fef08a", secondary: "#fbcfe8", caption: "idea", caption2: "ship", fontFamily: "Caveat, cursive", captionStyle: "Post-it notes", motionPreset: "post-it-pop", colorGrade: "sketch warm"}),
   prism_pro_pricing: base({accent: "#a7f36b", secondary: "#67e8f9", caption: "Pro $29", caption2: "highlighted plan", fontFamily: "Outfit, sans-serif", captionStyle: "Price label", motionPreset: "price-pop", colorGrade: "prism clean"}),
   chalk_word_emphasis: base({accent: "#e2e8f0", secondary: "#94a3b8", caption: "emphasis", caption2: "chalk on dark", fontFamily: "Permanent Marker, cursive", captionStyle: "Chalk handwriting", motionPreset: "chalk-scribble", colorGrade: "chalk dark board"}),
-  techtalk_intel_brief: base({accent: "#2dd4bf", secondary: "#e2e8f0", caption: "Key takeaway", caption2: "edu-finance brief", fontFamily: "IBM Plex Sans, sans-serif", captionStyle: "TechTalk weighted captions", motionPreset: "intel-lower-third", colorGrade: "clean teal grade"}),
+  techtalk_intel_brief: base({accent: "#2dd4bf", secondary: "#e2e8f0", caption: "Key takeaway", caption2: "edu-finance brief", fontFamily: "IBM Plex Sans, sans-serif", captionStyle: "Weighted edu-finance captions", motionPreset: "intel-lower-third", colorGrade: "clean teal grade"}),
 };
 
 export function getRecipeTheme(templateId: string): RecipeTheme {
