@@ -1,6 +1,6 @@
 {
   "id": "default_workspace_style",
-  "label": "Default Workspace Style",
+  "label": "Platform default",
   "layout": {
     "aspect_ratio": "9:16",
     "layout_mode": "fill",

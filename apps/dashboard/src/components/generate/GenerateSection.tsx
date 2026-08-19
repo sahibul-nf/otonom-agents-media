@@ -58,8 +58,10 @@ function ShellComponentToggle({
     <button
       type="button"
       onClick={() => onChange(!enabled)}
-      className={`flex flex-col rounded-xl border px-4 py-3 text-left transition ${
-        enabled ? "border-cyan bg-cyan/[0.05] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
+      className={`flex flex-col rounded-2xl border p-3 text-left transition ${
+        enabled
+          ? "border-cyan/[0.50] bg-cyan/[0.05] text-white"
+          : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
       }`}
       aria-pressed={enabled}
     >
@@ -156,6 +158,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   statusTone,
   onGenerate,
   onOpenReview,
+  onOpenBrand,
   onCopy,
   renderReadinessLine,
   renderActionStatus,
@@ -177,6 +180,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   statusTone: (status: string) => string;
   onGenerate: (source?: SourceResolveResult | null) => void;
   onOpenReview: () => void;
+  onOpenBrand?: () => void;
   onCopy: () => void;
   renderReadinessLine: ReadinessLineComponent;
   renderActionStatus: (state?: ActionUiState) => ReactNode;
@@ -250,6 +254,14 @@ export function GenerateSection<T extends GenerateConfigLike>({
     ...hyperframesTemplates.map((template) => ({value: template.id, label: template.label})),
   ];
   const selectedTemplate = hyperframesTemplates.find((template) => template.id === config.hyperframesTemplate);
+  const brandStyleOptions =
+    templates.length > 0
+      ? templates
+      : [{id: "default", label: "Platform default", path: defaultTemplatePath, has_brand_system: "0"}];
+  const savedBrandStyles = brandStyleOptions.filter((item) => /custom_/i.test(item.path));
+  const activeBrandStyle =
+    brandStyleOptions.find((item) => item.path === config.brandTemplate) ||
+    brandStyleOptions.find((item) => item.path === defaultTemplatePath);
   const latestProgress = Math.max(0, Math.min(100, latest?.progress || 0));
   const selectedGenreCount = genreOptions.filter((genre) => config.genres.includes(genre.id)).length;
   const toggleGenre = (id: string) => {
@@ -423,14 +435,17 @@ export function GenerateSection<T extends GenerateConfigLike>({
             <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
               Advanced
               <span className="ml-2 text-xs font-medium text-zinc-500">
-                style · duration · genres · brand
+                template · duration · angles · captions
               </span>
             </summary>
 
             <div className="mt-4 grid gap-5 border-t border-white/[0.06] pt-4">
               <div>
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h4 className="font-semibold text-white">Visual style</h4>
+                  <div>
+                    <h4 className="font-semibold text-white">Visual template</h4>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">Recipe layout, overlays, and motion from the template gallery.</p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setTemplatePickerOpen(true)}
@@ -467,6 +482,14 @@ export function GenerateSection<T extends GenerateConfigLike>({
                     onChange={(value) => update({hyperframesFormat: value})}
                   />
                 </div>
+                {selectedTemplate ? (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Using <span className="text-zinc-300">{selectedTemplate.label}</span>
+                    {selectedTemplate.source === "brand_system" ? " · includes saved caption style" : " · caption style is set below"}
+                  </p>
+                ) : config.hyperframesTemplate === "auto" ? (
+                  <p className="mt-2 text-xs text-zinc-500">Auto picks a recipe from your content angles and workspace niche.</p>
+                ) : null}
               </div>
 
               <div>
@@ -529,29 +552,62 @@ export function GenerateSection<T extends GenerateConfigLike>({
               </div>
 
               <div>
-                <h4 className="mb-3 font-semibold text-white">Brand</h4>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(templates.length ? templates : [{id: "default", label: "Default Workspace Style", path: defaultTemplatePath}]).map((template) => {
-                    const active = config.brandTemplate === template.path;
-                    return (
-                      <button
-                        key={template.id}
-                        type="button"
-                        onClick={() => update({brandTemplate: template.path})}
-                        className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
-                          active
-                            ? "border-cyan bg-cyan/[0.05] text-white"
-                            : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
-                        }`}
-                      >
-                        <span className="text-xs font-semibold">{template.label}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${active ? "bg-cyan text-ink" : "bg-white/[0.08] text-zinc-500"}`}>
-                          {active ? "On" : "Use"}
-                        </span>
-                      </button>
-                    );
-                  })}
+                <div className="mb-3">
+                  <h4 className="font-semibold text-white">Captions & watermark</h4>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                    Font, highlight color, and watermark text — separate from the visual template above.
+                  </p>
                 </div>
+                {savedBrandStyles.length === 0 ? (
+                  <div className="rounded-2xl border border-white/[0.08] bg-black/24 p-4">
+                    <p className="text-sm text-zinc-300">
+                      Using <span className="font-semibold text-white">{activeBrandStyle?.label || "Platform default"}</span>
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      Built-in caption and watermark settings. No extra step needed until you save a custom style in Brand.
+                    </p>
+                    {onOpenBrand ? (
+                      <button
+                        type="button"
+                        onClick={onOpenBrand}
+                        className="mt-3 text-xs font-semibold text-cyan transition hover:text-cyan/80"
+                      >
+                        Customize in Brand →
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {brandStyleOptions.map((template) => {
+                      const active = config.brandTemplate === template.path;
+                      const isDefault = template.path === defaultTemplatePath;
+                      return (
+                        <button
+                          key={template.id}
+                          type="button"
+                          onClick={() => update({brandTemplate: template.path})}
+                          className={`flex flex-col rounded-2xl border p-3 text-left transition ${
+                            active
+                              ? "border-cyan/[0.50] bg-cyan/[0.05] text-white"
+                              : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
+                          }`}
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold">{template.label}</span>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${active ? "bg-cyan text-ink" : "bg-white/[0.08] text-zinc-500"}`}>
+                              {active ? "Active" : "Use"}
+                            </span>
+                          </span>
+                          {isDefault ? (
+                            <span className="mt-1 text-[11px] leading-4 text-zinc-500">Built-in baseline when no saved style is selected</span>
+                          ) : (
+                            <span className="mt-1 text-[11px] leading-4 text-zinc-500">Saved in Brand Builder</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div>

@@ -182,7 +182,7 @@ def list_brand_templates() -> list[dict[str, str]]:
         if path.name.startswith("custom_") and not has_brand_system:
             continue
         if path.name == "default_workspace_style.json":
-            label = "Default Workspace Style"
+            label = "Platform default"
         templates.append(
             {
                 "id": str(path.relative_to(ROOT)),
@@ -192,7 +192,7 @@ def list_brand_templates() -> list[dict[str, str]]:
             }
         )
     if not templates:
-        templates.append({"id": "profiles/default_workspace_style.json", "label": "Default Workspace Style", "path": "profiles/default_workspace_style.json", "has_brand_system": "0"})
+        templates.append({"id": "profiles/default_workspace_style.json", "label": "Platform default", "path": "profiles/default_workspace_style.json", "has_brand_system": "0"})
     return templates
 
 

@@ -1416,6 +1416,7 @@ export function MediaStudioApp() {
               statusTone={statusTone}
               onGenerate={startGeneration}
               onOpenReview={() => setSection("review")}
+              onOpenBrand={() => setSection("brand")}
               onCopy={() => copyText(command, "Production command copied")}
               renderReadinessLine={(props) => <ReadinessLine {...props} />}
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}

@@ -177,7 +177,7 @@ export function BrandBuilderWorkspace({
     {value: "headline-slam", label: "Headline slam"},
   ];
   const baselineOptions = [
-    {id: defaultTemplate, label: "Default style baseline", path: defaultTemplate},
+    {id: defaultTemplate, label: "Platform default", path: defaultTemplate},
     ...templates.filter((template) => template.path !== defaultTemplate),
   ].map((template) => ({value: template.path, label: template.label}));
   const starterSelectOptions = starterTemplates.map((template) => ({value: template.id, label: template.label}));

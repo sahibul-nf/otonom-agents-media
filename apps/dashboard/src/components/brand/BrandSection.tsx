@@ -104,9 +104,9 @@ export function BrandSection({
     <section className="grid min-w-0 gap-9">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-white/[0.06] pb-5">
         <div className="min-w-0 max-w-xl">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Brand system</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Brand kit</p>
           <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">
-            Start from a preset, reopen a saved style, then refine live in Brand Builder.
+            Save custom caption & watermark styles here. Create already uses the platform default until you save one.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -167,7 +167,7 @@ export function BrandSection({
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h4 className="text-base font-semibold tracking-tight text-white">Saved styles</h4>
-            <p className="mt-1 text-xs text-zinc-500">Reopen to fine-tune in place, then Use in Create.</p>
+            <p className="mt-1 text-xs text-zinc-500">Saved styles appear as options in Create → Advanced → Captions & watermark.</p>
           </div>
           <div className="flex items-center gap-3">
             <button type="button" onClick={onTemplateSaved} className="text-[11px] font-semibold text-zinc-500 transition hover:text-cyan">
@@ -218,8 +218,10 @@ export function BrandSection({
         ) : (
           <div className="grid min-h-[7.5rem] place-items-center rounded-[22px] border border-dashed border-white/[0.08] bg-black/10 px-6 py-8 text-center">
             <div>
-              <p className="text-sm font-medium text-zinc-400">No saved brand styles yet</p>
-              <p className="mt-1 text-xs text-zinc-600">Open a preset, tweak it, then Save in Brand Builder.</p>
+              <p className="text-sm font-medium text-zinc-400">No saved caption styles yet</p>
+              <p className="mt-1 text-xs text-zinc-600">
+                Create uses the built-in platform default. Open a preset, tweak it, then Save in Brand Builder to unlock it in Create.
+              </p>
             </div>
           </div>
         )}
