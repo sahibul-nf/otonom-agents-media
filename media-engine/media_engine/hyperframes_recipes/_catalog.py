@@ -252,7 +252,7 @@ def _chalk_overlay(_c, _t, _l):
 def _techtalk_overlay(c, _t, _l):
     hook = _e(c.get("titleHook") or c.get("title_hook") or "Key takeaway")
     subtitle = _e(c.get("hookSubtitle") or c.get("hook_subtitle") or c.get("subtitle") or "")
-    brand = _e(c.get("watermarkText") or "TechTalk")
+    brand = _e(c.get("watermarkText") or "Intel Brief")
     reason = str(c.get("viralReason") or c.get("viral_reason") or "").lower()
     is_broll = "broll" in reason or "b-roll" in reason or "signal" in reason
     micro = "Signal snapshot" if is_broll else "Key takeaway"
@@ -331,7 +331,7 @@ _RECIPE_SPECS: list[dict[str, Any]] = [
         "techtalk_intel_brief",
         font="space_grotesk",
         font_family='"Space Grotesk", system-ui, sans-serif',
-        caption_style="TechTalk teal takeaway",
+        caption_style="Weighted edu-finance captions",
         motion="brief-slide",
         grade="intel cool slate",
         video_filter="contrast(1.08) saturate(0.92) brightness(0.88)",

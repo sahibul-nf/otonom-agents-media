@@ -38,8 +38,11 @@ class SpecTemplateRecipe(TemplateRecipe):
     def css_block(self, layout: LayoutContext) -> str:
         builder = self._spec.get("css_builder")
         if callable(builder):
-            return builder(layout)
-        return str(self._spec.get("css") or "")
+            base = builder(layout)
+        else:
+            base = str(self._spec.get("css") or "")
+        motion_css = str(self._spec.get("motion_extra") or "")
+        return base + motion_css
 
     def motion_block(
         self,
@@ -51,8 +54,7 @@ class SpecTemplateRecipe(TemplateRecipe):
         builder = self._spec.get("motion_builder")
         if callable(builder):
             return builder(contract, layout, hook_exit_s, cta_start_s)
-        extra = str(self._spec.get("motion_extra") or "")
-        return extra
+        return ""
 
     def shell_css(self, layout: LayoutContext) -> str:
         builder = self._spec.get("shell_css_builder")

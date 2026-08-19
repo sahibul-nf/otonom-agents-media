@@ -136,6 +136,47 @@ class HyperframesTemplateTests(unittest.TestCase):
         self.assertIn("techtalk-bars", broll_html)
         self.assertIn("Signal snapshot", broll_html)
 
+        default_html = recipe.render_overlay(
+            {"titleHook": "Key takeaway", "hookSubtitle": "Brief"},
+            {"id": "techtalk_intel_brief"},
+            layout,
+        )
+        self.assertIn("Intel Brief", default_html)
+
+    def test_techtalk_render_html_keeps_motion_css_in_style_block(self):
+        from media_engine.hyperframes_renderer import build_hyperframes_index_html
+        from media_engine.rendering import build_premium_render_contract
+
+        candidate = {
+            "id": "clip_techtalk",
+            "start_ms": 0,
+            "end_ms": 60_000,
+            "title_hook": "Fed pivot changes the tape",
+            "viral_reason": "Reason",
+            "transcript_span": "Fed pivot",
+            "timed_captions": [
+                {
+                    "text": "Fed pivot",
+                    "startMs": 0,
+                    "endMs": 60_000,
+                    "words": [{"text": "Fed", "startMs": 0, "endMs": 30_000}, {"text": "pivot", "startMs": 30_000, "endMs": 60_000}],
+                }
+            ],
+        }
+        profile = {"id": "techtalk", "watermark_text": "Intel Brief", "cta_text": ""}
+        contract = build_premium_render_contract(candidate, profile, "source.mp4", "https://youtu.be/test", "Source: Channel")
+        contract = {
+            **contract,
+            "shellComponents": {"hook": False, "watermark": False, "source": False, "cta": False},
+        }
+
+        html = build_hyperframes_index_html(contract, hyperframes_template="techtalk_intel_brief")
+        gsap_script = html.split('<script src="https://cdn.jsdelivr.net/npm/gsap')[1].split("</script>")[0]
+
+        self.assertNotIn(".techtalk-brief", gsap_script)
+        self.assertIn("@keyframes techtalkBriefIn", html)
+        self.assertIn(".techtalk-brief{animation:techtalkBriefIn", html)
+
     def test_templates_expose_shell_component_defaults(self):
         byline = next(template for template in list_hyperframes_templates() if template["id"] == "byline_trust_quote")
         velocity = next(template for template in list_hyperframes_templates() if template["id"] == "velocity_business_promo")
