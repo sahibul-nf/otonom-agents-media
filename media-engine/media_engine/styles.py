@@ -96,3 +96,55 @@ def save_brand_system_template(
 ) -> dict[str, str]:
     payload = deep_merge(style, {"brand_system": brand_system})
     return save_style_template(label, payload, base_style_path, target_path=target_path)
+
+
+def _brand_public_id(template_id: str) -> str:
+    clean = str(template_id or "").strip()
+    if clean.startswith("brand:"):
+        return clean
+    if not clean.startswith("custom_"):
+        clean = f"custom_{_slug(clean)}"
+    return f"brand:{clean}"
+
+
+def resolve_custom_brand_template_path(
+    *,
+    path: str | Path | None = None,
+    template_id: str | None = None,
+) -> Path:
+    raw_path = str(path or "").strip()
+    raw_id = str(template_id or "").strip()
+    if raw_path:
+        resolved = resolve_style_path(raw_path)
+    elif raw_id:
+        if raw_id.startswith("brand:"):
+            raw_id = raw_id.split(":", 1)[1]
+        candidate = PROFILES_DIR / f"{raw_id}.json" if not raw_id.endswith(".json") else PROFILES_DIR / Path(raw_id).name
+        resolved = resolve_style_path(candidate)
+    else:
+        raise ValueError("path or template_id is required")
+    if resolved.parent.resolve() != PROFILES_DIR.resolve():
+        raise ValueError("only profiles/custom_*.json brand templates can be deleted")
+    if not resolved.name.startswith("custom_") or resolved.suffix != ".json":
+        raise ValueError("only profiles/custom_*.json brand templates can be deleted")
+    if not resolved.exists():
+        raise ValueError("brand template not found")
+    return resolved
+
+
+def delete_brand_template(
+    *,
+    path: str | Path | None = None,
+    template_id: str | None = None,
+) -> dict[str, str]:
+    resolved = resolve_custom_brand_template_path(path=path, template_id=template_id)
+    template_slug = resolved.stem
+    brand_id = _brand_public_id(template_slug)
+    relative = _profiles_relative(resolved)
+    resolved.unlink()
+    return {
+        "deleted": "true",
+        "path": relative,
+        "template_id": template_slug,
+        "brand_id": brand_id,
+    }

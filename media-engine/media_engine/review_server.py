@@ -39,7 +39,13 @@ from .genres import genre_catalog
 from .source_resolve import resolve_youtube_source
 from .review_grouping import enrich_review_rows_with_source
 from .hyperframes_catalog import list_hyperframes_catalog
-from .hyperframes_previews import ensure_hyperframes_template_preview, list_hyperframes_preview_status, preview_status, prewarm_hyperframes_template_previews
+from .hyperframes_previews import (
+    clear_template_preview_cache,
+    ensure_hyperframes_template_preview,
+    list_hyperframes_preview_status,
+    preview_status,
+    prewarm_hyperframes_template_previews,
+)
 from .hyperframes_renderer import check_hyperframes_runtime
 from .hyperframes_templates import list_hyperframes_templates
 from .live_publishers import (
@@ -83,7 +89,7 @@ from .scheduler import (
     update_schedule,
     update_schedule_platforms,
 )
-from .styles import load_style, save_brand_system_template, save_style_template
+from .styles import delete_brand_template, load_style, save_brand_system_template, save_style_template
 
 
 ENV_FILE = ROOT.parent / ".env.local"
@@ -939,6 +945,21 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(template, status=201)
+            return
+
+        if parsed.path == "/api/brand-template-delete":
+            try:
+                result = delete_brand_template(
+                    path=str(payload.get("path") or "").strip() or None,
+                    template_id=str(payload.get("template_id") or payload.get("id") or "").strip() or None,
+                )
+            except ValueError as exc:
+                message = str(exc)
+                status = 404 if "not found" in message.lower() else 400
+                self._send_json({"error": message}, status=status)
+                return
+            preview_cleared = clear_template_preview_cache(result["brand_id"])
+            self._send_json({**result, "preview_cache_cleared": preview_cleared})
             return
 
         if parsed.path == "/api/hyperframes-template-preview-prewarm":

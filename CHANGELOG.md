@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Delete saved brand styles (#79): remove `profiles/custom_*.json` and matching `brand:custom_*` catalog entries from Brand and Templates with confirm; Create config resets when the active style is deleted.
 - Optional shell layers (#78): each recipe defines default hook/watermark/source/CTA toggles; renderer omits disabled nodes; Create Advanced exposes per-batch overrides; generation jobs pass `shell_components` through CLI → style → contract.
 - Template gallery previews: drop shared shell hook/brand/CTA/source chrome and generic fixture copy; recipe overlay + niche captions only; stale preview cache auto-regenerates (`PREVIEW_CONTRACT_VERSION=2`).
 - Templates UX: remove internal “HF render” badge from style previews; detail modal copy uses “sample clip” instead of HyperFrames jargon; grid cards show compact `9:16` format badge; fix nested-button hydration on template cards.

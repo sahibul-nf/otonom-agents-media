@@ -1,6 +1,6 @@
 "use client";
 
-import {BadgeCheck, ChevronRight, Layers3, Monitor, Settings, Smartphone, Sparkles, Wand2, X} from "lucide-react";
+import {BadgeCheck, ChevronRight, Layers3, Monitor, Settings, Smartphone, Sparkles, Trash2, Wand2, X} from "lucide-react";
 import {useEffect, useMemo, useState, type ReactNode} from "react";
 import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
@@ -43,6 +43,7 @@ export function TemplatesSection({
   onUse,
   onSetDefault,
   onCustomize,
+  onDelete,
   renderStatusPill,
   renderSettingTile,
   renderEmptyState,
@@ -54,6 +55,7 @@ export function TemplatesSection({
   onUse: (templateId: string) => void;
   onSetDefault: (templateId: string) => void;
   onCustomize: (templateId: string) => void;
+  onDelete?: (template: HyperframesTemplate) => void;
   renderStatusPill: (busy: boolean, status: string) => ReactNode;
   renderSettingTile: (label: string, value: string | number) => ReactNode;
   renderEmptyState: (title: string, text: string) => ReactNode;
@@ -437,6 +439,16 @@ export function TemplatesSection({
                     <Sparkles className="h-4 w-4" />
                     Set default
                   </button>
+                  {selected.source === "brand_system" && onDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => onDelete(selected)}
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-full border border-danger/25 px-4 text-xs font-semibold text-danger transition hover:bg-danger/[0.08]"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete saved style
+                    </button>
+                  ) : null}
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {renderSettingTile("Caption", selected.caption_style)}

@@ -13,7 +13,7 @@ from media_engine import hyperframes_templates
 from media_engine.hyperframes_renderer import build_hyperframes_index_html
 from media_engine.hyperframes_templates import resolve_hyperframes_template, resolve_starter_template_id
 from media_engine.rendering import build_premium_render_contract
-from media_engine.styles import load_style, save_brand_system_template
+from media_engine.styles import delete_brand_template, load_style, save_brand_system_template
 
 
 class BrandSystemClosedLoopTests(unittest.TestCase):
@@ -161,6 +161,56 @@ class BrandSystemClosedLoopTests(unittest.TestCase):
         self.assertIn("brand-grain", html)
         self.assertIn("brand-social-pill", html)
         self.assertIn("Style WM", html)
+
+    def test_delete_brand_template_removes_custom_file_and_catalog_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            (profiles / "default_workspace_style.json").write_text(json.dumps({"id": "default"}), encoding="utf-8")
+            style_path = profiles / "custom_delete_me.json"
+            style_path.write_text(
+                json.dumps(
+                    {
+                        "id": "custom_delete_me",
+                        "label": "Delete Me",
+                        "brand_system": {"starter_template": "spiritual_reflective"},
+                        "caption": {},
+                        "brand": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            preview_root = root / "artifacts" / "hyperframes_template_previews" / "brand__custom_delete_me" / "short_9_16"
+            preview_root.mkdir(parents=True)
+            (preview_root / "preview.mp4").write_bytes(b"preview")
+            with patch("media_engine.styles.ROOT", root), patch("media_engine.styles.PROFILES_DIR", profiles), patch(
+                "media_engine.styles.DEFAULT_STYLE_PATH", profiles / "default_workspace_style.json"
+            ), patch.object(hyperframes_templates, "ROOT", root), patch(
+                "media_engine.hyperframes_previews.PREVIEW_ROOT", root / "artifacts" / "hyperframes_template_previews"
+            ):
+                self.assertEqual(len(hyperframes_templates._saved_brand_system_templates()), 1)
+                result = delete_brand_template(path="profiles/custom_delete_me.json")
+                self.assertEqual(result["brand_id"], "brand:custom_delete_me")
+                self.assertFalse(style_path.exists())
+                self.assertEqual(hyperframes_templates._saved_brand_system_templates(), [])
+                from media_engine.hyperframes_previews import clear_template_preview_cache
+
+                self.assertTrue(clear_template_preview_cache("brand:custom_delete_me"))
+                self.assertFalse(preview_root.exists())
+
+    def test_delete_brand_template_rejects_builtin_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            default_path = profiles / "default_workspace_style.json"
+            default_path.write_text(json.dumps({"id": "default"}), encoding="utf-8")
+            with patch("media_engine.styles.ROOT", root), patch("media_engine.styles.PROFILES_DIR", profiles), patch(
+                "media_engine.styles.DEFAULT_STYLE_PATH", default_path
+            ):
+                with self.assertRaises(ValueError):
+                    delete_brand_template(path="profiles/default_workspace_style.json")
 
 
 if __name__ == "__main__":

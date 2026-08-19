@@ -836,6 +836,61 @@ export function MediaStudioApp() {
     await refreshAll();
   }
 
+  function deleteSavedBrandStyle(template: {id?: string; path?: string; brand_template_path?: string; label?: string}) {
+    const label = template.label || template.id || "saved style";
+    setConfirmDialog({
+      title: "Delete saved style?",
+      message: `Remove “${label}” from your workspace. This cannot be undone.`,
+      confirmLabel: "Delete style",
+      tone: "danger",
+      onConfirm: () =>
+        void performDeleteBrandTemplate({
+          path: template.path || template.brand_template_path,
+          templateId: template.id,
+          label,
+        }),
+    });
+  }
+
+  async function performDeleteBrandTemplate(args: {path?: string; templateId?: string; label?: string}) {
+    const key = `brand:${args.path || args.templateId || "template"}:delete`;
+    try {
+      await runAction(key, "Deleting saved style...", async () => {
+        const payload: Record<string, string> = {};
+        if (args.path) payload.path = args.path;
+        if (args.templateId) payload.template_id = args.templateId;
+        const result = await apiPost<{brand_id: string; path: string}>("brand-template-delete", payload);
+        const deletedBrandId = result.brand_id;
+        const deletedPath = result.path;
+        setGenerateConfig((current) => {
+          const usesDeleted =
+            (deletedPath && current.brandTemplate === deletedPath) ||
+            current.hyperframesTemplate === deletedBrandId ||
+            current.brandSystemTemplateId === deletedBrandId;
+          if (!usesDeleted) return current;
+          return {
+            ...current,
+            brandTemplate: defaultTemplate,
+            hyperframesTemplate: "auto",
+            brandSystemTemplateId: "",
+            shellComponents: {...DEFAULT_SHELL_COMPONENTS},
+          };
+        });
+        const storedDefault = window.localStorage.getItem("otonom.hyperframesTemplateDefault");
+        if (storedDefault === deletedBrandId) {
+          window.localStorage.removeItem("otonom.hyperframesTemplateDefault");
+        }
+      }, "Saved style deleted");
+      setStatus("Saved style deleted");
+      pushToast("Saved style deleted", "success");
+      await refreshAll();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Delete failed";
+      setStatus(message);
+      pushToast(message, "error");
+    }
+  }
+
   async function updateDeliverySettings(target: PublishTarget, patch: {daily_cap?: number; enabled?: boolean; mode?: string}) {
     const key = `target:${target.platform}:delivery`;
     const next = await runAction(key, "Updating delivery settings...", () => apiPost<PublishTarget>("publish-target", {
@@ -1449,6 +1504,7 @@ export function MediaStudioApp() {
                 window.localStorage.setItem("otonom.brandBuilderStarterTemplate", starter);
                 window.location.href = `/brand/builder?starter=${encodeURIComponent(starter)}`;
               }}
+              onDelete={deleteSavedBrandStyle}
               renderStatusPill={(busy, status) => <StatusPill busy={busy} status={status} />}
               renderSettingTile={(label, value) => <SettingTile label={label} value={value} />}
               renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
@@ -1527,6 +1583,7 @@ export function MediaStudioApp() {
               defaultTemplate={defaultTemplate}
               onAutonomyMode={updateAutonomyMode}
               onTemplateSaved={refreshAll}
+              onDeleteTemplate={deleteSavedBrandStyle}
             />
           )}
         </div>

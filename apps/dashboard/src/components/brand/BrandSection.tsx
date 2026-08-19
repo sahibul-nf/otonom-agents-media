@@ -1,7 +1,7 @@
 "use client";
 
 import {useRouter} from "next/navigation";
-import {ArrowUpRight, CheckCircle2, Layers3, Loader2, Palette, Settings2, Sparkles} from "lucide-react";
+import {ArrowUpRight, CheckCircle2, Layers3, Loader2, Palette, Settings2, Sparkles, Trash2} from "lucide-react";
 import {useEffect} from "react";
 import {brandPresets} from "@/components/brand/BrandBuilderWorkspace";
 import type {AutonomySettings, BrandTemplate, HyperframesCatalog, HyperframesTemplate, StyleProfile} from "@/lib/media-api";
@@ -18,6 +18,7 @@ type Props = {
   defaultTemplate: string;
   onAutonomyMode: (mode: string) => void;
   onTemplateSaved: () => void;
+  onDeleteTemplate?: (template: BrandTemplate) => void;
 };
 
 const STARTER_STORAGE_KEY = "otonom.brandBuilderStarterTemplate";
@@ -70,6 +71,7 @@ export function BrandSection({
   defaultTemplate: _defaultTemplate,
   onAutonomyMode,
   onTemplateSaved,
+  onDeleteTemplate,
 }: Props) {
   const router = useRouter();
   const autonomyBusy = Object.entries(actionStates).find(([key, state]) => key.startsWith("autonomy:") && state.status === "running")?.[1];
@@ -180,23 +182,37 @@ export function BrandSection({
         {savedStyles.length ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {savedStyles.map((template) => (
-              <button
+              <div
                 key={template.id}
-                type="button"
-                onClick={() => openSavedTemplate(template)}
-                className="group flex min-w-0 items-center gap-4 rounded-[22px] border border-white/[0.06] bg-black/15 p-4 text-left transition hover:-translate-y-0.5 hover:border-cyan/[0.22] hover:bg-black/25"
+                className="group flex min-w-0 items-center gap-2 rounded-[22px] border border-white/[0.06] bg-black/15 p-2 text-left transition hover:border-cyan/[0.22] hover:bg-black/25"
               >
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/[0.06] bg-black/30 text-cyan">
-                  <Sparkles className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-white transition-colors group-hover:text-cyan">
-                    {template.label}
+                <button
+                  type="button"
+                  onClick={() => openSavedTemplate(template)}
+                  className="flex min-w-0 flex-1 items-center gap-4 rounded-[18px] p-2 text-left"
+                >
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/[0.06] bg-black/30 text-cyan">
+                    <Sparkles className="h-4 w-4" />
                   </span>
-                  <span className="mt-1 block truncate text-[11px] text-zinc-500">Brand system · edit in Builder</span>
-                </span>
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-cyan" />
-              </button>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-white transition-colors group-hover:text-cyan">
+                      {template.label}
+                    </span>
+                    <span className="mt-1 block truncate text-[11px] text-zinc-500">Brand system · edit in Builder</span>
+                  </span>
+                  <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-cyan" />
+                </button>
+                {onDeleteTemplate ? (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteTemplate(template)}
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.08] text-zinc-500 transition hover:border-danger/35 hover:bg-danger/[0.08] hover:text-danger"
+                    aria-label={`Delete ${template.label}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
             ))}
           </div>
         ) : (

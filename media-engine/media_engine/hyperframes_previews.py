@@ -35,6 +35,17 @@ def preview_path(template_id: str, hyperframes_format: str) -> Path:
     return PREVIEW_ROOT / safe_template / normalized_format / "preview.mp4"
 
 
+def clear_template_preview_cache(template_id: str) -> bool:
+    safe_template = str(template_id or "").strip().replace("__", ":").replace(":", "__")
+    if not safe_template:
+        return False
+    preview_dir = PREVIEW_ROOT / safe_template
+    if not preview_dir.exists():
+        return False
+    shutil.rmtree(preview_dir)
+    return True
+
+
 def preview_status(template_id: str, hyperframes_format: str) -> dict[str, Any]:
     output = preview_path(template_id, hyperframes_format)
     metadata_path = output.parent / "preview-metadata.json"
