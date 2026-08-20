@@ -32,6 +32,11 @@ class HyperframesTemplateTests(unittest.TestCase):
         self.assertEqual(resolve_hyperframes_template("auto", genres=["podcast"])["id"], "grit_training_stamp")
         self.assertEqual(resolve_hyperframes_template("auto", genres=["geopolitics"])["id"], "byline_trust_quote")
         self.assertEqual(resolve_hyperframes_template("auto", genres=["explainer"])["id"], "techtalk_intel_brief")
+        self.assertNotEqual(
+            resolve_hyperframes_template("auto", genres=["story", "advice", "social_commentary"])["id"],
+            "spiritual_reflective",
+        )
+        self.assertEqual(resolve_hyperframes_template("auto", genres=["kajian"])["id"], "spiritual_reflective")
 
     def test_unknown_values_fall_back_to_auto_then_default(self):
         self.assertEqual(normalize_hyperframes_template("missing"), "auto")

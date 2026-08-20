@@ -767,9 +767,57 @@ def _ytdlp_cookies_path() -> str:
     )
 
 
+PREFERRED_SOURCE_MIN_HEIGHT = 720
+
+
+def _ffprobe_bin() -> str | None:
+    path = shutil.which("ffprobe")
+    if path:
+        return path
+    for candidate in (Path("/opt/homebrew/bin/ffprobe"), Path("/usr/local/bin/ffprobe"), Path("/usr/bin/ffprobe")):
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def probe_video_height(path: str | Path) -> int | None:
+    ffprobe = _ffprobe_bin()
+    if not ffprobe:
+        return None
+    result = subprocess.run(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=height",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        height = int((result.stdout or "").strip().splitlines()[0])
+    except (ValueError, IndexError):
+        return None
+    return height if height > 0 else None
+
+
 def _download_section_attempts() -> list[dict[str, str]]:
-    """Formats / player clients that often recover from CDN 403 on section downloads."""
+    """Prefer ≥720p web formats; android/ios 360p is last-resort after higher attempts fail."""
     return [
+        {
+            "format": "bestvideo[height<=1080][height>=720]+bestaudio/bestvideo[height<=720]+bestaudio/best[height>=720]/best[height<=1080]",
+            "extractor_args": "youtube:player_client=web,android",
+        },
         {
             "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
             "extractor_args": "youtube:player_client=android,ios,web",
@@ -779,26 +827,32 @@ def _download_section_attempts() -> list[dict[str, str]]:
             "extractor_args": "youtube:player_client=android,mweb",
         },
         {
-            "format": "bv*[height<=720]+ba/b[height<=720]/b",
+            "format": "bv*+ba/b",
             "extractor_args": "youtube:player_client=tv,android",
         },
     ]
+
+
+def _clear_section_outputs(out_dir: Path) -> None:
+    for stale in out_dir.glob("source_*.*"):
+        try:
+            stale.unlink()
+        except OSError:
+            pass
 
 
 def download_youtube_section(url: str, profile_id: str, candidate: dict[str, Any]) -> str:
     ytdlp = find_ytdlp()
     out_dir = ARTIFACTS_DIR / profile_id / candidate["id"] / "source"
     out_dir.mkdir(parents=True, exist_ok=True)
-    for stale in out_dir.glob("source_*.*"):
-        try:
-            stale.unlink()
-        except OSError:
-            pass
+    _clear_section_outputs(out_dir)
     output_template = out_dir / "source_%(id)s.%(ext)s"
     section = f"*{ms_to_timecode(candidate['start_ms'])}-{ms_to_timecode(candidate['end_ms'])}"
     cookies = _ytdlp_cookies_path()
     last_stderr = ""
-    for attempt in _download_section_attempts():
+    attempts = _download_section_attempts()
+    last_usable = ""
+    for index, attempt in enumerate(attempts):
         cmd = [
             ytdlp,
             "--no-update",
@@ -816,18 +870,30 @@ def download_youtube_section(url: str, profile_id: str, candidate: dict[str, Any
         if cookies and Path(cookies).is_file():
             cmd.extend(["--cookies", cookies])
         cmd.append(url)
+        before = {path.resolve() for path in out_dir.glob("source_*.mp4")}
         result = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         combined = f"{result.stderr or ''}\n{result.stdout or ''}"
         last_stderr = combined
         if result.returncode == 0:
-            matches = sorted(out_dir.glob("source_*.mp4"))
-            if matches:
-                return str(matches[-1])
-            last_stderr = combined + "\nyt-dlp finished but no mp4 source clip was produced"
-            continue
+            matches = list(out_dir.glob("source_*.mp4"))
+            created = [path for path in matches if path.resolve() not in before]
+            chosen = created or matches
+            if not chosen:
+                last_stderr = combined + "\nyt-dlp finished but no mp4 source clip was produced"
+                continue
+            path = str(max(chosen, key=lambda item: item.stat().st_mtime))
+            last_usable = path
+            height = probe_video_height(path)
+            remaining = index < len(attempts) - 1
+            if remaining and height is not None and height < PREFERRED_SOURCE_MIN_HEIGHT:
+                continue
+            return path
         lower = combined.lower()
-        # Retry only when YouTube CDN / client selection is the likely cause.
         if "403" in lower or "forbidden" in lower or "access denied" in lower:
             continue
+        if last_usable:
+            return last_usable
         break
+    if last_usable:
+        return last_usable
     raise RuntimeError(humanize_youtube_download_error(last_stderr))

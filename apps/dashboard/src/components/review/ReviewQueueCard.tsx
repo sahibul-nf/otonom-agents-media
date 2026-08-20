@@ -101,6 +101,7 @@ export function ReviewQueueCard({
           muted={muted}
           loop
           preload="metadata"
+          posterSeekSeconds={0.5}
           spacing="none"
           rounded="panel"
           showPlayHint={false}

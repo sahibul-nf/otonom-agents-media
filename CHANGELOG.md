@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Clip render sharpness (#81): YouTube section download prefers ≥720p and retries if the file is below 720p; Auto template no longer maps generic Create angles (`advice`/`story`) onto Spiritual Reflective; Review cards seek the poster to 0.5s so a corrupt first frame is not the thumbnail.
+
 - Multi-tenant template catalog: builtin `techtalk_intel_brief` label neutralized to **Intel Brief** (id + aliases unchanged); workspace default stays in `profiles/techtalk_style.json`.
 - Template gallery previews: background prewarm on server start/template list; status API exposes `renderer_ready`; UI falls back to recipe overlay with "Recipe preview" instead of infinite loading when HyperFrames is off or prewarm fails.
 - Intel Brief (`techtalk_intel_brief`) preview render: move recipe `motion_extra` CSS into the style block (fixes HyperFrames lint `invalid_inline_script_syntax`).

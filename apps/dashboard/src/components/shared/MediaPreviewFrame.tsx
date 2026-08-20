@@ -1,7 +1,7 @@
 "use client";
 
 import {Play} from "lucide-react";
-import type {ReactNode, RefObject} from "react";
+import {useRef, type ReactNode, type RefObject} from "react";
 
 export type MediaPreviewAspect = "portrait" | "landscape";
 
@@ -53,6 +53,8 @@ export type MediaPreviewFrameProps = {
   onPlay?: () => void;
   onPause?: () => void;
   onEnded?: () => void;
+  /** Seek once after metadata so Review posters skip a corrupt first frame. */
+  posterSeekSeconds?: number;
   ariaLabel?: string;
   /** Cap width to Review grid card footprint (17.5rem) */
   gridMatch?: boolean;
@@ -87,11 +89,23 @@ export function MediaPreviewFrame({
   onPause,
   onEnded,
   ariaLabel,
+  posterSeekSeconds = 0,
   gridMatch = false,
 }: MediaPreviewFrameProps) {
   const hasVideo = Boolean(src);
   const spacingClass = spacing === "card" ? "mb-2.5" : spacing === "compact" ? "mb-4" : "";
   const gridMatchClass = gridMatch ? "mx-auto w-full max-w-[17.5rem]" : "";
+  const posterSeekedKey = useRef("");
+
+  function seekPoster(video: HTMLVideoElement) {
+    if (posterSeekSeconds <= 0) return;
+    const key = `${src ?? ""}:${posterSeekSeconds}`;
+    if (posterSeekedKey.current === key) return;
+    if (!Number.isFinite(video.duration) || video.duration < posterSeekSeconds) return;
+    if (!video.paused) return;
+    posterSeekedKey.current = key;
+    video.currentTime = posterSeekSeconds;
+  }
 
   return (
     <div
@@ -112,6 +126,7 @@ export function MediaPreviewFrame({
           loop={loop}
           playsInline={playsInline}
           preload={preload}
+          onLoadedMetadata={(event) => seekPoster(event.currentTarget)}
           onLoadedData={onLoadedData}
           onError={onError}
           onTimeUpdate={onTimeUpdate}

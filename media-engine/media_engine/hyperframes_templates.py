@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from .genres import UNIVERSAL_CATALOG
 
 AUTO_TEMPLATE_ID = "auto"
 DEFAULT_TEMPLATE_ID = "spiritual_reflective"
@@ -125,7 +125,7 @@ TEMPLATES: tuple[HyperframesTemplate, ...] = (
         best_for="Spiritual teaching, reflective advice, and heart-softening clips.",
         effects=("warm vignette", "subtle grain", "editorial hook", "word emphasis"),
         caption_style="Editorial weighted captions",
-        default_genres=("kajian", "spiritual_reflection", "advice", "history", "dua_and_dzikir"),
+        default_genres=("kajian", "spiritual_reflection", "dua_and_dzikir"),
         status="ready",
         tone="Calm, warm, devotional",
         accent="#d8b45f",
@@ -489,6 +489,14 @@ def dimensions_for_format(value: Any) -> tuple[int, int, str]:
     return 1080, 1920, "short_9_16" if normalized == "auto" else normalized
 
 
+def _auto_template_score(template: HyperframesTemplate, signals: set[str]) -> int:
+    overlap = signals.intersection(template.default_genres)
+    if not overlap:
+        return 0
+    specific = overlap - set(UNIVERSAL_CATALOG)
+    return len(specific) * 100 + len(overlap)
+
+
 def resolve_starter_template_id(value: Any) -> str:
     """Map a Brand Studio starter id (including aliases) to a builtin template id."""
     raw = str(value or "").strip() or DEFAULT_TEMPLATE_ID
@@ -530,9 +538,15 @@ def resolve_hyperframes_template(
     if "spiritual" in brand or "reflective" in brand:
         signals.add("kajian")
 
+    best: HyperframesTemplate | None = None
+    best_score = 0
     for template in TEMPLATES:
-        if signals.intersection(template.default_genres):
-            return template.renderer_dict()
+        score = _auto_template_score(template, signals)
+        if score > best_score:
+            best = template
+            best_score = score
+    if best is not None:
+        return best.renderer_dict()
     return TEMPLATE_BY_ID[DEFAULT_TEMPLATE_ID].renderer_dict()
 
 
