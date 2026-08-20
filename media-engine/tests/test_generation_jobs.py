@@ -42,6 +42,17 @@ class GenerationJobTests(unittest.TestCase):
         self.assertEqual(payload["speech_language"], "auto")
         self.assertEqual(payload["transcript_languages"], "auto")
         self.assertEqual(payload["llm_provider"], "deepseek")
+        self.assertEqual(payload["brand_template"], "auto")
+        self.assertEqual(payload["shell_components"], {})
+
+    def test_normalize_generation_payload_legacy_default_style_maps_to_auto(self):
+        payload = normalize_generation_payload(
+            {
+                "source_url": "https://youtube.com/watch?v=test",
+                "brand_template": "profiles/default_workspace_style.json",
+            }
+        )
+        self.assertEqual(payload["brand_template"], "auto")
 
     def test_normalize_generation_payload_canonicalizes_legacy_clip_length(self):
         payload = normalize_generation_payload({"source_url": "https://youtube.com/watch?v=test", "clip_length_preset": "30-60s"})
@@ -132,7 +143,28 @@ class GenerationJobTests(unittest.TestCase):
         self.assertIn("--speech-language", command)
         self.assertIn("--transcript-languages", command)
 
-    def test_build_generation_command_passes_shell_components(self):
+    def test_build_generation_command_passes_shell_components_for_custom_brand(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            (profiles / "custom_shell.json").write_text('{"id":"custom_shell","label":"Shell"}', encoding="utf-8")
+            with patch.object(generation_jobs_module, "ROOT", root):
+                payload = generation_jobs_module.normalize_generation_payload(
+                    {
+                        "source_url": "https://youtube.com/watch?v=test",
+                        "brand_template": "profiles/custom_shell.json",
+                        "shell_components": {"hook": True, "watermark": False, "source": True, "cta": False},
+                    }
+                )
+                command = build_generation_command(payload)
+
+            self.assertIn("--shell-components", command)
+            shell_index = command.index("--shell-components")
+            self.assertIn('"hook":true', command[shell_index + 1])
+            self.assertIn('"watermark":false', command[shell_index + 1])
+
+    def test_build_generation_command_omits_shell_components_for_template_only(self):
         payload = normalize_generation_payload(
             {
                 "source_url": "https://youtube.com/watch?v=test",
@@ -140,11 +172,7 @@ class GenerationJobTests(unittest.TestCase):
             }
         )
         command = build_generation_command(payload)
-
-        self.assertIn("--shell-components", command)
-        shell_index = command.index("--shell-components")
-        self.assertIn('"hook":true', command[shell_index + 1])
-        self.assertIn('"watermark":false', command[shell_index + 1])
+        self.assertNotIn("--shell-components", command)
 
     def test_brand_templates_include_default_workspace_style(self):
         templates = list_brand_templates()

@@ -188,10 +188,14 @@ def build_premium_render_contract(
     style = style or load_style()
     caption_style = style["caption"]
     brand = style.get("brand") if isinstance(style.get("brand"), dict) else {}
-    watermark_text = str(brand.get("watermark_text") or "").strip() or str(profile.get("watermark_text") or "")
-    cta_text = str(profile.get("cta_text") or "")
-    if brand.get("cta_enabled") is False:
+    if style.get("template_only"):
+        watermark_text = ""
         cta_text = ""
+    else:
+        watermark_text = str(brand.get("watermark_text") or "").strip() or str(profile.get("watermark_text") or "")
+        cta_text = str(profile.get("cta_text") or "")
+        if brand.get("cta_enabled") is False:
+            cta_text = ""
     raw_captions = candidate.get("timed_captions") or []
     if not raw_captions:
         raise ValueError(

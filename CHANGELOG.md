@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- Create clip batches default to **template-only** styling (`brand_template: auto`): caption, watermark, and shell layers come from the selected HyperFrames recipe until the operator picks a saved custom brand style. Platform `default_workspace_style.json` is no longer auto-applied on generate.
+- `npm run dev` from `apps/dashboard` starts media engine + dashboard (same as repo root); use `npm run dev:next` for Next.js only.
+
 ### Fixed
 - Clip render sharpness (#81): YouTube section download prefers ≥720p and retries if the file is below 720p; Auto template no longer maps generic Create angles (`advice`/`story`) onto Spiritual Reflective; Review cards seek the poster to 0.5s so a corrupt first frame is not the thumbnail.
 

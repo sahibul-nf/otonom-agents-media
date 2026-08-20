@@ -37,13 +37,15 @@ cd media-engine
 PYTHONPATH=. python3 -m media_engine.review_server
 ```
 
-Then start the SaaS dashboard:
+Then start the SaaS dashboard (Next.js only — no media engine API):
 
 ```bash
 cd apps/dashboard
 npm install
-npm run dev
+npm run dev:next
 ```
+
+To start **both** backend + dashboard from `apps/dashboard`, use `npm run dev` (same as repo root).
 
 Open `http://127.0.0.1:3100`. The dashboard proxies local engine calls through `MEDIA_ENGINE_API_BASE`, defaulting to `http://127.0.0.1:8765`. Port `3100` avoids colliding with Postiz (`:3000` / `:4200`) on the same machine.
 

@@ -5,7 +5,7 @@ import {useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStat
 import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
 import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
-import {apiGet, type ShellComponents, DEFAULT_SHELL_COMPONENTS, type SourceResolveResult} from "@/lib/media-api";
+import {apiGet, type ShellComponents, DEFAULT_SHELL_COMPONENTS, isTemplateOnlyBrand, TEMPLATE_ONLY_BRAND, type SourceResolveResult} from "@/lib/media-api";
 import {
   type ActionUiState,
   type BrandTemplate,
@@ -254,14 +254,13 @@ export function GenerateSection<T extends GenerateConfigLike>({
     ...hyperframesTemplates.map((template) => ({value: template.id, label: template.label})),
   ];
   const selectedTemplate = hyperframesTemplates.find((template) => template.id === config.hyperframesTemplate);
-  const brandStyleOptions =
-    templates.length > 0
-      ? templates
-      : [{id: "default", label: "Platform default", path: defaultTemplatePath, has_brand_system: "0"}];
-  const savedBrandStyles = brandStyleOptions.filter((item) => /custom_/i.test(item.path));
-  const activeBrandStyle =
-    brandStyleOptions.find((item) => item.path === config.brandTemplate) ||
-    brandStyleOptions.find((item) => item.path === defaultTemplatePath);
+  const savedBrandStyles = templates.filter((item) => /custom_/i.test(item.path));
+  const templateOnlyBrand = isTemplateOnlyBrand(config.brandTemplate, defaultTemplatePath);
+  const brandStyleOptions = [
+    {id: "template-default", label: "Template default", path: TEMPLATE_ONLY_BRAND, has_brand_system: "0"},
+    ...savedBrandStyles,
+  ];
+  const templateShellDefaults = shellComponentsFromTemplate(selectedTemplate);
   const latestProgress = Math.max(0, Math.min(100, latest?.progress || 0));
   const selectedGenreCount = genreOptions.filter((genre) => config.genres.includes(genre.id)).length;
   const toggleGenre = (id: string) => {
@@ -466,7 +465,12 @@ export function GenerateSection<T extends GenerateConfigLike>({
                         renderer: "hyperframes",
                         hyperframesTemplate: value,
                         brandSystemTemplateId: picked?.source === "brand_system" ? value : "",
-                        brandTemplate: picked?.brand_template_path || config.brandTemplate,
+                        brandTemplate:
+                          picked?.source === "brand_system" && picked?.brand_template_path
+                            ? picked.brand_template_path
+                            : templateOnlyBrand
+                              ? TEMPLATE_ONLY_BRAND
+                              : config.brandTemplate,
                         shellComponents: shellComponentsFromTemplate(picked),
                       });
                     }}
@@ -555,16 +559,16 @@ export function GenerateSection<T extends GenerateConfigLike>({
                 <div className="mb-3">
                   <h4 className="font-semibold text-white">Captions & watermark</h4>
                   <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    Font, highlight color, and watermark text — separate from the visual template above.
+                    Optional — only applies when you pick a saved brand style below. Otherwise the visual template drives the look.
                   </p>
                 </div>
                 {savedBrandStyles.length === 0 ? (
                   <div className="rounded-2xl border border-white/[0.08] bg-black/24 p-4">
                     <p className="text-sm text-zinc-300">
-                      Using <span className="font-semibold text-white">{activeBrandStyle?.label || "Platform default"}</span>
+                      Using <span className="font-semibold text-white">template defaults</span>
                     </p>
                     <p className="mt-1 text-xs leading-5 text-zinc-500">
-                      Built-in caption and watermark settings. No extra step needed until you save a custom style in Brand.
+                      Caption font, colors, watermark, and shell layers come from the selected visual template — no platform brand overlay.
                     </p>
                     {onOpenBrand ? (
                       <button
@@ -572,15 +576,17 @@ export function GenerateSection<T extends GenerateConfigLike>({
                         onClick={onOpenBrand}
                         className="mt-3 text-xs font-semibold text-cyan transition hover:text-cyan/80"
                       >
-                        Customize in Brand →
+                        Save a custom style in Brand →
                       </button>
                     ) : null}
                   </div>
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2">
                     {brandStyleOptions.map((template) => {
-                      const active = config.brandTemplate === template.path;
-                      const isDefault = template.path === defaultTemplatePath;
+                      const active = templateOnlyBrand
+                        ? template.path === TEMPLATE_ONLY_BRAND
+                        : config.brandTemplate === template.path;
+                      const isTemplateDefault = template.path === TEMPLATE_ONLY_BRAND;
                       return (
                         <button
                           key={template.id}
@@ -598,8 +604,8 @@ export function GenerateSection<T extends GenerateConfigLike>({
                               {active ? "Active" : "Use"}
                             </span>
                           </span>
-                          {isDefault ? (
-                            <span className="mt-1 text-[11px] leading-4 text-zinc-500">Built-in baseline when no saved style is selected</span>
+                          {isTemplateDefault ? (
+                            <span className="mt-1 text-[11px] leading-4 text-zinc-500">Recipe captions and shell only — no saved brand overlay</span>
                           ) : (
                             <span className="mt-1 text-[11px] leading-4 text-zinc-500">Saved in Brand Builder</span>
                           )}
@@ -613,37 +619,71 @@ export function GenerateSection<T extends GenerateConfigLike>({
               <div>
                 <div className="mb-3 flex items-center justify-between">
                   <h4 className="font-semibold text-white">Shell layers</h4>
-                  <span className="text-xs text-zinc-500">Per-template defaults; override for this batch</span>
+                  <span className="text-xs text-zinc-500">
+                    {templateOnlyBrand ? "From template" : "Override for this batch"}
+                  </span>
                 </div>
-                <p className="mb-3 text-xs leading-5 text-zinc-500">
-                  Hook and CTA are optional shell nodes. Most templates keep the hook inside the recipe overlay instead.
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <ShellComponentToggle
-                    label="Hook"
-                    detail="Title + subtitle card in the shell"
-                    enabled={config.shellComponents.hook}
-                    onChange={(hook) => update({shellComponents: {...config.shellComponents, hook}})}
-                  />
-                  <ShellComponentToggle
-                    label="Watermark"
-                    detail="Brand name in the corner"
-                    enabled={config.shellComponents.watermark}
-                    onChange={(watermark) => update({shellComponents: {...config.shellComponents, watermark}})}
-                  />
-                  <ShellComponentToggle
-                    label="Source"
-                    detail="Attribution line under the watermark"
-                    enabled={config.shellComponents.source}
-                    onChange={(source) => update({shellComponents: {...config.shellComponents, source}})}
-                  />
-                  <ShellComponentToggle
-                    label="CTA"
-                    detail="End-card follow / subscribe prompt"
-                    enabled={config.shellComponents.cta}
-                    onChange={(cta) => update({shellComponents: {...config.shellComponents, cta}})}
-                  />
-                </div>
+                {templateOnlyBrand ? (
+                  <div className="rounded-2xl border border-white/[0.08] bg-black/24 p-4">
+                    <p className="text-sm text-zinc-300">
+                      {selectedTemplate ? (
+                        <>
+                          Defaults for <span className="font-semibold text-white">{selectedTemplate.label}</span>
+                        </>
+                      ) : (
+                        "Template shell defaults"
+                      )}
+                    </p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {(["hook", "watermark", "source", "cta"] as const).map((key) => (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2 text-xs"
+                        >
+                          <span className="font-semibold capitalize text-zinc-400">{key}</span>
+                          <span className={templateShellDefaults[key] ? "text-cyan" : "text-zinc-600"}>
+                            {templateShellDefaults[key] ? "On" : "Off"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs leading-5 text-zinc-500">
+                      Pick a saved brand style above to override caption, watermark, and shell layers for this batch.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="mb-3 text-xs leading-5 text-zinc-500">
+                      Hook and CTA are optional shell nodes. Most templates keep the hook inside the recipe overlay instead.
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <ShellComponentToggle
+                        label="Hook"
+                        detail="Title + subtitle card in the shell"
+                        enabled={config.shellComponents.hook}
+                        onChange={(hook) => update({shellComponents: {...config.shellComponents, hook}})}
+                      />
+                      <ShellComponentToggle
+                        label="Watermark"
+                        detail="Brand name in the corner"
+                        enabled={config.shellComponents.watermark}
+                        onChange={(watermark) => update({shellComponents: {...config.shellComponents, watermark}})}
+                      />
+                      <ShellComponentToggle
+                        label="Source"
+                        detail="Attribution line under the watermark"
+                        enabled={config.shellComponents.source}
+                        onChange={(source) => update({shellComponents: {...config.shellComponents, source}})}
+                      />
+                      <ShellComponentToggle
+                        label="CTA"
+                        detail="End-card follow / subscribe prompt"
+                        enabled={config.shellComponents.cta}
+                        onChange={(cta) => update({shellComponents: {...config.shellComponents, cta}})}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <details className="rounded-[20px] border border-white/[0.06] bg-black/20 p-4">
@@ -725,7 +765,12 @@ export function GenerateSection<T extends GenerateConfigLike>({
                       renderer: "hyperframes",
                       hyperframesTemplate: template.id,
                       brandSystemTemplateId: template.source === "brand_system" ? template.id : "",
-                      brandTemplate: template.brand_template_path || config.brandTemplate,
+                      brandTemplate:
+                        template.source === "brand_system" && template.brand_template_path
+                          ? template.brand_template_path
+                          : templateOnlyBrand
+                            ? TEMPLATE_ONLY_BRAND
+                            : config.brandTemplate,
                       shellComponents: shellComponentsFromTemplate(template),
                     });
                     setTemplatePickerOpen(false);

@@ -30,7 +30,7 @@ from .rerender import rerender_from_args
 from .schedule_publisher import process_due_publishes
 from .shell_components import normalize_shell_components
 from .silence_trim import apply_silence_trim_for_render
-from .styles import load_style
+from .styles import load_style, load_style_for_render
 from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
 
 
@@ -293,7 +293,11 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
 
     bar.step("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
-    style = load_style(args.style)
+    style = load_style_for_render(
+        args.style,
+        hyperframes_template=getattr(args, "hyperframes_template", "auto"),
+        genres=parse_genres(args.genres, args.profile),
+    )
     bar.step("selecting best short candidate")
     candidate = choose_nourbit_premium_candidates(
         args.profile,
@@ -535,7 +539,11 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
     bar.step("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
-    style = load_style(args.style)
+    style = load_style_for_render(
+        args.style,
+        hyperframes_template=getattr(args, "hyperframes_template", "auto"),
+        genres=parse_genres(args.genres, args.profile),
+    )
     bar.step(f"curating {args.count} candidates with llm_provider={args.llm_provider}")
     candidates = choose_nourbit_premium_candidates(
         args.profile,
@@ -565,7 +573,11 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
     bar.step("fetching YouTube transcript")
     entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
-    style = load_style(args.style)
+    style = load_style_for_render(
+        args.style,
+        hyperframes_template=getattr(args, "hyperframes_template", "auto"),
+        genres=parse_genres(args.genres, args.profile),
+    )
     shell_components_raw = str(getattr(args, "shell_components", "") or "").strip()
     if shell_components_raw:
         try:

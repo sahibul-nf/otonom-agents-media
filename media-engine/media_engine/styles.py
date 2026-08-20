@@ -13,6 +13,27 @@ from .db import ROOT
 
 DEFAULT_STYLE_PATH = ROOT / "profiles" / "default_workspace_style.json"
 PROFILES_DIR = ROOT / "profiles"
+TEMPLATE_ONLY_STYLE_TOKEN = "auto"
+_LEGACY_DEFAULT_STYLE_REFS = frozenset(
+    {
+        "profiles/default_workspace_style.json",
+        "default_workspace_style.json",
+    }
+)
+
+
+def is_template_only_style(style_path: str | Path | None) -> bool:
+    text = str(style_path or "").strip().lower()
+    if text in {"", TEMPLATE_ONLY_STYLE_TOKEN, "template", "none"}:
+        return True
+    return str(style_path or "").strip() in _LEGACY_DEFAULT_STYLE_REFS
+
+
+def normalize_brand_template_ref(value: Any) -> str:
+    text = str(value or "").strip()
+    if is_template_only_style(text):
+        return TEMPLATE_ONLY_STYLE_TOKEN
+    return text
 
 
 def resolve_style_path(style_path: str | Path | None = None) -> Path:
@@ -46,6 +67,68 @@ def load_style(style_path: str | Path | None = None) -> dict[str, Any]:
     override_path = resolve_style_path(style_path)
     override = json.loads(override_path.read_text(encoding="utf-8"))
     return deep_merge(base, override)
+
+
+def style_from_recipe(template_id: str) -> dict[str, Any]:
+    """Minimal render style driven by the HyperFrames recipe — no platform brand overlay."""
+    from .hyperframes_recipes import get_recipe, recipe_style_meta
+    from .hyperframes_templates import normalize_hyperframes_template, resolve_hyperframes_template
+
+    resolved = resolve_hyperframes_template(normalize_hyperframes_template(template_id))
+    recipe_id = str(resolved.get("recipe_module") or resolved["id"])
+    recipe = get_recipe(recipe_id)
+    meta = recipe_style_meta(recipe_id)
+    font_primary = str(meta.font_family or "Arial").split(",")[0].strip() or "Arial"
+    default_doc = json.loads(DEFAULT_STYLE_PATH.read_text(encoding="utf-8"))
+    default_layout = default_doc.get("layout") if isinstance(default_doc.get("layout"), dict) else {}
+    return {
+        "id": "template_only",
+        "label": "Template default",
+        "template_only": True,
+        "layout": deepcopy(default_layout),
+        "caption": {
+            "preset": "mozi",
+            "font_family": font_primary,
+            "fallback_font_family": "Arial",
+            "font_size": 54,
+            "font_weight": "black",
+            "uppercase": False,
+            "position": "bottom",
+            "lines": 1,
+            "max_words_per_caption": 3,
+            "text_color": "#ffffff",
+            "stroke_color": "#000000",
+            "stroke_width": 0,
+            "highlight_word_color": "",
+            "animation": "bounce",
+            "background_color": "transparent",
+            "background_radius": 8,
+        },
+        "brand": {
+            "watermark_text": "",
+            "source_attribution_prefix": "Source:",
+            "cta_enabled": False,
+            "intro_enabled": False,
+            "outro_enabled": False,
+        },
+        "shell_components": recipe.default_shell_components(),
+        "ai": deepcopy(default_doc.get("ai")) if isinstance(default_doc.get("ai"), dict) else {},
+    }
+
+
+def load_style_for_render(
+    style_path: str | Path | None = None,
+    *,
+    hyperframes_template: str = "auto",
+    genres: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    if is_template_only_style(style_path):
+        from .hyperframes_templates import resolve_hyperframes_template
+
+        resolved = resolve_hyperframes_template(hyperframes_template, genres=genres or ())
+        recipe_id = str(resolved.get("recipe_module") or resolved["id"])
+        return style_from_recipe(recipe_id)
+    return load_style(style_path)
 
 
 def _slug(value: str) -> str:

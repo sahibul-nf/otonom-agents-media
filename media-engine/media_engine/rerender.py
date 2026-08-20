@@ -16,7 +16,7 @@ from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_one, initialize,
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .silence_trim import apply_silence_trim_for_render, remap_caption_groups
-from .styles import load_style
+from .styles import load_style_for_render
 from .youtube_pipeline import download_youtube_section
 
 
@@ -183,7 +183,11 @@ def rerender_candidate(
 
     report(27, "Auto-trimming silence on source clip")
     source_clip = apply_silence_trim_for_render(source_clip, candidate)
-    style = load_style(style_path)
+    style = load_style_for_render(
+        style_path,
+        hyperframes_template=str(render_metadata.get("hyperframesTemplate") or "auto"),
+        genres=(candidate.get("genres") or render_metadata.get("genres") or []),
+    )
 
     if regenerate_captions:
         report(30, "Regenerating captions for edited boundary")

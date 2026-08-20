@@ -41,6 +41,8 @@ import {
   ClipCandidate,
   CredentialStatus,
   DEFAULT_SHELL_COMPONENTS,
+  isTemplateOnlyBrand,
+  TEMPLATE_ONLY_BRAND,
   DurationPreset,
   EngineHealth,
   ExplainerJob,
@@ -441,7 +443,9 @@ function shellComponentsForTemplate(templates: HyperframesTemplate[], templateId
 }
 
 function productionCommand(config: GenerateConfig) {
-  const shellJson = JSON.stringify(config.shellComponents);
+  const shellLine = isTemplateOnlyBrand(config.brandTemplate, defaultTemplate)
+    ? ""
+    : `  --shell-components '${JSON.stringify(config.shellComponents)}' \\\n`;
   return `cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
 MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPATH=. "\${MEDIA_ENGINE_PYTHON}" -m media_engine.cli premium-batch \\
   --youtube-url "${config.sourceUrl}" \\
@@ -460,8 +464,7 @@ MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPA
   --speech-language ${config.speechLanguage} \\
   --transcript-languages ${config.transcriptLanguages} \\
   --style ${config.brandTemplate} \\
-  --shell-components '${shellJson}' \\
-  --llm-provider ${config.llmProvider} \\
+${shellLine}  --llm-provider ${config.llmProvider} \\
   --env-file ../.env.local`;
 }
 
@@ -509,7 +512,7 @@ export function MediaStudioApp() {
     clipMinSeconds: 20,
     clipMaxSeconds: 180,
     genres: ["story", "advice", "social_commentary"],
-    brandTemplate: defaultTemplate,
+    brandTemplate: TEMPLATE_ONLY_BRAND,
     hyperframesTemplate: "auto",
     brandSystemTemplateId: "",
     hyperframesFormat: "short_9_16",
@@ -775,7 +778,9 @@ export function MediaStudioApp() {
           speech_language: generateConfig.speechLanguage,
           transcript_languages: generateConfig.transcriptLanguages,
           llm_provider: generateConfig.llmProvider,
-          shell_components: generateConfig.shellComponents,
+          ...(isTemplateOnlyBrand(generateConfig.brandTemplate, defaultTemplate)
+            ? {}
+            : {shell_components: generateConfig.shellComponents}),
           env_file: "../.env.local",
         }), "Generation batch started");
       setJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
@@ -870,10 +875,10 @@ export function MediaStudioApp() {
           if (!usesDeleted) return current;
           return {
             ...current,
-            brandTemplate: defaultTemplate,
+            brandTemplate: TEMPLATE_ONLY_BRAND,
             hyperframesTemplate: "auto",
             brandSystemTemplateId: "",
-            shellComponents: {...DEFAULT_SHELL_COMPONENTS},
+            shellComponents: shellComponentsForTemplate(hyperframesTemplates, current.hyperframesTemplate),
           };
         });
         const storedDefault = window.localStorage.getItem("otonom.hyperframesTemplateDefault");
@@ -1484,7 +1489,12 @@ export function MediaStudioApp() {
                   renderer: "hyperframes",
                   hyperframesTemplate: templateId,
                   brandSystemTemplateId: selectedTemplate?.source === "brand_system" ? templateId : "",
-                  brandTemplate: selectedTemplate?.brand_template_path || current.brandTemplate,
+                  brandTemplate:
+                    selectedTemplate?.source === "brand_system" && selectedTemplate?.brand_template_path
+                      ? selectedTemplate.brand_template_path
+                      : isTemplateOnlyBrand(current.brandTemplate, defaultTemplate)
+                        ? TEMPLATE_ONLY_BRAND
+                        : current.brandTemplate,
                   shellComponents: shellComponentsForTemplate(hyperframesTemplates, templateId),
                 }));
                 setSection("generate");

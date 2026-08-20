@@ -19,6 +19,7 @@ from .duration_presets import resolve_duration_strategy
 from .genres import normalize_genres
 from .hyperframes_renderer import check_hyperframes_runtime
 from .hyperframes_templates import normalize_hyperframes_template
+from .styles import is_template_only_style, normalize_brand_template_ref
 from .shell_components import normalize_shell_components
 
 
@@ -237,7 +238,7 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     source_url = str(payload.get("source_url") or "").strip()
     if not source_url:
         raise ValueError("source_url is required")
-    brand_template = str(payload.get("brand_template") or "profiles/default_workspace_style.json").strip()
+    brand_template = normalize_brand_template_ref(payload.get("brand_template"))
     brand_system_template_id = str(payload.get("brand_system_template_id") or "").strip()
     hyperframes_template = normalize_hyperframes_template(payload.get("hyperframes_template"))
 
@@ -252,15 +253,15 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
             brand_system_template_id = brand_id
             style_path = str(saved.get("brand_template_path") or "").strip()
             if style_path and (
-                not brand_template
-                or brand_template == "profiles/default_workspace_style.json"
+                is_template_only_style(brand_template)
                 or not (ROOT / brand_template).exists()
             ):
                 brand_template = style_path
 
-    template_path = (ROOT / brand_template).resolve()
-    if ROOT.resolve() not in template_path.parents or not template_path.exists():
-        raise ValueError("brand_template not found")
+    if not is_template_only_style(brand_template):
+        template_path = (ROOT / brand_template).resolve()
+        if ROOT.resolve() not in template_path.parents or not template_path.exists():
+            raise ValueError("brand_template not found")
     min_seconds, max_seconds, preset_id = _duration_seconds(payload)
     profile_id = str(payload.get("profile_id") or "workspace").strip()
     genres = normalize_genres(
@@ -314,7 +315,11 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "env_file": str(payload.get("env_file") or "../.env.local").strip(),
         "niche": str(payload.get("niche") or "").strip(),
         "workspace_name": str(payload.get("workspace_name") or "").strip(),
-        "shell_components": normalize_shell_components(payload.get("shell_components")),
+        "shell_components": (
+            {}
+            if is_template_only_style(brand_template)
+            else normalize_shell_components(payload.get("shell_components"))
+        ),
     }
 
 

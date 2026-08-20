@@ -236,6 +236,22 @@ export const DEFAULT_SHELL_COMPONENTS: ShellComponents = {
   cta: true,
 };
 
+export const TEMPLATE_ONLY_BRAND = "auto";
+
+export function isTemplateOnlyBrand(
+  path: string,
+  legacyDefaultPath = "profiles/default_workspace_style.json",
+): boolean {
+  const normalized = String(path || "").trim().toLowerCase();
+  return (
+    !normalized ||
+    normalized === TEMPLATE_ONLY_BRAND ||
+    normalized === "template" ||
+    normalized === "none" ||
+    path === legacyDefaultPath
+  );
+}
+
 export type HyperframesTemplate = {
   id: string;
   label: string;
