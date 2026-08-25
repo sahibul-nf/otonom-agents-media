@@ -152,7 +152,7 @@ export function ReviewEditorWorkspace(props: ReviewEditorWorkspaceProps) {
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-            <div className={`relative min-w-0 flex-1 ${longform ? "min-h-[360px] lg:min-h-0" : "min-h-[420px] lg:min-h-0"}`}>
+            <div className={`relative min-w-0 flex-1 ${longform ? "min-h-[360px] lg:min-h-0" : "min-h-[520px] lg:min-h-0"}`}>
               <EditorStage
                 clip={props.clip}
                 context={props.context}

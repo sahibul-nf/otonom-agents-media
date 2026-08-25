@@ -11,6 +11,7 @@ from typing import Any
 
 from .db import ARTIFACTS_DIR
 from .hyperframes_renderer import build_hyperframes_index_html, check_hyperframes_runtime, render_hyperframes_project, require_hyperframes_runtime
+from .overlay_copy import heuristic_overlay_slots
 from .hyperframes_templates import (
     PREVIEW_SECONDS,
     dimensions_for_format,
@@ -22,7 +23,7 @@ from .hyperframes_templates import (
 )
 
 PREVIEW_ROOT = ARTIFACTS_DIR / "hyperframes_template_previews"
-PREVIEW_CONTRACT_VERSION = 2
+PREVIEW_CONTRACT_VERSION = 3
 # Gallery previews show recipe overlay + captions only — no shared shell hook/brand/CTA chrome.
 PREVIEW_SHELL_COMPONENTS = {"hook": False, "watermark": False, "source": False, "cta": False}
 
@@ -373,6 +374,7 @@ def _preview_contract(template_id: str, hyperframes_format: str, width: int, hei
         "endTimecode": "00:00:15",
         "titleHook": copy["titleHook"],
         "subtitle": copy["subtitle"],
+        "overlay": heuristic_overlay_slots(copy["titleHook"], copy["subtitle"]),
         "captionText": copy["captionText"],
         "captions": captions,
         "captionEvents": [],

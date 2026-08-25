@@ -14,6 +14,7 @@ from typing import Any
 from .db import ARTIFACTS_DIR, ROOT
 from .hyperframes_recipes import LayoutContext, get_recipe
 from .hyperframes_templates import TEMPLATE_VERSION, dimensions_for_format, resolve_hyperframes_template
+from .styles import apply_readable_template_only_caption
 
 HYPERFRAMES_PACKAGE = "hyperframes@0.6.40"
 HYPERFRAMES_DIR = ROOT / "render" / "hyperframes"
@@ -140,7 +141,7 @@ def _shell_css(
     stroke_width: float = 0,
 ) -> str:
     stroke_css = (
-        f"-webkit-text-stroke: {min(max(stroke_width / 4, 0), 2.5):.2f}px rgba(0,0,0,.45);"
+        f"-webkit-text-stroke: {min(max(stroke_width / 3, 0), 3):.2f}px rgba(0,0,0,.72);"
         if stroke_width > 0
         else ""
     )
@@ -217,11 +218,12 @@ def _shell_css(
       column-gap: 14px;
       row-gap: 2px;
       max-width: 100%;
-      font-size: {caption_font_size}px;
+      font-size: {caption_font_size}px !important;
       line-height: 1.08;
       font-weight: 900;
       font-family: {font_family};
       text-shadow: 0 3px 12px rgba(0,0,0,0.9);
+      paint-order: stroke fill;
       {stroke_css}
     }}
     .caption-text span {{ display: inline-block; color: {text_color}; }}
@@ -310,6 +312,11 @@ def _css_font_family(value: Any) -> str:
 
 def _css_background(value: Any, fallback: str = "rgba(4, 7, 8, 0.72)") -> str:
     text = str(value or "").strip()
+    if not text:
+        return fallback
+    lowered = text.lower().replace(" ", "")
+    if lowered in {"transparent", "none", "rgba(0,0,0,0)", "#00000000"}:
+        return "transparent"
     if re.fullmatch(r"#[0-9a-fA-F]{6}", text):
         return text
     if re.fullmatch(r"rgba?\([^)]+\)", text):
@@ -393,6 +400,10 @@ def build_hyperframes_index_html(
         accent = _style_hex(template.get("accent"), "#d8b45f")
     secondary_accent = _style_hex(template.get("secondary_accent"), "#8ee6c8")
     caption_font_size = int(caption_style.get("font_size") or 54)
+    if style.get("template_only"):
+        caption_style = apply_readable_template_only_caption(dict(caption_style))
+        caption_font_size = int(caption_style.get("font_size") or 48)
+        style = {**style, "caption": caption_style}
     font_family = _css_font_family(caption_style.get("font_family") or template.get("font_family") or "Arial")
     caption_background = _css_background(caption_style.get("background_color"))
     stroke_width = float(caption_style.get("stroke_width") or 0)

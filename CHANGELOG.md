@@ -2,12 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+- Clip recipe overlays now fill named slots (`kicker`, `headline`, `subhead`, `stamp`, `line_a`, `line_b`) from the clip hook (and LLM overlay JSON when ranking is on) instead of gallery dummy copy (#82). Template gallery preview cache bumped to `PREVIEW_CONTRACT_VERSION=3`.
+
 ### Changed
 - Create clip batches default to **template-only** styling (`brand_template: auto`): caption, watermark, and shell layers come from the selected HyperFrames recipe until the operator picks a saved custom brand style. Platform `default_workspace_style.json` is no longer auto-applied on generate.
 - `npm run dev` from `apps/dashboard` starts media engine + dashboard (same as repo root); use `npm run dev:next` for Next.js only.
 
 ### Fixed
-- Clip render sharpness (#81): YouTube section download prefers ≥720p and retries if the file is below 720p; Auto template no longer maps generic Create angles (`advice`/`story`) onto Spiritual Reflective; Review cards seek the poster to 0.5s so a corrupt first frame is not the thumbnail.
+- Template-only karaoke captions use a 48px size (40–50 band) with stroke plus a caption card so they stay readable on talking-head footage and in the Review 9:16 preview (#83).
+- Clip render sharpness (#81): YouTube section download prefers ≥720p and retries if the file is below 720p **or unscored**; HD format strings no longer fall through to 360p progressive in the same `-f`; Review cards show a `{n}p source` badge when the mezzanine is below 720p. Restart the engine and generate a new batch — old 360p artifacts stay blurry.
+- YouTube clip generate no longer stops on `Requested format is not available` after the first HD client fails; it falls through to the `android` progressive client (works when YouTube SABR blocks `android_vr` CDN URLs).
+- YouTube source clips prefer default yt-dlp clients (visionos/tv DASH) for ≥720p instead of `android_vr`/`android`, which YouTube now gates behind a GVS PO token and otherwise only serve 360p. Deno/Node are put on PATH so n-challenge solving can run.
 
 - Multi-tenant template catalog: builtin `techtalk_intel_brief` label neutralized to **Intel Brief** (id + aliases unchanged); workspace default stays in `profiles/techtalk_style.json`.
 - Template gallery previews: background prewarm on server start/template list; status API exposes `renderer_ready`; UI falls back to recipe overlay with "Recipe preview" instead of infinite loading when HyperFrames is off or prewarm fails.

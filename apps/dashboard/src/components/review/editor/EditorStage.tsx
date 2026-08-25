@@ -29,7 +29,7 @@ export function EditorStage({
   const longform = context.capability === "scene" || context.capability === "imported_longform";
 
   return (
-    <section className="relative flex h-full min-h-[420px] min-w-0 flex-col lg:min-h-0">
+    <section className="relative flex h-full min-h-[520px] min-w-0 flex-col lg:min-h-0">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex h-10 items-center justify-between gap-3 px-5">
         <div className="flex items-center gap-2">
           <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-600">Preview</p>

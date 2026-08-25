@@ -517,6 +517,8 @@ def finalize_candidate_metadata(candidate: dict[str, Any], contract: dict[str, A
     render_quality = build_render_quality_report(contract, output_path)
     if isinstance(candidate.get("silence_trim"), dict):
         render_quality["silence_trim"] = candidate["silence_trim"]
+    if candidate.get("source_height") is not None:
+        render_quality["source_height"] = candidate.get("source_height")
     cost = estimate_clip_cost(
         int(candidate["end_ms"]) - int(candidate["start_ms"]),
         llm_provider=getattr(args, "llm_provider", "none"),

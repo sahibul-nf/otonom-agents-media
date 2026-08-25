@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
+from ..overlay_copy import overlay_text as _slot
 from ..shell_components import category_shell_defaults
 from ._factory import recipe_from_spec
 
@@ -108,33 +109,80 @@ def _spec(
     }
 
 
+def _txt(contract: dict[str, Any], *keys: str, default: str = "") -> str:
+    return _e(_slot(contract, *keys, default=default))
+
+
+def _layer_if(html: str, text: str) -> str:
+    return html if str(text or "").strip() else ""
+
+
 def _spiritual_overlay(c, _t, _l):
-    return f'<div class="template-layer editorial-masthead"><span class="micro-label">Reflect</span><strong>{_e(c.get("watermarkText",""))}</strong></div><div class="template-layer grain-heavy"></div>'
+    kicker = _txt(c, "kicker") or "Clip"
+    headline = _txt(c, "headline")
+    return (
+        f'<div class="template-layer editorial-masthead"><span class="micro-label">{kicker}</span>'
+        f"<strong>{headline}</strong></div><div class=\"template-layer grain-heavy\"></div>"
+    )
 
 
 def _podcast_overlay(c, _t, _l):
-    return f'''<div class="template-layer lower-third"><span class="micro-label">Guest</span><strong>{_e(c.get("titleHook",""))}</strong><small>{_e(c.get("watermarkText",""))}</small></div>
-<div class="template-layer avatar-ring"></div><div class="template-layer social-pill">Follow for the next clip</div>'''
+    kicker = _txt(c, "kicker") or "Guest"
+    stamp = _slot(c, "stamp")
+    pill = f'<div class="template-layer social-pill">{_e(stamp)}</div>' if stamp else ""
+    return (
+        f'<div class="template-layer lower-third"><span class="micro-label">{kicker}</span>'
+        f"<strong>{_txt(c, 'headline')}</strong><small>{_txt(c, 'subhead')}</small></div>"
+        f'<div class="template-layer avatar-ring"></div>{pill}'
+    )
 
 
-def _data_overlay(_c, _t, _l):
-    return '<div class="template-layer metrics-panel"><div><span>Signal</span><strong>74</strong></div><div><span>Window</span><strong>Short</strong></div><div><span>Action</span><strong>Watch</strong></div></div><div class="template-layer chart-bars"><span></span><span></span><span></span><span></span></div>'
+def _data_overlay(c, _t, _l):
+    return (
+        '<div class="template-layer metrics-panel">'
+        f"<div><span>{_txt(c, 'kicker') or 'Signal'}</span><strong>{_txt(c, 'stamp')}</strong></div>"
+        f"<div><span>Take</span><strong>{_txt(c, 'line_a')}</strong></div>"
+        f"<div><span>Next</span><strong>{_txt(c, 'line_b')}</strong></div>"
+        "</div><div class=\"template-layer chart-bars\"><span></span><span></span><span></span><span></span></div>"
+    )
 
 
 def _news_overlay(c, _t, _l):
-    return f'<div class="template-layer breaking-strip">BREAKING</div><div class="template-layer map-card"><span class="micro-label">Regional brief</span><strong>{_e(c.get("sourceAttribution") or "Verified source")}</strong><div class="map-grid"><i></i><i></i><i></i><i></i></div></div><div class="template-layer ticker">Source checked · Context preserved · Review required</div>'
+    return (
+        f'<div class="template-layer breaking-strip">{_txt(c, "stamp") or "BREAKING"}</div>'
+        f'<div class="template-layer map-card"><span class="micro-label">{_txt(c, "kicker") or "Brief"}</span>'
+        f"<strong>{_txt(c, 'headline')}</strong>"
+        '<div class="map-grid"><i></i><i></i><i></i><i></i></div></div>'
+        f'<div class="template-layer ticker">{_txt(c, "subhead")}</div>'
+    )
 
 
 def _product_overlay(c, _t, _l):
-    return f'<div class="template-layer logo-badge">{_e(c.get("watermarkText") or "Brand")}</div><div class="template-layer promo-card"><span class="micro-label">Creator promo</span><strong>{_e(c.get("ctaText",""))}</strong><small>Save, follow, and share</small></div><div class="template-layer chip-row"><span>NEW</span><span>SAVE 20%</span></div>'
+    brand = _e(str(c.get("watermarkText") or "").strip()) or _txt(c, "kicker")
+    return (
+        f'<div class="template-layer logo-badge">{brand}</div>'
+        f'<div class="template-layer promo-card"><span class="micro-label">{_txt(c, "kicker")}</span>'
+        f"<strong>{_txt(c, 'headline')}</strong><small>{_txt(c, 'subhead')}</small></div>"
+        f'<div class="template-layer chip-row"><span>{_txt(c, "line_a")}</span><span>{_txt(c, "line_b")}</span></div>'
+    )
 
 
 def _warm_overlay(c, _t, _l):
-    return f'<div class="template-layer magazine-masthead">THE STORY</div><div class="template-layer drop-cap">A</div><div class="template-layer handwritten-note">{_e(c.get("watermarkText",""))}</div><div class="template-layer grain-heavy"></div>'
+    first = (_slot(c, "headline") or "?")[:1].upper()
+    return (
+        f'<div class="template-layer magazine-masthead">{_txt(c, "kicker")}</div>'
+        f'<div class="template-layer drop-cap">{_e(first)}</div>'
+        f'<div class="template-layer handwritten-note">{_txt(c, "headline")}</div>'
+        '<div class="template-layer grain-heavy"></div>'
+    )
 
 
-def _play_overlay(_c, _t, _l):
-    return '<div class="template-layer sticker yellow">HOOK</div><div class="template-layer sticker pink">NOW</div><div class="template-layer diagonal-tag">PLAY MODE</div>'
+def _play_overlay(c, _t, _l):
+    return (
+        f'<div class="template-layer sticker yellow">{_txt(c, "line_a") or _txt(c, "kicker")}</div>'
+        f'<div class="template-layer sticker pink">{_txt(c, "line_b") or _txt(c, "stamp")}</div>'
+        f'<div class="template-layer diagonal-tag">{_txt(c, "stamp")}</div>'
+    )
 
 
 def _swiss_overlay(_c, _t, _l):
@@ -142,120 +190,195 @@ def _swiss_overlay(_c, _t, _l):
 
 
 def _vignelli_overlay(c, _t, _l):
-    return f'<div class="template-layer portrait-headline">{_e(c.get("titleHook",""))}</div>'
+    return f'<div class="template-layer portrait-headline">{_txt(c, "headline")}</div>'
 
 
-def _tree_overlay(_c, _t, _l):
-    return '<div class="template-layer flow-node a">Start</div><div class="template-layer flow-node b">Decide</div><div class="template-layer flow-node c">Result</div><div class="template-layer flow-arrow"></div>'
+def _tree_overlay(c, _t, _l):
+    a, b, d = _txt(c, "kicker"), _txt(c, "line_a"), _txt(c, "line_b") or _txt(c, "stamp")
+    return (
+        f'<div class="template-layer flow-node a">{a}</div>'
+        f'<div class="template-layer flow-node b">{b}</div>'
+        f'<div class="template-layer flow-node c">{d}</div>'
+        '<div class="template-layer flow-arrow"></div>'
+    )
 
 
-def _kinetic_overlay(_c, _t, _l):
-    return '<div class="template-layer word-swap"><span class="w1">MAKE</span><span class="w2">IT</span><span class="w3">POP</span></div><div class="template-layer neon-outline"></div>'
+def _kinetic_overlay(c, _t, _l):
+    words = (_slot(c, "headline") or "").split()[:3]
+    while len(words) < 3:
+        words.append("")
+    return (
+        '<div class="template-layer word-swap">'
+        f'<span class="w1">{_e(words[0])}</span><span class="w2">{_e(words[1])}</span>'
+        f'<span class="w3">{_e(words[2])}</span></div>'
+        '<div class="template-layer neon-outline"></div>'
+    )
 
 
-def _saas_overlay(_c, _t, _l):
-    return '<div class="template-layer ui-mock"><div class="ui-bar"></div><div class="ui-pane"></div></div><div class="template-layer cursor-dot"></div><div class="template-layer feature-pills"><span>Fast</span><span>Simple</span></div>'
+def _saas_overlay(c, _t, _l):
+    return (
+        '<div class="template-layer ui-mock"><div class="ui-bar"></div><div class="ui-pane"></div></div>'
+        '<div class="template-layer cursor-dot"></div>'
+        f'<div class="template-layer feature-pills"><span>{_txt(c, "line_a")}</span>'
+        f"<span>{_txt(c, 'line_b')}</span></div>"
+    )
 
 
-def _nyt_overlay(_c, _t, _l):
-    return '<div class="template-layer chart-annotation"><div class="chart-line"></div><div class="chart-dot"></div><span class="chart-label">+18%</span></div>'
+def _nyt_overlay(c, _t, _l):
+    return (
+        '<div class="template-layer chart-annotation"><div class="chart-line"></div><div class="chart-dot"></div>'
+        f'<span class="chart-label">{_txt(c, "stamp") or _txt(c, "kicker")}</span></div>'
+    )
 
 
-def _neon_overlay(_c, _t, _l):
-    return '<div class="template-layer scanlines"></div><div class="template-layer neon-frame"></div><div class="template-layer glitch-tag">CYBER</div>'
+def _neon_overlay(c, _t, _l):
+    return (
+        '<div class="template-layer scanlines"></div><div class="template-layer neon-frame"></div>'
+        f'<div class="template-layer glitch-tag">{_txt(c, "stamp")}</div>'
+    )
 
 
-def _volt_overlay(_c, _t, _l):
-    return '<div class="template-layer lime-bar"></div><div class="template-layer impact-type">VOLT</div>'
+def _volt_overlay(c, _t, _l):
+    return (
+        '<div class="template-layer lime-bar"></div>'
+        f'<div class="template-layer impact-type">{_txt(c, "stamp") or _txt(c, "headline")}</div>'
+    )
 
 
-def _ember_overlay(_c, _t, _l):
-    return '<div class="template-layer sunset-bloom"></div><div class="template-layer script-accent">bloom</div>'
+def _ember_overlay(c, _t, _l):
+    return (
+        '<div class="template-layer sunset-bloom"></div>'
+        f'<div class="template-layer script-accent">{_txt(c, "kicker") or _txt(c, "headline")}</div>'
+    )
 
 
 def _align_overlay(_c, _t, _l):
     return '<div class="template-layer minimal-box-frame"></div>'
 
 
-def _energy_overlay(_c, _t, _l):
-    return '<div class="template-layer sticky-note yellow">more views?</div>'
+def _energy_overlay(c, _t, _l):
+    return _layer_if(
+        f'<div class="template-layer sticky-note yellow">{_txt(c, "headline", "kicker")}</div>',
+        _slot(c, "headline", "kicker"),
+    )
 
 
-def _arion_overlay(_c, _t, _l):
-    return '<div class="template-layer pink-callout">say it louder</div>'
+def _arion_overlay(c, _t, _l):
+    return _layer_if(
+        f'<div class="template-layer pink-callout">{_txt(c, "headline")}</div>',
+        _slot(c, "headline"),
+    )
 
 
-def _quint_overlay(_c, _t, _l):
-    return '<div class="template-layer display-serif"><em>More</em> clarity</div>'
+def _quint_overlay(c, _t, _l):
+    headline = _slot(c, "headline")
+    words = headline.split()
+    if len(words) > 1:
+        body = f"<em>{_e(words[0])}</em> {_e(' '.join(words[1:]))}"
+    else:
+        body = _e(headline)
+    return _layer_if(f'<div class="template-layer display-serif">{body}</div>', headline)
 
 
-def _archive_overlay(_c, _t, _l):
-    return '<div class="template-layer magazine-cover"><span>ARCHIVE</span><strong>Guidelines</strong></div>'
+def _archive_overlay(c, _t, _l):
+    return (
+        f'<div class="template-layer magazine-cover"><span>{_txt(c, "kicker") or _txt(c, "stamp")}</span>'
+        f"<strong>{_txt(c, 'headline')}</strong></div>"
+    )
 
 
-def _story_overlay(_c, _t, _l):
-    return '<div class="template-layer script-hand">Creative</div>'
+def _story_overlay(c, _t, _l):
+    return _layer_if(
+        f'<div class="template-layer script-hand">{_txt(c, "headline", "kicker")}</div>',
+        _slot(c, "headline", "kicker"),
+    )
 
 
-def _kai_overlay(_c, _t, _l):
-    return '<div class="template-layer mustard-card">MUSTARD MODE</div>'
+def _kai_overlay(c, _t, _l):
+    text = (_slot(c, "stamp") or _slot(c, "headline")).upper()
+    return _layer_if(f'<div class="template-layer mustard-card">{_e(text)}</div>', text)
 
 
 def _byline_overlay(c, _t, _l):
-    return f'<div class="template-layer trust-quote">"{_e(c.get("subtitle",""))}"</div>'
+    quote = _slot(c, "subhead", "headline")
+    return _layer_if(f'<div class="template-layer trust-quote">"{_e(quote)}"</div>', quote)
 
 
-def _sonnet_overlay(_c, _t, _l):
-    return '<div class="template-layer botanical-accent"></div><div class="template-layer script-lessons">lessons</div>'
+def _sonnet_overlay(c, _t, _l):
+    text = _slot(c, "kicker", "headline")
+    lessons = f'<div class="template-layer script-lessons">{_e(text)}</div>' if text else ""
+    return f'<div class="template-layer botanical-accent"></div>{lessons}'
 
 
-def _rocket_overlay(_c, _t, _l):
-    return '<div class="template-layer vhs-glitch">LEVEL UP</div>'
+def _rocket_overlay(c, _t, _l):
+    text = (_slot(c, "stamp") or _slot(c, "headline")).upper()
+    return _layer_if(f'<div class="template-layer vhs-glitch">{_e(text)}</div>', text)
 
 
-def _grit_overlay(_c, _t, _l):
-    return '<div class="template-layer training-stamp">TRAINING</div>'
+def _grit_overlay(c, _t, _l):
+    text = (_slot(c, "stamp") or _slot(c, "kicker")).upper()
+    return _layer_if(f'<div class="template-layer training-stamp">{_e(text)}</div>', text)
 
 
-def _cove_overlay(_c, _t, _l):
-    return '<div class="template-layer pill-stack"><span class="pink">add captions</span><span class="cyan">in seconds</span></div>'
+def _cove_overlay(c, _t, _l):
+    a, b = _txt(c, "line_a"), _txt(c, "line_b") or _txt(c, "subhead")
+    if not a and not b:
+        return ""
+    return f'<div class="template-layer pill-stack"><span class="pink">{a}</span><span class="cyan">{b}</span></div>'
 
 
-def _pulse_overlay(_c, _t, _l):
-    return '<div class="template-layer remember-banner">REMEMBER THE CONSISTENCY</div>'
+def _pulse_overlay(c, _t, _l):
+    text = (_slot(c, "headline") or _slot(c, "stamp")).upper()
+    return _layer_if(f'<div class="template-layer remember-banner">{_e(text)}</div>', text)
 
 
-def _neon_burst_overlay(_c, _t, _l):
-    return '<div class="template-layer star-burst"></div><div class="template-layer neon-future">SEIZE THE FUTURE</div>'
+def _neon_burst_overlay(c, _t, _l):
+    headline = _slot(c, "headline")
+    future = f'<div class="template-layer neon-future">{_e(headline)}</div>' if headline else ""
+    return f'<div class="template-layer star-burst"></div>{future}'
 
 
-def _velocity_overlay(_c, _t, _l):
-    return '<div class="template-layer velocity-stack"><span>BOOST</span><strong>YOUR BUSINESS</strong></div>'
+def _velocity_overlay(c, _t, _l):
+    return (
+        '<div class="template-layer velocity-stack">'
+        f"<span>{_txt(c, 'kicker')}</span><strong>{_txt(c, 'headline')}</strong></div>"
+    )
 
 
-def _blueprint_overlay(_c, _t, _l):
-    return '<div class="template-layer graph-paper"></div><div class="template-layer blueprint-title">how to build anything</div>'
+def _blueprint_overlay(c, _t, _l):
+    headline = _slot(c, "headline")
+    title = f'<div class="template-layer blueprint-title">{_e(headline)}</div>' if headline else ""
+    return f'<div class="template-layer graph-paper"></div>{title}'
 
 
-def _sketch_overlay(_c, _t, _l):
-    return '<div class="template-layer post-it a">idea</div><div class="template-layer post-it b">ship</div>'
+def _sketch_overlay(c, _t, _l):
+    return (
+        f'<div class="template-layer post-it a">{_txt(c, "line_a") or _txt(c, "kicker")}</div>'
+        f'<div class="template-layer post-it b">{_txt(c, "line_b") or _txt(c, "stamp")}</div>'
+    )
 
 
-def _prism_overlay(_c, _t, _l):
-    return '<div class="template-layer price-tag"><span>Pro</span><strong>$29</strong></div>'
+def _prism_overlay(c, _t, _l):
+    return (
+        f'<div class="template-layer price-tag"><span>{_txt(c, "kicker")}</span>'
+        f"<strong>{_txt(c, 'stamp') or _txt(c, 'headline')}</strong></div>"
+    )
 
 
-def _chalk_overlay(_c, _t, _l):
-    return '<div class="template-layer chalk-board"><span>emphasis</span></div>'
+def _chalk_overlay(c, _t, _l):
+    return _layer_if(
+        f'<div class="template-layer chalk-board"><span>{_txt(c, "headline")}</span></div>',
+        _slot(c, "headline"),
+    )
 
 
 def _techtalk_overlay(c, _t, _l):
-    hook = _e(c.get("titleHook") or c.get("title_hook") or "Key takeaway")
-    subtitle = _e(c.get("hookSubtitle") or c.get("hook_subtitle") or c.get("subtitle") or "")
-    brand = _e(c.get("watermarkText") or "Intel Brief")
+    hook = _txt(c, "headline")
+    subtitle = _txt(c, "subhead")
+    brand = _e(str(c.get("watermarkText") or "").strip()) or "Intel Brief"
     reason = str(c.get("viralReason") or c.get("viral_reason") or "").lower()
     is_broll = "broll" in reason or "b-roll" in reason or "signal" in reason
-    micro = "Signal snapshot" if is_broll else "Key takeaway"
+    micro = "Signal snapshot" if is_broll else (_txt(c, "kicker") or "Key takeaway")
     subtitle_html = f"<small>{subtitle}</small>" if subtitle else ""
     bars = (
         '<div class="template-layer techtalk-bars"><span></span><span></span><span></span><span class="hot"></span><span></span></div>'
@@ -265,7 +388,7 @@ def _techtalk_overlay(c, _t, _l):
     return (
         f'<div class="template-layer techtalk-brand">{brand}</div>'
         '<div class="template-layer techtalk-keyline"></div>'
-        f'{bars}'
+        f"{bars}"
         f'<div class="template-layer techtalk-brief"><span class="micro-label">{micro}</span>'
         f"<strong>{hook}</strong>{subtitle_html}</div>"
     )
@@ -291,11 +414,11 @@ _RECIPE_SPECS: list[dict[str, Any]] = [
         css="#root.recipe-spiritual-reflective video{filter:contrast(1.02) saturate(.88) brightness(.96) sepia(.14)}#root.recipe-spiritual-reflective .caption-text{font-family:Lora,serif;font-style:italic;font-weight:600}#root.recipe-spiritual-reflective .caption-card{border:none;background:rgba(24,18,10,.55);border-bottom:3px dotted var(--template-accent)}.editorial-masthead{left:48px;top:52px;max-width:360px;padding:14px 18px;border-left:4px solid var(--template-accent);background:rgba(12,10,8,.55);color:#fff8eb;font-family:Lora,serif}.grain-heavy{inset:0;opacity:.22;background-image:radial-gradient(rgba(255,255,255,.18) 1px,transparent 1px);background-size:5px 5px;mix-blend-mode:overlay}",
     ),
 
-    _spec("energy_warm_question", font="caveat", font_family='"Caveat", cursive', caption_style="Yellow sticky question", motion="note-pop", grade="warm social", video_filter="contrast(1.1) saturate(1.1) brightness(.93)", overlay_fn=_energy_overlay, shell_css=_shell(f"{_recipe_root('energy_warm_question')} .cta{{border:none;background:#ffe566;color:#222;font-family:Caveat,cursive}}", f"{_recipe_root('energy_warm_question')} .hook h1{{font-family:Caveat,cursive}}"), css="#root.recipe-energy-warm-question .caption-text{font-family:Caveat,cursive;font-size:1.2em}.sticky-note.yellow{left:48px;top:200px;padding:18px 22px;background:#ffe566;color:#222;font-family:Caveat,cursive;font-size:34px;transform:rotate(-5deg);box-shadow:0 16px 40px rgba(0,0,0,.35);border-radius:4px 16px 16px 16px}"),
+    _spec("energy_warm_question", font="caveat", font_family='"Caveat", cursive', caption_style="Yellow sticky question", motion="note-pop", grade="warm social", video_filter="contrast(1.1) saturate(1.1) brightness(.93)", overlay_fn=_energy_overlay, shell_css=_shell(f"{_recipe_root('energy_warm_question')} .cta{{border:none;background:#ffe566;color:#222;font-family:Caveat,cursive}}", f"{_recipe_root('energy_warm_question')} .hook h1{{font-family:Caveat,cursive}}"), css="#root.recipe-energy-warm-question .caption-text{font-family:Caveat,cursive}.sticky-note.yellow{left:48px;top:200px;padding:18px 22px;background:#ffe566;color:#222;font-family:Caveat,cursive;font-size:34px;transform:rotate(-5deg);box-shadow:0 16px 40px rgba(0,0,0,.35);border-radius:4px 16px 16px 16px}"),
 
     _spec("arion_pink_callout", font="rubik", font_family='"Rubik", sans-serif', caption_style="Pink rounded callout", motion="callout-bounce", grade="pink pop", video_filter="contrast(1.12) saturate(1.2) brightness(.94)", overlay_fn=_arion_overlay, shell_css=_shell(f"{_recipe_root('arion_pink_callout')} .cta{{border:none;background:#ff7ad1;color:#1a1020;border-radius:24px}}"), css="#root.recipe-arion-pink-callout .caption-card{background:#ff7ad1;color:#1a1020;border:none;border-radius:24px}.pink-callout{left:50%;top:45%;transform:translate(-50%,-50%);padding:22px 30px;border-radius:28px;background:#ff7ad1;color:#1a1020;font-weight:900;font-size:32px}"),
 
-    _spec("quintessence_serif", font="dm_serif", font_family='"DM Serif Display", serif', caption_style="Display serif emphasis", motion="serif-fade", grade="editorial cream", video_filter="contrast(1.03) saturate(.86) brightness(.95) sepia(.1)", overlay_fn=_quint_overlay, shell_css=_shell(f"{_recipe_root('quintessence_serif')} .hook h1{{font-family:'DM Serif Display',serif;font-style:italic}}", f"{_recipe_root('quintessence_serif')} .cta{{border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.45);color:var(--template-accent)}}"), css="#root.recipe-quintessence-serif .caption-text{font-family:'DM Serif Display',serif;font-size:1.1em}.display-serif{left:48px;top:180px;font-family:'DM Serif Display',serif;font-size:58px;color:#fff}.display-serif em{font-style:italic;color:var(--template-accent)}"),
+    _spec("quintessence_serif", font="dm_serif", font_family='"DM Serif Display", serif', caption_style="Display serif emphasis", motion="serif-fade", grade="editorial cream", video_filter="contrast(1.03) saturate(.86) brightness(.95) sepia(.1)", overlay_fn=_quint_overlay, shell_css=_shell(f"{_recipe_root('quintessence_serif')} .hook h1{{font-family:'DM Serif Display',serif;font-style:italic}}", f"{_recipe_root('quintessence_serif')} .cta{{border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.45);color:var(--template-accent)}}"), css="#root.recipe-quintessence-serif .caption-text{font-family:'DM Serif Display',serif}.display-serif{left:48px;top:180px;font-family:'DM Serif Display',serif;font-size:58px;color:#fff}.display-serif em{font-style:italic;color:var(--template-accent)}"),
 
     _spec("archive_magazine", font="playfair", font_family='"Playfair Display", serif', caption_style="Editorial cover", motion="cover-slide", grade="magazine muted", video_filter="contrast(1.06) saturate(.8) brightness(.88)", overlay_fn=_archive_overlay, shell_css=_shell(f"{_recipe_root('archive_magazine')} .hook h1{{font-family:'Playfair Display',serif;letter-spacing:.04em}}", f"{_recipe_root('archive_magazine')} .cta{{border:2px solid rgba(255,255,255,.28);background:transparent;color:#fff}}"), css=".magazine-cover{left:40px;top:60px;right:40px;padding:24px;border:3px solid rgba(255,255,255,.25);font-family:'Playfair Display',serif}.magazine-cover span{letter-spacing:.28em;font-size:14px}.magazine-cover strong{display:block;margin-top:12px;font-size:48px}"),
 

@@ -19,6 +19,7 @@ from .db import ARTIFACTS_DIR, ROOT
 from .duration_presets import DurationPreset, duration_prompt_phrase, resolve_duration_strategy
 from .genres import genre_prompt_phrase, normalize_genres, uses_devotional_tone, workspace_curation_context
 from .llm import LLMError, call_llm_json
+from .overlay_copy import overlay_slots_for_candidate
 from .rendering import ms_to_timecode
 from .scoring import score_candidate_text
 from .transcript_quality import correct_transcript_entries, resolve_glossary
@@ -532,6 +533,11 @@ def build_candidate(
         "subtitle_source": subtitle_source,
         "reason_source": reason_source,
     }
+    overlay_slots = overlay_slots_for_candidate(
+        {"title_hook": title, "hook_subtitle": hook_subtitle},
+        llm_suggestion,
+    )
+    metadata["overlay_slots"] = overlay_slots
     return {
         "id": f"clip_{uuid.uuid4().hex[:12]}",
         "profile_id": profile_id,
@@ -546,6 +552,7 @@ def build_candidate(
         "risk_flags": ["public_third_party_review_required"],
         "score": score,
         "curation_metadata": metadata,
+        "overlay_slots": overlay_slots,
         "caption_source": "youtube_glossary",
         "status": "draft",
     }
@@ -568,7 +575,10 @@ def llm_rank_suggestions(
     transcript = "\n".join(f"{ms_to_timecode(entry.start_ms)} {entry.text}" for entry in entries[:600])
     system_prompt = (
         "Anda adalah kurator clip pendek. Balas hanya JSON murni dengan key clips. "
-        "Setiap clip berisi start_time, end_time, title_hook, hook_subtitle, viral_reason. "
+        "Setiap clip berisi start_time, end_time, title_hook, hook_subtitle, viral_reason, "
+        "dan overlay {kicker, headline, subhead, stamp, line_a, line_b} dari transcript clip itu. "
+        "Batas karakter overlay: kicker 28, headline 56, subhead 80, stamp 22, line_a 32, line_b 32. "
+        "Jangan pakai copy dummy katalog (contoh More clarity, MUSTARD MODE, LEVEL UP, BOOST YOUR BUSINESS). "
         "Niche dan brand voice datang dari workspace, bukan dari daftar genre kustom."
     )
     angle_line = genre_prompt_phrase(genres)
@@ -811,26 +821,93 @@ def probe_video_height(path: str | Path) -> int | None:
     return height if height > 0 else None
 
 
+def _ffmpeg_bin() -> str | None:
+    path = shutil.which("ffmpeg")
+    if path:
+        return path
+    for candidate in (Path("/opt/homebrew/bin/ffmpeg"), Path("/usr/local/bin/ffmpeg"), Path("/usr/bin/ffmpeg")):
+        if candidate.exists():
+            return str(candidate)
+    return None
+
+
+def _yt_dlp_path_prefixes() -> list[str]:
+    prefixes = [
+        "/opt/homebrew/opt/node/bin",
+        "/opt/homebrew/opt/node@24/bin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+    ]
+    return [item for item in prefixes if Path(item).is_dir()]
+
+
+def _yt_dlp_tool_env() -> dict[str, str]:
+    env = dict(os.environ)
+    env["PATH"] = ":".join([*_yt_dlp_path_prefixes(), env.get("PATH", "")])
+    return env
+
+
+def _resolve_js_runtime(name: str) -> str:
+    which_found = shutil.which(name, path=_yt_dlp_tool_env().get("PATH", ""))
+    if which_found:
+        return which_found
+    for prefix in _yt_dlp_path_prefixes():
+        candidate = Path(prefix) / name
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
+def _yt_dlp_js_runtime_args() -> list[str]:
+    args: list[str] = []
+    for name in ("deno", "node"):
+        found = _resolve_js_runtime(name)
+        if found:
+            args.extend(["--js-runtimes", f"{name}:{found}"])
+    return args
+
+
+HD_SOURCE_FORMAT = (
+    "bestvideo[height>=720][height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/"
+    "bestvideo[height>=720][height<=1080]+bestaudio/"
+    "best[height>=720]"
+)
+
+
 def _download_section_attempts() -> list[dict[str, str]]:
-    """Prefer ≥720p web formats; android/ios 360p is last-resort after higher attempts fail."""
+    """Default yt-dlp clients (visionos/tv) still serve DASH 720p/1080p.
+
+    android / android_vr HTTPS formats now need a GVS PO token; without it
+    those clients only expose progressive itag 18 (360p). Keep 360p last.
+    """
     return [
+        {"format": HD_SOURCE_FORMAT, "extractor_args": ""},
         {
-            "format": "bestvideo[height<=1080][height>=720]+bestaudio/bestvideo[height<=720]+bestaudio/best[height>=720]/best[height<=1080]",
-            "extractor_args": "youtube:player_client=web,android",
+            "format": HD_SOURCE_FORMAT,
+            "extractor_args": "youtube:player_client=tv,visionos,mweb",
         },
         {
-            "format": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-            "extractor_args": "youtube:player_client=android,ios,web",
+            "format": HD_SOURCE_FORMAT,
+            "extractor_args": "youtube:player_client=android_vr",
         },
         {
-            "format": "best[height<=720]/best",
-            "extractor_args": "youtube:player_client=android,mweb",
-        },
-        {
-            "format": "bv*+ba/b",
-            "extractor_args": "youtube:player_client=tv,android",
+            "format": "18/best[height<=480]/best",
+            "extractor_args": "youtube:player_client=android",
         },
     ]
+
+
+def _stamp_source_probe(candidate: dict[str, Any], path: str) -> int | None:
+    height = probe_video_height(path)
+    candidate["source_height"] = height
+    if height is not None and height < PREFERRED_SOURCE_MIN_HEIGHT:
+        print(
+            f"[media-engine] source clip is {height}p (wanted ≥{PREFERRED_SOURCE_MIN_HEIGHT}p). "
+            "Export will look soft. Set MEDIA_ENGINE_YTDLP_COOKIES to a signed-in browser cookies.txt "
+            "and retry generate.",
+            file=sys.stderr,
+        )
+    return height
 
 
 def _clear_section_outputs(out_dir: Path) -> None:
@@ -852,6 +929,9 @@ def download_youtube_section(url: str, profile_id: str, candidate: dict[str, Any
     last_stderr = ""
     attempts = _download_section_attempts()
     last_usable = ""
+    ffmpeg = _ffmpeg_bin()
+    js_args = _yt_dlp_js_runtime_args()
+    tool_env = _yt_dlp_tool_env()
     for index, attempt in enumerate(attempts):
         cmd = [
             ytdlp,
@@ -860,18 +940,22 @@ def download_youtube_section(url: str, profile_id: str, candidate: dict[str, Any
             section,
             "-f",
             attempt["format"],
-            "--extractor-args",
-            attempt["extractor_args"],
             "--merge-output-format",
             "mp4",
             "-o",
             str(output_template),
         ]
+        extractor_args = (attempt.get("extractor_args") or "").strip()
+        if extractor_args:
+            cmd.extend(["--extractor-args", extractor_args])
+        if ffmpeg:
+            cmd.extend(["--ffmpeg-location", ffmpeg])
+        cmd.extend(js_args)
         if cookies and Path(cookies).is_file():
             cmd.extend(["--cookies", cookies])
         cmd.append(url)
         before = {path.resolve() for path in out_dir.glob("source_*.mp4")}
-        result = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=tool_env)
         combined = f"{result.stderr or ''}\n{result.stdout or ''}"
         last_stderr = combined
         if result.returncode == 0:
@@ -883,17 +967,21 @@ def download_youtube_section(url: str, profile_id: str, candidate: dict[str, Any
                 continue
             path = str(max(chosen, key=lambda item: item.stat().st_mtime))
             last_usable = path
-            height = probe_video_height(path)
+            height = _stamp_source_probe(candidate, path)
             remaining = index < len(attempts) - 1
-            if remaining and height is not None and height < PREFERRED_SOURCE_MIN_HEIGHT:
+            if remaining and (height is None or height < PREFERRED_SOURCE_MIN_HEIGHT):
                 continue
             return path
         lower = combined.lower()
         if "403" in lower or "forbidden" in lower or "access denied" in lower:
             continue
+        if "requested format is not available" in lower or "format is not available" in lower:
+            continue
         if last_usable:
+            _stamp_source_probe(candidate, last_usable)
             return last_usable
-        break
+        continue
     if last_usable:
+        _stamp_source_probe(candidate, last_usable)
         return last_usable
     raise RuntimeError(humanize_youtube_download_error(last_stderr))

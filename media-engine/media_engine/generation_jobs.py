@@ -35,11 +35,12 @@ GENERATION_JOB_STALE_MINUTES = max(2, int(os.environ.get("GENERATION_JOB_STALE_M
 MODULE_TO_PIP_PACKAGE = {
     "youtube_transcript_api": "youtube-transcript-api",
     "faster_whisper": "faster-whisper",
+    "yt_dlp_ejs": "yt-dlp-ejs",
 }
 
 
 def _runtime_requirements(config: dict[str, Any]) -> list[str]:
-    modules = ["youtube_transcript_api"]
+    modules = ["youtube_transcript_api", "yt_dlp_ejs"]
     if config.get("caption_source") in {"whisper", "hybrid"}:
         modules.append("faster_whisper")
     return modules
@@ -599,7 +600,15 @@ def run_generation_job(job_id: str, command: list[str]) -> None:
         runtime_env = {**os.environ, "PYTHONPATH": str(ROOT), "MEDIA_ENGINE_PYTHON": python_bin}
         if resolved_ytdlp:
             runtime_env["MEDIA_ENGINE_YTDLP"] = resolved_ytdlp
-        runtime_env["PATH"] = f"{python_dir}:{os.environ.get('PATH', '')}"
+        runtime_env["PATH"] = ":".join(
+            [
+                python_dir,
+                "/opt/homebrew/opt/node/bin",
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                os.environ.get("PATH", ""),
+            ]
+        )
         process = subprocess.Popen(
             command,
             cwd=str(ROOT),

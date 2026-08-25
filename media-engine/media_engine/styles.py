@@ -29,6 +29,32 @@ def is_template_only_style(style_path: str | Path | None) -> bool:
     return str(style_path or "").strip() in _LEGACY_DEFAULT_STYLE_REFS
 
 
+TEMPLATE_ONLY_CAPTION_FONT_SIZE = 48
+TEMPLATE_ONLY_CAPTION_FONT_MIN = 36
+TEMPLATE_ONLY_CAPTION_FONT_MAX = 50
+TEMPLATE_ONLY_CAPTION_STROKE_WIDTH = 6
+TEMPLATE_ONLY_CAPTION_BACKGROUND = "rgba(0,0,0,0.62)"
+
+
+def _caption_background_is_off(value: Any) -> bool:
+    text = str(value or "").strip().lower().replace(" ", "")
+    return text in {"", "transparent", "none", "rgba(0,0,0,0)", "#00000000"}
+
+
+def apply_readable_template_only_caption(caption: dict[str, Any]) -> dict[str, Any]:
+    """Karaoke must stay in the 40–50px band with stroke or a caption card."""
+    size = int(caption.get("font_size") or TEMPLATE_ONLY_CAPTION_FONT_SIZE)
+    if size < TEMPLATE_ONLY_CAPTION_FONT_MIN:
+        size = TEMPLATE_ONLY_CAPTION_FONT_SIZE
+    caption["font_size"] = max(40, min(TEMPLATE_ONLY_CAPTION_FONT_MAX, size))
+    stroke = float(caption.get("stroke_width") or 0)
+    if stroke <= 0:
+        caption["stroke_width"] = TEMPLATE_ONLY_CAPTION_STROKE_WIDTH
+    if _caption_background_is_off(caption.get("background_color")):
+        caption["background_color"] = TEMPLATE_ONLY_CAPTION_BACKGROUND
+    return caption
+
+
 def normalize_brand_template_ref(value: Any) -> str:
     text = str(value or "").strip()
     if is_template_only_style(text):
@@ -86,11 +112,11 @@ def style_from_recipe(template_id: str) -> dict[str, Any]:
         "label": "Template default",
         "template_only": True,
         "layout": deepcopy(default_layout),
-        "caption": {
+        "caption": apply_readable_template_only_caption({
             "preset": "mozi",
             "font_family": font_primary,
             "fallback_font_family": "Arial",
-            "font_size": 54,
+            "font_size": TEMPLATE_ONLY_CAPTION_FONT_SIZE,
             "font_weight": "black",
             "uppercase": False,
             "position": "bottom",
@@ -98,12 +124,12 @@ def style_from_recipe(template_id: str) -> dict[str, Any]:
             "max_words_per_caption": 3,
             "text_color": "#ffffff",
             "stroke_color": "#000000",
-            "stroke_width": 0,
+            "stroke_width": TEMPLATE_ONLY_CAPTION_STROKE_WIDTH,
             "highlight_word_color": "",
             "animation": "bounce",
-            "background_color": "transparent",
+            "background_color": TEMPLATE_ONLY_CAPTION_BACKGROUND,
             "background_radius": 8,
-        },
+        }),
         "brand": {
             "watermark_text": "",
             "source_attribution_prefix": "Source:",

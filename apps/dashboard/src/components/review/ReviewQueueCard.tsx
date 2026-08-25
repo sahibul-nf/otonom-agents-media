@@ -173,8 +173,15 @@ export function ReviewQueueCard({
             ) : null}
           </div>
         ) : null}
-        <span className="pointer-events-none absolute bottom-3 left-3 z-[4] rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white backdrop-blur-md">
-          {formatDuration(duration)}
+        <span className="pointer-events-none absolute bottom-3 left-3 z-[4] flex items-center gap-1.5">
+          <span className="rounded-full bg-black/65 px-2.5 py-1 text-[11px] font-semibold tabular-nums text-white backdrop-blur-md">
+            {formatDuration(duration)}
+          </span>
+          {typeof clip.render_quality?.source_height === "number" && clip.render_quality.source_height < 720 ? (
+            <span className="rounded-full border border-amber-400/40 bg-amber-500/20 px-2 py-1 text-[10px] font-semibold text-amber-100 backdrop-blur-md">
+              {clip.render_quality.source_height}p source
+            </span>
+          ) : null}
         </span>
         {source ? (
           <button

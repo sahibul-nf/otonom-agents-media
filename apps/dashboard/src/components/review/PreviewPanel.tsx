@@ -37,7 +37,7 @@ export function PreviewPanel({
   const landscape = isExplainerClip(clip);
   const stageClass = landscape
     ? "aspect-video h-auto max-h-full w-full max-w-[min(100%,1120px)]"
-    : "aspect-[9/16] h-full max-h-full w-auto max-w-full";
+    : "aspect-[9/16] h-full max-h-full w-auto min-w-[20rem] max-w-full";
   const cardClass = landscape ? "max-w-3xl aspect-video" : "max-w-[17.5rem] aspect-[9/16]";
   return (
     <div className={embedded ? (variant === "stage" ? "flex h-full min-h-0 w-full items-center justify-center" : "") : "rounded-[28px] border border-white/[0.08] bg-surface p-5"}>

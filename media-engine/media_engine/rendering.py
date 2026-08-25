@@ -11,6 +11,7 @@ from typing import Any
 
 from .captions import build_fallback_caption_segments, normalize_caption_groups
 from .db import ARTIFACTS_DIR, ROOT
+from .overlay_copy import overlay_slots_for_candidate
 from .hyperframes_renderer import check_hyperframes_runtime, render_premium_hyperframes as _render_hyperframes_contract
 from .silence_trim import captions_duration_ms, probe_duration_ms
 from .styles import load_style
@@ -228,6 +229,7 @@ def build_premium_render_contract(
         "titleHook": candidate["title_hook"],
         "subtitle": candidate.get("hook_subtitle", candidate["viral_reason"]),
         "hookSubtitle": candidate.get("hook_subtitle", ""),
+        "overlay": overlay_slots_for_candidate(candidate),
         "viralReason": candidate.get("viral_reason", ""),
         "captionText": candidate["transcript_span"],
         "captions": captions,

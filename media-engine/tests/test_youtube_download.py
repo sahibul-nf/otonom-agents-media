@@ -59,8 +59,8 @@ class YoutubeDownloadTests(unittest.TestCase):
                 first_cmd = run_mock.call_args_list[0].args[0]
                 second_cmd = run_mock.call_args_list[1].args[0]
                 self.assertIn("--no-update", first_cmd)
-                self.assertIn("--extractor-args", first_cmd)
-                self.assertNotEqual(first_cmd[first_cmd.index("-f") + 1], second_cmd[second_cmd.index("-f") + 1])
+                self.assertNotIn("--extractor-args", first_cmd)
+                self.assertIn("--extractor-args", second_cmd)
 
     @patch("media_engine.youtube_pipeline.probe_video_height")
     @patch("media_engine.youtube_pipeline.find_ytdlp", return_value="yt-dlp")
@@ -87,8 +87,68 @@ class YoutubeDownloadTests(unittest.TestCase):
                 )
             self.assertTrue(path.endswith("source_hd.mp4"))
             self.assertEqual(run_mock.call_count, 2)
-            self.assertIn("height>=720", run_mock.call_args_list[0].args[0][run_mock.call_args_list[0].args[0].index("-f") + 1])
+            first_cmd = run_mock.call_args_list[0].args[0]
+            self.assertIn("height>=720", first_cmd[first_cmd.index("-f") + 1])
+            self.assertNotIn("best[height<=1080]", first_cmd[first_cmd.index("-f") + 1])
+            self.assertNotIn("--extractor-args", first_cmd)
 
 
-if __name__ == "__main__":
-    unittest.main()
+    @patch("media_engine.youtube_pipeline.probe_video_height", return_value=360)
+    @patch("media_engine.youtube_pipeline.find_ytdlp", return_value="yt-dlp")
+    @patch("media_engine.youtube_pipeline.subprocess.run")
+    def test_download_continues_after_format_unavailable(self, run_mock, _find, _probe):
+        fail = Mock(
+            returncode=1,
+            stdout="",
+            stderr="ERROR: [youtube] BUKGRBfzEc4: Requested format is not available.",
+        )
+        success = Mock(returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "workspace" / "clip_x" / "source"
+
+            def run_side_effect(cmd, **_kwargs):
+                fmt = cmd[cmd.index("-f") + 1]
+                if "18" not in fmt:
+                    return fail
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "source_prog.mp4").write_bytes(b"mp4")
+                return success
+
+            run_mock.side_effect = run_side_effect
+            with patch("media_engine.youtube_pipeline.ARTIFACTS_DIR", Path(tmp)):
+                path = download_youtube_section(
+                    "https://www.youtube.com/watch?v=BUKGRBfzEc4",
+                    "workspace",
+                    {"id": "clip_x", "start_ms": 10_000, "end_ms": 25_000},
+                )
+            self.assertTrue(path.endswith("source_prog.mp4"))
+            last_cmd = run_mock.call_args_list[-1].args[0]
+            self.assertIn("player_client=android", last_cmd[last_cmd.index("--extractor-args") + 1])
+            self.assertIn("18", last_cmd[last_cmd.index("-f") + 1])
+
+    @patch("media_engine.youtube_pipeline.probe_video_height")
+    @patch("media_engine.youtube_pipeline.find_ytdlp", return_value="yt-dlp")
+    @patch("media_engine.youtube_pipeline.subprocess.run")
+    def test_download_retries_when_height_probe_is_missing(self, run_mock, _find, probe_mock):
+        probe_mock.side_effect = [None, 720]
+        success = Mock(returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "workspace" / "clip_x" / "source"
+
+            def run_side_effect(cmd, **_kwargs):
+                out_dir.mkdir(parents=True, exist_ok=True)
+                name = "source_unknown.mp4" if run_mock.call_count == 1 else "source_hd.mp4"
+                (out_dir / name).write_bytes(b"mp4")
+                return success
+
+            run_mock.side_effect = run_side_effect
+            with patch("media_engine.youtube_pipeline.ARTIFACTS_DIR", Path(tmp)):
+                path = download_youtube_section(
+                    "https://www.youtube.com/watch?v=seqhQpImJDo",
+                    "workspace",
+                    {"id": "clip_x", "start_ms": 0, "end_ms": 30_000},
+                )
+            self.assertTrue(path.endswith("source_hd.mp4"))
+            self.assertEqual(run_mock.call_count, 2)

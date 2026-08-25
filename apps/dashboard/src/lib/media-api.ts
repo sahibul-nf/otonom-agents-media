@@ -75,6 +75,7 @@ export type ClipCandidate = {
     caption_overlap_count?: number;
     output_path?: string;
     renderer?: string;
+    source_height?: number;
   };
   cost?: {
     estimated_total?: number;
