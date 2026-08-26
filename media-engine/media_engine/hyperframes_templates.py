@@ -418,6 +418,7 @@ TEMPLATES: tuple[HyperframesTemplate, ...] = (
         secondary_accent="#e2e8f0",
         overlay_class="template-data",
         preview_source_video="velocity_business_promo.mp4",
+        formats=("long_16_9",),
     ),
 )
 
@@ -462,8 +463,20 @@ def preview_stock_path(template_id: str) -> Path | None:
     return candidate if candidate.exists() else None
 
 
-def list_hyperframes_templates() -> list[dict[str, Any]]:
-    return [template.public_dict() for template in TEMPLATES] + _saved_brand_system_templates()
+def template_supports_format(template: HyperframesTemplate | dict[str, Any], hyperframes_format: str) -> bool:
+    _, _, resolved = dimensions_for_format(hyperframes_format)
+    if isinstance(template, HyperframesTemplate):
+        supported = template.formats
+    else:
+        supported = tuple(template.get("formats") or ("short_9_16", "long_16_9"))
+    return resolved in supported
+
+
+def list_hyperframes_templates(hyperframes_format: str | None = None) -> list[dict[str, Any]]:
+    items = [template.public_dict() for template in TEMPLATES] + _saved_brand_system_templates()
+    if not hyperframes_format:
+        return items
+    return [item for item in items if template_supports_format(item, hyperframes_format)]
 
 
 def hyperframes_template_ids() -> set[str]:
@@ -510,6 +523,7 @@ def resolve_hyperframes_template(
     value: Any = AUTO_TEMPLATE_ID,
     genres: list[str] | tuple[str, ...] | None = None,
     brand_template: str = "",
+    hyperframes_format: str = "auto",
 ) -> dict[str, Any]:
     template_id = normalize_hyperframes_template(value)
     saved = _saved_brand_template_by_id(template_id)
@@ -541,6 +555,8 @@ def resolve_hyperframes_template(
     best: HyperframesTemplate | None = None
     best_score = 0
     for template in TEMPLATES:
+        if not template_supports_format(template, hyperframes_format):
+            continue
         score = _auto_template_score(template, signals)
         if score > best_score:
             best = template

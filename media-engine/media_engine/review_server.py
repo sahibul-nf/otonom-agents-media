@@ -434,7 +434,9 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/hyperframes-templates":
             schedule_builtin_preview_prewarm()
-            self._send_json(list_hyperframes_templates())
+            query = parse_qs(parsed.query)
+            hyperframes_format = (query.get("format", [""])[0] or "").strip() or None
+            self._send_json(list_hyperframes_templates(hyperframes_format=hyperframes_format))
             return
         if parsed.path == "/api/hyperframes-catalog":
             self._send_json(list_hyperframes_catalog())

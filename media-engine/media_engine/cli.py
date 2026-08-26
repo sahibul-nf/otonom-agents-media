@@ -296,6 +296,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     style = load_style_for_render(
         args.style,
         hyperframes_template=getattr(args, "hyperframes_template", "auto"),
+        hyperframes_format=getattr(args, "hyperframes_format", "auto"),
         genres=parse_genres(args.genres, args.profile),
     )
     bar.step("selecting best short candidate")
@@ -544,6 +545,7 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
     style = load_style_for_render(
         args.style,
         hyperframes_template=getattr(args, "hyperframes_template", "auto"),
+        hyperframes_format=getattr(args, "hyperframes_format", "auto"),
         genres=parse_genres(args.genres, args.profile),
     )
     bar.step(f"curating {args.count} candidates with llm_provider={args.llm_provider}")
@@ -578,6 +580,7 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
     style = load_style_for_render(
         args.style,
         hyperframes_template=getattr(args, "hyperframes_template", "auto"),
+        hyperframes_format=getattr(args, "hyperframes_format", "auto"),
         genres=parse_genres(args.genres, args.profile),
     )
     shell_components_raw = str(getattr(args, "shell_components", "") or "").strip()

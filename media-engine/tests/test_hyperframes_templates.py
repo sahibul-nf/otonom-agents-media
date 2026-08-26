@@ -8,6 +8,7 @@ from media_engine.hyperframes_templates import (
     normalize_hyperframes_template,
     resolve_hyperframes_template,
     hyperframes_template_ids,
+    template_supports_format,
 )
 
 
@@ -31,12 +32,27 @@ class HyperframesTemplateTests(unittest.TestCase):
         self.assertEqual(resolve_hyperframes_template("auto", genres=["crypto"])["id"], "velocity_business_promo")
         self.assertEqual(resolve_hyperframes_template("auto", genres=["podcast"])["id"], "grit_training_stamp")
         self.assertEqual(resolve_hyperframes_template("auto", genres=["geopolitics"])["id"], "byline_trust_quote")
-        self.assertEqual(resolve_hyperframes_template("auto", genres=["explainer"])["id"], "techtalk_intel_brief")
+        self.assertEqual(
+            resolve_hyperframes_template("auto", genres=["explainer"], hyperframes_format="long_16_9")["id"],
+            "techtalk_intel_brief",
+        )
+        self.assertEqual(
+            resolve_hyperframes_template("auto", genres=["explainer"], hyperframes_format="short_9_16")["id"],
+            DEFAULT_TEMPLATE_ID,
+        )
         self.assertNotEqual(
             resolve_hyperframes_template("auto", genres=["story", "advice", "social_commentary"])["id"],
             "spiritual_reflective",
         )
         self.assertEqual(resolve_hyperframes_template("auto", genres=["kajian"])["id"], "spiritual_reflective")
+
+    def test_intel_brief_is_long_form_only(self):
+        intel = next(template for template in list_hyperframes_templates() if template["id"] == "techtalk_intel_brief")
+        self.assertEqual(intel["formats"], ["long_16_9"])
+        short_templates = list_hyperframes_templates("short_9_16")
+        self.assertFalse(any(template["id"] == "techtalk_intel_brief" for template in short_templates))
+        self.assertTrue(template_supports_format(intel, "long_16_9"))
+        self.assertFalse(template_supports_format(intel, "short_9_16"))
 
     def test_unknown_values_fall_back_to_auto_then_default(self):
         self.assertEqual(normalize_hyperframes_template("missing"), "auto")

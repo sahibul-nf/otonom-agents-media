@@ -1,11 +1,11 @@
 "use client";
 
 import {ArrowRight, BadgeCheck, CheckCircle2, ChevronDown, Copy, Loader2, Sparkles, Youtube} from "lucide-react";
-import {useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction} from "react";
+import {useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction} from "react";
 import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
 import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
-import {apiGet, type ShellComponents, DEFAULT_SHELL_COMPONENTS, isTemplateOnlyBrand, TEMPLATE_ONLY_BRAND, type SourceResolveResult} from "@/lib/media-api";
+import {apiGet, templateSupportsFormat, type ShellComponents, DEFAULT_SHELL_COMPONENTS, isTemplateOnlyBrand, TEMPLATE_ONLY_BRAND, type SourceResolveResult} from "@/lib/media-api";
 import {
   type ActionUiState,
   type BrandTemplate,
@@ -249,11 +249,23 @@ export function GenerateSection<T extends GenerateConfigLike>({
     {id: "social_commentary", label: "Social commentary", description: "Culture and public habits."},
   ];
   const selectedPreset = presetOptions.find((item) => item.id === config.clipLength) || presetOptions[0];
+  const formatKey = config.hyperframesFormat === "long_16_9" ? "long_16_9" : "short_9_16";
+  const templatesForFormat = useMemo(
+    () => hyperframesTemplates.filter((template) => templateSupportsFormat(template, formatKey)),
+    [hyperframesTemplates, formatKey],
+  );
+  useEffect(() => {
+    if (config.hyperframesTemplate === "auto") return;
+    if (!templatesForFormat.some((template) => template.id === config.hyperframesTemplate)) {
+      update({hyperframesTemplate: "auto"});
+    }
+  }, [config.hyperframesTemplate, templatesForFormat, update]);
   const hyperframesTemplateOptions = [
     {value: "auto", label: "Auto by niche"},
-    ...hyperframesTemplates.map((template) => ({value: template.id, label: template.label})),
+    ...templatesForFormat.map((template) => ({value: template.id, label: template.label})),
   ];
-  const selectedTemplate = hyperframesTemplates.find((template) => template.id === config.hyperframesTemplate);
+  const selectedTemplate = templatesForFormat.find((template) => template.id === config.hyperframesTemplate)
+    ?? hyperframesTemplates.find((template) => template.id === config.hyperframesTemplate);
   const savedBrandStyles = templates.filter((item) => /custom_/i.test(item.path));
   const templateOnlyBrand = isTemplateOnlyBrand(config.brandTemplate, defaultTemplatePath);
   const brandStyleOptions = [
@@ -460,7 +472,8 @@ export function GenerateSection<T extends GenerateConfigLike>({
                     value={config.hyperframesTemplate}
                     options={hyperframesTemplateOptions}
                     onChange={(value) => {
-                      const picked = hyperframesTemplates.find((template) => template.id === value);
+                      const picked = templatesForFormat.find((template) => template.id === value)
+                        ?? hyperframesTemplates.find((template) => template.id === value);
                       update({
                         renderer: "hyperframes",
                         hyperframesTemplate: value,
@@ -743,7 +756,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
 
       <FocusModal open={templatePickerOpen} title="Choose video template" subtitle="Pick a visual style before generating clips." width="wide" onClose={() => setTemplatePickerOpen(false)}>
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {hyperframesTemplates.map((template) => {
+          {templatesForFormat.map((template) => {
             const active = config.hyperframesTemplate === template.id;
             return (
               <div

@@ -186,6 +186,7 @@ def rerender_candidate(
     style = load_style_for_render(
         style_path,
         hyperframes_template=str(render_metadata.get("hyperframesTemplate") or "auto"),
+        hyperframes_format=str(render_metadata.get("hyperframesFormat") or "auto"),
         genres=(candidate.get("genres") or render_metadata.get("genres") or []),
     )
 

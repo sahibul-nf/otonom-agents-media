@@ -6,6 +6,7 @@ import {FocusModal} from "@/components/FocusModal";
 import {TemplatePreview} from "@/components/templates/TemplatePreview";
 import {getRecipeTheme} from "@/components/templates/recipes";
 import type {EngineHealth, HyperframesCatalog, HyperframesTemplate} from "@/lib/media-api";
+import {templateSupportsFormat} from "@/lib/media-api";
 
 const templateFilters = ["All", "Spiritual", "Podcast", "Data", "News", "Promo", "Official", "Brand"] as const;
 type TemplateFrame = "short" | "long";
@@ -64,8 +65,13 @@ export function TemplatesSection({
   const [frame, setFrame] = useState<TemplateFrame>("short");
   const [selectedId, setSelectedId] = useState(currentTemplate === "auto" ? templates[0]?.id || "" : currentTemplate);
   const [detailOpen, setDetailOpen] = useState(false);
-  const visible = templates.filter((template) => filter === "All" || template.category === filter);
-  const selected = templates.find((template) => template.id === selectedId) || visible[0] || templates[0];
+  const formatKey = frame === "long" ? "long_16_9" : "short_9_16";
+  const templatesForFrame = useMemo(
+    () => templates.filter((template) => templateSupportsFormat(template, formatKey)),
+    [templates, formatKey],
+  );
+  const visible = templatesForFrame.filter((template) => filter === "All" || template.category === filter);
+  const selected = visible.find((template) => template.id === selectedId) || visible[0] || templatesForFrame[0];
   const selectedRecipe = selected ? getRecipeTheme(selected.id) : null;
   const ready = Boolean(engineHealth?.hyperframes.ready);
   const catalogReady = catalog?.items.filter((item) => item.status === "production-ready").length || 0;
@@ -75,13 +81,13 @@ export function TemplatesSection({
       ? templates.find((template) => template.id === currentTemplate)
       : undefined;
   const categoryCounts = useMemo(() => {
-    const counts: Record<(typeof templateFilters)[number], number> = {All: templates.length, Spiritual: 0, Podcast: 0, Data: 0, News: 0, Promo: 0, Official: 0, Brand: 0};
-    for (const template of templates) {
+    const counts: Record<(typeof templateFilters)[number], number> = {All: templatesForFrame.length, Spiritual: 0, Podcast: 0, Data: 0, News: 0, Promo: 0, Official: 0, Brand: 0};
+    for (const template of templatesForFrame) {
       const key = template.category as (typeof templateFilters)[number];
       if (templateFilters.includes(key) && key !== "All") counts[key] += 1;
     }
     return counts;
-  }, [templates]);
+  }, [templatesForFrame]);
   const frameLabelShort = frame === "long" ? "16:9 landscape" : "9:16 portrait";
   const framePreviewKey = frame === "long" ? "long_16_9" : "short_9_16";
   const detailFrameLabel = frame === "long" ? "Long/Landscape 16:9" : "Short/Reels 9:16";

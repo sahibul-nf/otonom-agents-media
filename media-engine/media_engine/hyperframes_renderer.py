@@ -382,7 +382,12 @@ def build_hyperframes_index_html(
     is_landscape = width > height
     style = contract.get("style") or {}
     caption_style = style.get("caption") or {}
-    template = resolve_hyperframes_template(hyperframes_template, genres or contract.get("genres") or [], str(style.get("template") or ""))
+    template = resolve_hyperframes_template(
+        hyperframes_template,
+        genres or contract.get("genres") or [],
+        str(style.get("template") or ""),
+        hyperframes_format=resolved_format,
+    )
     contract = {
         **contract,
         "hyperframesTemplate": template["id"],
@@ -564,7 +569,12 @@ def render_premium_hyperframes(
     output = out_dir / f"{job_id}_hyperframes.mp4"
     metadata_path = out_dir / f"{job_id}_hyperframes.json"
     width, height, resolved_format = dimensions_for_format(hyperframes_format)
-    resolved_template = resolve_hyperframes_template(hyperframes_template, genres or contract.get("genres") or [], str((contract.get("style") or {}).get("template") or ""))
+    resolved_template = resolve_hyperframes_template(
+        hyperframes_template,
+        genres or contract.get("genres") or [],
+        str((contract.get("style") or {}).get("template") or ""),
+        hyperframes_format=resolved_format,
+    )
     contract = {
         **contract,
         "width": width,

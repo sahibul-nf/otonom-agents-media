@@ -253,6 +253,12 @@ export function isTemplateOnlyBrand(
   );
 }
 
+export function templateSupportsFormat(template: HyperframesTemplate, hyperframesFormat: string): boolean {
+  const resolved = hyperframesFormat === "long_16_9" ? "long_16_9" : "short_9_16";
+  const formats = template.formats?.length ? template.formats : ["short_9_16", "long_16_9"];
+  return formats.includes(resolved);
+}
+
 export type HyperframesTemplate = {
   id: string;
   label: string;

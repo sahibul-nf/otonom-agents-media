@@ -146,12 +146,17 @@ def load_style_for_render(
     style_path: str | Path | None = None,
     *,
     hyperframes_template: str = "auto",
+    hyperframes_format: str = "auto",
     genres: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     if is_template_only_style(style_path):
         from .hyperframes_templates import resolve_hyperframes_template
 
-        resolved = resolve_hyperframes_template(hyperframes_template, genres=genres or ())
+        resolved = resolve_hyperframes_template(
+            hyperframes_template,
+            genres=genres or (),
+            hyperframes_format=hyperframes_format,
+        )
         recipe_id = str(resolved.get("recipe_module") or resolved["id"])
         return style_from_recipe(recipe_id)
     return load_style(style_path)
