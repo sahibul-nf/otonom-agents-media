@@ -88,6 +88,7 @@ function getPlatformIcon(platform: string) {
   switch (platform) {
     case "youtube":
     case "youtube_shorts":
+    case "youtube_video":
       return <Youtube className="h-5 w-5" />;
     case "instagram":
     case "instagram_reels":
@@ -143,6 +144,7 @@ const platformThemes: Record<string, {glow: string; text: string; bg: string; ic
   },
 };
 platformThemes.youtube_shorts = platformThemes.youtube;
+platformThemes.youtube_video = platformThemes.youtube;
 platformThemes.facebook_reels = platformThemes.facebook;
 platformThemes.instagram_reels = platformThemes.instagram;
 platformThemes.telegram_channel = {

@@ -37,6 +37,7 @@ ACCOUNT_ENV_KEYS = {
 PLATFORM_ACCOUNT_KEYS: dict[str, list[str]] = {
     "telegram_channel": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "TELEGRAM_CHAT_ID"],
     "youtube_shorts": ["YOUTUBE_REFRESH_TOKEN"],
+    "youtube_video": ["YOUTUBE_REFRESH_TOKEN"],
     "facebook_reels": ["META_PAGE_ID", "META_PAGE_ACCESS_TOKEN", "NOURBIT_FACEBOOK_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_TOKEN"],
     "tiktok": ["TIKTOK_ACCESS_TOKEN", "TIKTOK_REFRESH_TOKEN", "TIKTOK_OPEN_ID"],
 }
@@ -44,6 +45,7 @@ PLATFORM_ACCOUNT_KEYS: dict[str, list[str]] = {
 PLATFORM_REQUIRED_GROUPS: dict[str, list[list[str]]] = {
     "telegram_channel": [["TELEGRAM_BOT_TOKEN"], ["TELEGRAM_CHANNEL_ID", "TELEGRAM_CHAT_ID"]],
     "youtube_shorts": [["YOUTUBE_CLIENT_ID"], ["YOUTUBE_CLIENT_SECRET"], ["YOUTUBE_REFRESH_TOKEN"]],
+    "youtube_video": [["YOUTUBE_CLIENT_ID"], ["YOUTUBE_CLIENT_SECRET"], ["YOUTUBE_REFRESH_TOKEN"]],
     "facebook_reels": [
         ["META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_ID"],
         ["META_PAGE_ACCESS_TOKEN", "NOURBIT_FACEBOOK_PAGE_TOKEN"],

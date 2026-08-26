@@ -98,7 +98,7 @@ def _pop_state(state: str, platform: str) -> dict[str, Any]:
 
 def _redirect_for(platform: str, server_base: str) -> str:
     keys: list[str] = []
-    if platform == "youtube_shorts":
+    if platform in {"youtube_shorts", "youtube_video"}:
         keys.append("YOUTUBE_REDIRECT_URI")
     elif platform == "facebook_reels":
         keys.append("META_REDIRECT_URI")
@@ -122,7 +122,7 @@ def start_oauth(
     redirect_uri = _redirect_for(platform, server_base)
     base_payload = {"profile_id": profile_id}
 
-    if platform == "youtube_shorts":
+    if platform in {"youtube_shorts", "youtube_video"}:
         client_id = _env_first("YOUTUBE_CLIENT_ID")
         if not client_id:
             raise OAuthFlowError("YOUTUBE_CLIENT_ID is missing")
@@ -199,7 +199,7 @@ def complete_oauth(platform: str, query: dict[str, str], server_base: str, env_f
     profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
     redirect_uri = payload.get("redirect_uri") or _redirect_for(platform, server_base)
 
-    if platform == "youtube_shorts":
+    if platform in {"youtube_shorts", "youtube_video"}:
         client_id = _env_first("YOUTUBE_CLIENT_ID")
         client_secret = _env_first("YOUTUBE_CLIENT_SECRET")
         if not client_id or not client_secret:

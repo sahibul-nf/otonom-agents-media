@@ -84,6 +84,7 @@ export type ClipCandidate = {
     caption_source?: string;
   };
   curation_metadata?: Record<string, unknown>;
+  delivery_orientation?: "landscape" | "portrait";
 };
 
 export type EditorCapability = "scene" | "short" | "imported_longform";
@@ -585,8 +586,30 @@ export function platformLabel(platform: string) {
   const labels: Record<string, string> = {
     facebook_reels: "Facebook Reels",
     youtube_shorts: "YouTube Shorts",
+    youtube_video: "YouTube Video",
     tiktok: "TikTok",
     telegram_channel: "Telegram Channel",
   };
   return labels[platform] || platform;
+}
+
+const PORTRAIT_ONLY_PLATFORMS = new Set(["youtube_shorts", "facebook_reels", "tiktok"]);
+const LANDSCAPE_ONLY_PLATFORMS = new Set(["youtube_video"]);
+
+export function clipDeliveryOrientation(clip?: ClipCandidate | null): "landscape" | "portrait" {
+  if (clip?.delivery_orientation === "landscape" || clip?.delivery_orientation === "portrait") {
+    return clip.delivery_orientation;
+  }
+  if (isExplainerClip(clip)) return "landscape";
+  return "portrait";
+}
+
+export function platformMatchesClipOrientation(platform: string, clip?: ClipCandidate | null): boolean {
+  const orientation = clipDeliveryOrientation(clip);
+  if (orientation === "landscape") return !PORTRAIT_ONLY_PLATFORMS.has(platform);
+  return !LANDSCAPE_ONLY_PLATFORMS.has(platform);
+}
+
+export function filterPlatformsForClip(platforms: string[], clip?: ClipCandidate | null): string[] {
+  return platforms.filter((platform) => platformMatchesClipOrientation(platform, clip));
 }

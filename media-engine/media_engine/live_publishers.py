@@ -93,6 +93,11 @@ def validate_youtube_connection(timeout_seconds: int = 20) -> dict[str, Any]:
     return {"platform": "youtube_shorts", "status": "authorized", "raw": result}
 
 
+def validate_youtube_video_connection(timeout_seconds: int = 20) -> dict[str, Any]:
+    result = validate_youtube_connection(timeout_seconds=timeout_seconds)
+    return {**result, "platform": "youtube_video"}
+
+
 def validate_tiktok_connection(timeout_seconds: int = 20) -> dict[str, Any]:
     access_token = _env_first("TIKTOK_ACCESS_TOKEN")
     if not access_token:
@@ -116,7 +121,7 @@ def verify_published_remote(platform: str, remote_id: str, timeout_seconds: int 
     if not remote_id:
         return False
     try:
-        if platform == "youtube_shorts":
+        if platform in {"youtube_shorts", "youtube_video"}:
             client_id = _env_first("YOUTUBE_CLIENT_ID")
             client_secret = _env_first("YOUTUBE_CLIENT_SECRET")
             refresh_token = _env_first("YOUTUBE_REFRESH_TOKEN")
@@ -438,7 +443,13 @@ def _require_file(payload: dict[str, Any]) -> Path:
     return path
 
 
-def publish_youtube_short(payload: dict[str, Any], timeout_seconds: int = 300) -> dict[str, Any]:
+def _publish_youtube(
+    payload: dict[str, Any],
+    *,
+    platform: str,
+    default_title: str,
+    timeout_seconds: int = 300,
+) -> dict[str, Any]:
     client_id = _env_first("YOUTUBE_CLIENT_ID")
     client_secret = _env_first("YOUTUBE_CLIENT_SECRET")
     refresh_token = _env_first("YOUTUBE_REFRESH_TOKEN")
@@ -459,7 +470,7 @@ def publish_youtube_short(payload: dict[str, Any], timeout_seconds: int = 300) -
         raise LivePublishError("YouTube OAuth refresh did not return an access token")
     metadata = {
         "snippet": {
-            "title": str(payload.get("title") or payload.get("caption") or "Short")[:100],
+            "title": str(payload.get("title") or payload.get("caption") or default_title)[:100],
             "description": str(payload.get("caption") or ""),
             "categoryId": os.environ.get("YOUTUBE_CATEGORY_ID", "22"),
         },
@@ -501,12 +512,20 @@ def publish_youtube_short(payload: dict[str, Any], timeout_seconds: int = 300) -
     if not remote_id:
         raise LivePublishError("YouTube upload did not return a video id")
     return {
-        "platform": "youtube_shorts",
+        "platform": platform,
         "status": "published",
         "remote_id": remote_id,
         "remote_url": f"https://www.youtube.com/watch?v={remote_id}",
         "raw": uploaded,
     }
+
+
+def publish_youtube_short(payload: dict[str, Any], timeout_seconds: int = 300) -> dict[str, Any]:
+    return _publish_youtube(payload, platform="youtube_shorts", default_title="Short", timeout_seconds=timeout_seconds)
+
+
+def publish_youtube_video(payload: dict[str, Any], timeout_seconds: int = 300) -> dict[str, Any]:
+    return _publish_youtube(payload, platform="youtube_video", default_title="Video", timeout_seconds=timeout_seconds)
 
 
 def publish_tiktok_video(payload: dict[str, Any], timeout_seconds: int = 300) -> dict[str, Any]:
@@ -628,6 +647,8 @@ def publish_live_payload(platform: str, payload: dict[str, Any], profile_id: str
             return publish_telegram_video(payload)
         if platform == "youtube_shorts":
             return publish_youtube_short(payload)
+        if platform == "youtube_video":
+            return publish_youtube_video(payload)
         if platform == "tiktok":
             return publish_tiktok_video(payload)
         if platform == "facebook_reels":
@@ -643,6 +664,8 @@ def validate_platform_connection(platform: str, profile_id: str | None = None, t
             return validate_facebook_connection(timeout_seconds=timeout_seconds)
         if platform == "youtube_shorts":
             return validate_youtube_connection(timeout_seconds=timeout_seconds)
+        if platform == "youtube_video":
+            return validate_youtube_video_connection(timeout_seconds=timeout_seconds)
         if platform == "tiktok":
             return validate_tiktok_connection(timeout_seconds=timeout_seconds)
         raise LivePublishError(f"connection test is not supported for {platform}")

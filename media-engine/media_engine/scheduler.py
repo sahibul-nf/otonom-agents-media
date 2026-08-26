@@ -8,7 +8,13 @@ import uuid
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from .publish_delivery import (
+    ALL_DELIVERY_PLATFORMS,
+    candidate_orientation_for_id,
+    filter_platforms_for_orientation,
+)
 
+DEFAULT_DELIVERY_PLATFORMS = list(ALL_DELIVERY_PLATFORMS)
 DEFAULT_TZ = ZoneInfo("Asia/Jakarta")
 DEFAULT_SLOTS = (time(9, 0), time(19, 30))
 SCHEDULED_PUBLISH = "scheduled_publish"
@@ -147,7 +153,7 @@ def enabled_delivery_platforms(conn: sqlite3.Connection, profile_id: str, now: d
         (profile_id,),
     ).fetchall()
     if not targets:
-        return ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"]
+        return DEFAULT_DELIVERY_PLATFORMS.copy()
 
     scheduled_rows = conn.execute(
         """
@@ -200,6 +206,10 @@ def schedule_candidate_next(
     platform_list = platforms or enabled_delivery_platforms(conn, profile_id, now=now)
     if not platform_list:
         raise ValueError("no delivery platforms with remaining daily capacity")
+    orientation = candidate_orientation_for_id(conn, candidate_id)
+    platform_list = filter_platforms_for_orientation(platform_list, orientation)
+    if not platform_list:
+        raise ValueError("no delivery platforms compatible with this clip orientation")
     conn.execute(
         """
         INSERT OR REPLACE INTO scheduled_posts
@@ -285,10 +295,20 @@ def update_schedule(conn: sqlite3.Connection, schedule_id: str, scheduled_at: st
 
 
 def update_schedule_platforms(conn: sqlite3.Connection, schedule_id: str, platforms: list[str]) -> dict:
-    allowed = {"telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"}
+    allowed = set(ALL_DELIVERY_PLATFORMS)
     normalized = [platform for platform in platforms if platform in allowed]
     if not normalized:
         raise ValueError("at least one publish platform is required")
+    row = conn.execute(
+        "SELECT candidate_id FROM scheduled_posts WHERE id = ?",
+        (schedule_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("schedule not found")
+    orientation = candidate_orientation_for_id(conn, str(row["candidate_id"]))
+    normalized = filter_platforms_for_orientation(normalized, orientation)
+    if not normalized:
+        raise ValueError("no publish platforms compatible with this clip orientation")
     result = conn.execute(
         """
         UPDATE scheduled_posts

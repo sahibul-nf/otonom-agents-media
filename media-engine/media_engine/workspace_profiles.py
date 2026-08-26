@@ -17,6 +17,7 @@ _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
 DEFAULT_PUBLISH_PLATFORMS: tuple[tuple[str, str], ...] = (
     ("telegram_channel", "{name} Telegram"),
     ("youtube_shorts", "{name} YouTube Shorts"),
+    ("youtube_video", "{name} YouTube Video"),
     ("facebook_reels", "{name} Facebook Reels"),
     ("tiktok", "{name} TikTok"),
 )
@@ -81,13 +82,57 @@ def _row_to_profile(row: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def _insert_publish_target(conn: sqlite3.Connection, profile_id: str, platform: str, label: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO publish_targets
+          (profile_id, platform, account_label, mode, require_approval,
+           ai_disclosure_required, daily_cap, enabled)
+        VALUES (?, ?, ?, 'review_required', 1, 0, 2, 1)
+        """,
+        (profile_id, platform, label),
+    )
+
+
+def sync_missing_publish_targets(
+    conn: sqlite3.Connection,
+    profile_id: str,
+    *,
+    display_name: str | None = None,
+) -> list[str]:
+    """Insert any newly added platform rows for workspaces that already have targets."""
+    profile_id = (profile_id or "").strip()
+    if not profile_id:
+        return []
+    existing = {
+        str(row[0])
+        for row in conn.execute(
+            "SELECT platform FROM publish_targets WHERE profile_id = ?",
+            (profile_id,),
+        ).fetchall()
+    }
+    if not existing:
+        return []
+    profile = get_profile(conn, profile_id)
+    name = (display_name or (profile or {}).get("name") or profile_id).strip() or profile_id
+    created: list[str] = []
+    for platform, label_template in DEFAULT_PUBLISH_PLATFORMS:
+        if platform in existing:
+            continue
+        _insert_publish_target(conn, profile_id, platform, label_template.format(name=name))
+        created.append(platform)
+    if created:
+        conn.commit()
+    return created
+
+
 def ensure_default_publish_targets(
     conn: sqlite3.Connection,
     profile_id: str,
     *,
     display_name: str | None = None,
 ) -> list[str]:
-    """If a workspace has zero publish destinations, seed the four live platforms."""
+    """If a workspace has zero publish destinations, seed all live platforms."""
     profile_id = (profile_id or "").strip()
     if not profile_id:
         return []
@@ -96,22 +141,13 @@ def ensure_default_publish_targets(
         (profile_id,),
     ).fetchone()
     if int(count_row[0] if count_row else 0) > 0:
-        return []
+        return sync_missing_publish_targets(conn, profile_id, display_name=display_name)
 
     profile = get_profile(conn, profile_id)
     name = (display_name or (profile or {}).get("name") or profile_id).strip() or profile_id
     created: list[str] = []
     for platform, label_template in DEFAULT_PUBLISH_PLATFORMS:
-        label = label_template.format(name=name)
-        conn.execute(
-            """
-            INSERT INTO publish_targets
-              (profile_id, platform, account_label, mode, require_approval,
-               ai_disclosure_required, daily_cap, enabled)
-            VALUES (?, ?, ?, 'review_required', 1, 0, 2, 1)
-            """,
-            (profile_id, platform, label),
-        )
+        _insert_publish_target(conn, profile_id, platform, label_template.format(name=name))
         created.append(platform)
     if created:
         conn.commit()

@@ -79,10 +79,12 @@ Target cadence: **≤ 4 long-form / month** → N shorts.
 
 ```text
 Explainer long-form (16:9)
-  → Review approve → publish to your YouTube channel
+  → Review approve → publish to your YouTube channel (Channels → **YouTube Video** when OAuth is connected)
   → paste that YouTube URL in Create (shorts pipeline)
   → curate / render / Review / schedule multi-platform
 ```
+
+Landscape long-form uses the **YouTube Video** publish target (standard `videos.insert`, same OAuth as Shorts). Vertical shorts keep **YouTube Shorts**, Reels, and TikTok.
 
 No separate publish stack for Explainers — reuse Review + Schedule + Channels.
 

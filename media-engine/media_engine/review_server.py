@@ -90,13 +90,14 @@ from .scheduler import (
     update_schedule,
     update_schedule_platforms,
 )
-from .styles import delete_brand_template, load_style, save_brand_system_template, save_style_template
+from .publish_delivery import candidate_delivery_orientation, latest_render_job
 
 
 ENV_FILE = ROOT.parent / ".env.local"
 PLATFORM_DISCONNECT_KEYS: dict[str, list[str]] = {
     "telegram_channel": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "TELEGRAM_CHAT_ID"],
     "youtube_shorts": ["YOUTUBE_REFRESH_TOKEN"],
+    "youtube_video": ["YOUTUBE_REFRESH_TOKEN"],
     "facebook_reels": ["META_PAGE_ACCESS_TOKEN", "META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_TOKEN", "NOURBIT_FACEBOOK_PAGE_ID"],
     "tiktok": ["TIKTOK_ACCESS_TOKEN", "TIKTOK_REFRESH_TOKEN", "TIKTOK_OPEN_ID"],
 }
@@ -360,7 +361,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             rows = fetch_all(
                 conn,
                 """
-                SELECT c.*, r.output_path, r.metadata_json AS render_metadata_json
+                SELECT c.*, r.output_path, r.preset, r.metadata_json AS render_metadata_json
                 FROM clip_candidates c
                 LEFT JOIN render_jobs r ON r.id = (
                   SELECT r2.id
@@ -383,6 +384,10 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 row["quality_gate"] = _loads(row.get("quality_gate_json"), {})
                 row["caption_corrections"] = _loads(row.get("caption_corrections_json"), {})
                 row["render_metadata"] = _loads(row.get("render_metadata_json"), {})
+                row["delivery_orientation"] = candidate_delivery_orientation(
+                    row,
+                    {"metadata_json": row.get("render_metadata_json"), "preset": row.get("preset"), "output_path": row.get("output_path")},
+                )
                 row["captions"] = row["caption_corrections"].get("edited_captions") or row["render_metadata"].get("captions") or []
                 row["post_caption"] = build_post_caption(row, {"metadata_json": row.get("render_metadata_json") or "{}"})
             enrich_review_rows_with_source(conn, rows)
@@ -620,6 +625,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 "auth": {
                     "telegram_channel": {"mode": "bot_token", "action": "configure_token", "disconnect_supported": True},
                     "youtube_shorts": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
+                    "youtube_video": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
                     "facebook_reels": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
                     "tiktok": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
                 },

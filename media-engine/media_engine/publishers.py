@@ -25,6 +25,8 @@ def build_payload(platform: str, candidate: dict[str, Any], render_job: dict[str
         return {**base, "endpoint": "meta-video-api/reels", "page_type": "facebook_page"}
     if platform == "youtube_shorts":
         return {**base, "endpoint": "youtube-data-api/videos.insert", "privacy_status": "private"}
+    if platform == "youtube_video":
+        return {**base, "endpoint": "youtube-data-api/videos.insert", "privacy_status": "private", "format": "long_form"}
     if platform == "tiktok":
         return {**base, "endpoint": "tiktok-content-posting/direct-post", "visibility": "private"}
     if platform == "telegram_channel":

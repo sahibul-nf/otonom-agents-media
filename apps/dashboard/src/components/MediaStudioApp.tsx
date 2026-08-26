@@ -57,6 +57,7 @@ import {
   HyperframesTemplate,
   MediaProfile,
   platformLabel,
+  filterPlatformsForClip,
   PublishAttempt,
   PublishTarget,
   ScheduledPost,
@@ -94,8 +95,8 @@ type ConfirmDialogState = {
   tone?: "danger" | "default";
   onConfirm: () => void;
 };
-const publishPlatforms = ["telegram_channel", "youtube_shorts", "facebook_reels", "tiktok"];
-const oauthPlatforms = new Set(["youtube_shorts", "facebook_reels", "tiktok"]);
+const publishPlatforms = ["telegram_channel", "youtube_shorts", "youtube_video", "facebook_reels", "tiktok"];
+const oauthPlatforms = new Set(["youtube_shorts", "youtube_video", "facebook_reels", "tiktok"]);
 const PROFILE_STORAGE_KEY = "otonom.activeProfileId";
 
 function readStoredProfileId() {
@@ -1000,8 +1001,15 @@ export function MediaStudioApp() {
 
   async function scheduleNext(id: string) {
     const key = `clip:${id}:schedule`;
+    const clip = clips.find((item) => item.id === id);
+    const platforms = filterPlatformsForClip(publishSelection, clip);
+    if (!platforms.length) {
+      setStatus("No publish destinations match this clip format. Enable YouTube Video for long-form or Shorts/Reels for vertical clips in Channels.");
+      pushToast("No compatible publish destinations for this clip", "info");
+      return;
+    }
     try {
-      await runAction(key, "Scheduling next slot...", () => apiPost("schedule-next", {candidate_id: id, platforms: publishSelection}), "Clip scheduled");
+      await runAction(key, "Scheduling next slot...", () => apiPost("schedule-next", {candidate_id: id, platforms}), "Clip scheduled");
       setStatus("Clip scheduled in next open slot");
       await refreshAll();
     } catch (error) {
