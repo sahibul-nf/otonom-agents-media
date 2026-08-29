@@ -4,6 +4,7 @@ import Link from "next/link";
 import {ArrowUpRight, Loader2, MoreHorizontal, Pause, Play, Scissors, Trash2, Volume2, VolumeX} from "lucide-react";
 import {useCallback, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent} from "react";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
+import {ReviewCardSelectToggle} from "@/components/review/ReviewCardSelectToggle";
 import {apiPath, canMakeShortsFromClip, type ClipCandidate, formatDuration, isExplainerClip} from "@/lib/media-api";
 import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
 
@@ -22,6 +23,10 @@ export function ReviewQueueCard({
   editHref,
   onDelete,
   onMakeShorts,
+  selectable = false,
+  selectionMode = false,
+  selected = false,
+  onToggleSelect,
 }: {
   clip: ClipCandidate;
   statusTone: (status: string) => string;
@@ -29,6 +34,10 @@ export function ReviewQueueCard({
   editHref?: string;
   onDelete?: (clip: ClipCandidate) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
+  selectable?: boolean;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -93,8 +102,26 @@ export function ReviewQueueCard({
     if (video) video.muted = next;
   }
 
+  const showSelectToggle = Boolean(selectionMode && selectable && onToggleSelect);
+
   return (
-    <article className="group w-full min-w-0 rounded-[24px] border border-white/[0.08] bg-surface p-3 transition duration-200 hover:-translate-y-0.5 hover:border-cyan/[0.20] hover:shadow-glow motion-reduce:transform-none motion-reduce:transition-none">
+    <article
+      onClick={
+        showSelectToggle
+          ? (event) => {
+              if ((event.target as HTMLElement).closest("button, a")) return;
+              onToggleSelect?.();
+            }
+          : undefined
+      }
+      className={`group w-full min-w-0 rounded-[24px] border bg-surface p-3 transition duration-200 hover:-translate-y-0.5 hover:shadow-glow motion-reduce:transform-none motion-reduce:transition-none ${
+        showSelectToggle ? "cursor-pointer" : ""
+      } ${
+        selected
+          ? "border-cyan/[0.35] ring-2 ring-cyan/25 ring-offset-2 ring-offset-canvas-deep"
+          : "border-white/[0.08] hover:border-cyan/[0.20]"
+      }`}
+    >
       <div className="relative">
         <MediaPreviewFrame
           aspect={isExplainerClip(clip) ? "landscape" : "portrait"}
@@ -123,7 +150,7 @@ export function ReviewQueueCard({
           ariaLabel={`Preview ${clip.title_hook}`}
           emptyState={<div className="absolute inset-0 grid place-items-center text-sm text-zinc-600">Preview unavailable</div>}
         />
-        {source ? (
+        {source && !selectionMode ? (
           <button
             type="button"
             onClick={() => void togglePreview()}
@@ -135,7 +162,12 @@ export function ReviewQueueCard({
             </span>
           </button>
         ) : null}
-        {onDelete ? (
+        {showSelectToggle ? (
+          <div className="absolute left-2.5 top-2.5 z-[6]">
+            <ReviewCardSelectToggle selected={selected} onToggle={onToggleSelect!} label={clip.title_hook} />
+          </div>
+        ) : null}
+        {onDelete && !selectionMode ? (
           <div className="absolute right-2.5 top-2.5 z-[5]" ref={menuRef}>
             <button
               type="button"
@@ -223,7 +255,14 @@ export function ReviewQueueCard({
           </div>
           <Link
             href={editorHref}
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.30] hover:text-cyan focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+            onClick={(event) => {
+              if (selectionMode) event.preventDefault();
+            }}
+            aria-disabled={selectionMode}
+            tabIndex={selectionMode ? -1 : undefined}
+            className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan ${
+              selectionMode ? "pointer-events-none opacity-35" : "hover:border-cyan/[0.30] hover:text-cyan"
+            }`}
           >
             Edit <ArrowUpRight className="h-3.5 w-3.5" />
           </Link>

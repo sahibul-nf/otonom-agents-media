@@ -11,16 +11,25 @@ export function ReviewSourceGroup({
   actionStates,
   onDelete,
   onMakeShorts,
+  selectableIds,
+  selectedIds,
+  selectionMode = false,
+  onToggleSelect,
 }: {
   group: ReviewClipGroup;
   statusTone: (status: string) => string;
   actionStates?: Record<string, {status: "running" | "done" | "failed"; message: string}>;
   onDelete?: (clip: ReviewClipGroup["clips"][number]) => void;
   onMakeShorts?: (clip: ReviewClipGroup["clips"][number]) => void;
+  selectableIds?: Set<string>;
+  selectedIds?: Set<string>;
+  selectionMode?: boolean;
+  onToggleSelect?: (clipId: string) => void;
 }) {
   if (!group.showHeader) {
     const clip = group.clips[0];
     if (!clip) return null;
+    const selectable = Boolean(selectableIds?.has(clip.id));
     return (
       <ReviewQueueCard
         clip={clip}
@@ -28,6 +37,10 @@ export function ReviewSourceGroup({
         deleting={actionStates?.[`clip:${clip.id}:delete`]?.status === "running"}
         onDelete={onDelete}
         onMakeShorts={onMakeShorts}
+        selectable={selectable}
+        selectionMode={selectionMode}
+        selected={Boolean(selectedIds?.has(clip.id))}
+        onToggleSelect={selectable ? () => onToggleSelect?.(clip.id) : undefined}
       />
     );
   }

@@ -60,6 +60,7 @@ import {
   canMakeShortsFromClip,
   filterPlatformsForClip,
   type MakeShortsFromLongformResult,
+  type DeleteCandidatesResult,
   PublishAttempt,
   PublishTarget,
   ScheduledPost,
@@ -502,6 +503,7 @@ export function MediaStudioApp() {
   const [publishAttempts, setPublishAttempts] = useState<PublishAttempt[]>([]);
   const [filter, setFilter] = useState("all");
   const [showPublished, setShowPublished] = useState(false);
+  const [batchDeleteVersion, setBatchDeleteVersion] = useState(0);
   const [status, setStatus] = useState("Ready");
   const [busy, setBusy] = useState(false);
   const [actionStates, setActionStates] = useState<Record<string, ActionUiState>>({});
@@ -1075,6 +1077,45 @@ export function MediaStudioApp() {
     });
   }
 
+  function deleteSelectedClips(candidateIds: string[]) {
+    if (!candidateIds.length) return;
+    setConfirmDialog({
+      title: `Delete ${candidateIds.length} clip${candidateIds.length === 1 ? "" : "s"}?`,
+      message: `Remove ${candidateIds.length} selected clip${candidateIds.length === 1 ? "" : "s"} and their rendered files from this workspace.`,
+      confirmLabel: `Delete ${candidateIds.length}`,
+      tone: "danger",
+      onConfirm: () => void performDeleteClips(candidateIds),
+    });
+  }
+
+  async function performDeleteClips(candidateIds: string[]) {
+    const key = "review:batch-delete";
+    try {
+      const result = await runAction(
+        key,
+        "Deleting selected clips...",
+        () => apiPost<DeleteCandidatesResult>("delete-candidates", {candidate_ids: candidateIds, delete_artifacts: true}),
+        "Selected clips deleted",
+      );
+      const deleted = new Set(result.deleted_ids);
+      setClips((items) => items.filter((item) => !deleted.has(item.id)));
+      setSchedule((items) => items.filter((item) => !item.candidate_id || !deleted.has(item.candidate_id)));
+      setBatchDeleteVersion((value) => value + 1);
+      if (result.failed.length) {
+        const message = `Deleted ${result.deleted_ids.length}; ${result.failed.length} failed`;
+        setStatus(message);
+        pushToast(message, "error");
+      } else {
+        setStatus(`Deleted ${result.deleted_ids.length} clip${result.deleted_ids.length === 1 ? "" : "s"}`);
+        pushToast(`Deleted ${result.deleted_ids.length} clip${result.deleted_ids.length === 1 ? "" : "s"}`, "success");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Delete failed";
+      setStatus(message);
+      pushToast(message, "error");
+    }
+  }
+
   async function makeShortsFromClip(clip: ClipCandidate) {
     if (!canMakeShortsFromClip(clip)) return;
     const key = `clip:${clip.id}:shorts`;
@@ -1558,6 +1599,7 @@ export function MediaStudioApp() {
               clips={filtered}
               filter={filter}
               showPublished={showPublished}
+              selectionResetKey={`${profileId}:${filter}:${showPublished}:${batchDeleteVersion}`}
               reviewFilters={reviewFilters}
               actionStates={actionStates}
               setFilter={setFilter}
@@ -1565,6 +1607,7 @@ export function MediaStudioApp() {
               statusTone={statusTone}
               onClear={clearQueue}
               onDeleteClip={deleteClip}
+              onDeleteSelected={deleteSelectedClips}
               onMakeShorts={makeShortsFromClip}
             />
           )}

@@ -4,9 +4,11 @@ import Link from "next/link";
 import {useRouter} from "next/navigation";
 import {AlertTriangle, ArrowLeft, Loader2} from "lucide-react";
 import {useCallback, useEffect, useMemo, useState} from "react";
+import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewQueueCard} from "@/components/review/ReviewQueueCard";
-import {apiGet, apiPost, type ClipCandidate} from "@/lib/media-api";
+import {apiGet, apiPost, type ClipCandidate, type DeleteCandidatesResult} from "@/lib/media-api";
 import {groupFromClips, reviewEditorHref, reviewStatusTone} from "@/lib/review-groups";
+import {useReviewSelection} from "@/lib/use-review-selection";
 
 /** Max columns by viewport — iPad portrait stays 2-up. */
 function maxBatchColumnsForWidth(width: number) {
@@ -36,6 +38,8 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   const router = useRouter();
   const [clips, setClips] = useState<ClipCandidate[] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
@@ -55,6 +59,17 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
 
   const group = useMemo(() => (clips ? groupFromClips(clips, sourceId) : null), [clips, sourceId]);
   const columnCount = useBatchColumnCount(group?.clips.length || 0);
+  const selectableIds = useMemo(() => group?.clips.map((clip) => clip.id) || [], [group]);
+  const selection = useReviewSelection(selectableIds, `${sourceId}:${selectableIds.join(",")}`);
+
+  useEffect(() => {
+    setSelectionMode(false);
+  }, [sourceId, selectableIds.join(",")]);
+
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    selection.clearSelection();
+  }
 
   async function deleteClip(clip: ClipCandidate) {
     if (!window.confirm(`Remove “${clip.title_hook}” and its rendered files from this workspace?`)) return;
@@ -62,10 +77,31 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
     try {
       await apiPost("delete-candidate", {candidate_id: clip.id, delete_artifacts: true});
       setClips((items) => (items || []).filter((item) => item.id !== clip.id));
+      selection.deselect(clip.id);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function deleteSelected() {
+    const ids = Array.from(selection.selectedIds);
+    if (!ids.length) return;
+    if (!window.confirm(`Remove ${ids.length} selected clip${ids.length === 1 ? "" : "s"} and their rendered files from this workspace?`)) return;
+    setBatchDeleting(true);
+    try {
+      const result = await apiPost<DeleteCandidatesResult>("delete-candidates", {candidate_ids: ids, delete_artifacts: true});
+      const deleted = new Set(result.deleted_ids);
+      setClips((items) => (items || []).filter((item) => !deleted.has(item.id)));
+      exitSelectionMode();
+      if (result.failed.length) {
+        window.alert(`Deleted ${result.deleted_ids.length}; ${result.failed.length} failed.`);
+      }
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setBatchDeleting(false);
     }
   }
 
@@ -162,12 +198,42 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               {total} clip{total === 1 ? "" : "s"} · {progressLabel}
             </p>
           </div>
+          {!selectionMode ? (
+            <div className="shrink-0 self-center">
+              <ReviewSelectionChrome
+                active={false}
+                selectedCount={0}
+                totalSelectable={selectableIds.length}
+                allSelected={false}
+                onEnter={() => setSelectionMode(true)}
+                onExit={exitSelectionMode}
+                onToggleAll={() => undefined}
+                onDeleteSelected={() => undefined}
+              />
+            </div>
+          ) : null}
         </div>
+        {selectionMode ? (
+          <div className="mt-3 border-t border-white/[0.06] pt-3">
+            <ReviewSelectionChrome
+              active
+              selectedCount={selection.selectedCount}
+              totalSelectable={selectableIds.length}
+              allSelected={selection.allSelected}
+              deleting={batchDeleting}
+              onEnter={() => setSelectionMode(true)}
+              onExit={exitSelectionMode}
+              onToggleAll={() => (selection.allSelected ? selection.clearSelection() : selection.selectAll())}
+              onDeleteSelected={() => void deleteSelected()}
+            />
+          </div>
+        ) : null}
       </header>
 
       <section className="w-full px-4 py-6 sm:px-6 lg:px-8">
-        <p className="mb-5 text-center text-sm text-zinc-500">Review each candidate, then open Edit for captions and finishing.</p>
-        {/* Window centered; column count = min(items, breakpoint max) so leftover rows stay left-aligned. */}
+        <p className="mb-5 text-center text-sm text-zinc-500">
+          {selectionMode ? "Tap clips to select, then delete or open Edit when done." : "Review each candidate, then open Edit for captions and finishing."}
+        </p>
         <div
           className="mx-auto grid w-fit max-w-full gap-4 sm:gap-5"
           style={{gridTemplateColumns: `repeat(${columnCount}, minmax(0, 22rem))`}}
@@ -180,6 +246,10 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               editHref={reviewEditorHref(clip.id, sourceId)}
               deleting={deletingId === clip.id}
               onDelete={deleteClip}
+              selectable
+              selectionMode={selectionMode}
+              selected={selection.isSelected(clip.id)}
+              onToggleSelect={() => selection.toggle(clip.id)}
             />
           ))}
         </div>

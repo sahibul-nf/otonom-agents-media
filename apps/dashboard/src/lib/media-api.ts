@@ -629,3 +629,9 @@ export type MakeShortsFromLongformResult = {
   source_id?: string;
   message: string;
 };
+
+export type DeleteCandidatesResult = {
+  deleted_ids: string[];
+  failed: {id: string; error: string}[];
+  artifacts_removed?: string[];
+};

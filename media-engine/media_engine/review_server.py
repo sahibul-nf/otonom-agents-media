@@ -143,6 +143,29 @@ def _delete_candidate_artifacts(paths: list[str]) -> list[str]:
     return sorted(removed)
 
 
+def _delete_candidate_record(conn: sqlite3.Connection, candidate_id: str) -> tuple[bool, str | None, list[str]]:
+    """Delete one candidate and related rows. Returns (ok, error_message, artifact_paths)."""
+    candidate = conn.execute("SELECT id FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
+    if not candidate:
+        return False, "candidate not found", []
+    paths = [
+        row["output_path"]
+        for row in conn.execute("SELECT output_path FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
+        if row["output_path"]
+    ]
+    try:
+        conn.execute("DELETE FROM scheduled_posts WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM rerender_jobs WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM publish_attempts WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM clip_candidates WHERE id = ?", (candidate_id,))
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        conn.rollback()
+        return False, f"failed to delete candidate: {exc}", []
+    return True, None, paths
+
+
 def _loads(value: str | None, fallback):
     try:
         return json.loads(value or "")
@@ -1650,28 +1673,39 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             conn = connect(DEFAULT_DB)
             initialize(conn)
-            candidate = conn.execute("SELECT id FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
-            if not candidate:
-                self._send_json({"error": "candidate not found"}, status=404)
-                return
-            paths = [
-                row["output_path"]
-                for row in conn.execute("SELECT output_path FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
-                if row["output_path"]
-            ]
-            try:
-                conn.execute("DELETE FROM scheduled_posts WHERE candidate_id = ?", (candidate_id,))
-                conn.execute("DELETE FROM rerender_jobs WHERE candidate_id = ?", (candidate_id,))
-                conn.execute("DELETE FROM publish_attempts WHERE candidate_id = ?", (candidate_id,))
-                conn.execute("DELETE FROM render_jobs WHERE candidate_id = ?", (candidate_id,))
-                conn.execute("DELETE FROM clip_candidates WHERE id = ?", (candidate_id,))
-                conn.commit()
-            except sqlite3.IntegrityError as exc:
-                conn.rollback()
-                self._send_json({"error": f"failed to delete candidate: {exc}"}, status=409)
+            ok, error, paths = _delete_candidate_record(conn, candidate_id)
+            if not ok:
+                status = 404 if error == "candidate not found" else 409
+                self._send_json({"error": error}, status=status)
                 return
             removed = _delete_candidate_artifacts(paths) if delete_artifacts else []
             self._send_json({"candidate_id": candidate_id, "deleted": True, "artifacts_removed": removed})
+            return
+
+        if parsed.path == "/api/delete-candidates":
+            raw_ids = payload.get("candidate_ids")
+            if not isinstance(raw_ids, list):
+                self._send_json({"error": "candidate_ids must be an array"}, status=400)
+                return
+            candidate_ids = [str(value).strip() for value in raw_ids if str(value).strip()]
+            if not candidate_ids:
+                self._send_json({"error": "candidate_ids must be a non-empty array"}, status=400)
+                return
+            delete_artifacts = bool(payload.get("delete_artifacts", True))
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            deleted_ids: list[str] = []
+            failed: list[dict[str, str]] = []
+            artifact_paths: list[str] = []
+            for candidate_id in candidate_ids:
+                ok, error, paths = _delete_candidate_record(conn, candidate_id)
+                if ok:
+                    deleted_ids.append(candidate_id)
+                    artifact_paths.extend(paths)
+                else:
+                    failed.append({"id": candidate_id, "error": error or "unknown error"})
+            removed = _delete_candidate_artifacts(artifact_paths) if delete_artifacts else []
+            self._send_json({"deleted_ids": deleted_ids, "failed": failed, "artifacts_removed": removed})
             return
 
         if parsed.path == "/api/clear-review":

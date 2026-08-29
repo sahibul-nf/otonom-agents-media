@@ -1,10 +1,12 @@
 "use client";
 
 import {AlertTriangle} from "lucide-react";
-import {useMemo} from "react";
+import {useEffect, useMemo, useState} from "react";
+import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewSourceGroup} from "@/components/review/ReviewSourceGroup";
 import type {ClipCandidate} from "@/lib/media-api";
 import {groupReviewClips} from "@/lib/review-groups";
+import {useReviewSelection} from "@/lib/use-review-selection";
 
 type ReviewFilter = {
   id: string;
@@ -19,6 +21,7 @@ export type ReviewStudioSectionProps = {
   clips: ClipCandidate[];
   filter: string;
   showPublished: boolean;
+  selectionResetKey: string;
   reviewFilters: readonly ReviewFilter[];
   actionStates: Record<string, ActionUiState>;
   setFilter: (value: string) => void;
@@ -26,6 +29,7 @@ export type ReviewStudioSectionProps = {
   statusTone: (status: string) => string;
   onClear: () => void;
   onDeleteClip: (clip: ClipCandidate) => void;
+  onDeleteSelected: (candidateIds: string[]) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
 };
 
@@ -33,18 +37,37 @@ export function ReviewStudioSection({
   clips,
   filter,
   showPublished,
+  selectionResetKey,
   reviewFilters,
   actionStates,
   setFilter,
   setShowPublished,
   onClear,
   onDeleteClip,
+  onDeleteSelected,
   onMakeShorts,
   statusTone,
 }: ReviewStudioSectionProps) {
   const clearState = actionStates["queue:clear"];
+  const batchDeleteState = actionStates["review:batch-delete"];
+  const [selectionMode, setSelectionMode] = useState(false);
   const groups = useMemo(() => groupReviewClips(clips), [clips]);
   const batchCount = groups.filter((group) => group.showHeader).length;
+  const selectableIds = useMemo(
+    () => groups.filter((group) => !group.showHeader).flatMap((group) => group.clips.map((clip) => clip.id)),
+    [groups],
+  );
+  const selection = useReviewSelection(selectableIds, selectionResetKey);
+  const selectableSet = useMemo(() => new Set(selectableIds), [selectableIds]);
+
+  useEffect(() => {
+    setSelectionMode(false);
+  }, [selectionResetKey]);
+
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    selection.clearSelection();
+  }
 
   return (
     <section className="mx-auto grid w-full max-w-[1180px] gap-5">
@@ -56,7 +79,7 @@ export function ReviewStudioSection({
             {batchCount ? ` · ${batchCount} source batch${batchCount === 1 ? "" : "es"}` : ""}
           </p>
           </div>
-        <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+        <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1">
           {reviewFilters.map((item) => (
             <button
               key={item.id}
@@ -67,10 +90,35 @@ export function ReviewStudioSection({
               className={`h-9 shrink-0 rounded-full px-3.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan ${filter === item.id ? "bg-cyan text-ink" : "border border-white/[0.08] bg-surface text-zinc-400 hover:text-white"}`}
             >
               {item.label}
-                  </button>
-                ))}
+            </button>
+          ))}
+          {!selectionMode ? (
+            <ReviewSelectionChrome
+              active={false}
+              selectedCount={0}
+              totalSelectable={selectableIds.length}
+              allSelected={false}
+              onEnter={() => setSelectionMode(true)}
+              onExit={exitSelectionMode}
+              onToggleAll={() => undefined}
+              onDeleteSelected={() => undefined}
+            />
+          ) : null}
         </div>
       </div>
+      {selectionMode ? (
+        <ReviewSelectionChrome
+          active
+          selectedCount={selection.selectedCount}
+          totalSelectable={selectableIds.length}
+          allSelected={selection.allSelected}
+          deleting={batchDeleteState?.status === "running"}
+          onEnter={() => setSelectionMode(true)}
+          onExit={exitSelectionMode}
+          onToggleAll={() => (selection.allSelected ? selection.clearSelection() : selection.selectAll())}
+          onDeleteSelected={() => onDeleteSelected(Array.from(selection.selectedIds))}
+        />
+      ) : null}
       {clips.length ? (
         <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">
           {groups.map((group) => (
@@ -81,6 +129,10 @@ export function ReviewStudioSection({
                 actionStates={actionStates}
                 onDelete={onDeleteClip}
                 onMakeShorts={onMakeShorts}
+                selectableIds={selectableSet}
+                selectedIds={selection.selectedIds}
+                selectionMode={selectionMode}
+                onToggleSelect={selection.toggle}
               />
                 </div>
           ))}
