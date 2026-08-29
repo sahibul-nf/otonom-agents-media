@@ -85,6 +85,13 @@ export type ClipCandidate = {
   };
   curation_metadata?: Record<string, unknown>;
   delivery_orientation?: "landscape" | "portrait";
+  rerender_job?: {
+    id: string;
+    status: string;
+    progress?: number;
+    message?: string;
+    error?: string;
+  };
 };
 
 export type EditorCapability = "scene" | "short" | "imported_longform";
@@ -635,3 +642,22 @@ export type DeleteCandidatesResult = {
   failed: {id: string; error: string}[];
   artifacts_removed?: string[];
 };
+
+export type BatchRerenderResult = {
+  queued: {candidate_id: string; job_id: string; status: string}[];
+  skipped: {id: string; error: string}[];
+  failed: {id: string; error: string}[];
+};
+
+export function canBatchRerenderClip(clip: ClipCandidate): boolean {
+  if (clip.status === "published") return false;
+  if (clip.caption_source === "ingest_longform") return false;
+  const kind = clip.curation_metadata?.kind;
+  if (kind === "explainer" || kind === "longform_ingest") return false;
+  return true;
+}
+
+export function isClipRerendering(clip: ClipCandidate): boolean {
+  const status = clip.rerender_job?.status;
+  return status === "queued" || status === "running";
+}

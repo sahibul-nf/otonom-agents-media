@@ -6,7 +6,7 @@ import {AlertTriangle, ArrowLeft, Loader2} from "lucide-react";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewQueueCard} from "@/components/review/ReviewQueueCard";
-import {apiGet, apiPost, type ClipCandidate, type DeleteCandidatesResult} from "@/lib/media-api";
+import {apiGet, apiPost, canBatchRerenderClip, isClipRerendering, type BatchRerenderResult, type ClipCandidate, type DeleteCandidatesResult} from "@/lib/media-api";
 import {groupFromClips, reviewEditorHref, reviewStatusTone} from "@/lib/review-groups";
 import {useReviewSelection} from "@/lib/use-review-selection";
 
@@ -39,6 +39,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   const [clips, setClips] = useState<ClipCandidate[] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [batchDeleting, setBatchDeleting] = useState(false);
+  const [batchRerendering, setBatchRerendering] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [error, setError] = useState("");
 
@@ -56,6 +57,19 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const hasActiveRerender = useMemo(
+    () => (clips || []).some((clip) => isClipRerendering(clip)),
+    [clips],
+  );
+
+  useEffect(() => {
+    if (!hasActiveRerender) return;
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 3500);
+    return () => window.clearInterval(timer);
+  }, [hasActiveRerender, refresh]);
 
   const group = useMemo(() => (clips ? groupFromClips(clips, sourceId) : null), [clips, sourceId]);
   const columnCount = useBatchColumnCount(group?.clips.length || 0);
@@ -82,6 +96,48 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
       window.alert(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function rerenderSelected() {
+    const ids = Array.from(selection.selectedIds);
+    if (!ids.length) return;
+    const eligible = ids.filter((id) => {
+      const clip = group?.clips.find((item) => item.id === id);
+      return clip ? canBatchRerenderClip(clip) : false;
+    });
+    if (!eligible.length) {
+      window.alert("No selected clips can be re-rendered.");
+      return;
+    }
+    const skipped = ids.length - eligible.length;
+    const skipNote = skipped ? ` ${skipped} ineligible clip${skipped === 1 ? "" : "s"} will be skipped.` : "";
+    if (
+      !window.confirm(
+        `Re-render ${eligible.length} selected clip${eligible.length === 1 ? "" : "s"} with current hook titles and caption timing?${skipNote} Renders run in the background.`,
+      )
+    ) {
+      return;
+    }
+    setBatchRerendering(true);
+    try {
+      const result = await apiPost<BatchRerenderResult>("batch-rerender", {
+        candidate_ids: eligible,
+        renderer: "hyperframes",
+        quality: "production",
+        style: "auto",
+      });
+      exitSelectionMode();
+      const queued = result.queued.length;
+      const problems = result.skipped.length + result.failed.length;
+      if (problems) {
+        window.alert(`Queued ${queued} re-render${queued === 1 ? "" : "s"}; ${problems} skipped or failed.`);
+      }
+      await refresh();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Batch re-render failed");
+    } finally {
+      setBatchRerendering(false);
     }
   }
 
@@ -221,10 +277,12 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               totalSelectable={selectableIds.length}
               allSelected={selection.allSelected}
               deleting={batchDeleting}
+              rerendering={batchRerendering}
               onEnter={() => setSelectionMode(true)}
               onExit={exitSelectionMode}
               onToggleAll={() => (selection.allSelected ? selection.clearSelection() : selection.selectAll())}
               onDeleteSelected={() => void deleteSelected()}
+              onRerenderSelected={() => void rerenderSelected()}
             />
           </div>
         ) : null}
@@ -232,7 +290,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
 
       <section className="w-full px-4 py-6 sm:px-6 lg:px-8">
         <p className="mb-5 text-center text-sm text-zinc-500">
-          {selectionMode ? "Tap clips to select, then delete or open Edit when done." : "Review each candidate, then open Edit for captions and finishing."}
+          {selectionMode ? "Tap clips to select, then re-render, delete, or open Edit when done." : "Review each candidate, then open Edit for captions and finishing."}
         </p>
         <div
           className="mx-auto grid w-fit max-w-full gap-4 sm:gap-5"

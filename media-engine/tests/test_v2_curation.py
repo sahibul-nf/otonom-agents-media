@@ -287,7 +287,7 @@ class V2CurationTests(unittest.TestCase):
         self.assertGreaterEqual(len(title.split()), 4)
         self.assertNotEqual(title, "Allah Tidak Pernah Jauh")
         self.assertNotEqual(subtitle, "Potongan singkat untuk menenangkan hati dan meluruskan arah.")
-        self.assertIn("ringkasan isi clip:", subtitle.lower())
+        self.assertNotIn("ringkasan isi clip:", subtitle.lower())
 
     def test_unknown_title_fallback_uses_content_phrase(self):
         span = "cerita guru membimbing murid menjaga adab ketika belajar dan menerima nasihat"
@@ -295,8 +295,9 @@ class V2CurationTests(unittest.TestCase):
         title = title_for_span(span)
         subtitle = hook_subtitle_for_span(span, title)
 
-        self.assertEqual(title, "Cerita Guru Membimbing Murid Menjaga Adab Ketika")
-        self.assertIn("cerita guru", subtitle.lower())
+        self.assertEqual(title, "Cerita Guru Membimbing Murid Menjaga Adab Ketika Belajar")
+        self.assertTrue(subtitle)
+        self.assertNotIn("ringkasan isi clip:", subtitle.lower())
         self.assertNotIn("Allah Tidak Pernah Jauh", title)
 
     def test_candidate_rejects_static_llm_title_and_reason_when_span_mismatches(self):

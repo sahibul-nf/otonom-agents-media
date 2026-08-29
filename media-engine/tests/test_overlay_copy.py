@@ -125,16 +125,28 @@ class OverlayCopyTests(unittest.TestCase):
         self.assertTrue(candidate["overlay_slots"]["headline"])
         self.assertEqual(candidate["curation_metadata"]["overlay_slots"], candidate["overlay_slots"])
 
-    def test_persisted_metadata_overlay_wins_over_dummy_llm(self):
+    def test_stale_persisted_overlay_is_ignored_when_title_changes(self):
+        slots = overlay_slots_for_candidate(
+            {
+                "title_hook": "Zuhud itu Kaya atau Miskin?",
+                "hook_subtitle": "Nasihat singkat soal zuhud.",
+                "curation_metadata": {
+                    "overlay_slots": {"headline": "Secara Fitrah, Kita Tidak Bisa Berarti Kaya Saja?"},
+                },
+            },
+        )
+        self.assertEqual(slots["headline"], "Zuhud itu Kaya atau Miskin?")
+
+    def test_persisted_metadata_overlay_kept_when_it_matches_title(self):
         slots = overlay_slots_for_candidate(
             {
                 "title_hook": "Fed pivot changes the tape",
                 "hook_subtitle": "Rates still lead risk",
-                "curation_metadata": {"overlay_slots": {"headline": "Watch the rate path"}},
+                "curation_metadata": {"overlay_slots": {"headline": "Fed pivot changes the tape"}},
             },
             {"overlay": {"headline": "More clarity"}},
         )
-        self.assertEqual(slots["headline"], "Watch the rate path")
+        self.assertEqual(slots["headline"], "Fed pivot changes the tape")
 
 
 if __name__ == "__main__":

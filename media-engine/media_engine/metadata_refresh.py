@@ -7,7 +7,9 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from .genres import resolve_genre_pack, uses_devotional_tone, workspace_curation_context
 from .llm import LLMError, call_llm_json
+from .overlay_copy import overlay_slots_for_candidate
 from .scoring import score_candidate_text
 from .youtube_pipeline import _subtitle_is_relevant, _title_is_relevant, hook_subtitle_for_span, title_for_span
 
@@ -20,7 +22,7 @@ def _loads(value: str | None) -> dict[str, Any]:
         return {}
 
 
-def _available_provider(preferred: str = "") -> str:
+def available_metadata_provider(preferred: str = "") -> str:
     candidates = [preferred, "deepseek", "openai"]
     for provider in candidates:
         provider = (provider or "").strip().lower()
@@ -29,6 +31,32 @@ def _available_provider(preferred: str = "") -> str:
         if provider == "openai" and os.environ.get("OPENAI_API_KEY"):
             return provider
     return "none"
+
+
+def metadata_editor_system_prompt(
+    *,
+    profile_id: str = "",
+    niche: str = "",
+    workspace_name: str = "",
+) -> str:
+    if uses_devotional_tone(profile_id=profile_id, niche=niche):
+        role = "short-form Islamic content editor"
+        tone = "warm, reflective Indonesian suited to faith-based clips"
+    elif resolve_genre_pack(profile_id, niche) == "tech_finance":
+        role = "short-form tech and finance content editor"
+        tone = "clear, opinionated Indonesian suited to tech and finance edutainment"
+    else:
+        role = "short-form video content editor"
+        tone = "clear, engaging Indonesian that matches the workspace niche"
+    base = (
+        f"You are a {role}. Return strict JSON only. "
+        "Write metadata that is specific to the transcript and never generic. "
+        f"Tone: {tone}."
+    )
+    context = workspace_curation_context(workspace_name, niche)
+    if context:
+        base += f" {context}"
+    return base
 
 
 def _local_metadata(span: str) -> dict[str, str]:
@@ -42,10 +70,20 @@ def _local_metadata(span: str) -> dict[str, str]:
     }
 
 
-def _llm_metadata(span: str, current_title: str, current_subtitle: str, provider: str) -> dict[str, str] | None:
-    system_prompt = (
-        "You are a short-form Islamic content editor. Return strict JSON only. "
-        "Write metadata that is specific to the transcript and never generic."
+def _llm_metadata(
+    span: str,
+    current_title: str,
+    current_subtitle: str,
+    provider: str,
+    *,
+    profile_id: str = "",
+    niche: str = "",
+    workspace_name: str = "",
+) -> dict[str, str] | None:
+    system_prompt = metadata_editor_system_prompt(
+        profile_id=profile_id,
+        niche=niche,
+        workspace_name=workspace_name,
     )
     user_prompt = json.dumps(
         {
@@ -87,6 +125,108 @@ def _llm_metadata(span: str, current_title: str, current_subtitle: str, provider
     }
 
 
+def needs_metadata_enrichment(candidate: dict[str, Any]) -> bool:
+    curation = candidate.get("curation_metadata")
+    if not isinstance(curation, dict):
+        return True
+    title_source = str(curation.get("title_source") or "")
+    subtitle_source = str(curation.get("subtitle_source") or "")
+    if title_source.startswith("llm") and subtitle_source.startswith("llm"):
+        return False
+    return title_source in {"", "heuristic_span"} or subtitle_source in {"", "heuristic_span"}
+
+
+def _apply_metadata_to_candidate(candidate: dict[str, Any], metadata: dict[str, str]) -> None:
+    candidate["title_hook"] = metadata["title_hook"]
+    candidate["hook_subtitle"] = metadata["hook_subtitle"]
+    candidate["viral_reason"] = metadata["viral_reason"]
+    curation = candidate.get("curation_metadata")
+    if not isinstance(curation, dict):
+        curation = {}
+    source = metadata["source"]
+    curation.pop("overlay_slots", None)
+    candidate["curation_metadata"] = curation
+    fresh_overlay = overlay_slots_for_candidate(candidate)
+    curation = {
+        **curation,
+        "title_source": source,
+        "subtitle_source": source,
+        "reason_source": source,
+        "overlay_slots": fresh_overlay,
+        "metadata_enriched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    candidate["curation_metadata"] = curation
+    candidate["overlay_slots"] = fresh_overlay
+    duration_ms = int(candidate["end_ms"]) - int(candidate["start_ms"])
+    existing_score = candidate.get("score") if isinstance(candidate.get("score"), dict) else {}
+    candidate["score"] = {
+        **existing_score,
+        **score_candidate_text(
+            str(candidate.get("transcript_span") or ""),
+            metadata["title_hook"],
+            duration_ms,
+            rights_risk=True,
+            boundary_confidence=int(curation.get("boundary_confidence") or 75),
+            opening_strength=int(curation.get("opening_strength") or 70),
+        ),
+    }
+
+
+def enrich_candidate_metadata(
+    candidate: dict[str, Any],
+    *,
+    llm_provider: str = "",
+    profile_id: str = "",
+    niche: str = "",
+    workspace_name: str = "",
+) -> dict[str, Any]:
+    """Upgrade hook copy on an in-memory candidate before render or insert."""
+    if not needs_metadata_enrichment(candidate):
+        return candidate
+    span = str(candidate.get("transcript_span") or "").strip()
+    if not span:
+        return candidate
+
+    curation = candidate.get("curation_metadata") if isinstance(candidate.get("curation_metadata"), dict) else {}
+    preferred = llm_provider or str(curation.get("llm_provider") or "")
+    provider = available_metadata_provider(preferred)
+    metadata = None
+    if provider != "none":
+        metadata = _llm_metadata(
+            span,
+            str(candidate.get("title_hook") or ""),
+            str(candidate.get("hook_subtitle") or ""),
+            provider,
+            profile_id=profile_id or str(candidate.get("profile_id") or ""),
+            niche=niche,
+            workspace_name=workspace_name,
+        )
+    if not metadata:
+        metadata = _local_metadata(span)
+    _apply_metadata_to_candidate(candidate, metadata)
+    return candidate
+
+
+def enrich_candidates_metadata(
+    candidates: list[dict[str, Any]],
+    *,
+    llm_provider: str = "",
+    profile_id: str = "",
+    niche: str = "",
+    workspace_name: str = "",
+) -> list[dict[str, Any]]:
+    return [
+        enrich_candidate_metadata(
+            candidate,
+            llm_provider=llm_provider,
+            profile_id=profile_id or str(candidate.get("profile_id") or ""),
+            niche=niche,
+            workspace_name=workspace_name,
+        )
+        for candidate in candidates
+    ]
+
+
 def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> dict[str, Any]:
     if mode not in {"smart", "local"}:
         raise ValueError("mode must be smart or local")
@@ -98,14 +238,27 @@ def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> 
     if not span:
         raise ValueError("candidate has no transcript span")
 
+    profile_id = str(candidate.get("profile_id") or "")
+    profile = conn.execute("SELECT niche, name FROM media_profiles WHERE id = ?", (profile_id,)).fetchone()
+    niche = str(profile["niche"] or "") if profile else ""
+    workspace_name = str(profile["name"] or "") if profile else ""
+
     curation = _loads(candidate.get("curation_metadata_json"))
     preferred_provider = str(curation.get("llm_provider") or "")
     metadata: dict[str, str] | None = None
     if mode == "smart":
-        provider = _available_provider(preferred_provider)
+        provider = available_metadata_provider(preferred_provider)
         if provider == "none":
             raise ValueError("metadata refresh failed: no LLM provider key available (set OPENAI_API_KEY or DEEPSEEK_API_KEY)")
-        llm_result = _llm_metadata(span, candidate.get("title_hook", ""), candidate.get("hook_subtitle", ""), provider)
+        llm_result = _llm_metadata(
+            span,
+            candidate.get("title_hook", ""),
+            candidate.get("hook_subtitle", ""),
+            provider,
+            profile_id=profile_id,
+            niche=niche,
+            workspace_name=workspace_name,
+        )
         if not llm_result:
             raise ValueError("metadata refresh failed: LLM output is invalid or not relevant to transcript")
         metadata = llm_result
@@ -126,6 +279,12 @@ def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> 
         ),
     }
     refreshed_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    scratch = {
+        "title_hook": metadata["title_hook"],
+        "hook_subtitle": metadata["hook_subtitle"],
+        "curation_metadata": curation,
+    }
+    fresh_overlay = overlay_slots_for_candidate(scratch)
     curation = {
         **curation,
         "metadata_refresh_mode": mode,
@@ -133,6 +292,7 @@ def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> 
         "title_source": metadata["source"],
         "subtitle_source": metadata["source"],
         "reason_source": metadata["source"],
+        "overlay_slots": fresh_overlay,
     }
     conn.execute(
         """
@@ -158,4 +318,5 @@ def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> 
         "viral_reason": metadata["viral_reason"],
         "score": score,
         "curation_metadata": curation,
+        "overlay_slots": fresh_overlay,
     }

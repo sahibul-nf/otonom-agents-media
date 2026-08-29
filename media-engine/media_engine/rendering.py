@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .captions import build_fallback_caption_segments, normalize_caption_groups
+from .captions import build_fallback_caption_segments, normalize_caption_groups, normalize_caption_timeline_for_render
 from .db import ARTIFACTS_DIR, ROOT
 from .overlay_copy import overlay_slots_for_candidate
 from .hyperframes_renderer import check_hyperframes_runtime, render_premium_hyperframes as _render_hyperframes_contract
@@ -203,6 +203,11 @@ def build_premium_render_contract(
             "timed captions are required for premium render. "
             "Re-run with --caption-source whisper or hybrid and verify ASR output."
         )
+    raw_captions = normalize_caption_timeline_for_render(
+        raw_captions,
+        clip_start_ms=int(candidate.get("start_ms") or 0),
+        video_duration_ms=duration_ms,
+    )
     captions = normalize_caption_groups(
         raw_captions,
         max_words_per_caption=int(caption_style.get("max_words_per_caption", 3)),

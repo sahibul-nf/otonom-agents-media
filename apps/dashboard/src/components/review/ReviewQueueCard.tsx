@@ -5,7 +5,7 @@ import {ArrowUpRight, Loader2, MoreHorizontal, Pause, Play, Scissors, Trash2, Vo
 import {useCallback, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent} from "react";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {ReviewCardSelectToggle} from "@/components/review/ReviewCardSelectToggle";
-import {apiPath, canMakeShortsFromClip, type ClipCandidate, formatDuration, isExplainerClip} from "@/lib/media-api";
+import {apiPath, canMakeShortsFromClip, type ClipCandidate, formatDuration, isClipRerendering, isExplainerClip} from "@/lib/media-api";
 import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
 
 function readinessLabel(clip: ClipCandidate) {
@@ -14,6 +14,12 @@ function readinessLabel(clip: ClipCandidate) {
   if (clip.status === "scheduled" || clip.status === "ready_to_publish") return "Scheduled";
   if (clip.status === "published") return "Published";
   return "Ready to review";
+}
+
+function needsMetadataRefresh(clip: ClipCandidate) {
+  const titleSource = String(clip.curation_metadata?.title_source || "");
+  const subtitleSource = String(clip.curation_metadata?.subtitle_source || "");
+  return titleSource === "heuristic_span" || subtitleSource === "heuristic_span";
 }
 
 export function ReviewQueueCard({
@@ -49,6 +55,9 @@ export function ReviewQueueCard({
   const source = output ? apiPath(`artifact?path=${encodeURIComponent(output)}`) : null;
   const duration = clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms;
   const editorHref = editHref || `/review/${encodeURIComponent(clip.id)}`;
+  const rerendering = isClipRerendering(clip);
+  const rerenderProgress = clip.rerender_job?.progress ?? 0;
+  const rerenderMessage = clip.rerender_job?.message?.trim() || "";
 
   const pauseThisPreview = useCallback(() => {
     const video = videoRef.current;
@@ -150,7 +159,7 @@ export function ReviewQueueCard({
           ariaLabel={`Preview ${clip.title_hook}`}
           emptyState={<div className="absolute inset-0 grid place-items-center text-sm text-zinc-600">Preview unavailable</div>}
         />
-        {source && !selectionMode ? (
+        {source && !selectionMode && !rerendering ? (
           <button
             type="button"
             onClick={() => void togglePreview()}
@@ -161,6 +170,20 @@ export function ReviewQueueCard({
               {playing ? <Pause className="h-5 w-5 fill-white" /> : <Play className="ml-0.5 h-5 w-5 fill-white" />}
             </span>
           </button>
+        ) : null}
+        {rerendering ? (
+          <div className="absolute inset-0 z-[7] grid place-items-center rounded-[16px] bg-black/70 backdrop-blur-[2px]">
+            <div className="flex max-w-[14rem] flex-col items-center gap-2 px-4 text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-cyan" aria-hidden />
+              <p className="text-xs font-semibold text-white">Re-rendering…</p>
+              {rerenderProgress > 0 ? (
+                <p className="text-[11px] font-semibold tabular-nums text-cyan">{rerenderProgress}%</p>
+              ) : null}
+              {rerenderMessage ? (
+                <p className="line-clamp-2 text-[10px] leading-4 text-zinc-400">{rerenderMessage}</p>
+              ) : null}
+            </div>
+          </div>
         ) : null}
         {showSelectToggle ? (
           <div className="absolute left-2.5 top-2.5 z-[6]">
@@ -233,7 +256,7 @@ export function ReviewQueueCard({
             </span>
           ) : null}
         </span>
-        {source ? (
+        {source && !rerendering ? (
           <button
             type="button"
             onClick={toggleMuted}
@@ -249,19 +272,36 @@ export function ReviewQueueCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-white">{clip.title_hook}</h3>
-            <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusTone(clip.status)}`}>
-              {readinessLabel(clip)}
-            </span>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {rerendering ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-cyan/[0.35] bg-cyan/[0.12] px-2.5 py-1 text-[10px] font-semibold text-cyan">
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                  Re-rendering{rerenderProgress > 0 ? ` ${rerenderProgress}%` : ""}
+                </span>
+              ) : (
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${statusTone(clip.status)}`}>
+                  {readinessLabel(clip)}
+                </span>
+              )}
+              {needsMetadataRefresh(clip) ? (
+                <span
+                  className="inline-flex rounded-full border border-amber-400/35 bg-amber-500/15 px-2.5 py-1 text-[10px] font-semibold text-amber-100"
+                  title="Hook title was auto-generated from transcript — open Edit → Metadata to refresh and re-render"
+                >
+                  Auto hook
+                </span>
+              ) : null}
+            </div>
           </div>
           <Link
             href={editorHref}
             onClick={(event) => {
-              if (selectionMode) event.preventDefault();
+              if (selectionMode || rerendering) event.preventDefault();
             }}
-            aria-disabled={selectionMode}
-            tabIndex={selectionMode ? -1 : undefined}
+            aria-disabled={selectionMode || rerendering}
+            tabIndex={selectionMode || rerendering ? -1 : undefined}
             className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan ${
-              selectionMode ? "pointer-events-none opacity-35" : "hover:border-cyan/[0.30] hover:text-cyan"
+              selectionMode || rerendering ? "pointer-events-none opacity-35" : "hover:border-cyan/[0.30] hover:text-cyan"
             }`}
           >
             Edit <ArrowUpRight className="h-3.5 w-3.5" />

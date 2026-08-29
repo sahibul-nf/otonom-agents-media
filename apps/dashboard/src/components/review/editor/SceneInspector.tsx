@@ -30,7 +30,7 @@ type Props = {
   onPlanChange: (plan: ExplainerScenePlan) => void;
   onPostCopyChange: (value: string) => void;
   onGeneratePostCopy: () => void;
-  onRefreshMetadata: () => void;
+  onRefreshMetadata: (rerenderAfter?: boolean) => void;
   onSaveBoundary: (startMs: number, endMs: number, rerenderAfter: boolean) => void;
   onRerenderShort: () => void;
   onBatchRemovePauses: (minGapMs: number) => void;
@@ -258,7 +258,15 @@ function formatRemovedLabel(ms: number) {
 }
 
 function MetadataFields(props: Props) {
-  const state = props.actionStates[`clip:${props.clip.id}:metadata`];
+  const metadataState = props.actionStates[`clip:${props.clip.id}:metadata`];
+  const rerenderState = props.actionStates[`clip:${props.clip.id}:rerender`];
+  const canRerender = props.context.capability === "short" && props.context.can_rerender;
+  const rendering = Boolean(props.context.job && ["queued", "running", "rendering", "processing"].includes(props.context.job.status));
+  const busy = metadataState?.status === "running" || rerenderState?.status === "running" || rendering;
+  const titleSource = String(props.clip.curation_metadata?.title_source || "");
+  const subtitleSource = String(props.clip.curation_metadata?.subtitle_source || "");
+  const heuristicHook = titleSource === "heuristic_span" || subtitleSource === "heuristic_span";
+
   return (
     <div className="grid gap-5">
       <Field label="Title">
@@ -267,9 +275,48 @@ function MetadataFields(props: Props) {
       <Field label="Description">
         <p className="text-sm leading-6 text-zinc-300">{props.clip.hook_subtitle || props.clip.viral_reason || "No description."}</p>
       </Field>
-      <button type="button" onClick={props.onRefreshMetadata} disabled={state?.status === "running"} className={secondaryButton}>
-        {state?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh metadata
-      </button>
+      {heuristicHook ? (
+        <p className="text-xs leading-5 text-amber-100/90">
+          Hook copy was auto-generated from transcript. Refresh with AI, then re-render so the on-video title updates.
+        </p>
+      ) : canRerender ? (
+        <p className="text-xs leading-5 text-zinc-500">
+          Hook title is baked into the rendered video. Use re-render after changing metadata.
+        </p>
+      ) : null}
+      <div className="grid gap-2">
+        <button
+          type="button"
+          onClick={() => props.onRefreshMetadata(canRerender)}
+          disabled={busy}
+          className={primaryButton}
+        >
+          {metadataState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+          {metadataState?.status === "running" ? "Refreshing…" : canRerender ? "Refresh & re-render" : "Refresh metadata"}
+        </button>
+        {canRerender ? (
+          <>
+            <button
+              type="button"
+              onClick={() => props.onRefreshMetadata(false)}
+              disabled={busy}
+              className={secondaryButton}
+            >
+              Refresh metadata only
+            </button>
+            <button type="button" onClick={props.onRerenderShort} disabled={busy} className={secondaryButton}>
+              {rerenderState?.status === "running" || rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+              {rendering || rerenderState?.status === "running" ? "Re-rendering…" : "Re-render video"}
+            </button>
+          </>
+        ) : null}
+      </div>
+      {metadataState?.message && metadataState.status !== "running" ? (
+        <p className={`text-xs ${metadataState.status === "failed" ? "text-danger" : "text-cyan"}`}>{metadataState.message}</p>
+      ) : null}
+      {rerenderState?.message && rerenderState.status !== "running" ? (
+        <p className={`text-xs ${rerenderState.status === "failed" ? "text-danger" : "text-cyan"}`}>{rerenderState.message}</p>
+      ) : null}
     </div>
   );
 }

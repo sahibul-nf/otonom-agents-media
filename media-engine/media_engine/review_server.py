@@ -60,7 +60,7 @@ from .metadata_refresh import refresh_candidate_metadata
 from .oauth_flow import OAuthFlowError, complete_oauth, start_oauth
 from .post_copy import build_post_caption, generate_post_caption, sanitize_post_caption
 from .publishers import build_payload, create_dry_run_attempt
-from .rerender import create_rerender_job, list_rerender_jobs
+from .rerender import attach_active_rerender_jobs, create_batch_rerender_jobs, create_rerender_job, list_rerender_jobs
 from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
 from .channel_watcher import (
     add_watch_channel,
@@ -416,6 +416,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 row["captions"] = row["caption_corrections"].get("edited_captions") or row["render_metadata"].get("captions") or []
                 row["post_caption"] = build_post_caption(row, {"metadata_json": row.get("render_metadata_json") or "{}"})
             enrich_review_rows_with_source(conn, rows)
+            attach_active_rerender_jobs(conn, rows)
             rows.sort(key=lambda row: row.get("score", {}).get("overall_score", 0), reverse=True)
             payload = json.dumps(rows, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
@@ -1413,6 +1414,31 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             try:
                 result = create_rerender_job(
                     candidate_id,
+                    renderer=str(payload.get("renderer") or "hyperframes"),
+                    quality=str(payload.get("quality") or "production"),
+                    style_path=str(payload.get("style") or "") or None,
+                    force_source_refresh=bool(payload.get("force_source_refresh", False)),
+                    regenerate_captions=bool(payload.get("regenerate_captions", False)),
+                )
+            except (RuntimeError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result, status=202)
+            return
+
+        if parsed.path == "/api/batch-rerender":
+            raw_ids = payload.get("candidate_ids")
+            if not isinstance(raw_ids, list):
+                self._send_json({"error": "candidate_ids must be an array"}, status=400)
+                return
+            candidate_ids = [str(value).strip() for value in raw_ids if str(value).strip()]
+            if not candidate_ids:
+                self._send_json({"error": "candidate_ids must be a non-empty array"}, status=400)
+                return
+            load_env_file(ENV_FILE)
+            try:
+                result = create_batch_rerender_jobs(
+                    candidate_ids,
                     renderer=str(payload.get("renderer") or "hyperframes"),
                     quality=str(payload.get("quality") or "production"),
                     style_path=str(payload.get("style") or "") or None,

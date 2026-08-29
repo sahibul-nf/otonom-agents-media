@@ -99,6 +99,21 @@ def merge_overlay_slots(base: dict[str, str], override: Any) -> dict[str, str]:
     return merged
 
 
+def _overlay_matches_title(overlay: dict[str, Any], title: str) -> bool:
+    headline = " ".join(str(overlay.get("headline") or "").split()).lower()
+    title_norm = " ".join(str(title or "").split()).lower()
+    if not headline or not title_norm:
+        return False
+    if headline == title_norm:
+        return True
+    title_words = {word for word in title_norm.split() if len(word) > 2}
+    headline_words = {word for word in headline.split() if len(word) > 2}
+    if not title_words or not headline_words:
+        return False
+    overlap = len(title_words & headline_words)
+    return overlap >= max(1, min(2, len(title_words) // 2))
+
+
 def overlay_slots_for_candidate(
     candidate: dict[str, Any],
     llm_suggestion: dict[str, Any] | None = None,
@@ -116,6 +131,8 @@ def overlay_slots_for_candidate(
     if not isinstance(existing, dict):
         meta = candidate.get("curation_metadata")
         existing = meta.get("overlay_slots") if isinstance(meta, dict) else None
+    if isinstance(existing, dict) and not _overlay_matches_title(existing, title):
+        existing = None
     merged = merge_overlay_slots(base, existing)
     return merge_overlay_slots(merged, suggestion.get("overlay"))
 
@@ -126,7 +143,10 @@ def resolve_overlay_for_contract(contract: dict[str, Any]) -> dict[str, str]:
         contract.get("hookSubtitle") or contract.get("hook_subtitle") or contract.get("subtitle") or ""
     ).strip()
     base = heuristic_overlay_slots(title, subtitle)
-    return merge_overlay_slots(base, contract.get("overlay"))
+    overlay = contract.get("overlay")
+    if isinstance(overlay, dict) and not _overlay_matches_title(overlay, title):
+        overlay = None
+    return merge_overlay_slots(base, overlay)
 
 
 def overlay_text(contract: dict[str, Any], *keys: str, default: str = "") -> str:

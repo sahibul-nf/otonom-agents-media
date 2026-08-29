@@ -26,6 +26,7 @@ from .db import (
     initialize,
 )
 from .explainer_stitch import probe_duration_seconds
+from .metadata_refresh import available_metadata_provider, enrich_candidate_metadata
 from .youtube_pipeline import TranscriptEntry, choose_nourbit_premium_candidates
 
 IngestMode = Literal["review_only", "clip_batch"]
@@ -237,6 +238,11 @@ def clip_batch_from_local_path(
         initialize(conn)
         ensure_media_profile(conn, profile_id)
 
+    profile_row = conn.execute("SELECT niche, name FROM media_profiles WHERE id = ?", (profile_id,)).fetchone()
+    niche = str(profile_row["niche"] or "") if profile_row else ""
+    workspace_name = str(profile_row["name"] or "") if profile_row else ""
+    llm_provider = available_metadata_provider("deepseek")
+
     batch_job_id = (job_id or "").strip() or _job_id()
     cache_root = ARTIFACTS_DIR / profile_id / "ingest" / batch_job_id
     cache = cache_root / "asr_words.json"
@@ -250,9 +256,19 @@ def clip_batch_from_local_path(
         source_id,
         entries,
         count=max(1, min(int(count), 12)),
-        llm_provider="none",
+        llm_provider=llm_provider if llm_provider != "none" else "none",
         duration_preset="standard_short",
+        niche=niche,
+        workspace_name=workspace_name,
     )
+    for cand in curated:
+        enrich_candidate_metadata(
+            cand,
+            llm_provider=llm_provider,
+            profile_id=profile_id,
+            niche=niche,
+            workspace_name=workspace_name,
+        )
     clips_dir = cache_root / "clips"
     candidate_ids: list[str] = []
     parent_meta = {"parent_candidate_id": parent_candidate_id} if parent_candidate_id else {}

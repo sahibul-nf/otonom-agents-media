@@ -1,6 +1,6 @@
 "use client";
 
-import {Loader2, Trash2} from "lucide-react";
+import {Loader2, RefreshCcw, Trash2} from "lucide-react";
 
 export function ReviewSelectionChrome({
   active,
@@ -8,23 +8,28 @@ export function ReviewSelectionChrome({
   totalSelectable,
   allSelected,
   deleting = false,
+  rerendering = false,
   onEnter,
   onExit,
   onToggleAll,
   onDeleteSelected,
+  onRerenderSelected,
 }: {
   active: boolean;
   selectedCount: number;
   totalSelectable: number;
   allSelected: boolean;
   deleting?: boolean;
+  rerendering?: boolean;
   onEnter: () => void;
   onExit: () => void;
   onToggleAll: () => void;
   onDeleteSelected: () => void;
+  onRerenderSelected?: () => void;
 }) {
   if (!totalSelectable) return null;
 
+  const busy = deleting || rerendering;
   const chipClass =
     "inline-flex h-8 shrink-0 items-center rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-[11px] font-semibold text-zinc-200 transition hover:border-cyan/[0.28] hover:text-white disabled:opacity-40";
 
@@ -47,22 +52,35 @@ export function ReviewSelectionChrome({
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={onToggleAll} disabled={deleting} className={chipClass}>
+        <button type="button" onClick={onToggleAll} disabled={busy} className={chipClass}>
           {allSelected ? "Clear all" : "Select all"}
         </button>
-        <button type="button" onClick={onExit} disabled={deleting} className={chipClass}>
+        <button type="button" onClick={onExit} disabled={busy} className={chipClass}>
           Done
         </button>
         {selectedCount > 0 ? (
-          <button
-            type="button"
-            onClick={onDeleteSelected}
-            disabled={deleting}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full bg-danger px-3.5 text-[11px] font-semibold text-white transition hover:bg-danger/90 disabled:opacity-40"
-          >
-            {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            Delete {selectedCount}
-          </button>
+          <>
+            {onRerenderSelected ? (
+              <button
+                type="button"
+                onClick={onRerenderSelected}
+                disabled={busy}
+                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-cyan/[0.28] bg-cyan/[0.12] px-3.5 text-[11px] font-semibold text-cyan transition hover:bg-cyan/[0.18] disabled:opacity-40"
+              >
+                {rerendering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+                Re-render {selectedCount}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onDeleteSelected}
+              disabled={busy}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-danger px-3.5 text-[11px] font-semibold text-white transition hover:bg-danger/90 disabled:opacity-40"
+            >
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Delete {selectedCount}
+            </button>
+          </>
         ) : null}
       </div>
     </div>

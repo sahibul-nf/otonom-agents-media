@@ -25,6 +25,7 @@ from .models import PUBLISH_MODES, RIGHTS_MODES, require_choice
 from .publishers import create_dry_run_attempt
 from .publishers import build_payload
 from .render_quality import build_render_quality_report
+from .metadata_refresh import enrich_candidates_metadata
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .rerender import rerender_from_args
 from .schedule_publisher import process_due_publishes
@@ -563,6 +564,13 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
         niche=getattr(args, "niche", None) or profile.get("niche"),
         workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
     )
+    enrich_candidates_metadata(
+        candidates,
+        llm_provider=args.llm_provider,
+        profile_id=args.profile,
+        niche=getattr(args, "niche", None) or profile.get("niche"),
+        workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
+    )
     for candidate in candidates:
         insert_candidate(conn, candidate)
     bar.step(f"curation complete: {len(candidates)} candidates")
@@ -602,6 +610,13 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         clip_min_seconds=args.clip_min_seconds,
         clip_max_seconds=args.clip_max_seconds,
         genres=parse_genres(args.genres, args.profile),
+        niche=getattr(args, "niche", None) or profile.get("niche"),
+        workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
+    )
+    enrich_candidates_metadata(
+        candidates,
+        llm_provider=args.llm_provider,
+        profile_id=args.profile,
         niche=getattr(args, "niche", None) or profile.get("niche"),
         workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
     )

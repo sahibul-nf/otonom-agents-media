@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -18,10 +19,38 @@ from .styles import apply_readable_template_only_caption
 
 HYPERFRAMES_PACKAGE = "hyperframes@0.6.40"
 HYPERFRAMES_DIR = ROOT / "render" / "hyperframes"
+# HyperFrames defaults to 600_000 ms streaming inactivity; slow local renders (or the
+# ffmpeg tail after the last frame is piped) can exceed that and get SIGTERM (code 255).
+DEFAULT_FFMPEG_STREAMING_TIMEOUT_MS = "1800000"
+DEFAULT_FFMPEG_ENCODE_TIMEOUT_MS = "1800000"
+_HYPERFRAMES_RENDER_LOCK = threading.Lock()
 
 
 def _flag_enabled(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _hyperframes_subprocess_env() -> dict[str, str]:
+    """Env overrides for HyperFrames child processes (respect existing operator settings)."""
+    env = dict(os.environ)
+    env.setdefault("FFMPEG_STREAMING_TIMEOUT_MS", DEFAULT_FFMPEG_STREAMING_TIMEOUT_MS)
+    env.setdefault("FFMPEG_ENCODE_TIMEOUT_MS", DEFAULT_FFMPEG_ENCODE_TIMEOUT_MS)
+    return env
+
+
+def _sanitize_cli_output(text: str, *, tail_chars: int = 2400) -> str:
+    cleaned = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", text or "")
+    cleaned = re.sub(r"\r", "", cleaned)
+    lines = [line.strip() for line in cleaned.split("\n") if line.strip()]
+    if not lines:
+        return ""
+    progress_markers = ("Streaming frame", "█", "░░")
+    kept = [line for line in lines if not any(marker in line for marker in progress_markers)]
+    summary = kept if kept else lines[-6:]
+    body = "\n".join(summary)
+    if len(body) > tail_chars:
+        body = body[-tail_chars:]
+    return body.strip()
 
 
 def _node_major(version: str) -> int:
@@ -530,24 +559,27 @@ def _run_hyperframes(args: list[str], cwd: Path) -> dict[str, Any]:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        env=_hyperframes_subprocess_env(),
     )
-    return {"command": " ".join(hyperframes_command(*args)), "returncode": result.returncode, "output": result.stdout[-6000:]}
+    output = _sanitize_cli_output(result.stdout or "")
+    return {"command": " ".join(hyperframes_command(*args)), "returncode": result.returncode, "output": output}
 
 
 def render_hyperframes_project(project_dir: Path, output_path: Path, quality: str = "standard") -> dict[str, Any]:
-    lint = _run_hyperframes(["lint"], project_dir)
-    if lint["returncode"] != 0:
-        raise RuntimeError(f"hyperframes lint failed: {lint['output']}")
-    inspect = _run_hyperframes(["inspect", "--json", "--samples", "9"], project_dir)
-    if inspect["returncode"] != 0:
-        raise RuntimeError(f"hyperframes inspect failed: {inspect['output']}")
-    render = _run_hyperframes(
-        ["render", "--output", str(output_path), "--quality", quality, "--workers", "1"],
-        project_dir,
-    )
-    if render["returncode"] != 0:
-        raise RuntimeError(f"hyperframes render failed: {render['output']}")
-    return {"lint": lint, "inspect": inspect, "render": render}
+    with _HYPERFRAMES_RENDER_LOCK:
+        lint = _run_hyperframes(["lint"], project_dir)
+        if lint["returncode"] != 0:
+            raise RuntimeError(f"hyperframes lint failed: {lint['output']}")
+        inspect = _run_hyperframes(["inspect", "--json", "--samples", "9"], project_dir)
+        if inspect["returncode"] != 0:
+            raise RuntimeError(f"hyperframes inspect failed: {inspect['output']}")
+        render = _run_hyperframes(
+            ["render", "--output", str(output_path), "--quality", quality, "--workers", "1"],
+            project_dir,
+        )
+        if render["returncode"] != 0:
+            raise RuntimeError(f"hyperframes render failed: {render['output']}")
+        return {"lint": lint, "inspect": inspect, "render": render}
 
 
 def render_premium_hyperframes(

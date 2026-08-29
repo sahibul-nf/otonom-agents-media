@@ -61,6 +61,9 @@ import {
   filterPlatformsForClip,
   type MakeShortsFromLongformResult,
   type DeleteCandidatesResult,
+  type BatchRerenderResult,
+  canBatchRerenderClip,
+  isClipRerendering,
   PublishAttempt,
   PublishTarget,
   ScheduledPost,
@@ -1088,6 +1091,57 @@ export function MediaStudioApp() {
     });
   }
 
+  function rerenderSelectedClips(candidateIds: string[]) {
+    if (!candidateIds.length) return;
+    const eligible = candidateIds.filter((id) => {
+      const clip = clips.find((item) => item.id === id);
+      return clip ? canBatchRerenderClip(clip) : false;
+    });
+    if (!eligible.length) {
+      pushToast("No selected clips can be re-rendered", "error");
+      return;
+    }
+    const skipped = candidateIds.length - eligible.length;
+    setConfirmDialog({
+      title: `Re-render ${eligible.length} clip${eligible.length === 1 ? "" : "s"}?`,
+      message: `Regenerate ${eligible.length} selected short${eligible.length === 1 ? "" : "s"} with current hook titles and caption timing.${skipped ? ` ${skipped} ineligible clip${skipped === 1 ? "" : "s"} will be skipped.` : ""} Renders run in the background.`,
+      confirmLabel: `Re-render ${eligible.length}`,
+      tone: "default",
+      onConfirm: () => void performBatchRerender(eligible),
+    });
+  }
+
+  async function performBatchRerender(candidateIds: string[]) {
+    const key = "review:batch-rerender";
+    try {
+      const result = await runAction(
+        key,
+        `Queuing ${candidateIds.length} re-render${candidateIds.length === 1 ? "" : "s"}…`,
+        () =>
+          apiPost<BatchRerenderResult>("batch-rerender", {
+            candidate_ids: candidateIds,
+            renderer: "hyperframes",
+            quality: "production",
+            style: "auto",
+          }),
+        `Queued ${candidateIds.length} re-render${candidateIds.length === 1 ? "" : "s"}`,
+      );
+      const queued = result.queued.length;
+      const skipped = result.skipped.length + result.failed.length;
+      if (skipped) {
+        const message = `Queued ${queued}; ${skipped} skipped or failed`;
+        setStatus(message);
+        pushToast(message, queued ? "success" : "error");
+      } else {
+        setStatus(`Queued ${queued} re-render${queued === 1 ? "" : "s"}`);
+      }
+      await refreshAll();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Batch re-render failed";
+      setStatus(message);
+    }
+  }
+
   async function performDeleteClips(candidateIds: string[]) {
     const key = "review:batch-delete";
     try {
@@ -1333,6 +1387,15 @@ export function MediaStudioApp() {
     }, 3500);
     return () => window.clearInterval(timer);
   }, [jobs]);
+
+  const hasActiveRerender = clips.some((clip) => isClipRerendering(clip));
+  useEffect(() => {
+    if (!hasActiveRerender) return;
+    const timer = window.setInterval(() => {
+      void refreshAll();
+    }, 3500);
+    return () => window.clearInterval(timer);
+  }, [hasActiveRerender]);
 
   const focusedWorkflow = section !== "dashboard";
 
@@ -1608,6 +1671,7 @@ export function MediaStudioApp() {
               onClear={clearQueue}
               onDeleteClip={deleteClip}
               onDeleteSelected={deleteSelectedClips}
+              onRerenderSelected={rerenderSelectedClips}
               onMakeShorts={makeShortsFromClip}
             />
           )}

@@ -30,6 +30,7 @@ export type ReviewStudioSectionProps = {
   onClear: () => void;
   onDeleteClip: (clip: ClipCandidate) => void;
   onDeleteSelected: (candidateIds: string[]) => void;
+  onRerenderSelected?: (candidateIds: string[]) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
 };
 
@@ -45,11 +46,13 @@ export function ReviewStudioSection({
   onClear,
   onDeleteClip,
   onDeleteSelected,
+  onRerenderSelected,
   onMakeShorts,
   statusTone,
 }: ReviewStudioSectionProps) {
   const clearState = actionStates["queue:clear"];
   const batchDeleteState = actionStates["review:batch-delete"];
+  const batchRerenderState = actionStates["review:batch-rerender"];
   const [selectionMode, setSelectionMode] = useState(false);
   const groups = useMemo(() => groupReviewClips(clips), [clips]);
   const batchCount = groups.filter((group) => group.showHeader).length;
@@ -113,10 +116,14 @@ export function ReviewStudioSection({
           totalSelectable={selectableIds.length}
           allSelected={selection.allSelected}
           deleting={batchDeleteState?.status === "running"}
+          rerendering={batchRerenderState?.status === "running"}
           onEnter={() => setSelectionMode(true)}
           onExit={exitSelectionMode}
           onToggleAll={() => (selection.allSelected ? selection.clearSelection() : selection.selectAll())}
           onDeleteSelected={() => onDeleteSelected(Array.from(selection.selectedIds))}
+          onRerenderSelected={
+            onRerenderSelected ? () => onRerenderSelected(Array.from(selection.selectedIds)) : undefined
+          }
         />
       ) : null}
       {clips.length ? (

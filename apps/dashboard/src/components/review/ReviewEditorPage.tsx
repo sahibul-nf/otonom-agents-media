@@ -11,7 +11,6 @@ import {
   apiGet,
   apiPost,
   canMakeShortsFromClip,
-  type BrandTemplate,
   type ClipCandidate,
   type EditorContext,
   type ExplainerScene,
@@ -24,6 +23,14 @@ import {
 import {reviewBatchHref, reviewEditorHref} from "@/lib/review-groups";
 
 type ScenePlanResult = Partial<SaveScenePlanResponse> & {plan: ExplainerScenePlan};
+type RerenderJob = {id: string; status: string; error?: string; message?: string; progress?: number};
+type MetadataRefreshResult = {
+  title_hook: string;
+  hook_subtitle: string;
+  viral_reason: string;
+  curation_metadata?: ClipCandidate["curation_metadata"];
+  rerender_job?: RerenderJob;
+};
 
 export function ReviewEditorPage({
   clipId,
@@ -43,9 +50,7 @@ export function ReviewEditorPage({
   const [cleanPlan, setCleanPlan] = useState<ExplainerScenePlan>();
   const [draftPlan, setDraftPlan] = useState<ExplainerScenePlan>();
   const [templates, setTemplates] = useState<HyperframesTemplate[]>([]);
-  const [brandTemplates, setBrandTemplates] = useState<BrandTemplate[]>([]);
   const [schedulePlatforms, setSchedulePlatforms] = useState<string[]>([]);
-  const [rerenderStyle, setRerenderStyle] = useState("");
   const [cleanCaptionDraft, setCleanCaptionDraft] = useState("");
   const [captionDraft, setCaptionDraft] = useState("");
   const [cleanPostCopy, setCleanPostCopy] = useState("");
@@ -88,20 +93,17 @@ export function ReviewEditorPage({
 
   const loadInitial = useCallback(async () => {
     try {
-      const [reviewItems, editorContext, targets, nextBrandTemplates, nextTemplates] = await Promise.all([
+      const [reviewItems, editorContext, targets, nextTemplates] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clipId)}`),
         apiGet<PublishTarget[]>("targets"),
-        apiGet<BrandTemplate[]>("brand-templates"),
         apiGet<HyperframesTemplate[]>("hyperframes-templates"),
       ]);
       const nextClip = reviewItems.find((item) => item.id === clipId) || null;
       setClips(reviewItems);
       setClip(nextClip);
       setTemplates(nextTemplates);
-      setBrandTemplates(nextBrandTemplates);
       setSchedulePlatforms(targets.filter((target) => target.mode !== "off").map((target) => target.platform));
-      setRerenderStyle(nextBrandTemplates[0]?.path || "");
       if (nextClip) {
         const captions = joinCaptionsFromSegments(nextClip.captions || []);
         const postCopy = nextClip.post_caption || "";
@@ -177,6 +179,60 @@ export function ReviewEditorPage({
     const index = captionIndexAtSeconds(clip, clip.captions, currentSeconds);
     if (index !== undefined) setSelectedCaptionIndex(index);
   }, [clip, context?.capability, currentSeconds]);
+
+  async function applyRerenderJob(job: RerenderJob) {
+    const nextContext = await apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clipId)}`);
+    applyContext(
+      {
+        ...nextContext,
+        job: nextContext.job || {
+          job_id: job.id,
+          status: job.status || "queued",
+          error: job.error || "",
+          progress: job.progress,
+          message: job.message || "Re-rendering…",
+        },
+      },
+      false,
+    );
+  }
+
+  async function queueRerender() {
+    if (!context?.can_rerender || context.capability !== "short" || !clip) return;
+    const job = await apiPost<RerenderJob>("rerender", {
+      candidate_id: clip.id,
+      renderer: "hyperframes",
+      quality: "production",
+      style: "auto",
+    });
+    await applyRerenderJob(job);
+  }
+
+  async function refreshMetadata(rerenderAfter: boolean) {
+    if (!clip) return;
+    const result = await apiPost<MetadataRefreshResult>("metadata-refresh", {
+      candidate_id: clip.id,
+      mode: "smart",
+      rerender_after: rerenderAfter,
+      renderer: "hyperframes",
+      quality: "production",
+      style: "auto",
+    });
+    setClip((current) =>
+      current
+        ? {
+            ...current,
+            title_hook: result.title_hook,
+            hook_subtitle: result.hook_subtitle,
+            viral_reason: result.viral_reason,
+            curation_metadata: result.curation_metadata || current.curation_metadata,
+          }
+        : current,
+    );
+    if (rerenderAfter && result.rerender_job) {
+      await applyRerenderJob(result.rerender_job);
+    }
+  }
 
   async function runAction(key: string, pending: string, action: () => Promise<void>, done: string, refresh = true) {
     setActionStates((items) => ({...items, [key]: {status: "running", message: pending}}));
@@ -311,6 +367,19 @@ export function ReviewEditorPage({
               actionStates={actionStates}
               onSave={() => void saveAllChanges()}
               onRender={() => void savePlan(true)}
+              onRerender={
+                context.can_rerender && context.capability === "short"
+                  ? () => {
+                      void runAction(
+                        `clip:${clip.id}:rerender`,
+                        "Starting re-render…",
+                        () => queueRerender(),
+                        "Re-render started — preview updates when ready.",
+                        false,
+                      );
+                    }
+                  : undefined
+              }
               onApprove={() => void runAction(`clip:${clip.id}:approve`, "Approving…", () => apiPost("approve", {candidate_id: clip.id}), "Approved")}
               onSchedule={() => void runAction(`clip:${clip.id}:schedule`, "Scheduling…", () => apiPost("schedule-next", {candidate_id: clip.id, platforms: schedulePlatforms}), "Scheduled")}
             />
@@ -430,7 +499,7 @@ export function ReviewEditorPage({
                   rerender_after: true,
                   renderer: "hyperframes",
                   quality: "production",
-                  style: rerenderStyle,
+                  style: "auto",
                 });
                 const nextCaptions = result.captions || [];
                 const nextDraft = joinCaptionsFromSegments(nextCaptions);
@@ -491,7 +560,7 @@ export function ReviewEditorPage({
                   rerender_after: true,
                   renderer: "hyperframes",
                   quality: "production",
-                  style: rerenderStyle,
+                  style: "auto",
                 });
                 const nextCaptions = result.captions || [];
                 const nextDraft = joinCaptionsFromSegments(nextCaptions);
@@ -528,36 +597,22 @@ export function ReviewEditorPage({
             );
           }}
           onGeneratePostCopy={() => void runAction(`post:${clip.id}:generate`, "Generating post copy…", async () => { const result = await apiPost<{post_caption: string}>("post-copy-generate", {candidate_id: clip.id, llm_provider: "deepseek"}); setPostCopyDraft(result.post_caption); }, "Post copy generated", false)}
-          onRefreshMetadata={() => void runAction(`clip:${clip.id}:metadata`, "Refreshing metadata…", () => apiPost("metadata-refresh", {candidate_id: clip.id, mode: "smart"}), "Metadata refreshed")}
-          onSaveBoundary={(startMs, endMs, rerenderAfter) => void runAction(`clip:${clip.id}:boundary`, "Saving trim…", () => apiPost("clip-boundary", {candidate_id: clip.id, start_ms: startMs, end_ms: endMs, rerender_after: rerenderAfter, renderer: "hyperframes", quality: "production", style: rerenderStyle}), "Trim saved")}
+          onRefreshMetadata={(rerenderAfter = false) =>
+            void runAction(
+              `clip:${clip.id}:metadata`,
+              rerenderAfter ? "Refreshing metadata and re-rendering…" : "Refreshing metadata…",
+              () => refreshMetadata(rerenderAfter),
+              rerenderAfter ? "Metadata refreshed — re-render started" : "Metadata refreshed",
+              !rerenderAfter,
+            )
+          }
+          onSaveBoundary={(startMs, endMs, rerenderAfter) => void runAction(`clip:${clip.id}:boundary`, "Saving trim…", () => apiPost("clip-boundary", {candidate_id: clip.id, start_ms: startMs, end_ms: endMs, rerender_after: rerenderAfter, renderer: "hyperframes", quality: "production", style: "auto"}), "Trim saved")}
           onRerenderShort={() => {
             if (!context.can_rerender || context.capability !== "short") return;
             void runAction(
               `clip:${clip.id}:rerender`,
               "Starting re-render…",
-              async () => {
-                type RerenderJob = {id: string; status: string; error?: string; message?: string; progress?: number};
-                const job = await apiPost<RerenderJob>("rerender", {
-                  candidate_id: clip.id,
-                  renderer: "hyperframes",
-                  quality: "production",
-                  style: rerenderStyle,
-                });
-                const nextContext = await apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clip.id)}`);
-                applyContext(
-                  {
-                    ...nextContext,
-                    job: nextContext.job || {
-                      job_id: job.id,
-                      status: job.status || "queued",
-                      error: job.error || "",
-                      progress: job.progress,
-                      message: job.message || "Re-rendering…",
-                    },
-                  },
-                  false,
-                );
-              },
+              () => queueRerender(),
               "Re-render started — preview updates when ready.",
               false,
             );

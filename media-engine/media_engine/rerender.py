@@ -11,12 +11,13 @@ from typing import Any, Callable
 
 from .autonomy import evaluate_quality_gate, get_autonomy_settings
 from .caption_pipeline import build_production_captions
+from .captions import captions_out_of_sync, normalize_caption_timeline_for_render
 from .costs import estimate_clip_cost
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_one, initialize, load_json, seed_profile
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
-from .silence_trim import apply_silence_trim_for_render, remap_caption_groups
-from .styles import load_style_for_render
+from .silence_trim import apply_silence_trim_for_render, probe_duration_ms
+from .styles import is_template_only_style, load_style_for_render
 from .youtube_pipeline import download_youtube_section
 
 
@@ -141,6 +142,114 @@ def _regenerate_captions(
     }
 
 
+def _coerce_genres(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return []
+
+
+def _hyperframes_settings(render_metadata: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    curation = candidate.get("curation_metadata") if isinstance(candidate.get("curation_metadata"), dict) else {}
+    genres = _coerce_genres(render_metadata.get("genres") or curation.get("genres") or candidate.get("genres"))
+    return {
+        "hyperframes_template": str(render_metadata.get("hyperframesTemplate") or "auto"),
+        "hyperframes_format": str(render_metadata.get("hyperframesFormat") or "auto"),
+        "brand_system_template_id": str(render_metadata.get("brandSystemTemplateId") or ""),
+        "genres": genres,
+    }
+
+
+def _resolve_rerender_style(
+    style_path: str | None,
+    render_metadata: dict[str, Any],
+    hf_settings: dict[str, Any],
+) -> dict[str, Any]:
+    saved_style = render_metadata.get("style")
+    if isinstance(saved_style, dict) and saved_style:
+        return saved_style
+    # Short-form re-render should keep the original HyperFrames recipe, not a random brand JSON path.
+    effective_path = "auto"
+    if style_path and not is_template_only_style(style_path) and not render_metadata.get("hyperframesTemplate"):
+        effective_path = style_path
+    return load_style_for_render(
+        effective_path,
+        hyperframes_template=hf_settings["hyperframes_template"],
+        hyperframes_format=hf_settings["hyperframes_format"],
+        genres=hf_settings["genres"],
+    )
+
+
+def _prepare_timed_captions_for_render(
+    candidate: dict[str, Any],
+    source_clip: str,
+    *,
+    style: dict[str, Any],
+    source_url: str,
+    profile: dict[str, Any],
+    regenerate_captions: bool,
+) -> bool:
+    """Normalize caption timeline and regenerate when missing or mismatched to source media."""
+    clip_start = int(candidate.get("start_ms") or 0)
+    try:
+        video_ms = probe_duration_ms(source_clip)
+    except Exception:
+        video_ms = 0
+
+    captions = candidate.get("timed_captions")
+    if isinstance(captions, list) and captions:
+        candidate["timed_captions"] = normalize_caption_timeline_for_render(
+            captions,
+            clip_start_ms=clip_start,
+            video_duration_ms=video_ms or None,
+        )
+
+    needs_regen = regenerate_captions or not candidate.get("timed_captions")
+    if not needs_regen and captions_out_of_sync(
+        candidate.get("timed_captions") or [],
+        video_ms,
+        clip_start_ms=clip_start,
+    ):
+        needs_regen = True
+
+    if not needs_regen:
+        return False
+
+    _regenerate_captions(
+        candidate,
+        source_clip,
+        style,
+        model_name=str(candidate.get("asr_metadata", {}).get("model") or "medium"),
+        youtube_url=source_url,
+        niche=str(profile.get("niche") or ""),
+        llm_provider=str(candidate.get("cost", {}).get("llm_provider") or "none"),
+    )
+    candidate["timed_captions"] = normalize_caption_timeline_for_render(
+        candidate.get("timed_captions") or [],
+        clip_start_ms=clip_start,
+        video_duration_ms=video_ms or None,
+    )
+    return True
+
+
+def _hydrate_timed_captions(candidate: dict[str, Any], render_metadata: dict[str, Any]) -> bool:
+    """Load timed captions from manual edits or the latest render contract."""
+    corrections = candidate.get("caption_corrections") if isinstance(candidate.get("caption_corrections"), dict) else {}
+    edited = corrections.get("edited_captions")
+    edited_is_stale = bool(corrections.get("manual_edit_stale"))
+    if isinstance(edited, list) and edited and not edited_is_stale:
+        candidate["timed_captions"] = edited
+        candidate["caption_source"] = "manual_edit"
+        return True
+
+    captions = render_metadata.get("captions")
+    if isinstance(captions, list) and captions:
+        candidate["timed_captions"] = captions
+        return True
+    return False
+
+
 def rerender_candidate(
     candidate_id: str,
     renderer: str = "hyperframes",
@@ -166,6 +275,7 @@ def rerender_candidate(
     profile = _profile_for_candidate(conn, candidate["profile_id"])
     render_job = _latest_render(conn, candidate_id)
     render_metadata = _loads(render_job.get("metadata_json"))
+    _hydrate_timed_captions(candidate, render_metadata)
     if force_source_refresh:
         source_url = _source_url_for_candidate(conn, candidate, render_metadata)
         report(24, "Downloading source for edited boundary")
@@ -174,53 +284,39 @@ def rerender_candidate(
         source_clip = _find_source_clip(candidate["profile_id"], candidate_id, render_metadata)
         source_url = str(render_metadata.get("sourceUrl") or "")
 
-    edited = candidate.get("caption_corrections", {}).get("edited_captions")
-    edited_is_stale = bool(candidate.get("caption_corrections", {}).get("manual_edit_stale"))
-    pending_keep = (candidate.get("curation_metadata") or {}).get("manual_silence_keep_segments")
-    if isinstance(edited, list) and edited and not edited_is_stale:
-        candidate["timed_captions"] = edited
-        candidate["caption_source"] = "manual_edit"
-
     report(27, "Auto-trimming silence on source clip")
     source_clip = apply_silence_trim_for_render(source_clip, candidate)
-    style = load_style_for_render(
-        style_path,
-        hyperframes_template=str(render_metadata.get("hyperframesTemplate") or "auto"),
-        hyperframes_format=str(render_metadata.get("hyperframesFormat") or "auto"),
-        genres=(candidate.get("genres") or render_metadata.get("genres") or []),
-    )
+    hf_settings = _hyperframes_settings(render_metadata, candidate)
+    style = _resolve_rerender_style(style_path, render_metadata, hf_settings)
 
-    if regenerate_captions:
-        report(30, "Regenerating captions for edited boundary")
-        _regenerate_captions(
-            candidate,
-            source_clip,
-            style,
-            model_name=str(candidate.get("asr_metadata", {}).get("model") or "medium"),
-            youtube_url=source_url,
-            niche=str(profile.get("niche") or ""),
-            llm_provider=str(candidate.get("cost", {}).get("llm_provider") or "none"),
-        )
-    elif isinstance(edited, list) and edited and not edited_is_stale:
-        # Prefer already-remapped manual captions when Remove Pause queued a keep plan.
-        if not pending_keep:
-            candidate["timed_captions"] = edited
-            candidate["caption_source"] = "manual_edit"
-            trim = candidate.get("silence_trim") if isinstance(candidate.get("silence_trim"), dict) else {}
-            keep = trim.get("keep_segments") if trim.get("changed") else None
-            if isinstance(keep, list) and keep:
-                segments = [(int(pair[0]), int(pair[1])) for pair in keep]
-                candidate["timed_captions"] = remap_caption_groups(candidate["timed_captions"], segments)
-        else:
-            candidate["timed_captions"] = edited
-            candidate["caption_source"] = "manual_edit"
+    report(29, "Preparing caption timeline")
+    if _prepare_timed_captions_for_render(
+        candidate,
+        source_clip,
+        style=style,
+        source_url=source_url,
+        profile=profile,
+        regenerate_captions=regenerate_captions or not candidate.get("timed_captions"),
+    ):
+        report(31, "Regenerated captions from source audio")
 
     source_attribution = str(render_metadata.get("sourceAttribution") or "Source: Channel clip")
     resolved_renderer = "hyperframes" if quality == "production" and renderer == "ffmpeg" else renderer
     report(34, "Preparing render contract")
     if resolved_renderer == "hyperframes":
         report(52, "Rendering video with HyperFrames")
-        output_path, contract = render_premium_hyperframes(candidate, profile, source_clip, source_url, source_attribution, style)
+        output_path, contract = render_premium_hyperframes(
+            candidate,
+            profile,
+            source_clip,
+            source_url,
+            source_attribution,
+            style,
+            hyperframes_template=hf_settings["hyperframes_template"],
+            hyperframes_format=hf_settings["hyperframes_format"],
+            brand_system_template_id=hf_settings["brand_system_template_id"],
+            genres=hf_settings["genres"],
+        )
     elif resolved_renderer == "remotion":
         report(52, "Rendering video with Remotion")
         output_path, contract = render_premium_remotion(candidate, profile, source_clip, source_url, source_attribution, style)
@@ -379,6 +475,40 @@ def list_rerender_jobs(
     return [_job_payload(dict(row)) for row in rows]
 
 
+def attach_active_rerender_jobs(conn, rows: list[dict[str, Any]]) -> None:
+    """Attach in-flight rerender job metadata to review rows."""
+    if not rows:
+        return
+    candidate_ids = [str(row["id"]) for row in rows if row.get("id")]
+    if not candidate_ids:
+        return
+    placeholders = ",".join("?" for _ in candidate_ids)
+    active_rows = conn.execute(
+        f"""
+        SELECT id, candidate_id, status, progress, message, error
+        FROM rerender_jobs
+        WHERE candidate_id IN ({placeholders})
+          AND status IN ('queued', 'running')
+        ORDER BY created_at DESC, id DESC
+        """,
+        candidate_ids,
+    ).fetchall()
+    jobs_by_candidate: dict[str, dict[str, Any]] = {}
+    for row in active_rows:
+        candidate_id = str(row["candidate_id"])
+        if candidate_id in jobs_by_candidate:
+            continue
+        jobs_by_candidate[candidate_id] = {
+            "id": str(row["id"]),
+            "status": str(row["status"] or ""),
+            "progress": int(row["progress"] or 0),
+            "message": str(row["message"] or ""),
+            "error": str(row["error"] or ""),
+        }
+    for row in rows:
+        row["rerender_job"] = jobs_by_candidate.get(str(row["id"]))
+
+
 def create_rerender_job(
     candidate_id: str,
     renderer: str = "hyperframes",
@@ -425,6 +555,73 @@ def create_rerender_job(
         )
         thread.start()
     return get_rerender_job(job_id, db_path=db_path)
+
+
+def _candidate_can_rerender(conn, candidate_id: str) -> tuple[bool, str]:
+    row = fetch_one(conn, "SELECT * FROM clip_candidates WHERE id = ?", (candidate_id,))
+    if not row:
+        return False, "candidate not found"
+    if str(row.get("status") or "") == "published":
+        return False, "published clip is locked"
+    metadata = _loads(row.get("curation_metadata_json"))
+    kind = str(metadata.get("kind") or "")
+    if kind == "explainer":
+        return False, "explainer clips use scene editor render"
+    if kind == "longform_ingest" or str(row.get("caption_source") or "") == "ingest_longform":
+        return False, "long-form ingest cannot re-render from review"
+    render_job = conn.execute(
+        "SELECT id FROM render_jobs WHERE candidate_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+        (candidate_id,),
+    ).fetchone()
+    if not render_job:
+        return False, "clip has no render job to reuse"
+    return True, ""
+
+
+def create_batch_rerender_jobs(
+    candidate_ids: list[str],
+    *,
+    renderer: str = "hyperframes",
+    quality: str = "production",
+    style_path: str | None = None,
+    force_source_refresh: bool = False,
+    regenerate_captions: bool = False,
+    db_path: str | Path = DEFAULT_DB,
+) -> dict[str, Any]:
+    conn = connect(db_path)
+    initialize(conn)
+    queued: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    failed: list[dict[str, str]] = []
+    for candidate_id in candidate_ids:
+        candidate_id = str(candidate_id).strip()
+        if not candidate_id:
+            continue
+        can_rerender, reason = _candidate_can_rerender(conn, candidate_id)
+        if not can_rerender:
+            skipped.append({"id": candidate_id, "error": reason})
+            continue
+        try:
+            job = create_rerender_job(
+                candidate_id,
+                renderer=renderer,
+                quality=quality,
+                style_path=style_path,
+                force_source_refresh=force_source_refresh,
+                regenerate_captions=regenerate_captions,
+                db_path=db_path,
+            )
+            queued.append(
+                {
+                    "candidate_id": candidate_id,
+                    "job_id": job["id"],
+                    "status": str(job.get("status") or ""),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 - batch should continue on single failures
+            failed.append({"id": candidate_id, "error": str(exc)})
+    conn.close()
+    return {"queued": queued, "skipped": skipped, "failed": failed}
 
 
 def rerender_from_args(args: Namespace) -> dict[str, Any]:

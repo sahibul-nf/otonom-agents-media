@@ -232,20 +232,68 @@ def _title_case_words(words: list[str]) -> str:
     return " ".join(title_words)
 
 
-def _best_title_phrase(span: str, min_words: int = 4, max_words: int = 7) -> str:
+def _split_clauses(span: str) -> list[str]:
+    text = " ".join(str(span or "").split())
+    if not text:
+        return []
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    clauses: list[str] = []
+    for sentence in sentences:
+        chunk = sentence.strip()
+        if not chunk:
+            continue
+        parts = re.split(r"[,;:]\s+", chunk)
+        clauses.extend(part.strip() for part in parts if part.strip())
+    return clauses or [text]
+
+
+def _title_from_words(words: list[str], min_words: int, max_words: int) -> str:
+    if not words:
+        return ""
+    phrase = words[:max_words]
+    if len(phrase) < min_words:
+        phrase = (words + words)[:max_words]
+        phrase = phrase[: max(min_words, len(words))]
+    return _title_case_words(phrase[:max_words])
+
+
+def _best_title_phrase(span: str, min_words: int = 4, max_words: int = 8) -> str:
+    clauses = _split_clauses(span)
+    if not clauses:
+        return "Inti Nasihat Singkat"
+
+    for clause in clauses:
+        if "?" in clause:
+            words = _content_words(clause.replace("?", ""))
+            title = _title_from_words(words, min_words, max_words)
+            if title:
+                return f"{title}?"
+
+    for clause in clauses:
+        words = _content_words(clause)
+        if words and words[0] in HOOK_START_WORDS and len(words) >= min_words:
+            return _title_from_words(words, min_words, max_words)
+
+    for clause in clauses:
+        words = _content_words(clause)
+        if len(words) >= min_words:
+            return _title_from_words(words, min_words, max_words)
+
     words = _content_words(span)
     if not words:
         return "Inti Nasihat Singkat"
-
     deduped: list[str] = []
     for word in words:
         if not deduped or deduped[-1] != word:
             deduped.append(word)
+    return _title_from_words(deduped, min_words, max_words)
 
-    phrase = deduped[:max_words]
-    if len(phrase) < min_words:
-        phrase = (phrase + deduped[max_words : max_words + (min_words - len(phrase))])[:min_words]
-    return _title_case_words(phrase[:max_words])
+
+def _trim_hook_words(text: str, max_words: int = 18) -> str:
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]).rstrip(",;:") + "…"
 
 
 def title_for_span(span: str) -> str:
@@ -253,10 +301,28 @@ def title_for_span(span: str) -> str:
 
 
 def hook_subtitle_for_span(span: str, title: str) -> str:
-    phrase = _best_title_phrase(span, min_words=3, max_words=5).lower()
-    if phrase == "inti nasihat singkat":
+    clauses = _split_clauses(span)
+    if len(clauses) >= 2:
+        subtitle = _trim_hook_words(clauses[1])
+        if subtitle and not subtitle.endswith((".", "!", "?", "…")):
+            subtitle += "."
+        return subtitle[0].upper() + subtitle[1:] if subtitle else subtitle
+
+    words = _content_words(span)
+    title_words = _content_words(title.replace("?", ""))
+    tail = words[len(title_words) : len(title_words) + 18]
+    if len(tail) >= 5:
+        subtitle = _trim_hook_words(" ".join(tail))
+        if subtitle and not subtitle.endswith((".", "!", "?", "…")):
+            subtitle += "."
+        return subtitle[0].upper() + subtitle[1:] if subtitle else subtitle
+
+    if _best_title_phrase(span, min_words=3, max_words=5).lower() == "inti nasihat singkat":
         return "Ringkasan singkat dari isi clip ini. Perlu refresh metadata agar lebih spesifik."
-    return f"Ringkasan isi clip: {phrase}."
+    fallback = _trim_hook_words(" ".join(words[:12]))
+    if fallback and not fallback.endswith((".", "!", "?", "…")):
+        fallback += "."
+    return fallback[0].upper() + fallback[1:] if fallback else fallback
 
 
 def _title_is_relevant(title: str, span: str) -> bool:
@@ -462,22 +528,25 @@ def build_candidate(
     end_ms = refine_end_boundary(entries, start_ms, end_ms, duration_preset.max_ms, duration_preset.min_ms)
     window = [item for item in entries if item.start_ms < end_ms and item.end_ms > start_ms]
     span = " ".join(item.text for item in window)
+    pre_refine_window = [item for item in entries if item.start_ms < original_end_ms and item.end_ms > original_start_ms]
+    pre_refine_span = " ".join(item.text for item in pre_refine_window)
+    relevance_span = pre_refine_span if llm_suggestion else span
     suggested_title = str((llm_suggestion or {}).get("title_hook") or "").strip()
-    if suggested_title and _title_is_relevant(suggested_title, span):
+    if suggested_title and _title_is_relevant(suggested_title, relevance_span):
         title = suggested_title
         title_source = "llm"
     else:
         title = title_for_span(span)
         title_source = "heuristic_span"
     suggested_subtitle = str((llm_suggestion or {}).get("hook_subtitle") or "").strip()
-    if suggested_subtitle and _subtitle_is_relevant(suggested_subtitle, span):
+    if suggested_subtitle and _subtitle_is_relevant(suggested_subtitle, relevance_span):
         hook_subtitle = suggested_subtitle
         subtitle_source = "llm"
     else:
         hook_subtitle = hook_subtitle_for_span(span, title)
         subtitle_source = "heuristic_span"
     suggested_reason = str((llm_suggestion or {}).get("viral_reason") or "").strip()
-    if suggested_reason and _subtitle_is_relevant(suggested_reason, span):
+    if suggested_reason and _subtitle_is_relevant(suggested_reason, relevance_span):
         viral_reason = suggested_reason
         reason_source = "llm"
     else:

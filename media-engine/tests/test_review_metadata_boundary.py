@@ -66,7 +66,7 @@ class ReviewMetadataBoundaryTests(unittest.TestCase):
 
     def test_smart_metadata_rejects_generic_llm(self):
         conn = make_conn()
-        with patch("media_engine.metadata_refresh._available_provider", return_value="deepseek"), patch(
+        with patch("media_engine.metadata_refresh.available_metadata_provider", return_value="deepseek"), patch(
             "media_engine.metadata_refresh.call_llm_json",
             return_value={
                 "title_hook": "Allah Tidak Pernah Jauh",
