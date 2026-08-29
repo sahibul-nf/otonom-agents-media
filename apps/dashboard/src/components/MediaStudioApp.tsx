@@ -57,7 +57,9 @@ import {
   HyperframesTemplate,
   MediaProfile,
   platformLabel,
+  canMakeShortsFromClip,
   filterPlatformsForClip,
+  type MakeShortsFromLongformResult,
   PublishAttempt,
   PublishTarget,
   ScheduledPost,
@@ -1073,6 +1075,27 @@ export function MediaStudioApp() {
     });
   }
 
+  async function makeShortsFromClip(clip: ClipCandidate) {
+    if (!canMakeShortsFromClip(clip)) return;
+    const key = `clip:${clip.id}:shorts`;
+    try {
+      const result = await runAction(
+        key,
+        "Queuing shorts from long-form…",
+        () => apiPost<MakeShortsFromLongformResult>("make-shorts-from-longform", {candidate_id: clip.id}),
+        "Shorts queued",
+      );
+      setStatus(result.message);
+      pushToast(result.message, "success");
+      await refreshAll();
+      setSection(result.route === "generation_job" ? "generate" : "review");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Make shorts failed";
+      setStatus(message);
+      pushToast(message, "error");
+    }
+  }
+
   async function performDeleteClip(candidateId: string) {
     const key = `clip:${candidateId}:delete`;
     try {
@@ -1542,6 +1565,7 @@ export function MediaStudioApp() {
               statusTone={statusTone}
               onClear={clearQueue}
               onDeleteClip={deleteClip}
+              onMakeShorts={makeShortsFromClip}
             />
           )}
 

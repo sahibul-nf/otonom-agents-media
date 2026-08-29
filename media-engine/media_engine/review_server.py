@@ -90,7 +90,9 @@ from .scheduler import (
     update_schedule,
     update_schedule_platforms,
 )
+from .longform_shorts import LongformShortsError, make_shorts_from_longform
 from .publish_delivery import candidate_delivery_orientation, latest_render_job
+from .styles import delete_brand_template, load_style, save_brand_system_template, save_style_template
 
 
 ENV_FILE = ROOT.parent / ".env.local"
@@ -897,6 +899,29 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(result, status=201)
+            return
+
+        if parsed.path == "/api/make-shorts-from-longform":
+            candidate_id = str(payload.get("candidate_id") or "").strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            try:
+                result = make_shorts_from_longform(
+                    candidate_id,
+                    count=int(payload.get("count") or 5),
+                    language=str(payload.get("language") or "id"),
+                )
+            except LongformShortsError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+                return
+            except (OSError, ValueError, RuntimeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result, status=202 if result.get("route") == "generation_job" else 201)
             return
 
         if parsed.path == "/api/path-a-generate":

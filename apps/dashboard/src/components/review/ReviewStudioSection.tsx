@@ -26,6 +26,7 @@ export type ReviewStudioSectionProps = {
   statusTone: (status: string) => string;
   onClear: () => void;
   onDeleteClip: (clip: ClipCandidate) => void;
+  onMakeShorts?: (clip: ClipCandidate) => void;
 };
 
 export function ReviewStudioSection({
@@ -38,6 +39,7 @@ export function ReviewStudioSection({
   setShowPublished,
   onClear,
   onDeleteClip,
+  onMakeShorts,
   statusTone,
 }: ReviewStudioSectionProps) {
   const clearState = actionStates["queue:clear"];
@@ -78,6 +80,7 @@ export function ReviewStudioSection({
           statusTone={statusTone}
                 actionStates={actionStates}
                 onDelete={onDeleteClip}
+                onMakeShorts={onMakeShorts}
               />
                 </div>
           ))}

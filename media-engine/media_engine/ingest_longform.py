@@ -213,6 +213,88 @@ def _insert_candidate_and_render(
     )
 
 
+def clip_batch_from_local_path(
+    *,
+    local_path: str | Path,
+    profile_id: str,
+    source_id: str,
+    title: str = "",
+    count: int = 5,
+    language: str = "id",
+    db_path: str | Path = DEFAULT_DB,
+    parent_candidate_id: str | None = None,
+    job_id: str | None = None,
+    conn=None,
+) -> dict[str, Any]:
+    """Cut short candidates from an on-disk long-form file into Review."""
+    local_path = Path(local_path).expanduser().resolve()
+    if not local_path.exists():
+        raise FileNotFoundError(f"source not found: {local_path}")
+
+    owns_conn = conn is None
+    if owns_conn:
+        conn = connect(db_path)
+        initialize(conn)
+        ensure_media_profile(conn, profile_id)
+
+    batch_job_id = (job_id or "").strip() or _job_id()
+    cache_root = ARTIFACTS_DIR / profile_id / "ingest" / batch_job_id
+    cache = cache_root / "asr_words.json"
+    words, asr_meta = load_or_create_asr_words(str(local_path), str(cache), language=language)
+    entries = _words_to_transcript_entries(words)
+    if len(entries) < 10:
+        raise ValueError("transcript too short for clip_batch — try a longer video or publish to YouTube first")
+
+    curated = choose_nourbit_premium_candidates(
+        profile_id,
+        source_id,
+        entries,
+        count=max(1, min(int(count), 12)),
+        llm_provider="none",
+        duration_preset="standard_short",
+    )
+    clips_dir = cache_root / "clips"
+    candidate_ids: list[str] = []
+    parent_meta = {"parent_candidate_id": parent_candidate_id} if parent_candidate_id else {}
+    for index, cand in enumerate(curated, start=1):
+        cid = str(cand.get("id") or f"cand_{batch_job_id}_{index:02d}")
+        out = clips_dir / f"{cid}.mp4"
+        _cut_section(local_path, out, int(cand["start_ms"]), int(cand["end_ms"]))
+        _insert_candidate_and_render(
+            conn,
+            candidate_id=cid,
+            profile_id=profile_id,
+            source_id=source_id,
+            title=str(cand.get("title_hook") or title or f"Clip {index}"),
+            subtitle=str(cand.get("hook_subtitle") or "Short from long-form"),
+            viral_reason=str(cand.get("viral_reason") or "longform_shorts"),
+            transcript=str(cand.get("transcript_span") or ""),
+            start_ms=int(cand["start_ms"]),
+            end_ms=int(cand["end_ms"]),
+            output_path=out,
+            caption_source="whisper",
+            kind="ingest_clip",
+            extra_meta={
+                "job_id": batch_job_id,
+                "asr": asr_meta,
+                "path_a": bool(parent_meta),
+                "shorts_from_longform": True,
+                **parent_meta,
+            },
+        )
+        candidate_ids.append(cid)
+
+    if owns_conn:
+        conn.commit()
+    return {
+        "ok": True,
+        "candidate_ids": candidate_ids,
+        "source_id": source_id,
+        "job_id": batch_job_id,
+        "local_path": str(local_path),
+    }
+
+
 def ingest_longform(
     *,
     source: str,
@@ -270,43 +352,18 @@ def ingest_longform(
         )
         candidate_ids.append(candidate_id)
     else:
-        cache = ARTIFACTS_DIR / profile_id / "ingest" / job_id / "asr_words.json"
-        words, asr_meta = load_or_create_asr_words(str(local_path), str(cache), language=language)
-        entries = _words_to_transcript_entries(words)
-        if len(entries) < 10:
-            raise ValueError(
-                "transcript too short for clip_batch — try mode=review_only or a longer video"
-            )
-        curated = choose_nourbit_premium_candidates(
-            profile_id,
-            source_id,
-            entries,
-            count=max(1, min(int(count), 12)),
-            llm_provider="none",
-            duration_preset="standard_short",
+        batch = clip_batch_from_local_path(
+            local_path=local_path,
+            profile_id=profile_id,
+            source_id=source_id,
+            title=display_title,
+            count=count,
+            language=language,
+            db_path=db_path,
+            job_id=job_id,
+            conn=conn,
         )
-        clips_dir = ARTIFACTS_DIR / profile_id / "ingest" / job_id / "clips"
-        for index, cand in enumerate(curated, start=1):
-            cid = str(cand.get("id") or f"cand_{job_id}_{index:02d}")
-            out = clips_dir / f"{cid}.mp4"
-            _cut_section(local_path, out, int(cand["start_ms"]), int(cand["end_ms"]))
-            _insert_candidate_and_render(
-                conn,
-                candidate_id=cid,
-                profile_id=profile_id,
-                source_id=source_id,
-                title=str(cand.get("title_hook") or f"Clip {index}"),
-                subtitle=str(cand.get("hook_subtitle") or "Ingest clip_batch"),
-                viral_reason=str(cand.get("viral_reason") or "ingest clip_batch"),
-                transcript=str(cand.get("transcript_span") or ""),
-                start_ms=int(cand["start_ms"]),
-                end_ms=int(cand["end_ms"]),
-                output_path=out,
-                caption_source="whisper",
-                kind="ingest_clip",
-                extra_meta={"job_id": job_id, "asr": asr_meta, "path_a": True},
-            )
-            candidate_ids.append(cid)
+        candidate_ids.extend(batch["candidate_ids"])
 
     conn.commit()
     return {

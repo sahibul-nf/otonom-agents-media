@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import {ArrowUpRight, Loader2, MoreHorizontal, Pause, Play, Trash2, Volume2, VolumeX} from "lucide-react";
+import {ArrowUpRight, Loader2, MoreHorizontal, Pause, Play, Scissors, Trash2, Volume2, VolumeX} from "lucide-react";
 import {useCallback, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent} from "react";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
-import {apiPath, type ClipCandidate, formatDuration, isExplainerClip} from "@/lib/media-api";
+import {apiPath, canMakeShortsFromClip, type ClipCandidate, formatDuration, isExplainerClip} from "@/lib/media-api";
 import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
 
 function readinessLabel(clip: ClipCandidate) {
@@ -21,12 +21,14 @@ export function ReviewQueueCard({
   deleting = false,
   editHref,
   onDelete,
+  onMakeShorts,
 }: {
   clip: ClipCandidate;
   statusTone: (status: string) => string;
   deleting?: boolean;
   editHref?: string;
   onDelete?: (clip: ClipCandidate) => void;
+  onMakeShorts?: (clip: ClipCandidate) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -153,8 +155,24 @@ export function ReviewQueueCard({
               <div
                 id={menuId}
                 role="menu"
-                className="absolute right-0 top-10 z-50 w-40 overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl"
+                className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl"
               >
+                {canMakeShortsFromClip(clip) && onMakeShorts ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={deleting}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuOpen(false);
+                      onMakeShorts(clip);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-cyan transition hover:bg-cyan/[0.08] disabled:opacity-40"
+                  >
+                    <Scissors className="h-3.5 w-3.5" />
+                    Make shorts
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   role="menuitem"

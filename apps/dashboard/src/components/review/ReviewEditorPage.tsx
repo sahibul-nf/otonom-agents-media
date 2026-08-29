@@ -10,12 +10,14 @@ import {captionIndexAtSeconds, captionRelativeSeconds, isRenderingContext, joinC
 import {
   apiGet,
   apiPost,
+  canMakeShortsFromClip,
   type BrandTemplate,
   type ClipCandidate,
   type EditorContext,
   type ExplainerScene,
   type ExplainerScenePlan,
   type HyperframesTemplate,
+  type MakeShortsFromLongformResult,
   type PublishTarget,
   type SaveScenePlanResponse,
 } from "@/lib/media-api";
@@ -187,6 +189,31 @@ export function ReviewEditorPage({
     }
   }
 
+  async function makeShortsFromLongform() {
+    if (!clip || !canMakeShortsFromClip(clip)) return;
+    const key = `clip:${clip.id}:shorts`;
+    setActionStates((items) => ({...items, [key]: {status: "running", message: "Queuing shorts…"}}));
+    try {
+      const result = await apiPost<MakeShortsFromLongformResult>("make-shorts-from-longform", {candidate_id: clip.id});
+      setActionStates((items) => ({...items, [key]: {status: "done", message: result.message}}));
+      if (result.route === "generation_job") {
+        router.push("/?section=generate");
+        return;
+      }
+      await refreshClip();
+      if (fromBatch && batchSourceId) {
+        router.push(reviewBatchHref(batchSourceId));
+      } else {
+        router.push("/?section=review");
+      }
+    } catch (error) {
+      setActionStates((items) => ({
+        ...items,
+        [key]: {status: "failed", message: error instanceof Error ? error.message : "Make shorts failed"},
+      }));
+    }
+  }
+
   function navigate(href?: string) {
     if (!href) return;
     if (dirty && !window.confirm("Discard unsaved editor changes?")) return;
@@ -289,7 +316,17 @@ export function ReviewEditorPage({
             />
             <div className="relative">
               <button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-9 w-9 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label="More review actions" aria-expanded={menuOpen}><MoreHorizontal className="h-4 w-4" /></button>
-              {menuOpen ? <div className="absolute right-0 top-11 z-50 w-48 overflow-hidden rounded-2xl border border-white/[0.06] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl">
+              {menuOpen ? <div className="absolute right-0 top-11 z-50 w-52 overflow-hidden rounded-2xl border border-white/[0.06] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl">
+                {canMakeShortsFromClip(clip) ? (
+                  <button
+                    type="button"
+                    disabled={actionStates[`clip:${clip.id}:shorts`]?.status === "running"}
+                    onClick={() => { setMenuOpen(false); void makeShortsFromLongform(); }}
+                    className="w-full rounded-xl px-3 py-2 text-left text-sm text-cyan hover:bg-cyan/[0.08] disabled:opacity-40"
+                  >
+                    {actionStates[`clip:${clip.id}:shorts`]?.status === "running" ? "Queuing shorts…" : "Make shorts"}
+                  </button>
+                ) : null}
                 <button type="button" onClick={() => { setMenuOpen(false); void runAction(`clip:${clip.id}:hold`, "Holding…", () => apiPost("hold", {candidate_id: clip.id}), "Held"); }} className="w-full rounded-xl px-3 py-2 text-left text-sm text-warning hover:bg-warning/[0.08]">Hold for later</button>
                 <button type="button" onClick={() => { setMenuOpen(false); if (window.confirm("Delete this item and rendered files?")) void runAction(`clip:${clip.id}:delete`, "Deleting…", async () => { await apiPost("delete-candidate", {candidate_id: clip.id, delete_artifacts: true}); router.push(backHref); }, "Deleted", false); }} className="w-full rounded-xl px-3 py-2 text-left text-sm text-danger hover:bg-danger/[0.08]">Delete item</button>
               </div> : null}

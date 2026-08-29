@@ -81,6 +81,8 @@ Paste `video_url` into Explainer → Ingest, or MCP `ingest_longform`.
 
 Whisper ASR + short window curation + ffmpeg cuts into Review as 9:16-ready candidates (basic cuts; re-render with HyperFrames later if needed). Requires `faster-whisper` in the media-engine env. Not auto-run after Path A generate.
 
+**Make shorts (Review):** On an approved landscape long-form item, use **Make shorts** in Review — no URL paste. If the clip was published to YouTube, Otonom queues the full Create pipeline (`generation_jobs`) against that URL; otherwise it runs local `clip_batch` cuts from the on-disk source. Path A ingest still defaults to `review_only`; pass `mode=clip_batch` on `ingest_longform` / `POST /api/ingest-longform` when you want shorts at ingest time.
+
 ---
 
 ## Path B (future) — Direct API / USD wallet

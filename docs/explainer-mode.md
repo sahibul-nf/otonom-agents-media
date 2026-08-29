@@ -80,7 +80,7 @@ Target cadence: **≤ 4 long-form / month** → N shorts.
 ```text
 Explainer long-form (16:9)
   → Review approve → publish to your YouTube channel (Channels → **YouTube Video** when OAuth is connected)
-  → paste that YouTube URL in Create (shorts pipeline)
+  → **Make shorts** in Review (or `clip_batch` at ingest) — no URL paste when source is known
   → curate / render / Review / schedule multi-platform
 ```
 

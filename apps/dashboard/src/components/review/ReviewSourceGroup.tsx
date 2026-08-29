@@ -10,11 +10,13 @@ export function ReviewSourceGroup({
   statusTone,
   actionStates,
   onDelete,
+  onMakeShorts,
 }: {
   group: ReviewClipGroup;
   statusTone: (status: string) => string;
   actionStates?: Record<string, {status: "running" | "done" | "failed"; message: string}>;
   onDelete?: (clip: ReviewClipGroup["clips"][number]) => void;
+  onMakeShorts?: (clip: ReviewClipGroup["clips"][number]) => void;
 }) {
   if (!group.showHeader) {
     const clip = group.clips[0];
@@ -25,6 +27,7 @@ export function ReviewSourceGroup({
         statusTone={statusTone}
         deleting={actionStates?.[`clip:${clip.id}:delete`]?.status === "running"}
         onDelete={onDelete}
+        onMakeShorts={onMakeShorts}
       />
     );
   }

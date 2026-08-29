@@ -613,3 +613,19 @@ export function platformMatchesClipOrientation(platform: string, clip?: ClipCand
 export function filterPlatformsForClip(platforms: string[], clip?: ClipCandidate | null): string[] {
   return platforms.filter((platform) => platformMatchesClipOrientation(platform, clip));
 }
+
+/** Landscape long-form clips that can enqueue shorts without pasting a URL again. */
+export function canMakeShortsFromClip(clip?: ClipCandidate | null): boolean {
+  return isExplainerClip(clip);
+}
+
+export type MakeShortsFromLongformResult = {
+  ok: boolean;
+  route: "generation_job" | "clip_batch";
+  parent_candidate_id: string;
+  generation_job_id?: string;
+  candidate_ids?: string[];
+  source_url?: string;
+  source_id?: string;
+  message: string;
+};

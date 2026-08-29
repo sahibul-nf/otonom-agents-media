@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- **Make shorts** from approved long-form in Review: one-click handoff to `clip_batch` (local file) or Create `generation_jobs` (published YouTube URL) without re-pasting links (#85).
 - YouTube long-form publish target (**YouTube Video**) for landscape 16:9 clips: Review → Schedule → Publish via `videos.insert` with the same YouTube OAuth as Shorts; vertical-only targets are hidden/blocked for long-form (#84).
 - Clip recipe overlays now fill named slots (`kicker`, `headline`, `subhead`, `stamp`, `line_a`, `line_b`) from the clip hook (and LLM overlay JSON when ranking is on) instead of gallery dummy copy (#82). Template gallery preview cache bumped to `PREVIEW_CONTRACT_VERSION=3`.
 
