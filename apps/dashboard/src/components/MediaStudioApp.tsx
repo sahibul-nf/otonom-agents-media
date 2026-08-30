@@ -741,6 +741,23 @@ export function MediaStudioApp() {
     }
   }
 
+  async function updateAutonomySettings(patch: Partial<AutonomySettings>) {
+    if (!autonomy) return;
+    const key = "autonomy:settings";
+    try {
+      const next = await runAction(
+        key,
+        "Saving autonomy settings...",
+        () => apiPost<AutonomySettings>("autonomy-settings", {...autonomy, profile_id: profileId, ...patch}),
+        "Autonomy settings saved",
+      );
+      setAutonomy(next);
+      setStatus("Autonomy settings updated");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Autonomy update failed");
+    }
+  }
+
   async function startGeneration(source?: SourceResolveResult | null) {
     const key = "generate:start";
     if (!source?.ok || !source.video_id) {
@@ -1732,6 +1749,7 @@ export function MediaStudioApp() {
               actionStates={actionStates}
               defaultTemplate={defaultTemplate}
               onAutonomyMode={updateAutonomyMode}
+              onAutonomySettingsChange={updateAutonomySettings}
               onTemplateSaved={refreshAll}
               onDeleteTemplate={deleteSavedBrandStyle}
             />

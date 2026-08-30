@@ -9,7 +9,13 @@ from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any
 
-from .scheduler import DEFAULT_TZ
+from .scheduler import DEFAULT_TZ, process_due_auto_schedule
+from .scoring import (
+    HYGIENE_GATE_HOLD,
+    HYGIENE_GATE_NEEDS_ATTENTION,
+    HYGIENE_GATE_PASS,
+    evaluate_hygiene_gate,
+)
 
 
 AUTONOMY_OFF = "off"
@@ -197,6 +203,37 @@ def caption_hold_reason(caption: int, word_count: int, low_ratio: float) -> str:
     return ""
 
 
+def _resolve_hygiene_gate(
+    score: dict[str, Any],
+    metadata: dict[str, Any],
+    *,
+    caption: int,
+    boundary: int,
+    hold_reason: str,
+    rights_risk: bool,
+) -> dict[str, Any]:
+    gate_status = str(score.get("hygiene_gate") or "")
+    flags = score.get("hygiene_flags")
+    if gate_status in {HYGIENE_GATE_PASS, HYGIENE_GATE_NEEDS_ATTENTION, HYGIENE_GATE_HOLD} and isinstance(flags, list):
+        return {"gate_status": gate_status, "flags": [str(flag) for flag in flags]}
+    hygiene = evaluate_hygiene_gate(
+        caption_confidence=caption,
+        boundary_confidence=boundary,
+        rights_risk=rights_risk,
+        catastrophic_caption=bool(hold_reason),
+        explicit_copyright_risk=rights_risk,
+    )
+    return hygiene
+
+
+def _hygiene_allows_autonomy(gate_status: str, mode: str) -> bool:
+    if gate_status == HYGIENE_GATE_HOLD:
+        return False
+    if gate_status == HYGIENE_GATE_NEEDS_ATTENTION:
+        return mode in {AUTONOMY_ASSISTED, AUTONOMY_FULL}
+    return gate_status == HYGIENE_GATE_PASS
+
+
 def evaluate_quality_gate(
     candidate: dict[str, Any],
     settings: dict[str, Any],
@@ -205,23 +242,42 @@ def evaluate_quality_gate(
     score = candidate.get("score") or {}
     metadata = candidate.get("curation_metadata") or {}
     asr = candidate.get("asr_metadata") or {}
-    overall = int(score.get("overall_score") or 0)
+    performance = int(score.get("performance_score") or score.get("overall_score") or 0)
     hook = int(score.get("hook_score") or 0)
     caption = int(score.get("asr_confidence") or score.get("caption_confidence") or 0)
     boundary = int(metadata.get("boundary_confidence") or 0)
     low_confidence_words, word_count, low_ratio = _asr_word_stats(asr)
     low_words_ok = True if word_count <= 0 else low_ratio <= AUTO_SCHEDULE_LOW_WORD_RATIO
     hold_reason = caption_hold_reason(caption, word_count, low_ratio)
+    risk_flags = candidate.get("risk_flags") if isinstance(candidate.get("risk_flags"), list) else []
+    risk_blob = " ".join(str(flag) for flag in risk_flags).lower()
+    explicit_copyright_risk = "copyright" in risk_blob or "rights" in risk_blob
+    hygiene = _resolve_hygiene_gate(
+        score,
+        metadata,
+        caption=caption,
+        boundary=boundary,
+        hold_reason=hold_reason,
+        rights_risk=explicit_copyright_risk,
+    )
+    hygiene_status = str(hygiene["gate_status"])
+    hygiene_flags = list(hygiene.get("flags") or [])
+    mode = settings.get("autonomy_mode", AUTONOMY_ASSISTED)
+    hygiene_ok = _hygiene_allows_autonomy(hygiene_status, mode)
+    if mode == AUTONOMY_FULL:
+        hygiene_ok = hygiene_status == HYGIENE_GATE_PASS and not hold_reason
     checks = {
-        "overall": overall >= int(settings["overall_threshold"]),
+        "performance": performance >= int(settings["overall_threshold"]),
+        "overall": performance >= int(settings["overall_threshold"]),
         "hook": hook >= int(settings["hook_threshold"]),
         "caption": caption >= int(settings["caption_threshold"]),
         "boundary": boundary >= int(settings["boundary_threshold"]),
+        "hygiene_gate": hygiene_ok,
         "low_confidence_words": low_words_ok,
         "captions_usable": not hold_reason,
     }
-    passed = all(checks.values())
-    mode = settings.get("autonomy_mode", AUTONOMY_ASSISTED)
+    performance_passed = checks["performance"] and checks["hook"] and checks["low_confidence_words"] and checks["captions_usable"]
+    passed = performance_passed and hygiene_ok
     deadline = ""
     if passed and mode == AUTONOMY_ASSISTED:
         deadline = _iso(_now(now) + timedelta(hours=int(settings["review_grace_hours"])))
@@ -230,7 +286,7 @@ def evaluate_quality_gate(
     status = "rendered"
     if mode == AUTONOMY_OFF:
         status = "rendered"
-    elif hold_reason:
+    elif hold_reason or hygiene_status == HYGIENE_GATE_HOLD:
         status = "held"
     elif passed:
         status = STATUS_PENDING_AUTO_SCHEDULE
@@ -239,22 +295,108 @@ def evaluate_quality_gate(
         "status": status,
         "hold_reason": hold_reason,
         "review_deadline_at": deadline,
+        "auto_qualified": passed and mode != AUTONOMY_OFF and not hold_reason,
         "checks": checks,
+        "hygiene_gate": hygiene_status,
+        "hygiene_flags": hygiene_flags,
         "scores": {
-            "overall": overall,
+            "performance": performance,
+            "overall": performance,
             "hook": hook,
             "caption": caption,
             "boundary": boundary,
+            "viral": int(score.get("viral_score") or score.get("resonance_score") or 0),
+            "resonance": int(score.get("resonance_score") or score.get("viral_score") or 0),
+            "pacing": int(score.get("pacing_score") or 0),
+            "retention": int(score.get("retention_score") or 0),
             "low_confidence_words": low_confidence_words,
             "word_count": word_count,
             "low_word_ratio": round(low_ratio, 3),
+        },
+        "thresholds": {
+            "overall": int(settings["overall_threshold"]),
+            "performance": int(settings["overall_threshold"]),
+            "hook": int(settings["hook_threshold"]),
+            "caption": int(settings["caption_threshold"]),
+            "boundary": int(settings["boundary_threshold"]),
         },
         "settings": {
             "autonomy_mode": mode,
             "review_grace_hours": int(settings["review_grace_hours"]),
             "auto_schedule_enabled": bool(settings["auto_schedule_enabled"]),
+            "overall_threshold": int(settings["overall_threshold"]),
+            "hook_threshold": int(settings["hook_threshold"]),
+            "caption_threshold": int(settings["caption_threshold"]),
+            "boundary_threshold": int(settings["boundary_threshold"]),
         },
     }
+
+
+def apply_autonomy_gate_to_candidate(
+    candidate: dict[str, Any],
+    settings: dict[str, Any],
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Evaluate the quality gate and mirror results on an in-memory candidate."""
+    gate = evaluate_quality_gate(candidate, settings, now=now)
+    candidate["quality_gate"] = gate
+    candidate["review_deadline_at"] = gate.get("review_deadline_at", "")
+    protected_statuses = {"approved", "scheduled", "ready_to_publish", "published"}
+    if candidate.get("status") not in protected_statuses:
+        candidate["status"] = gate.get("status", "rendered")
+    return gate
+
+
+def maybe_immediate_auto_schedule(
+    conn: sqlite3.Connection,
+    candidate_id: str,
+    profile_id: str,
+    gate: dict[str, Any],
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Schedule immediately when full autonomy passes the gate."""
+    settings = gate.get("settings") or {}
+    if not gate.get("passed"):
+        return []
+    if settings.get("autonomy_mode") != AUTONOMY_FULL:
+        return []
+    if not settings.get("auto_schedule_enabled"):
+        return []
+    if gate.get("status") != STATUS_PENDING_AUTO_SCHEDULE:
+        return []
+    return process_due_auto_schedule(conn, profile_id=profile_id, now=_now(now) + timedelta(seconds=1))
+
+
+def finalize_candidate_autonomy(
+    conn: sqlite3.Connection,
+    candidate: dict[str, Any],
+    profile_id: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Apply the gate to an in-memory candidate before persistence."""
+    settings = get_autonomy_settings(conn, profile_id)
+    return apply_autonomy_gate_to_candidate(candidate, settings, now=now)
+
+
+def complete_autonomy_after_persist(
+    conn: sqlite3.Connection,
+    candidate: dict[str, Any],
+    profile_id: str,
+    gate: dict[str, Any] | None = None,
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Auto-schedule immediately in full autonomy mode after the candidate row is saved."""
+    resolved_gate = gate or candidate.get("quality_gate") or {}
+    scheduled = maybe_immediate_auto_schedule(conn, str(candidate["id"]), profile_id, resolved_gate, now=now)
+    if scheduled:
+        candidate["status"] = "scheduled"
+        resolved_gate["auto_scheduled"] = scheduled
+        candidate["quality_gate"] = resolved_gate
+    return scheduled
 
 
 def reconcile_caption_holds(conn: sqlite3.Connection) -> int:

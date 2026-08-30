@@ -2,7 +2,7 @@
 
 import {useRouter} from "next/navigation";
 import {ArrowUpRight, CheckCircle2, Layers3, Loader2, Palette, Settings2, Sparkles, Trash2} from "lucide-react";
-import {useEffect} from "react";
+import {useEffect, useState} from "react";
 import {brandPresets} from "@/components/brand/BrandBuilderWorkspace";
 import type {AutonomySettings, BrandTemplate, HyperframesCatalog, HyperframesTemplate, StyleProfile} from "@/lib/media-api";
 
@@ -17,6 +17,7 @@ type Props = {
   actionStates: Record<string, ActionUiState>;
   defaultTemplate: string;
   onAutonomyMode: (mode: string) => void;
+  onAutonomySettingsChange: (patch: Partial<AutonomySettings>) => void;
   onTemplateSaved: () => void;
   onDeleteTemplate?: (template: BrandTemplate) => void;
 };
@@ -70,6 +71,7 @@ export function BrandSection({
   actionStates,
   defaultTemplate: _defaultTemplate,
   onAutonomyMode,
+  onAutonomySettingsChange,
   onTemplateSaved,
   onDeleteTemplate,
 }: Props) {
@@ -77,7 +79,18 @@ export function BrandSection({
   const autonomyBusy = Object.entries(actionStates).find(([key, state]) => key.startsWith("autonomy:") && state.status === "running")?.[1];
   const currentAutonomy = autonomyModeMeta(autonomy?.autonomy_mode);
   const graceHours = autonomy?.review_grace_hours || 12;
+  const minScore = autonomy?.overall_threshold ?? 80;
+  const [draftMinScore, setDraftMinScore] = useState(minScore);
+  const [draftGraceHours, setDraftGraceHours] = useState(graceHours);
   const currentFont = String(style?.caption?.font_family || "Sora");
+
+  useEffect(() => {
+    setDraftMinScore(minScore);
+  }, [minScore]);
+
+  useEffect(() => {
+    setDraftGraceHours(graceHours);
+  }, [graceHours]);
   const savedStyles = templates.filter((template) => /custom_/i.test(template.path));
   const catalogReady = hyperframesCatalog?.items.filter((item) => item.status === "production-ready").length || 0;
 
@@ -271,6 +284,45 @@ export function BrandSection({
             })}
           </div>
           <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">{currentAutonomy.detail}</p>
+          <div className="mt-4 grid gap-4">
+            <label className="grid gap-2">
+              <span className="flex items-center justify-between text-[11px] font-semibold text-zinc-400">
+                Minimum score
+                <span className="tabular-nums text-cyan">{draftMinScore}</span>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={draftMinScore}
+                disabled={Boolean(autonomyBusy)}
+                onChange={(event) => setDraftMinScore(Number(event.target.value))}
+                onMouseUp={(event) => onAutonomySettingsChange({overall_threshold: Number((event.target as HTMLInputElement).value)})}
+                onTouchEnd={(event) => onAutonomySettingsChange({overall_threshold: Number((event.target as HTMLInputElement).value)})}
+                className="w-full accent-cyan"
+              />
+              <span className="text-[10px] leading-relaxed text-zinc-600">
+                Clips at or above this overall score can auto-qualify when autonomy is Assisted or Full.
+              </span>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[11px] font-semibold text-zinc-400">Grace period (hours)</span>
+              <input
+                type="number"
+                min={1}
+                max={168}
+                value={draftGraceHours}
+                disabled={Boolean(autonomyBusy) || (autonomy?.autonomy_mode || "off") === "off"}
+                onChange={(event) => setDraftGraceHours(Number(event.target.value))}
+                onBlur={() => onAutonomySettingsChange({review_grace_hours: draftGraceHours})}
+                className="h-10 rounded-2xl border border-white/[0.08] bg-black/30 px-3 text-sm text-zinc-100 outline-none focus:border-cyan/[0.28]"
+              />
+              <span className="text-[10px] leading-relaxed text-zinc-600">
+                Assisted mode waits this long before auto-queueing qualified clips.
+              </span>
+            </label>
+          </div>
           <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-zinc-600">
             <CheckCircle2 className="h-3.5 w-3.5 text-cyan/70" />
             Autonomy is separate from brand look tokens.

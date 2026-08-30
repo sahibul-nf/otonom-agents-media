@@ -40,19 +40,37 @@ export type ClipCandidate = {
   post_caption?: string;
   score?: {
     overall_score?: number;
+    performance_score?: number;
     viral_score?: number;
     hook_score?: number;
+    pacing_score?: number;
+    resonance_score?: number;
     context_score?: number;
     caption_confidence?: number;
     retention_score?: number;
     asr_confidence?: number;
+    hygiene_gate?: "pass" | "needs_attention" | "hold";
+    hygiene_flags?: string[];
   };
   quality_gate?: {
     passed?: boolean;
+    auto_qualified?: boolean;
     review_deadline_at?: string;
+    hold_reason?: string;
+    hygiene_gate?: "pass" | "needs_attention" | "hold";
+    hygiene_flags?: string[];
     checks?: Record<string, boolean>;
     scores?: Record<string, number>;
-    settings?: Record<string, unknown>;
+    thresholds?: Record<string, number>;
+    settings?: {
+      autonomy_mode?: string;
+      review_grace_hours?: number;
+      auto_schedule_enabled?: boolean | number;
+      overall_threshold?: number;
+      hook_threshold?: number;
+      caption_threshold?: number;
+      boundary_threshold?: number;
+    };
   };
   review_deadline_at?: string;
   caption_corrections?: {
@@ -660,4 +678,50 @@ export function canBatchRerenderClip(clip: ClipCandidate): boolean {
 export function isClipRerendering(clip: ClipCandidate): boolean {
   const status = clip.rerender_job?.status;
   return status === "queued" || status === "running";
+}
+
+export function clipOverallScore(clip: ClipCandidate): number | null {
+  const score =
+    clip.score?.performance_score ??
+    clip.score?.overall_score ??
+    clip.quality_gate?.scores?.performance ??
+    clip.quality_gate?.scores?.overall;
+  return typeof score === "number" ? score : null;
+}
+
+export function clipHygieneGate(clip: ClipCandidate): "pass" | "needs_attention" | "hold" | null {
+  const gate = clip.quality_gate?.hygiene_gate ?? clip.score?.hygiene_gate;
+  if (gate === "pass" || gate === "needs_attention" || gate === "hold") return gate;
+  return null;
+}
+
+export function clipHygieneFlags(clip: ClipCandidate): string[] {
+  const flags = clip.quality_gate?.hygiene_flags ?? clip.score?.hygiene_flags;
+  return Array.isArray(flags) ? flags.map(String) : [];
+}
+
+export function clipHygieneLabel(gate: "pass" | "needs_attention" | "hold" | null): string {
+  if (gate === "pass") return "Hygiene pass";
+  if (gate === "needs_attention") return "Needs attention";
+  if (gate === "hold") return "Hygiene hold";
+  return "Hygiene unknown";
+}
+
+export function clipHygieneTone(gate: "pass" | "needs_attention" | "hold" | null): string {
+  if (gate === "pass") return "border-teal/[0.35] bg-teal/[0.12] text-teal";
+  if (gate === "needs_attention") return "border-amber-400/30 bg-amber-500/10 text-amber-100";
+  if (gate === "hold") return "border-danger/35 bg-danger/[0.12] text-danger";
+  return "border-white/[0.10] bg-white/[0.04] text-zinc-300";
+}
+
+export function clipAutonomyThreshold(clip: ClipCandidate, fallback = 80): number {
+  return clip.quality_gate?.thresholds?.overall ?? clip.quality_gate?.settings?.overall_threshold ?? fallback;
+}
+
+export function clipMeetsAutonomyThreshold(clip: ClipCandidate, fallbackThreshold = 80): boolean {
+  const overall = clipOverallScore(clip);
+  if (overall == null) return false;
+  if (clip.quality_gate?.auto_qualified) return true;
+  if (clip.quality_gate?.passed) return true;
+  return overall >= clipAutonomyThreshold(clip, fallbackThreshold);
 }

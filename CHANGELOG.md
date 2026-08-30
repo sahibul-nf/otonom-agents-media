@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Niche-aware clip scoring (Devotional, Tech & Finance, General) with viral/hook/retention/ASR breakdown; Brand → Advanced autonomy panel exposes **minimum score** slider and **grace period**; Review cards and Inspector show score badges and auto-qualification status against your threshold.
 - Review **batch actions**: multi-select clips via **Select** mode in Review (ungrouped cards) and source batch headers, then **Delete** via `POST /api/delete-candidates` (#86) or **Re-render** via `POST /api/batch-rerender`; cards show a re-rendering overlay with progress while jobs are queued or running.
 - Clip hook titles: auto metadata enrichment before render/insert when an LLM key is available; improved heuristic fallbacks from transcript clauses; Review **Auto hook** badge when title/subtitle came from span heuristics; manual **Re-render** in Review editor (header + Metadata tab) and **Refresh & re-render** after metadata update (#87).
 - **Make shorts** from approved long-form in Review: one-click handoff to `clip_batch` (local file) or Create `generation_jobs` (published YouTube URL) without re-pasting links (#85).
@@ -10,11 +11,13 @@
 - Clip recipe overlays now fill named slots (`kicker`, `headline`, `subhead`, `stamp`, `line_a`, `line_b`) from the clip hook (and LLM overlay JSON when ranking is on) instead of gallery dummy copy (#82). Template gallery preview cache bumped to `PREVIEW_CONTRACT_VERSION=3`.
 
 ### Changed
-- Create clip batches default to **template-only** styling (`brand_template: auto`): caption, watermark, and shell layers come from the selected HyperFrames recipe until the operator picks a saved custom brand style. Platform `default_workspace_style.json` is no longer auto-applied on generate.
+- Clip scoring now uses a **two-layer model**: **Performance score** (hook, pacing, niche resonance, context payoff) ranks social potential; **Hygiene gate** (pass / needs attention / hold) tracks caption, boundary, and rights readiness separately. Review cards show both badges; full autonomy requires hygiene pass.
 - `npm run dev` from `apps/dashboard` starts media engine + dashboard (same as repo root); use `npm run dev:next` for Next.js only.
 
 ### Fixed
-- Clip hook titles no longer default to fragment first-N-words or generic `Ringkasan isi clip:` subtitles; LLM curation copy is preserved after boundary refine when still relevant (#87).
+- Clip batch generation no longer aborts the whole job when one HyperFrames render fails; successful clips still land in Review and failed clips are marked `failed` with readable layout errors.
+- `story_handwritten` template overlay text is constrained and auto-fit to the canvas so long hooks no longer fail HyperFrames inspect.
+- Generation job errors now surface human-readable HyperFrames layout messages instead of truncated JSON (`hyperframes inspect failed: {`).
 - Review manual re-render reuses timed captions from the last render contract (or regenerates from audio when missing) instead of failing with a caption-source CLI hint.
 - Review re-render preserves the original HyperFrames template/format from the last render contract instead of re-resolving `auto` (which could switch recipes).
 - Hook overlay on re-render now follows refreshed `title_hook` instead of stale `overlay_slots` from the first curation pass; caption karaoke timing is pulled earlier when the first word starts noticeably after t=0.

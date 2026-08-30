@@ -54,7 +54,7 @@ class MetadataEnrichmentTests(unittest.TestCase):
             enrich_candidate_metadata(
                 candidate,
                 llm_provider="deepseek",
-                profile_id="techtalk",
+                workspace_id="techtalk",
                 niche="tech_finance",
                 workspace_name="TechTalk Intel",
             )
@@ -63,11 +63,27 @@ class MetadataEnrichmentTests(unittest.TestCase):
         self.assertEqual(candidate["curation_metadata"]["title_source"], "llm_deepseek")
 
     def test_metadata_editor_prompt_is_niche_aware(self):
-        devotional = metadata_editor_system_prompt(profile_id="nourbit", niche="islamic")
-        tech = metadata_editor_system_prompt(profile_id="techtalk", niche="tech_finance")
+        devotional = metadata_editor_system_prompt(workspace_id="nourbit", niche="islamic")
+        tech = metadata_editor_system_prompt(workspace_id="techtalk", niche="tech_finance")
 
         self.assertIn("Islamic", devotional)
         self.assertIn("tech and finance", tech)
+
+    def test_enrich_candidate_metadata_uses_candidate_workspace_without_explicit_id(self):
+        candidate = {
+            "profile_id": "nourbit",
+            "transcript_span": "Allah membuat hati tenang dengan dzikir dan ibadah setiap malam.",
+            "title_hook": "Hati Tenang",
+            "hook_subtitle": "Ringkasan isi clip.",
+            "curation_metadata": {"title_source": "heuristic_span", "subtitle_source": "heuristic_span"},
+            "start_ms": 0,
+            "end_ms": 60_000,
+        }
+        with patch("media_engine.metadata_refresh.available_metadata_provider", return_value="none"):
+            enrich_candidate_metadata(candidate)
+
+        self.assertIn("overall_score", candidate["score"])
+        self.assertEqual(candidate["score"]["scoring_pack"], "devotional")
 
 
 if __name__ == "__main__":

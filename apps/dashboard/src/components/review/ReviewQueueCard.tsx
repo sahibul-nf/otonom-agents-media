@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import {ArrowUpRight, Loader2, MoreHorizontal, Pause, Play, Scissors, Trash2, Volume2, VolumeX} from "lucide-react";
+import {ArrowUpRight, CheckCircle2, Loader2, MoreHorizontal, Pause, Play, Scissors, Trash2, Volume2, VolumeX} from "lucide-react";
 import {useCallback, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent} from "react";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {ReviewCardSelectToggle} from "@/components/review/ReviewCardSelectToggle";
-import {apiPath, canMakeShortsFromClip, type ClipCandidate, formatDuration, isClipRerendering, isExplainerClip} from "@/lib/media-api";
+import {apiPath, canMakeShortsFromClip, clipAutonomyThreshold, clipHygieneFlags, clipHygieneGate, clipHygieneLabel, clipHygieneTone, clipMeetsAutonomyThreshold, clipOverallScore, type ClipCandidate, formatDuration, isClipRerendering, isExplainerClip} from "@/lib/media-api";
 import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
 
 function readinessLabel(clip: ClipCandidate) {
@@ -58,6 +58,11 @@ export function ReviewQueueCard({
   const rerendering = isClipRerendering(clip);
   const rerenderProgress = clip.rerender_job?.progress ?? 0;
   const rerenderMessage = clip.rerender_job?.message?.trim() || "";
+  const overallScore = clipOverallScore(clip);
+  const autoQualified = clipMeetsAutonomyThreshold(clip);
+  const scoreThreshold = clipAutonomyThreshold(clip);
+  const hygieneGate = clipHygieneGate(clip);
+  const hygieneFlags = clipHygieneFlags(clip);
 
   const pauseThisPreview = useCallback(() => {
     const video = videoRef.current;
@@ -289,6 +294,32 @@ export function ReviewQueueCard({
                   title="Hook title was auto-generated from transcript — open Edit → Metadata to refresh and re-render"
                 >
                   Auto hook
+                </span>
+              ) : null}
+              {overallScore != null ? (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-semibold tabular-nums ${
+                    autoQualified
+                      ? "border-teal/[0.35] bg-teal/[0.12] text-teal"
+                      : "border-amber-400/30 bg-amber-500/10 text-amber-100"
+                  }`}
+                  title={
+                    autoQualified
+                      ? `Performance score ${overallScore} meets autonomy threshold (${scoreThreshold})`
+                      : `Performance score ${overallScore} is below autonomy threshold (${scoreThreshold})`
+                  }
+                >
+                  {autoQualified ? <CheckCircle2 className="h-3 w-3" aria-hidden /> : null}
+                  Performance {overallScore}
+                  {autoQualified ? " · Auto-qualified" : ""}
+                </span>
+              ) : null}
+              {hygieneGate ? (
+                <span
+                  className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${clipHygieneTone(hygieneGate)}`}
+                  title={hygieneFlags.length ? hygieneFlags.join(", ") : clipHygieneLabel(hygieneGate)}
+                >
+                  {clipHygieneLabel(hygieneGate)}
                 </span>
               ) : null}
             </div>

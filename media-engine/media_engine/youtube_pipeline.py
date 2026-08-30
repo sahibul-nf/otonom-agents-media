@@ -576,6 +576,7 @@ def build_candidate(
         ideal_max_ms=duration_preset.max_ms,
         boundary_confidence=boundary_score,
         opening_strength=opening_score,
+        profile_id=profile_id,
     )
     metadata = {
         "rank": score_rank,

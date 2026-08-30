@@ -1,7 +1,6 @@
 "use client";
 
-import {
-  Clapperboard,
+import {CheckCircle2, Clapperboard,
   FileText,
   Loader2,
   RefreshCcw,
@@ -13,6 +12,7 @@ import {
 } from "lucide-react";
 import {useMemo, useState, type ReactNode} from "react";
 import type {ClipCandidate, EditorContext, ExplainerScene, ExplainerScenePlan, HyperframesTemplate} from "@/lib/media-api";
+import {clipAutonomyThreshold, clipHygieneFlags, clipHygieneGate, clipHygieneLabel, clipHygieneTone, clipMeetsAutonomyThreshold, clipOverallScore} from "@/lib/media-api";
 import {CAPTION_PAUSE_GAP_MS, captionWordPauseMarks, type ActionState, type EditorActionStates, type InspectorTab} from "@/components/review/editor/types";
 
 type Props = {
@@ -337,8 +337,78 @@ function PostFields(props: Props) {
 
 function QaFields({clip, context}: {clip: ClipCandidate; context: EditorContext}) {
   const checks = clip.quality_gate?.checks || {};
+  const scores = clip.quality_gate?.scores || {};
+  const thresholds = clip.quality_gate?.thresholds || clip.quality_gate?.settings || {};
+  const overall = clipOverallScore(clip);
+  const autoQualified = clipMeetsAutonomyThreshold(clip);
+  const overallThreshold = clipAutonomyThreshold(clip);
+  const hygieneGate = clipHygieneGate(clip);
+  const hygieneFlags = clipHygieneFlags(clip);
+  const breakdown = [
+    {label: "Hook", value: scores.hook ?? clip.score?.hook_score, threshold: thresholds.hook ?? thresholds.hook_threshold},
+    {label: "Pacing", value: scores.pacing ?? clip.score?.pacing_score, threshold: null},
+    {label: "Niche resonance", value: scores.resonance ?? scores.viral ?? clip.score?.resonance_score ?? clip.score?.viral_score, threshold: null},
+    {label: "Context payoff", value: clip.score?.context_score, threshold: null},
+    {label: "Retention", value: scores.retention ?? clip.score?.retention_score, threshold: null},
+    {
+      label: "ASR confidence",
+      value: scores.caption ?? clip.score?.caption_confidence ?? clip.score?.asr_confidence,
+      threshold: thresholds.caption ?? thresholds.caption_threshold,
+    },
+    {label: "Boundary", value: scores.boundary, threshold: thresholds.boundary ?? thresholds.boundary_threshold},
+  ].filter((item) => typeof item.value === "number");
+
   return (
     <div className="grid gap-4">
+      {overall != null ? (
+        <div
+          className={`rounded-2xl border px-4 py-3 ${
+            autoQualified ? "border-teal/[0.28] bg-teal/[0.08]" : "border-amber-400/25 bg-amber-500/10"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Performance score</p>
+              <p className="mt-1 text-2xl font-bold tabular-nums text-white">{overall}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Threshold</p>
+              <p className="mt-1 text-sm font-semibold tabular-nums text-zinc-300">{overallThreshold}</p>
+            </div>
+          </div>
+          {hygieneGate ? (
+            <p className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold ${clipHygieneTone(hygieneGate)}`}>
+              {clipHygieneLabel(hygieneGate)}
+            </p>
+          ) : null}
+          {hygieneFlags.length ? (
+            <p className="mt-2 text-[11px] leading-5 text-zinc-500">Hygiene flags: {hygieneFlags.join(", ")}</p>
+          ) : null}
+          <p className={`mt-2 inline-flex items-center gap-1.5 text-xs font-semibold ${autoQualified ? "text-teal" : "text-warning"}`}>
+            {autoQualified ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+            {autoQualified ? "Auto-qualified for autonomy" : "Below autonomy threshold — manual review"}
+          </p>
+          {clip.status === "pending_auto_schedule" ? (
+            <p className="mt-1 text-[11px] text-zinc-500">Pending auto-schedule after grace window.</p>
+          ) : null}
+        </div>
+      ) : null}
+      {breakdown.length ? (
+        <ul className="grid gap-2">
+          {breakdown.map((item) => {
+            const passed = item.threshold == null || Number(item.value) >= Number(item.threshold);
+            return (
+              <li key={item.label} className="flex items-center justify-between border-b border-white/[0.05] py-2 text-xs last:border-b-0">
+                <span className="text-zinc-300">{item.label}</span>
+                <span className={passed ? "text-teal" : "text-warning"}>
+                  {item.value}
+                  {item.threshold != null ? ` / ${item.threshold}` : ""}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
       <p className="text-sm leading-6 text-zinc-400">Check the opening, cuts, captions, audio, and final frame before approval.</p>
       {Object.keys(checks).length ? (
         <ul className="grid gap-2">

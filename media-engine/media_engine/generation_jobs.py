@@ -17,7 +17,7 @@ from typing import Any
 from .db import DEFAULT_DB, ROOT, connect, ensure_media_profile, ensure_source_manifest, initialize
 from .duration_presets import resolve_duration_strategy
 from .genres import normalize_genres
-from .hyperframes_renderer import check_hyperframes_runtime
+from .hyperframes_renderer import check_hyperframes_runtime, summarize_hyperframes_inspect_failure
 from .hyperframes_templates import normalize_hyperframes_template
 from .styles import is_template_only_style, normalize_brand_template_ref
 from .shell_components import normalize_shell_components
@@ -540,9 +540,35 @@ def _humanize_engine_exception(line: str) -> str:
     return cleaned
 
 
+def _partial_batch_message(result: dict[str, Any]) -> str:
+    failures = result.get("failures") if isinstance(result.get("failures"), list) else []
+    if not failures:
+        return ""
+    rendered = len(result.get("renders") or [])
+    first = failures[0] if isinstance(failures[0], dict) else {}
+    detail = str(first.get("error") or "One or more clips failed to render.").strip()
+    return f"{rendered} clip(s) rendered; {len(failures)} failed. {detail[:320]}"
+
+
 def _failure_summary(output: str, code: int) -> str:
     """Prefer the last actionable exception/message over a bare exit code."""
     text = (output or "").strip()
+    if "hyperframes layout check failed" in text.lower() or "text_box_overflow" in text:
+        marker = text.lower().rfind("hyperframes layout check failed")
+        if marker < 0:
+            marker = text.lower().rfind("runtimeerror:")
+        if marker >= 0:
+            tail = text[marker:]
+            json_start = tail.find("{")
+            if json_start >= 0:
+                parsed = summarize_hyperframes_inspect_failure(tail[json_start:])
+                if parsed:
+                    return parsed[:500]
+            line = tail.splitlines()[0].strip()
+            if line.lower().startswith("runtimeerror:"):
+                line = line.split(":", 1)[1].strip()
+            if line:
+                return line[:500]
     if not text:
         return f"premium-batch exited with code {code}"
 
@@ -646,13 +672,14 @@ def run_generation_job(job_id: str, command: list[str]) -> None:
                 (json.dumps(result, ensure_ascii=False), _failure_summary(output, code), job_id),
             )
         else:
+            partial_error = _partial_batch_message(result if isinstance(result, dict) else {})
             conn.execute(
                 """
                 UPDATE generation_jobs
-                SET status = 'completed', progress = 100, result_json = ?, updated_at = CURRENT_TIMESTAMP
+                SET status = 'completed', progress = 100, result_json = ?, error = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (json.dumps(result, ensure_ascii=False), job_id),
+                (json.dumps(result, ensure_ascii=False), partial_error, job_id),
             )
         conn.commit()
     except Exception as exc:  # pragma: no cover - defensive background guard

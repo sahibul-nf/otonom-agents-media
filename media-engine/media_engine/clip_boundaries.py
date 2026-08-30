@@ -44,6 +44,7 @@ def update_clip_boundary(conn, candidate_id: str, start_ms: int, end_ms: int) ->
             rights_risk=True,
             boundary_confidence=72,
             opening_strength=int(curation.get("opening_strength") or 70),
+            profile_id=str(candidate.get("profile_id") or ""),
         ),
     }
     cost = estimate_clip_cost(

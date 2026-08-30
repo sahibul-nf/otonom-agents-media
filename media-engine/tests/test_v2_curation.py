@@ -113,7 +113,19 @@ class V2CurationTests(unittest.TestCase):
         weak = score_candidate_text("Ini bagian pembukaan biasa tanpa inti yang jelas.", "Pembukaan", 20_000)
 
         self.assertGreater(strong["overall_score"], weak["overall_score"])
-        self.assertTrue(all(0 <= value <= 100 for value in strong.values()))
+        numeric_keys = {
+            "hook_score",
+            "pacing_score",
+            "resonance_score",
+            "context_score",
+            "retention_score",
+            "viral_score",
+            "caption_confidence",
+            "rights_risk_score",
+            "performance_score",
+            "overall_score",
+        }
+        self.assertTrue(all(0 <= strong[key] <= 100 for key in numeric_keys if key in strong))
         json.dumps(strong)
 
     def test_scoring_prefers_duration_near_strategy_target(self):

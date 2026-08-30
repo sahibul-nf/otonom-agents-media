@@ -265,7 +265,7 @@ def clip_batch_from_local_path(
         enrich_candidate_metadata(
             cand,
             llm_provider=llm_provider,
-            profile_id=profile_id,
+            workspace_id=profile_id,
             niche=niche,
             workspace_name=workspace_name,
         )

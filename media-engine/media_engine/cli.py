@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .autonomy import evaluate_quality_gate, get_autonomy_settings
+from .autonomy import complete_autonomy_after_persist, finalize_candidate_autonomy
 from .caption_pipeline import build_production_captions
 from .costs import estimate_clip_cost
 from .credentials import credential_status
@@ -442,10 +442,7 @@ def render_premium_candidate(
         output_path, contract = render_premium_ffmpeg(candidate, profile, source_clip, youtube_url, source_attribution, style)
     job_id = Path(output_path).stem
     finalize_candidate_metadata(candidate, contract, output_path, args, renderer)
-    quality_gate = evaluate_quality_gate(candidate, get_autonomy_settings(conn, profile["id"]))
-    candidate["quality_gate"] = quality_gate
-    candidate["review_deadline_at"] = quality_gate.get("review_deadline_at", "")
-    candidate["status"] = quality_gate.get("status", "rendered")
+    gate = finalize_candidate_autonomy(conn, candidate, profile["id"])
     conn.execute(
         """
         INSERT INTO render_jobs
@@ -464,6 +461,12 @@ def render_premium_candidate(
         ),
     )
     update_candidate_metadata(conn, candidate)
+    complete_autonomy_after_persist(conn, candidate, profile["id"], gate)
+    if candidate.get("status") == "scheduled":
+        conn.execute(
+            "UPDATE clip_candidates SET status = 'scheduled', quality_gate_json = ? WHERE id = ?",
+            (json.dumps(candidate.get("quality_gate", {}), ensure_ascii=False), candidate["id"]),
+        )
     conn.commit()
     (bar.step if bar else progress)(f"{prefix}completed {candidate['id']}")
     return {
@@ -567,7 +570,7 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
     enrich_candidates_metadata(
         candidates,
         llm_provider=args.llm_provider,
-        profile_id=args.profile,
+        workspace_id=args.profile,
         niche=getattr(args, "niche", None) or profile.get("niche"),
         workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
     )
@@ -616,30 +619,50 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
     enrich_candidates_metadata(
         candidates,
         llm_provider=args.llm_provider,
-        profile_id=args.profile,
+        workspace_id=args.profile,
         niche=getattr(args, "niche", None) or profile.get("niche"),
         workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
     )
     attribution = args.source_attribution or "Source: Channel clip"
-    renders = []
+    renders: list[dict[str, Any]] = []
+    failures: list[dict[str, str]] = []
     for index, candidate in enumerate(candidates, start=1):
         bar.step(f"[{index}/{len(candidates)}] queued {candidate['id']} - {candidate['title_hook']}")
-        renders.append(
-            render_premium_candidate(
-                conn,
-                candidate,
-                profile,
-                args.youtube_url,
-                attribution,
-                args.renderer,
-                style,
-                args,
-                progress_label=f"[{index}/{len(candidates)}]",
-                bar=bar,
+        try:
+            renders.append(
+                render_premium_candidate(
+                    conn,
+                    candidate,
+                    profile,
+                    args.youtube_url,
+                    attribution,
+                    args.renderer,
+                    style,
+                    args,
+                    progress_label=f"[{index}/{len(candidates)}]",
+                    bar=bar,
+                )
             )
-        )
-    bar.step(f"batch complete: {len(renders)} renders")
-    print(json.dumps({"count": len(renders), "renders": renders}, indent=2, ensure_ascii=False))
+        except Exception as exc:  # noqa: BLE001 — continue batch; record per-clip failure
+            message = str(exc).strip() or exc.__class__.__name__
+            failures.append(
+                {
+                    "candidate_id": str(candidate.get("id") or ""),
+                    "title_hook": str(candidate.get("title_hook") or ""),
+                    "error": message[:500],
+                }
+            )
+            conn.execute(
+                "UPDATE clip_candidates SET status = 'failed', review_deadline_at = '' WHERE id = ?",
+                (candidate["id"],),
+            )
+            conn.commit()
+            bar.step(f"[{index}/{len(candidates)}] failed {candidate['id']}: {message[:120]}")
+    bar.step(f"batch complete: {len(renders)} rendered, {len(failures)} failed")
+    payload = {"count": len(renders), "renders": renders, "failures": failures}
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if not renders:
+        raise SystemExit(1)
 
 
 def cmd_review(args: argparse.Namespace) -> None:

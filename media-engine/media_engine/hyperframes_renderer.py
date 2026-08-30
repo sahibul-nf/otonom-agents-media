@@ -200,14 +200,11 @@ def _shell_css(
       background: linear-gradient(180deg, rgba(0,0,0,0.58) 0%, rgba(0,0,0,0.12) 28%, rgba(0,0,0,0.18) 55%, rgba(0,0,0,0.76) 100%);
       pointer-events: none;
     }}
-    .micro-label {{
-      display: block;
-      margin-bottom: 8px;
-      color: var(--template-accent);
-      font-size: 18px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: 0;
+    .template-layer {{
+      box-sizing: border-box;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      max-width: calc(100% - 96px);
     }}
     .hook {{
       position: absolute;
@@ -331,6 +328,85 @@ def _shell_css(
       background: var(--template-accent); color: #041018; font-size: 14px;
     }}
     """
+
+
+_TEMPLATE_LAYOUT_FIT_JS = """
+    function fitTemplateLayersToCanvas() {
+      const root = document.getElementById("root");
+      const tl = window.__timelines && window.__timelines["premium-hyperframes"];
+      if (!root || !tl) return;
+      const pad = 36;
+      const samples = [0.12, 0.35, 0.65, 1];
+      root.querySelectorAll(".template-layer").forEach((el) => {
+        let size = parseFloat(window.getComputedStyle(el).fontSize) || 48;
+        const minSize = 22;
+        if (!el.style.transformOrigin || el.style.transformOrigin === "50% 50% 0px") {
+          el.style.transformOrigin = "left top";
+        }
+        outer: for (let step = 0; step < 36 && size >= minSize; step += 1) {
+          el.style.fontSize = size + "px";
+          for (const sample of samples) {
+            tl.progress(Math.min(1, Math.max(0, sample)));
+            const rect = el.getBoundingClientRect();
+            const bounds = root.getBoundingClientRect();
+            const ok =
+              rect.left >= bounds.left + pad - 2 &&
+              rect.right <= bounds.right - pad + 2 &&
+              rect.top >= bounds.top + pad - 2 &&
+              rect.bottom <= bounds.bottom - pad + 2;
+            if (!ok) {
+              size -= 1.25;
+              continue outer;
+            }
+          }
+          break;
+        }
+      });
+      tl.progress(0);
+    }
+"""
+
+
+def _parse_inspect_json(output: str) -> dict[str, Any]:
+    text = (output or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        start = text.find("{")
+        if start < 0:
+            return {}
+        try:
+            parsed = json.loads(text[start:])
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+
+
+def summarize_hyperframes_inspect_failure(output: str) -> str:
+    data = _parse_inspect_json(output)
+    if not data:
+        cleaned = (output or "HyperFrames layout check failed.").strip()
+        return cleaned[:500]
+    if data.get("ok"):
+        return ""
+    issues = [issue for issue in (data.get("issues") or []) if issue.get("severity") == "error"]
+    if not issues:
+        return "HyperFrames layout check failed before render."
+    parts: list[str] = []
+    for issue in issues[:3]:
+        code = str(issue.get("code") or "layout_error")
+        message = str(issue.get("message") or "Layout issue detected.")
+        sample = str(issue.get("text") or "").strip()
+        if len(sample) > 72:
+            sample = sample[:69] + "..."
+        if sample:
+            parts.append(f"{code}: {message} Text: \"{sample}\"")
+        else:
+            parts.append(f"{code}: {message}")
+    return "HyperFrames layout check failed. " + " ".join(parts)
 
 
 def _css_font_family(value: Any) -> str:
@@ -528,7 +604,9 @@ def build_hyperframes_index_html(
       }}
     }}
 {cta_motion}    {motion_extra}
+{_TEMPLATE_LAYOUT_FIT_JS}
     window.__timelines["premium-hyperframes"] = tl;
+    fitTemplateLayersToCanvas();
   </script>
 </body>
 </html>
@@ -562,7 +640,13 @@ def _run_hyperframes(args: list[str], cwd: Path) -> dict[str, Any]:
         env=_hyperframes_subprocess_env(),
     )
     output = _sanitize_cli_output(result.stdout or "")
-    return {"command": " ".join(hyperframes_command(*args)), "returncode": result.returncode, "output": output}
+    raw_output = (result.stdout or "").strip()
+    return {
+        "command": " ".join(hyperframes_command(*args)),
+        "returncode": result.returncode,
+        "output": output,
+        "raw_output": raw_output,
+    }
 
 
 def render_hyperframes_project(project_dir: Path, output_path: Path, quality: str = "standard") -> dict[str, Any]:
@@ -572,7 +656,8 @@ def render_hyperframes_project(project_dir: Path, output_path: Path, quality: st
             raise RuntimeError(f"hyperframes lint failed: {lint['output']}")
         inspect = _run_hyperframes(["inspect", "--json", "--samples", "9"], project_dir)
         if inspect["returncode"] != 0:
-            raise RuntimeError(f"hyperframes inspect failed: {inspect['output']}")
+            detail = summarize_hyperframes_inspect_failure(inspect.get("raw_output") or inspect.get("output") or "")
+            raise RuntimeError(detail or "HyperFrames layout check failed before render.")
         render = _run_hyperframes(
             ["render", "--output", str(output_path), "--quality", quality, "--workers", "1"],
             project_dir,

@@ -9,7 +9,7 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any, Callable
 
-from .autonomy import evaluate_quality_gate, get_autonomy_settings
+from .autonomy import complete_autonomy_after_persist, finalize_candidate_autonomy
 from .caption_pipeline import build_production_captions
 from .captions import captions_out_of_sync, normalize_caption_timeline_for_render
 from .costs import estimate_clip_cost
@@ -341,11 +341,9 @@ def rerender_candidate(
     candidate["score"] = {**candidate.get("score", {}), "render_quality_score": render_quality["quality_score"]}
 
     protected_statuses = {"approved", "scheduled", "ready_to_publish", "published"}
+    gate: dict[str, Any] = {}
     if candidate.get("status") not in protected_statuses:
-        gate = evaluate_quality_gate(candidate, get_autonomy_settings(conn, candidate["profile_id"]))
-        candidate["quality_gate"] = gate
-        candidate["review_deadline_at"] = gate.get("review_deadline_at", "")
-        candidate["status"] = gate.get("status", "rendered")
+        gate = finalize_candidate_autonomy(conn, candidate, str(candidate["profile_id"] or "nourbit"))
 
     report(92, "Saving render metadata")
     conn.execute(
@@ -366,6 +364,14 @@ def rerender_candidate(
         ),
     )
     _update_candidate_after_rerender(conn, candidate)
+    if gate:
+        complete_autonomy_after_persist(conn, candidate, str(candidate["profile_id"] or "nourbit"), gate)
+        if candidate.get("status") == "scheduled":
+            conn.execute(
+                "UPDATE clip_candidates SET status = 'scheduled', quality_gate_json = ? WHERE id = ?",
+                (json.dumps(candidate.get("quality_gate", {}), ensure_ascii=False), candidate["id"]),
+            )
+            conn.commit()
     report(100, "Render updated")
     return {
         "candidate_id": candidate["id"],
