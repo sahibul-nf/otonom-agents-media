@@ -68,13 +68,17 @@ class PremiumBatchResilienceTests(unittest.TestCase):
             shell_components="",
             llm_provider="none",
             count=3,
+            curation_source="youtube",
         )
 
         buffer = io.StringIO()
         with patch("media_engine.cli.connect", return_value=conn), patch("media_engine.cli.load_env_file"), patch(
             "media_engine.cli.load_profile_and_source",
             return_value=({"id": "nourbit", "niche": "kajian", "name": "Nourbit"}, {}),
-        ), patch("media_engine.cli.fetch_youtube_transcript", return_value=[]), patch(
+        ), patch(
+            "media_engine.cli.fetch_curation_transcript_entries",
+            return_value=([], {"curation_source": "youtube", "resolved_via": "youtube"}),
+        ), patch(
             "media_engine.cli.load_style_for_render", return_value={}
         ), patch(
             "media_engine.cli.choose_nourbit_premium_candidates", return_value=candidates

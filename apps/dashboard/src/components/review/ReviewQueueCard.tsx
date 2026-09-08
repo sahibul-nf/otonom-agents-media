@@ -5,7 +5,7 @@ import {ArrowUpRight, CheckCircle2, Loader2, MoreHorizontal, Pause, Play, Scisso
 import {useCallback, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent} from "react";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {ReviewCardSelectToggle} from "@/components/review/ReviewCardSelectToggle";
-import {apiPath, canMakeShortsFromClip, clipAutonomyThreshold, clipHygieneFlags, clipHygieneGate, clipHygieneLabel, clipHygieneTone, clipMeetsAutonomyThreshold, clipOverallScore, type ClipCandidate, formatDuration, isClipRerendering, isExplainerClip} from "@/lib/media-api";
+import {apiPath, canMakeShortsFromClip, canQuickApproveClip, clipAutonomyThreshold, clipHygieneFlags, clipHygieneGate, clipHygieneLabel, clipHygieneTone, clipMeetsAutonomyThreshold, clipOverallScore, type ClipCandidate, formatDuration, isClipRerendering, isExplainerClip} from "@/lib/media-api";
 import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
 
 function readinessLabel(clip: ClipCandidate) {
@@ -29,17 +29,21 @@ export function ReviewQueueCard({
   editHref,
   onDelete,
   onMakeShorts,
+  onApprove,
   selectable = false,
   selectionMode = false,
   selected = false,
   onToggleSelect,
+  approving = false,
 }: {
   clip: ClipCandidate;
   statusTone: (status: string) => string;
   deleting?: boolean;
+  approving?: boolean;
   editHref?: string;
   onDelete?: (clip: ClipCandidate) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
+  onApprove?: (clip: ClipCandidate) => void;
   selectable?: boolean;
   selectionMode?: boolean;
   selected?: boolean;
@@ -63,6 +67,7 @@ export function ReviewQueueCard({
   const scoreThreshold = clipAutonomyThreshold(clip);
   const hygieneGate = clipHygieneGate(clip);
   const hygieneFlags = clipHygieneFlags(clip);
+  const canApprove = Boolean(onApprove && canQuickApproveClip(clip));
 
   const pauseThisPreview = useCallback(() => {
     const video = videoRef.current;
@@ -195,11 +200,11 @@ export function ReviewQueueCard({
             <ReviewCardSelectToggle selected={selected} onToggle={onToggleSelect!} label={clip.title_hook} />
           </div>
         ) : null}
-        {onDelete && !selectionMode ? (
+        {(onDelete || onApprove) && !selectionMode ? (
           <div className="absolute right-2.5 top-2.5 z-[5]" ref={menuRef}>
             <button
               type="button"
-              disabled={deleting}
+              disabled={deleting || approving}
               onClick={(event) => {
                 event.stopPropagation();
                 setMenuOpen((open) => !open);
@@ -209,7 +214,7 @@ export function ReviewQueueCard({
               aria-expanded={menuOpen}
               aria-controls={menuId}
             >
-              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
+              {deleting || approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
             </button>
             {menuOpen ? (
               <div
@@ -217,11 +222,27 @@ export function ReviewQueueCard({
                 role="menu"
                 className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl"
               >
+                {canApprove ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={deleting || approving || rerendering}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuOpen(false);
+                      onApprove?.(clip);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-teal transition hover:bg-teal/[0.08] disabled:opacity-40"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Approve
+                  </button>
+                ) : null}
                 {canMakeShortsFromClip(clip) && onMakeShorts ? (
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={deleting}
+                    disabled={deleting || approving}
                     onClick={(event) => {
                       event.stopPropagation();
                       setMenuOpen(false);
@@ -233,20 +254,22 @@ export function ReviewQueueCard({
                     Make shorts
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={deleting}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setMenuOpen(false);
-                    onDelete(clip);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-danger transition hover:bg-danger/[0.08] disabled:opacity-40"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete clip
-                </button>
+                {onDelete ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={deleting || approving}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setMenuOpen(false);
+                      onDelete(clip);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-danger transition hover:bg-danger/[0.08] disabled:opacity-40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete clip
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -38,6 +38,30 @@ DEVOTIONAL_GLOSSARY = {
     "bismillah": "bismillah",
     "insyaallah": "insya Allah",
     "inshaallah": "insya Allah",
+    "balasya": "bala syahidna",
+    "hadrah": "hadrah",
+    "rububiyah": "rububiyah",
+    "mentakbir": "mentadbir",
+    "marbu": "al-marbub",
+    "makrifatullah": "makrifatullah",
+    "kerenanya": "karenanya",
+}
+
+DEVOTIONAL_PHRASE_GLOSSARY = {
+    "mentakbir kena cinta": "mentadbir karena cinta",
+    "mentadbir kena cinta": "mentadbir karena cinta",
+    "alastu bi rabbikum": "alastu bi rabbikum",
+    "alastu bi rabikum": "alastu bi rabbikum",
+    "bala syahidna": "bala syahidna",
+    "bala syahidnaa": "bala syahidna",
+    "hadrah rububiyah": "hadrah rububiyah",
+    "hadrat rububiyah": "hadrah rububiyah",
+    "al marbu": "al-marbub",
+    "al marbub": "al-marbub",
+    "nur muhammad": "nur Muhammad",
+    "makrifatullah": "makrifatullah",
+    "oleh kerenanya": "oleh karenanya",
+    "bukan ke aku ini": "bukankah Aku ini",
 }
 
 TECH_FINANCE_GLOSSARY = {
@@ -61,12 +85,42 @@ TECH_FINANCE_GLOSSARY = {
     "ai": "AI",
 }
 
+TECH_FINANCE_PHRASE_GLOSSARY = {
+    "burn rate": "burn rate",
+    "burnrate": "burn rate",
+    "product market fit": "product-market fit",
+    "product-market fit": "product-market fit",
+    "run way": "runway",
+    "valu ation": "valuation",
+    "venture capital": "venture capital",
+    "open ai": "OpenAI",
+    "chat gpt": "ChatGPT",
+}
+
 GENERAL_GLOSSARY: dict[str, str] = {}
 
 PACK_GLOSSARIES: dict[str, dict[str, str]] = {
     "devotional": DEVOTIONAL_GLOSSARY,
     "tech_finance": TECH_FINANCE_GLOSSARY,
     "general": GENERAL_GLOSSARY,
+}
+
+PACK_PHRASE_GLOSSARIES: dict[str, dict[str, str]] = {
+    "devotional": DEVOTIONAL_PHRASE_GLOSSARY,
+    "tech_finance": TECH_FINANCE_PHRASE_GLOSSARY,
+    "general": {},
+}
+
+_DOMAIN_VOCABULARY_HINTS: dict[str, str] = {
+    "devotional": (
+        "Allah, Rasulullah, dzikir, qalbu, sholawat, istighfar, ma'rifat, taubat, syukur, "
+        "alastu bi rabbikum, bala syahidna, hadrah rububiyah, al-marbub, mentadbir, makrifatullah, nur Muhammad"
+    ),
+    "tech_finance": (
+        "Bitcoin, Ethereum, SaaS, OpenAI, ChatGPT, Nvidia, burn rate, product-market fit, "
+        "runway, valuation, venture capital, FOMC, GDP, CPI, IPO, ETF"
+    ),
+    "general": "Indonesian and English mixed speech, names, numbers, technical terms",
 }
 
 # Backward-compatible alias used by older imports/tests.
@@ -83,6 +137,25 @@ def resolve_glossary(
     glossary = dict(PACK_GLOSSARIES.get(pack, GENERAL_GLOSSARY))
     glossary.update(_custom_glossary(profile_id, profile))
     return glossary
+
+
+def resolve_phrase_glossary(
+    profile_id: str = "",
+    niche: str = "",
+    profile: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    pack = resolve_genre_pack(profile_id, niche)
+    phrases = dict(PACK_PHRASE_GLOSSARIES.get(pack, {}))
+    custom = _custom_glossary(profile_id, profile)
+    for key, value in custom.items():
+        if " " in key:
+            phrases[key] = value
+    return phrases
+
+
+def domain_vocabulary_hint(profile_id: str = "", niche: str = "") -> str:
+    pack = resolve_genre_pack(profile_id, niche)
+    return _DOMAIN_VOCABULARY_HINTS.get(pack, _DOMAIN_VOCABULARY_HINTS["general"])
 
 
 def _custom_glossary(profile_id: str, profile: dict[str, Any] | None) -> dict[str, str]:
@@ -140,12 +213,84 @@ def correct_word_text(text: str, glossary: dict[str, str] | None = None, fuzzy: 
     return text, False
 
 
-def correct_asr_words(words: list[dict], glossary: dict[str, str] | None = None) -> tuple[list[dict], dict]:
+def _normalize_phrase_key(text: str) -> str:
+    return " ".join(part.lower() for part in re.split(r"\s+", text.strip()) if part)
+
+
+def _phrase_patterns(phrase_glossary: dict[str, str]) -> list[tuple[str, str, int]]:
+    patterns: list[tuple[str, str, int]] = []
+    for wrong, correct in phrase_glossary.items():
+        tokens = [token for token in _normalize_phrase_key(wrong).split() if token]
+        if len(tokens) < 2:
+            continue
+        patterns.append((wrong, correct, len(tokens)))
+    patterns.sort(key=lambda item: item[2], reverse=True)
+    return patterns
+
+
+def apply_phrase_glossary(words: list[dict], phrase_glossary: dict[str, str] | None = None) -> tuple[list[dict], list[dict]]:
+    phrase_glossary = phrase_glossary or {}
+    if not words or not phrase_glossary:
+        return list(words), []
+    patterns = _phrase_patterns(phrase_glossary)
+    if not patterns:
+        return list(words), []
+    corrected_words = [dict(word) for word in words]
+    corrections: list[dict[str, Any]] = []
+    index = 0
+    while index < len(corrected_words):
+        matched = False
+        for wrong, correct, size in patterns:
+            if index + size > len(corrected_words):
+                continue
+            window = " ".join(str(corrected_words[index + offset].get("text", "")).strip() for offset in range(size))
+            if _normalize_phrase_key(window) != _normalize_phrase_key(wrong):
+                continue
+            replacement_tokens = correct.split()
+            if len(replacement_tokens) == size:
+                for offset, token in enumerate(replacement_tokens):
+                    corrected_words[index + offset]["text"] = token
+            else:
+                start_ms = int(corrected_words[index].get("startMs") or 0)
+                end_ms = int(corrected_words[index + size - 1].get("endMs") or start_ms + 40)
+                chunk = corrected_words[index : index + size]
+                replacement_words = _split_phrase_timing(chunk, replacement_tokens, start_ms, end_ms)
+                corrected_words[index : index + size] = replacement_words
+            corrections.append({"index": index, "from": window, "to": correct})
+            index += len(replacement_tokens) if len(replacement_tokens) != size else size
+            matched = True
+            break
+        if not matched:
+            index += 1
+    return corrected_words, corrections
+
+
+def _split_phrase_timing(
+    original_chunk: list[dict],
+    replacement_tokens: list[str],
+    start_ms: int,
+    end_ms: int,
+) -> list[dict]:
+    if not replacement_tokens:
+        return []
+    duration = max(40, end_ms - start_ms)
+    step = max(40, duration // len(replacement_tokens))
+    base = dict(original_chunk[0]) if original_chunk else {"startMs": start_ms, "endMs": end_ms}
+    replacement_words: list[dict] = []
+    for offset, token in enumerate(replacement_tokens):
+        word_start = start_ms + offset * step
+        word_end = end_ms if offset == len(replacement_tokens) - 1 else min(end_ms, word_start + step)
+        replacement_words.append({**base, "text": token, "startMs": word_start, "endMs": max(word_start + 40, word_end)})
+    return replacement_words
+
+
+def correct_asr_words(words: list[dict], glossary: dict[str, str] | None = None, phrase_glossary: dict[str, str] | None = None) -> tuple[list[dict], dict]:
     glossary = glossary or resolve_glossary()
+    phrase_corrected, phrase_corrections = apply_phrase_glossary(words, phrase_glossary)
     corrected_words = []
-    corrections = []
+    corrections = list(phrase_corrections)
     low_confidence = 0
-    for index, word in enumerate(words):
+    for index, word in enumerate(phrase_corrected):
         original = str(word.get("text", ""))
         corrected, changed = correct_word_text(original, glossary)
         confidence = word.get("confidence")
@@ -156,9 +301,10 @@ def correct_asr_words(words: list[dict], glossary: dict[str, str] | None = None)
         if changed:
             corrections.append({"index": index, "from": original, "to": corrected})
     return corrected_words, {
-        "correction_engine": "glossary_pack_v2",
+        "correction_engine": "glossary_pack_v3",
         "correction_count": len(corrections),
         "corrections": corrections[:80],
+        "phrase_correction_count": len(phrase_corrections),
         "low_confidence_word_count": low_confidence,
         "glossary_size": len(glossary),
     }

@@ -37,6 +37,40 @@ class CaptionAlignTests(unittest.TestCase):
         aligned = align_caption_timeline_start(captions)
         self.assertEqual(aligned[0]["startMs"], 80)
 
+    def test_align_keeps_large_gap_when_already_silence_trimmed(self):
+        captions = [
+            {
+                "text": "Jika ada orang",
+                "startMs": 6220,
+                "endMs": 8000,
+                "words": [{"text": "Jika", "startMs": 6220, "endMs": 7000}],
+            }
+        ]
+        aligned = align_caption_timeline_start(captions, max_shift_ms=400)
+        self.assertEqual(aligned[0]["startMs"], 6220)
+
+    def test_normalize_does_not_pull_skipped_speech_to_zero_after_trim(self):
+        captions = [
+            {
+                "text": "Jika ada orang",
+                "startMs": 6220,
+                "endMs": 8000,
+                "words": [{"text": "Jika", "startMs": 6220, "endMs": 7000}],
+            }
+        ]
+        normalized = normalize_caption_timeline_for_render(captions, already_silence_trimmed=True)
+        self.assertEqual(normalized[0]["startMs"], 6220)
+        captions = [
+            {
+                "text": "halo",
+                "startMs": 80,
+                "endMs": 500,
+                "words": [{"text": "halo", "startMs": 80, "endMs": 500}],
+            }
+        ]
+        aligned = align_caption_timeline_start(captions)
+        self.assertEqual(aligned[0]["startMs"], 80)
+
     def test_detects_absolute_source_timeline(self):
         captions = [
             {

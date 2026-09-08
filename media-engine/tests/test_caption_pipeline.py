@@ -2,10 +2,16 @@ import unittest
 from unittest.mock import patch
 
 from media_engine.caption_pipeline import (
+    _try_youtube_text,
+    align_words_to_reconstructed_text,
     apply_youtube_text,
     asr_initial_prompt,
     build_polish_system_prompt,
+    build_reconstruct_system_prompt,
+    compute_caption_sync_score,
+    polish_candidate_captions,
     polish_uncertain_words,
+    reconstruct_timed_captions_llm,
 )
 from media_engine.youtube_pipeline import TranscriptEntry
 
@@ -17,10 +23,12 @@ class CaptionPipelineTests(unittest.TestCase):
             source_title="5 Kebohongan Tentang Hidup",
             source_channel="Timothy Ronald",
             niche="tech finance",
+            profile_id="workspace",
         )
 
         self.assertIn("Timothy Ronald", prompt)
         self.assertIn("Uang Itu Kotor?", prompt)
+        self.assertIn("Bitcoin", prompt)
         self.assertNotEqual(prompt, "Allah, Rasulullah, dzikir, zikir, qalbu, sholawat, istighfar, ma'rifat, taubat, syukur")
 
     def test_youtube_text_replaces_uncertain_whisper_token_and_keeps_timing(self):
@@ -47,6 +55,67 @@ class CaptionPipelineTests(unittest.TestCase):
         self.assertEqual(words[0]["text"], "Bitcoin")
         self.assertGreater(meta.get("youtube_skipped", 0), 0)
         self.assertEqual(meta["youtube_replaced"], 0)
+
+    def test_youtube_skips_unrelated_low_confidence_token(self):
+        whisper = [{"text": "Jika", "startMs": 0, "endMs": 400, "confidence": 0.49}]
+        entries = [TranscriptEntry(0, 2000, "kenal teritorial")]
+
+        words, meta = apply_youtube_text(whisper, entries, clip_start_ms=0)
+
+        self.assertEqual(words[0]["text"], "Jika")
+        self.assertEqual(meta["youtube_replaced"], 0)
+
+    def test_youtube_maps_trimmed_times_through_keep_segments(self):
+        whisper = [{"text": "wang", "startMs": 0, "endMs": 400, "confidence": 0.4}]
+        entries = [TranscriptEntry(5000, 6000, "uang itu")]
+
+        words, meta = apply_youtube_text(
+            whisper,
+            entries,
+            clip_start_ms=0,
+            keep_segments=[(5000, 20_000)],
+        )
+
+        self.assertEqual(words[0]["text"], "uang")
+        self.assertEqual(words[0]["startMs"], 0)
+        self.assertEqual(meta["youtube_replaced"], 1)
+
+    def test_hybrid_skips_youtube_when_trim_timeline_unknown(self):
+        words = [{"text": "Jika", "startMs": 6220, "endMs": 7000, "confidence": 0.49}]
+        candidate = {"start_ms": 1_536_440, "silence_trim": {"skipped": "already_trimmed"}}
+        next_words, meta = _try_youtube_text(words, candidate, "https://youtube.com/watch?v=test", ["id"])
+        self.assertEqual(next_words[0]["text"], "Jika")
+        self.assertEqual(meta.get("reason"), "silence_trim_timeline_unknown")
+
+    def test_align_keeps_opening_words_llm_dropped(self):
+        words = [
+            {"text": "Dia", "startMs": 0, "endMs": 200},
+            {"text": "memuji", "startMs": 200, "endMs": 400},
+            {"text": "dengan", "startMs": 400, "endMs": 600},
+            {"text": "sifatnya", "startMs": 600, "endMs": 800},
+        ]
+        aligned = align_words_to_reconstructed_text(words, "Dengan sifatnya")
+        joined = " ".join(item["text"] for item in aligned)
+        self.assertIn("Dia", joined)
+        self.assertIn("memuji", joined)
+        self.assertEqual(aligned[0]["startMs"], 0)
+
+    def test_align_does_not_invent_title_synonyms(self):
+        words = [
+            {"text": "cari", "startMs": 0, "endMs": 200},
+            {"text": "rida", "startMs": 200, "endMs": 400},
+        ]
+        aligned = align_words_to_reconstructed_text(words, "mencari Ilahi")
+        joined = " ".join(item["text"] for item in aligned).lower()
+        self.assertIn("rida", joined)
+        self.assertNotIn("ilahi", joined)
+
+    def test_caption_sync_score_penalizes_late_first_word(self):
+        late = [{"text": "Jika", "startMs": 6220, "endMs": 7000}, {"text": "akhir", "startMs": 78_000, "endMs": 79_500}]
+        early = [{"text": "Jika", "startMs": 120, "endMs": 800}, {"text": "akhir", "startMs": 78_000, "endMs": 79_500}]
+        self.assertLess(compute_caption_sync_score(late, video_ms=80_000), 70)
+        self.assertGreaterEqual(compute_caption_sync_score(early, video_ms=80_000), 95)
+        self.assertNotEqual(compute_caption_sync_score(late, video_ms=80_000), 95)
 
     def test_youtube_absent_leaves_whisper_words(self):
         whisper = [{"text": "wang", "startMs": 0, "endMs": 400, "confidence": 0.4}]
@@ -91,6 +160,80 @@ class CaptionPipelineTests(unittest.TestCase):
         prompt = build_polish_system_prompt(detected_language="id", profile_id="nourbit")
 
         self.assertIn("devotional", prompt.lower())
+
+    def test_reconstruct_prompt_mentions_punctuation(self):
+        prompt = build_reconstruct_system_prompt(detected_language="id", profile_id="nourbit")
+
+        self.assertIn("punctuation", prompt.lower())
+        self.assertIn("speaker's words", prompt.lower())
+        prompt = build_reconstruct_system_prompt(detected_language="id", profile_id="nourbit")
+
+        self.assertIn("punctuation", prompt.lower())
+
+    def test_align_words_removes_stutter_and_keeps_timing(self):
+        words = [
+            {"text": "memberikan", "startMs": 0, "endMs": 200},
+            {"text": "bi", "startMs": 200, "endMs": 300},
+            {"text": "memberikan", "startMs": 300, "endMs": 500},
+            {"text": "memberikan", "startMs": 500, "endMs": 700},
+            {"text": "lah", "startMs": 700, "endMs": 900},
+        ]
+        aligned = align_words_to_reconstructed_text(words, "Memberikan lah.")
+
+        self.assertEqual(len(aligned), 2)
+        self.assertEqual(aligned[0]["text"], "Memberikan")
+        self.assertEqual(aligned[0]["startMs"], 0)
+        self.assertEqual(aligned[1]["text"], "lah.")
+        self.assertEqual(aligned[1]["startMs"], 700)
+
+    def test_reconstruct_timed_captions_llm_uses_llm_output(self):
+        words = [
+            {"text": "mentakbir", "startMs": 0, "endMs": 200, "confidence": 0.4},
+            {"text": "kena", "startMs": 200, "endMs": 400, "confidence": 0.4},
+            {"text": "cinta", "startMs": 400, "endMs": 600, "confidence": 0.4},
+        ]
+        with patch(
+            "media_engine.caption_pipeline.call_llm_json",
+            return_value={"text": "Mentadbir karena cinta."},
+        ):
+            next_words, meta = reconstruct_timed_captions_llm(words, "deepseek", profile_id="nourbit")
+
+        self.assertTrue(meta["llm_reconstructed"])
+        self.assertEqual(next_words[0]["text"], "Mentadbir")
+        self.assertEqual(next_words[-1]["text"], "cinta.")
+        self.assertEqual(next_words[0]["startMs"], 0)
+
+    def test_polish_candidate_captions_updates_caption_corrections(self):
+        candidate = {
+            "title_hook": "Saksi Cinta",
+            "transcript_span": "mentakbir kena cinta",
+            "profile_id": "nourbit",
+            "caption_corrections": {},
+            "asr_metadata": {"detected_language": "id"},
+        }
+        captions = [
+            {
+                "text": "mentakbir kena cinta",
+                "startMs": 0,
+                "endMs": 900,
+                "words": [
+                    {"text": "mentakbir", "startMs": 0, "endMs": 300},
+                    {"text": "kena", "startMs": 300, "endMs": 600},
+                    {"text": "cinta", "startMs": 600, "endMs": 900},
+                ],
+            }
+        ]
+        with patch(
+            "media_engine.caption_pipeline.call_llm_json",
+            return_value={"text": "Mentadbir karena cinta."},
+        ):
+            result = polish_candidate_captions(candidate, captions, llm_provider="deepseek", profile_id="nourbit")
+
+        self.assertTrue(result["caption_corrections"]["ai_polish"])
+        self.assertGreater(len(result["captions"]), 0)
+        joined = " ".join(caption["text"] for caption in result["captions"])
+        self.assertIn("Mentadbir", joined)
+        self.assertIn("karena", joined)
 
 
 if __name__ == "__main__":

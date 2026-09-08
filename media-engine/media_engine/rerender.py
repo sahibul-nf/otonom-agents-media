@@ -16,7 +16,7 @@ from .costs import estimate_clip_cost
 from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_one, initialize, load_json, seed_profile
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
-from .silence_trim import apply_silence_trim_for_render, probe_duration_ms
+from .silence_trim import apply_silence_trim_for_render, probe_duration_ms, source_already_silence_trimmed
 from .styles import is_template_only_style, load_style_for_render
 from .youtube_pipeline import download_youtube_section
 
@@ -203,6 +203,7 @@ def _prepare_timed_captions_for_render(
             captions,
             clip_start_ms=clip_start,
             video_duration_ms=video_ms or None,
+            already_silence_trimmed=source_already_silence_trimmed(candidate, source_clip),
         )
 
     needs_regen = regenerate_captions or not candidate.get("timed_captions")
@@ -229,6 +230,7 @@ def _prepare_timed_captions_for_render(
         candidate.get("timed_captions") or [],
         clip_start_ms=clip_start,
         video_duration_ms=video_ms or None,
+        already_silence_trimmed=source_already_silence_trimmed(candidate, source_clip),
     )
     return True
 

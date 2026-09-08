@@ -7,7 +7,7 @@ import subprocess
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .youtube_pipeline import find_ytdlp
+from .youtube_pipeline import find_ytdlp, probe_youtube_transcript
 
 # Soft guidance only — ASR transcript length is still checked later.
 SHORT_DURATION_WARNING_SECONDS = 180
@@ -128,6 +128,17 @@ def resolve_youtube_source(url: str, *, timeout_seconds: int = 45) -> dict[str, 
     elif duration_seconds is not None and duration_seconds < SHORT_DURATION_WARNING_SECONDS:
         warnings.append("This video is under 3 minutes — fewer strong clip candidates are likely.")
 
+    transcript = probe_youtube_transcript(video_id, languages=["id", "en", "ar"])
+    if transcript.get("status") == "missing":
+        warnings.append(
+            "No YouTube subtitles yet. Fresh live replays often need 12–48 hours for auto-captions. "
+            "Use Transcribe from audio when creating clips."
+        )
+    elif transcript.get("status") == "disabled":
+        warnings.append("YouTube captions are disabled on this video. Use Transcribe from audio when creating clips.")
+    elif transcript.get("status") == "restricted":
+        warnings.append(str(transcript.get("message") or "Transcript access is restricted for this video."))
+
     return {
         "ok": True,
         "provider": "youtube",
@@ -139,4 +150,5 @@ def resolve_youtube_source(url: str, *, timeout_seconds: int = 45) -> dict[str, 
         "canonical_url": webpage.split("&", 1)[0] if "watch?v=" in webpage else canonical,
         "source_url": canonical,
         "warnings": warnings,
+        "transcript": transcript,
     }

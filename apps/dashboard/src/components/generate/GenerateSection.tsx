@@ -30,6 +30,7 @@ type GenerateConfigLike = {
   brandSystemTemplateId: string;
   brandTemplate: string;
   captionSource: string;
+  curationSource: string;
   speechLanguage: string;
   transcriptLanguages: string;
   llmProvider: string;
@@ -78,6 +79,35 @@ type ReadinessLineComponent = (props: {ready: boolean; label: string; detail: st
 
 type SelectTileOption = string | {value: string; label: string; disabled?: boolean};
 
+function transcriptStatusLabel(status?: string) {
+  switch (status) {
+    case "available":
+      return "Captions ready";
+    case "missing":
+      return "No captions yet";
+    case "disabled":
+      return "Captions disabled";
+    case "restricted":
+      return "Captions restricted";
+    default:
+      return "Captions unknown";
+  }
+}
+
+function transcriptStatusTone(status?: string) {
+  switch (status) {
+    case "available":
+      return "border-success/30 bg-success/[0.08] text-success";
+    case "missing":
+      return "border-warning/30 bg-warning/[0.08] text-warning";
+    case "disabled":
+    case "restricted":
+      return "border-danger/30 bg-danger/[0.08] text-danger";
+    default:
+      return "border-white/[0.10] bg-white/[0.04] text-zinc-400";
+  }
+}
+
 function clipCountLabel(count: number) {
   return `${count} ${count === 1 ? "clip" : "clips"}`;
 }
@@ -101,8 +131,8 @@ function humanizeGenerationError(error?: string) {
   ) {
     return "Couldn’t find a usable clip in this video. Try a longer source or a looser duration. How many clips is a maximum — one clip is still a successful run.";
   }
-  if (lower.includes("no transcript") || lower.includes("captions unavailable")) {
-    return "No usable captions or transcript were found for this video. Try another source or enable captions.";
+  if (lower.includes("no transcript") || lower.includes("captions unavailable") || lower.includes("no youtube subtitles") || lower.includes("transcribe from audio") || lower.includes("github.com/jdepoix/youtube-transcript-api")) {
+    return "No YouTube subtitles are available for this video yet. Fresh live replays often need 12–48 hours for auto-captions. Use Transcribe from audio when creating clips.";
   }
   if (lower.includes("connection") || lower.includes("offline") || lower.includes("refused")) {
     return "Couldn’t reach the media engine. Make sure the backend is running, then try again.";
@@ -241,7 +271,10 @@ export function GenerateSection<T extends GenerateConfigLike>({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-resolve when the pasted URL changes
   }, [config.sourceUrl]);
 
-  const canGenerate = Boolean(config.sourceUrl.trim()) && resolveState === "ready" && Boolean(resolvedSource?.ok);
+  const canGenerate = Boolean(config.sourceUrl.trim()) && resolveState === "ready" && Boolean(resolvedSource?.ok)
+    && !(resolvedSource?.transcript?.status && resolvedSource.transcript.status !== "available" && config.curationSource === "youtube");
+  const transcriptStatus = resolvedSource?.transcript?.status;
+  const needsAudioCuration = transcriptStatus && transcriptStatus !== "available" && config.curationSource !== "audio";
   const presetOptions = durationPresets.length ? durationPresets : [{id: "auto", label: "Auto (0-3 min)", detail: "20-180s", range_label: "0-3 min", best_for: "General use", min_ms: 20_000, target_ms: 90_000, max_ms: 180_000, intent: "Automatic duration"}];
   const genreOptions = genres.length ? genres : [
     {id: "story", label: "Story", description: "Narrative moments and analogies."},
@@ -338,16 +371,61 @@ export function GenerateSection<T extends GenerateConfigLike>({
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-white">{resolvedSource.title || "YouTube video"}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-white">{resolvedSource.title || "YouTube video"}</p>
+                    {resolvedSource.transcript?.status ? (
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${transcriptStatusTone(resolvedSource.transcript.status)}`}>
+                        {transcriptStatusLabel(resolvedSource.transcript.status)}
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="mt-1 truncate text-xs text-zinc-400">
                     {[resolvedSource.channel, formatSourceDuration(resolvedSource.duration_seconds)].filter(Boolean).join(" · ")}
                   </p>
-                  {resolvedSource.warnings?.length ? (
+                  {resolvedSource.transcript?.status && resolvedSource.transcript.status !== "available" ? (
+                    <p className="mt-2 text-xs leading-5 text-warning">
+                      {resolvedSource.transcript.message || "No YouTube subtitles yet. Use Transcribe from audio below."}
+                    </p>
+                  ) : resolvedSource.warnings?.length ? (
                     <p className="mt-2 text-xs leading-5 text-warning">{resolvedSource.warnings[0]}</p>
                   ) : (
                     <p className="mt-2 text-xs text-teal">Ready to generate</p>
                   )}
                 </div>
+              </div>
+            ) : null}
+
+            {resolveState === "ready" && resolvedSource?.transcript?.status && resolvedSource.transcript.status !== "available" ? (
+              <div className="mt-3 rounded-[18px] border border-warning/20 bg-warning/[0.05] p-3">
+                <p className="text-sm font-semibold text-white">Clip selection source</p>
+                <p className="mt-1 text-xs leading-5 text-zinc-400">
+                  YouTube captions are not ready. Choose how the app should find clip moments before rendering.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {[
+                    {value: "auto", label: "Auto (recommended)", detail: "Try YouTube captions, then transcribe audio if missing."},
+                    {value: "audio", label: "Transcribe from audio", detail: "Slower, but works without YouTube CC."},
+                    {value: "youtube", label: "YouTube captions only", detail: "Fast, but requires subtitles on YouTube."},
+                  ].map((option) => {
+                    const active = config.curationSource === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => update({curationSource: option.value})}
+                        className={`rounded-2xl border p-3 text-left transition ${active ? "border-cyan/[0.40] bg-cyan/[0.06]" : "border-white/[0.08] bg-black/20 hover:border-white/[0.14]"}`}
+                      >
+                        <span className="text-xs font-semibold text-white">{option.label}</span>
+                        <span className="mt-1 block text-[11px] leading-4 text-zinc-500">{option.detail}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {config.curationSource === "youtube" ? (
+                  <p className="mt-2 text-xs leading-5 text-danger">YouTube captions only is blocked until subtitles appear on this video.</p>
+                ) : needsAudioCuration ? (
+                  <p className="mt-2 text-xs leading-5 text-zinc-400">Audio transcription can take several minutes for long videos.</p>
+                ) : null}
               </div>
             ) : null}
 

@@ -13,7 +13,7 @@ from .captions import build_fallback_caption_segments, normalize_caption_groups,
 from .db import ARTIFACTS_DIR, ROOT
 from .overlay_copy import overlay_slots_for_candidate
 from .hyperframes_renderer import check_hyperframes_runtime, render_premium_hyperframes as _render_hyperframes_contract
-from .silence_trim import captions_duration_ms, probe_duration_ms
+from .silence_trim import captions_duration_ms, probe_duration_ms, source_already_silence_trimmed
 from .styles import load_style
 
 PREMIUM_PRESET = "nourbit_premium_v1"
@@ -207,6 +207,7 @@ def build_premium_render_contract(
         raw_captions,
         clip_start_ms=int(candidate.get("start_ms") or 0),
         video_duration_ms=duration_ms,
+        already_silence_trimmed=source_already_silence_trimmed(candidate, source_video_path),
     )
     captions = normalize_caption_groups(
         raw_captions,

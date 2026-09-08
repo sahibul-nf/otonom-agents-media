@@ -11,6 +11,7 @@ import {
   apiGet,
   apiPost,
   canMakeShortsFromClip,
+  type CaptionPolishResult,
   type ClipCandidate,
   type EditorContext,
   type ExplainerScene,
@@ -245,6 +246,24 @@ export function ReviewEditorPage({
     }
   }
 
+  async function polishCaptions() {
+    if (!clip?.captions?.length) return;
+    await runAction(
+      `clip:${clip.id}:caption-polish`,
+      "Polishing captions…",
+      async () => {
+        const result = await apiPost<CaptionPolishResult>("caption-polish", {candidate_id: clip.id});
+        const nextCaptions = result.captions || [];
+        const joined = joinCaptionsFromSegments(nextCaptions);
+        setClip((current) => (current ? {...current, captions: nextCaptions, caption_corrections: result.caption_corrections} : current));
+        setCaptionDraft(joined);
+        setCleanCaptionDraft(joined);
+      },
+      "Captions polished",
+      false,
+    );
+  }
+
   async function makeShortsFromLongform() {
     if (!clip || !canMakeShortsFromClip(clip)) return;
     const key = `clip:${clip.id}:shorts`;
@@ -377,6 +396,13 @@ export function ReviewEditorPage({
                         "Re-render started — preview updates when ready.",
                         false,
                       );
+                    }
+                  : undefined
+              }
+              onPolishCaptions={
+                context.capability === "short" && clip.captions?.length
+                  ? () => {
+                      void polishCaptions();
                     }
                   : undefined
               }

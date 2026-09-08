@@ -328,6 +328,43 @@ def remap_time_ms(original_ms: int, keep_segments: list[tuple[int, int]]) -> int
     return out
 
 
+def untrim_time_ms(trimmed_ms: int, keep_segments: list[tuple[int, int]]) -> int:
+    """Map a timestamp on the trimmed file back onto the original clip timeline."""
+    t = max(0, int(trimmed_ms))
+    cursor = 0
+    for start, end in keep_segments:
+        length = max(0, int(end) - int(start))
+        if t <= cursor + length:
+            return int(start) + (t - cursor)
+        cursor += length
+    if not keep_segments:
+        return t
+    return int(keep_segments[-1][1])
+
+
+def parse_keep_segments(value: Any) -> list[tuple[int, int]]:
+    segments: list[tuple[int, int]] = []
+    if not isinstance(value, list):
+        return segments
+    for pair in value:
+        if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+            continue
+        start = int(pair[0])
+        end = int(pair[1])
+        if end > start:
+            segments.append((start, end))
+    return segments
+
+
+def source_already_silence_trimmed(candidate: dict[str, Any] | None = None, source_path: str | Path = "") -> bool:
+    payload = candidate or {}
+    trim = payload.get("silence_trim") if isinstance(payload.get("silence_trim"), dict) else {}
+    if trim.get("changed") or trim.get("skipped") == "already_trimmed":
+        return True
+    stem = Path(str(source_path or "")).stem
+    return stem.endswith("_silencetrim") or stem.endswith("_cut")
+
+
 def remap_caption_groups(
     captions: list[dict[str, Any]],
     keep_segments: list[tuple[int, int]],

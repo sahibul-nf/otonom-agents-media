@@ -10,6 +10,7 @@ export function ReviewSourceGroup({
   statusTone,
   actionStates,
   onDelete,
+  onApprove,
   onMakeShorts,
   selectableIds,
   selectedIds,
@@ -20,6 +21,7 @@ export function ReviewSourceGroup({
   statusTone: (status: string) => string;
   actionStates?: Record<string, {status: "running" | "done" | "failed"; message: string}>;
   onDelete?: (clip: ReviewClipGroup["clips"][number]) => void;
+  onApprove?: (clip: ReviewClipGroup["clips"][number]) => void;
   onMakeShorts?: (clip: ReviewClipGroup["clips"][number]) => void;
   selectableIds?: Set<string>;
   selectedIds?: Set<string>;
@@ -35,7 +37,9 @@ export function ReviewSourceGroup({
         clip={clip}
         statusTone={statusTone}
         deleting={actionStates?.[`clip:${clip.id}:delete`]?.status === "running"}
+        approving={actionStates?.[`clip:${clip.id}:approve`]?.status === "running"}
         onDelete={onDelete}
+        onApprove={onApprove}
         onMakeShorts={onMakeShorts}
         selectable={selectable}
         selectionMode={selectionMode}

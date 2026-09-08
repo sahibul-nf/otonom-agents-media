@@ -114,7 +114,7 @@ def _cut_section(source: Path, output: Path, start_ms: int, end_ms: int) -> Path
     return output
 
 
-def _words_to_transcript_entries(words: list[dict[str, Any]]) -> list[TranscriptEntry]:
+def words_to_transcript_entries(words: list[dict[str, Any]]) -> list[TranscriptEntry]:
     entries: list[TranscriptEntry] = []
     bucket: list[dict[str, Any]] = []
     bucket_start = 0
@@ -247,7 +247,7 @@ def clip_batch_from_local_path(
     cache_root = ARTIFACTS_DIR / profile_id / "ingest" / batch_job_id
     cache = cache_root / "asr_words.json"
     words, asr_meta = load_or_create_asr_words(str(local_path), str(cache), language=language)
-    entries = _words_to_transcript_entries(words)
+    entries = words_to_transcript_entries(words)
     if len(entries) < 10:
         raise ValueError("transcript too short for clip_batch — try a longer video or publish to YouTube first")
 

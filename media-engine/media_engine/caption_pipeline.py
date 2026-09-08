@@ -1,17 +1,25 @@
-"""Production captions: Whisper timing + YouTube text + light LLM polish."""
+"""Production captions: Whisper timing + YouTube text + contextual LLM reconstruction."""
 
 from __future__ import annotations
 
+import re
 from difflib import SequenceMatcher
 from typing import Any
 
 from .asr import asr_cache_path, load_or_create_asr_words
 from .caption_composer import compose_caption_groups
+from .caption_edits import merge_caption_corrections
 from .captions import split_words
 from .genres import resolve_genre_pack
 from .llm import LLMError, call_llm_json
+from .silence_trim import parse_keep_segments, probe_duration_ms, untrim_time_ms
 from .speech_language import AUTO_LANGUAGE, build_transcript_language_list
-from .transcript_quality import correct_asr_words, resolve_glossary
+from .transcript_quality import (
+    correct_asr_words,
+    domain_vocabulary_hint,
+    resolve_glossary,
+    resolve_phrase_glossary,
+)
 from .youtube_pipeline import TranscriptEntry, fetch_youtube_transcript
 
 UNCERTAIN_THRESHOLD = 0.65
@@ -26,6 +34,23 @@ _POLISH_DOMAINS = {
     "tech_finance": "Indonesian and English tech, finance, and business speech",
     "general": "Indonesian and English mixed short-form speech",
 }
+
+
+def build_reconstruct_system_prompt(
+    *,
+    detected_language: str | None = None,
+    niche: str = "",
+    profile_id: str = "",
+) -> str:
+    pack = resolve_genre_pack(profile_id, niche)
+    domain = _POLISH_DOMAINS.get(pack, _POLISH_DOMAINS["general"])
+    language_hint = (detected_language or "auto-detected").strip() or "auto-detected"
+    return (
+        f"You clean {domain} ASR captions (spoken language: {language_hint}). Reply JSON only: "
+        '{"text":"..."}. Fix spelling and niche terminology, remove repeated stutters/disfluencies, '
+        "add natural punctuation and capitalization. Keep the speaker's words and word order. "
+        "Do not replace spoken phrases with title, kicker, or synonym rewrites."
+    )
 
 
 def build_polish_system_prompt(
@@ -51,6 +76,7 @@ def asr_initial_prompt(
     niche: str = "",
     source_title: str = "",
     source_channel: str = "",
+    profile_id: str = "",
 ) -> str:
     payload = candidate or {}
     metadata = payload.get("curation_metadata") if isinstance(payload.get("curation_metadata"), dict) else {}
@@ -60,15 +86,18 @@ def asr_initial_prompt(
         str(niche or "").strip(),
         str(payload.get("title_hook") or "").strip(),
         str(payload.get("transcript_span") or "").strip()[:160],
+        domain_vocabulary_hint(profile_id or str(payload.get("profile_id") or ""), niche),
     ]
     hint = ". ".join(part for part in parts if part)
-    return (hint or "Multilingual speech, names, numbers, technical terms").strip()[:400]
+    return (hint or "Multilingual speech, names, numbers, technical terms").strip()[:500]
 
 
 def apply_youtube_text(
     whisper_words: list[dict[str, Any]],
     entries: list[TranscriptEntry],
     clip_start_ms: int,
+    *,
+    keep_segments: list[tuple[int, int]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if not whisper_words or not entries:
         return list(whisper_words), {"youtube_replaced": 0, "youtube_cues": len(entries)}
@@ -76,8 +105,13 @@ def apply_youtube_text(
     skipped = 0
     next_words: list[dict[str, Any]] = []
     for index, word in enumerate(whisper_words):
-        abs_start = clip_start_ms + int(word.get("startMs") or 0)
-        abs_end = clip_start_ms + int(word.get("endMs") or abs_start + 80)
+        rel_start = int(word.get("startMs") or 0)
+        rel_end = int(word.get("endMs") or rel_start + 80)
+        if keep_segments:
+            rel_start = untrim_time_ms(rel_start, keep_segments)
+            rel_end = untrim_time_ms(rel_end, keep_segments)
+        abs_start = clip_start_ms + rel_start
+        abs_end = clip_start_ms + max(rel_end, rel_start + 80)
         token, entry_tokens, token_index = _youtube_token_context(entries, abs_start, abs_end)
         item = dict(word)
         if token and _should_take_youtube_token(word, token, whisper_words, index, entry_tokens, token_index):
@@ -152,6 +186,194 @@ def polish_uncertain_words(
     return next_words, {"llm_replacements": applied}
 
 
+def reconstruct_timed_captions_llm(
+    words: list[dict[str, Any]],
+    provider: str,
+    *,
+    context: str = "",
+    detected_language: str | None = None,
+    niche: str = "",
+    profile_id: str = "",
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if provider in {"", "none"} or not words:
+        return list(words), {"llm_reconstructed": False, "llm_skipped": True}
+    raw_text = " ".join(str(word.get("text") or "").strip() for word in words if str(word.get("text") or "").strip())
+    if not raw_text:
+        return list(words), {"llm_reconstructed": False, "llm_skipped": True}
+    payload = {"context": context[:320], "raw_transcript": raw_text[:4000]}
+    system_prompt = build_reconstruct_system_prompt(
+        detected_language=detected_language,
+        niche=niche,
+        profile_id=profile_id,
+    )
+    try:
+        result = call_llm_json(provider, system_prompt, str(payload), timeout_seconds=45)
+    except (LLMError, TypeError, ValueError):
+        return list(words), {"llm_reconstructed": False, "llm_error": True}
+    cleaned = str(result.get("text") or "").strip() if isinstance(result, dict) else ""
+    if not cleaned:
+        return list(words), {"llm_reconstructed": False, "llm_error": True}
+    aligned = align_words_to_reconstructed_text(words, cleaned)
+    removed = max(0, len(words) - len(aligned))
+    return aligned, {
+        "llm_reconstructed": True,
+        "llm_removed_words": removed,
+        "llm_output_preview": cleaned[:240],
+        "llm_word_count": len(aligned),
+    }
+
+
+def align_words_to_reconstructed_text(
+    original_words: list[dict[str, Any]],
+    reconstructed_text: str,
+) -> list[dict[str, Any]]:
+    recon_tokens = split_words(reconstructed_text)
+    if not recon_tokens:
+        return list(original_words)
+    aligned: list[dict[str, Any]] = []
+    orig_index = 0
+    prefix_kept = False
+    for recon_token in recon_tokens:
+        recon_norm = _normalize_align_token(recon_token)
+        if not recon_norm and not _is_punctuation_only(recon_token):
+            continue
+        if _is_punctuation_only(recon_token) and aligned:
+            aligned[-1]["text"] = f"{aligned[-1]['text']}{recon_token}"
+            continue
+        best_index: int | None = None
+        best_ratio = 0.0
+        search_end = min(len(original_words), orig_index + 8)
+        for candidate_index in range(orig_index, search_end):
+            orig_norm = _normalize_align_token(str(original_words[candidate_index].get("text") or ""))
+            if not orig_norm:
+                continue
+            ratio = SequenceMatcher(None, orig_norm, recon_norm).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_index = candidate_index
+        if best_index is None or best_ratio < 0.6:
+            continue
+        if not prefix_kept:
+            aligned.extend(dict(word) for word in original_words[:best_index])
+            prefix_kept = True
+        item = dict(original_words[best_index])
+        item["text"] = recon_token
+        item["caption_text_source"] = "llm_reconstruct"
+        aligned.append(item)
+        orig_index = best_index + 1
+    if orig_index < len(original_words):
+        aligned.extend(dict(word) for word in original_words[orig_index:])
+    return aligned if aligned else list(original_words)
+
+
+def flatten_caption_segments_to_words(captions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    words: list[dict[str, Any]] = []
+    for caption in captions:
+        timed_words = caption.get("words")
+        if isinstance(timed_words, list) and timed_words:
+            for word in timed_words:
+                text = str(word.get("text") or "").strip()
+                if not text:
+                    continue
+                start_ms = int(word.get("startMs", caption.get("startMs", 0)) or 0)
+                end_ms = int(word.get("endMs", caption.get("endMs", start_ms + 40)) or start_ms + 40)
+                words.append({**word, "text": text, "startMs": start_ms, "endMs": max(start_ms + 40, end_ms)})
+            continue
+        text = str(caption.get("text") or "").strip()
+        if not text:
+            continue
+        start_ms = int(caption.get("startMs", 0) or 0)
+        end_ms = int(caption.get("endMs", start_ms + 40) or start_ms + 40)
+        tokens = split_words(text)
+        if not tokens:
+            continue
+        duration = max(40, end_ms - start_ms)
+        step = max(40, duration // len(tokens))
+        for index, token in enumerate(tokens):
+            token_start = start_ms + index * step
+            token_end = end_ms if index == len(tokens) - 1 else min(end_ms, token_start + step)
+            words.append({"text": token, "startMs": token_start, "endMs": max(token_start + 40, token_end)})
+    return words
+
+
+def polish_caption_words(
+    words: list[dict[str, Any]],
+    *,
+    llm_provider: str = "none",
+    niche: str = "",
+    profile_id: str = "",
+    profile: dict[str, Any] | None = None,
+    context: str = "",
+    detected_language: str | None = None,
+    max_words_per_caption: int = 3,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    glossary = resolve_glossary(profile_id=profile_id, niche=niche, profile=profile)
+    phrase_glossary = resolve_phrase_glossary(profile_id=profile_id, niche=niche, profile=profile)
+    words, glossary_meta = correct_asr_words(words, glossary=glossary, phrase_glossary=phrase_glossary)
+    pipeline: dict[str, Any] = {"glossary": glossary_meta}
+    if llm_provider not in {"", "none"}:
+        words, llm_meta = reconstruct_timed_captions_llm(
+            words,
+            llm_provider,
+            context=context,
+            detected_language=detected_language,
+            niche=niche,
+            profile_id=profile_id,
+        )
+        pipeline["llm"] = llm_meta
+    else:
+        words, llm_meta = polish_uncertain_words(
+            words,
+            llm_provider,
+            context=context,
+            detected_language=detected_language,
+            niche=niche,
+            profile_id=profile_id,
+        )
+        pipeline["llm"] = llm_meta
+    captions, composer_metadata = compose_caption_groups(words, max_words_per_caption=max_words_per_caption, glossary=glossary)
+    pipeline["composer"] = composer_metadata
+    return captions, pipeline
+
+
+def polish_candidate_captions(
+    candidate: dict[str, Any],
+    captions: list[dict[str, Any]],
+    *,
+    llm_provider: str = "deepseek",
+    niche: str = "",
+    profile_id: str = "",
+    profile: dict[str, Any] | None = None,
+    max_words_per_caption: int = 3,
+) -> dict[str, Any]:
+    words = flatten_caption_segments_to_words(captions)
+    if not words:
+        raise ValueError("no caption words available to polish")
+    metadata = candidate.get("curation_metadata") if isinstance(candidate.get("curation_metadata"), dict) else {}
+    asr_metadata = candidate.get("asr_metadata") if isinstance(candidate.get("asr_metadata"), dict) else {}
+    detected_language = str(asr_metadata.get("detected_language") or asr_metadata.get("language") or "").strip() or None
+    context = asr_initial_prompt(candidate, niche=niche, profile_id=profile_id, source_title=str(metadata.get("source_title") or ""))
+    polished_captions, pipeline = polish_caption_words(
+        words,
+        llm_provider=llm_provider,
+        niche=niche,
+        profile_id=profile_id,
+        profile=profile,
+        context=context,
+        detected_language=detected_language,
+        max_words_per_caption=max_words_per_caption,
+    )
+    existing = candidate.get("caption_corrections") if isinstance(candidate.get("caption_corrections"), dict) else {}
+    corrections = merge_caption_corrections(existing, polished_captions)
+    corrections["ai_polish"] = True
+    corrections["ai_polish_pipeline"] = pipeline
+    return {
+        "captions": polished_captions,
+        "caption_corrections": corrections,
+        "pipeline": pipeline,
+    }
+
+
 def build_production_captions(
     candidate: dict[str, Any],
     source_clip: str,
@@ -173,8 +395,9 @@ def build_production_captions(
         return {"skipped": True, "caption_source": caption_source}
 
     glossary = resolve_glossary(profile_id=profile_id, niche=niche, profile=profile)
+    phrase_glossary = resolve_phrase_glossary(profile_id=profile_id, niche=niche, profile=profile)
     asr_path = asr_cache_path(source_clip, asr_model, speech_language)
-    prompt = asr_initial_prompt(candidate, niche=niche)
+    prompt = asr_initial_prompt(candidate, niche=niche, profile_id=profile_id)
     words, asr_metadata = load_or_create_asr_words(
         source_clip,
         str(asr_path),
@@ -200,16 +423,26 @@ def build_production_captions(
     if caption_source == "hybrid":
         words, youtube_meta = _try_youtube_text(words, candidate, youtube_url, transcript_lang_list)
         pipeline["youtube"] = youtube_meta
-    words, glossary_meta = correct_asr_words(words, glossary=glossary)
+    words, glossary_meta = correct_asr_words(words, glossary=glossary, phrase_glossary=phrase_glossary)
     words = _confirm_glossary_corrections(words, glossary_meta)
-    words, llm_meta = polish_uncertain_words(
-        words,
-        llm_provider,
-        context=asr_initial_prompt(candidate, niche=niche),
-        detected_language=detected_language,
-        niche=niche,
-        profile_id=profile_id,
-    )
+    if llm_provider not in {"", "none"}:
+        words, llm_meta = reconstruct_timed_captions_llm(
+            words,
+            llm_provider,
+            context=asr_initial_prompt(candidate, niche=niche, profile_id=profile_id),
+            detected_language=detected_language,
+            niche=niche,
+            profile_id=profile_id,
+        )
+    else:
+        words, llm_meta = polish_uncertain_words(
+            words,
+            llm_provider,
+            context=asr_initial_prompt(candidate, niche=niche, profile_id=profile_id),
+            detected_language=detected_language,
+            niche=niche,
+            profile_id=profile_id,
+        )
     pipeline["glossary"] = {"correction_count": glossary_meta.get("correction_count", 0)}
     pipeline["llm"] = llm_meta
     style = style or {}
@@ -233,9 +466,59 @@ def build_production_captions(
     candidate["score"] = {
         **candidate.get("score", {}),
         "asr_confidence": int(round((composer_metadata.get("avg_word_confidence") or 0.82) * 100)),
-        "caption_sync_score": 95 if composer_metadata.get("caption_count", 0) else 0,
+        "caption_sync_score": compute_caption_sync_score(words, video_ms=_source_duration_ms(source_clip)),
     }
     return pipeline
+
+
+def compute_caption_sync_score(
+    words: list[dict[str, Any]],
+    *,
+    video_ms: int = 0,
+) -> int:
+    if not words:
+        return 0
+    starts = []
+    ends = []
+    for word in words:
+        try:
+            starts.append(int(word.get("startMs") or 0))
+            ends.append(int(word.get("endMs") or 0))
+        except (TypeError, ValueError):
+            continue
+    if not starts or not ends:
+        return 0
+    first_ms = min(starts)
+    last_ms = max(ends)
+    score = 100
+    if first_ms > 450:
+        score -= min(50, int((first_ms - 450) / 150))
+    if video_ms > 0:
+        if last_ms > video_ms + 1500:
+            score -= min(20, int((last_ms - video_ms) / 500))
+        trailing = video_ms - last_ms
+        if video_ms >= 15_000 and trailing > 8000:
+            score -= min(20, int(trailing / 1000))
+    return max(0, min(100, score))
+
+
+def _source_duration_ms(source_clip: str) -> int:
+    try:
+        return int(probe_duration_ms(source_clip) or 0)
+    except Exception:  # noqa: BLE001 - scoring must not fail caption build
+        return 0
+
+
+def _youtube_keep_segments(candidate: dict[str, Any]) -> tuple[list[tuple[int, int]] | None, str]:
+    trim = candidate.get("silence_trim") if isinstance(candidate.get("silence_trim"), dict) else {}
+    segments = parse_keep_segments(trim.get("keep_segments"))
+    if trim.get("skipped") == "already_trimmed" and not segments:
+        return None, "silence_trim_timeline_unknown"
+    if trim.get("changed"):
+        if not segments:
+            return None, "silence_trim_timeline_unknown"
+        return segments, ""
+    return None, ""
 
 
 def _try_youtube_text(
@@ -247,13 +530,21 @@ def _try_youtube_text(
     url = str(youtube_url or "").strip()
     if not url:
         return words, {"used": False, "reason": "no_url"}
+    keep_segments, skip_reason = _youtube_keep_segments(candidate)
+    if skip_reason:
+        return words, {"used": False, "reason": skip_reason}
     languages = _language_list(transcript_languages)
     try:
         entries = fetch_youtube_transcript(url, languages=languages)
     except Exception:  # noqa: BLE001 - missing captions must not fail generate
         return words, {"used": False, "reason": "fetch_failed"}
     clip_start = int(candidate.get("start_ms") or 0)
-    next_words, meta = apply_youtube_text(words, entries, clip_start)
+    next_words, meta = apply_youtube_text(
+        words,
+        entries,
+        clip_start,
+        keep_segments=keep_segments,
+    )
     meta["used"] = bool(meta.get("youtube_replaced") or meta.get("youtube_cues"))
     return next_words, meta
 
@@ -281,7 +572,7 @@ def _should_take_youtube_token(
         return False
     if not _youtube_anchors_align(whisper_words, word_index, entry_tokens, token_index):
         return False
-    return similar or confidence_value < UNCERTAIN_THRESHOLD
+    return similar
 
 
 def _similar_token(left: str, right: str) -> bool:
@@ -378,6 +669,15 @@ def _safe_token(value: Any) -> str:
     if not tokens or len(tokens) > LLM_TOKEN_MAX_WORDS:
         return ""
     return " ".join(tokens)
+
+
+def _normalize_align_token(text: str) -> str:
+    return re.sub(r"[^\w']+", "", text.lower())
+
+
+def _is_punctuation_only(text: str) -> bool:
+    stripped = text.strip()
+    return bool(stripped) and not re.search(r"[A-Za-z0-9]", stripped)
 
 
 def _language_list(value: str | list[str] | None) -> list[str]:

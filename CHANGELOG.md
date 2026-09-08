@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Added
+- Create clips: YouTube transcript **pre-flight** on source resolve (CC available / missing / disabled badge), humanized errors when captions are absent, and **Transcribe from audio** curation fallback via Whisper when YouTube has no subtitles (#90).
+- Contextual Caption AI Polish: multi-word niche phrase glossary, LLM semantic reconstruction with timestamp re-alignment, and one-click **AI Polish** in the Review Editor for short clips.
+- `POST /api/caption-polish` endpoint to run glossary + LLM caption cleanup on existing clip captions.
+
+### Changed
+- Production caption pipeline now runs phrase glossary correction and full LLM reconstruction (when `llm_provider` is set) before caption grouping.
+- ASR initial prompt includes domain vocabulary hints per niche pack (devotional, tech & finance).
+
+### Added
+- Review **Quick Approve** on queue cards (no Editor) plus **batch Approve** via selection or **Approve all** on source batch pages.
 - Niche-aware clip scoring (Devotional, Tech & Finance, General) with viral/hook/retention/ASR breakdown; Brand → Advanced autonomy panel exposes **minimum score** slider and **grace period**; Review cards and Inspector show score badges and auto-qualification status against your threshold.
 - Review **batch actions**: multi-select clips via **Select** mode in Review (ungrouped cards) and source batch headers, then **Delete** via `POST /api/delete-candidates` (#86) or **Re-render** via `POST /api/batch-rerender`; cards show a re-rendering overlay with progress while jobs are queued or running.
 - Clip hook titles: auto metadata enrichment before render/insert when an LLM key is available; improved heuristic fallbacks from transcript clauses; Review **Auto hook** badge when title/subtitle came from span heuristics; manual **Re-render** in Review editor (header + Metadata tab) and **Refresh & re-render** after metadata update (#87).
@@ -15,6 +25,7 @@
 - `npm run dev` from `apps/dashboard` starts media engine + dashboard (same as repo root); use `npm run dev:next` for Next.js only.
 
 ### Fixed
+- Karaoke captions no longer slide onto the next sentence after silence-trim when Whisper skips the opening; hybrid YouTube text maps through the trim timeline (or is skipped); low-confidence ASR cannot be replaced with an unrelated CC token; LLM reconstruct keeps spoken wording instead of title synonyms; `caption_sync_score` now reflects first-word gap (#91).
 - Clip batch generation no longer aborts the whole job when one HyperFrames render fails; successful clips still land in Review and failed clips are marked `failed` with readable layout errors.
 - `story_handwritten` template overlay text is constrained and auto-fit to the canvas so long hooks no longer fail HyperFrames inspect.
 - Generation job errors now surface human-readable HyperFrames layout messages instead of truncated JSON (`hyperframes inspect failed: {`).

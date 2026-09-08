@@ -16,6 +16,14 @@ export type CaptionSegment = {
   words?: CaptionWord[];
 };
 
+export type CaptionPolishResult = {
+  candidate_id: string;
+  status: string;
+  captions: CaptionSegment[];
+  caption_corrections?: ClipCandidate["caption_corrections"];
+  pipeline?: Record<string, unknown>;
+};
+
 export type ClipCandidate = {
   id: string;
   profile_id?: string;
@@ -382,6 +390,13 @@ export function parseGenreCatalog(payload: GenreCatalog | GenreOption[] | null |
   };
 }
 
+export type TranscriptProbeResult = {
+  status: "available" | "missing" | "disabled" | "restricted" | "unknown";
+  message: string;
+  languages?: string[];
+  requested_languages?: string[];
+};
+
 export type SourceResolveResult = {
   ok: boolean;
   provider?: string;
@@ -393,6 +408,7 @@ export type SourceResolveResult = {
   canonical_url?: string;
   source_url?: string;
   warnings?: string[];
+  transcript?: TranscriptProbeResult;
   error?: string;
 };
 
@@ -666,6 +682,19 @@ export type BatchRerenderResult = {
   skipped: {id: string; error: string}[];
   failed: {id: string; error: string}[];
 };
+
+export type BatchApproveResult = {
+  approved_ids: string[];
+  skipped: {id: string; error: string}[];
+  failed: {id: string; error: string}[];
+};
+
+const QUICK_APPROVE_STATUSES = new Set(["rendered", "pending_auto_schedule"]);
+
+export function canQuickApproveClip(clip: ClipCandidate): boolean {
+  if (isClipRerendering(clip)) return false;
+  return QUICK_APPROVE_STATUSES.has(clip.status);
+}
 
 export function canBatchRerenderClip(clip: ClipCandidate): boolean {
   if (clip.status === "published") return false;

@@ -29,7 +29,9 @@ export type ReviewStudioSectionProps = {
   statusTone: (status: string) => string;
   onClear: () => void;
   onDeleteClip: (clip: ClipCandidate) => void;
+  onApproveClip?: (clip: ClipCandidate) => void;
   onDeleteSelected: (candidateIds: string[]) => void;
+  onApproveSelected?: (candidateIds: string[]) => void;
   onRerenderSelected?: (candidateIds: string[]) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
 };
@@ -45,7 +47,9 @@ export function ReviewStudioSection({
   setShowPublished,
   onClear,
   onDeleteClip,
+  onApproveClip,
   onDeleteSelected,
+  onApproveSelected,
   onRerenderSelected,
   onMakeShorts,
   statusTone,
@@ -53,6 +57,7 @@ export function ReviewStudioSection({
   const clearState = actionStates["queue:clear"];
   const batchDeleteState = actionStates["review:batch-delete"];
   const batchRerenderState = actionStates["review:batch-rerender"];
+  const batchApproveState = actionStates["review:batch-approve"];
   const [selectionMode, setSelectionMode] = useState(false);
   const groups = useMemo(() => groupReviewClips(clips), [clips]);
   const batchCount = groups.filter((group) => group.showHeader).length;
@@ -117,10 +122,12 @@ export function ReviewStudioSection({
           allSelected={selection.allSelected}
           deleting={batchDeleteState?.status === "running"}
           rerendering={batchRerenderState?.status === "running"}
+          approving={batchApproveState?.status === "running"}
           onEnter={() => setSelectionMode(true)}
           onExit={exitSelectionMode}
           onToggleAll={() => (selection.allSelected ? selection.clearSelection() : selection.selectAll())}
           onDeleteSelected={() => onDeleteSelected(Array.from(selection.selectedIds))}
+          onApproveSelected={onApproveSelected ? () => onApproveSelected(Array.from(selection.selectedIds)) : undefined}
           onRerenderSelected={
             onRerenderSelected ? () => onRerenderSelected(Array.from(selection.selectedIds)) : undefined
           }
@@ -135,6 +142,7 @@ export function ReviewStudioSection({
           statusTone={statusTone}
                 actionStates={actionStates}
                 onDelete={onDeleteClip}
+                onApprove={onApproveClip}
                 onMakeShorts={onMakeShorts}
                 selectableIds={selectableSet}
                 selectedIds={selection.selectedIds}

@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .autonomy import MANUAL_HOLD_REASON, get_autonomy_settings, reconcile_caption_holds, update_autonomy_settings
 from .caption_edits import merge_caption_corrections
+from .caption_pipeline import polish_candidate_captions
 from .clip_boundaries import update_clip_boundary
 from .db import ARTIFACTS_DIR, DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, fetch_all, fetch_one, initialize
 from .silence_trim import captions_duration_ms, remove_pause_from_captions, remove_pauses_batch_from_captions, word_pause_gaps
@@ -164,6 +165,57 @@ def _delete_candidate_record(conn: sqlite3.Connection, candidate_id: str) -> tup
         conn.rollback()
         return False, f"failed to delete candidate: {exc}", []
     return True, None, paths
+
+
+APPROVABLE_STATUSES = frozenset({"rendered", "pending_auto_schedule"})
+
+
+def _approve_candidate_record(conn: sqlite3.Connection, candidate_id: str) -> tuple[bool, str | None]:
+    """Approve one candidate when eligible. Returns (ok, error_message)."""
+    row = conn.execute("SELECT id, status FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
+    if not row:
+        return False, "candidate not found"
+    status = str(row["status"] or "")
+    if status in {"approved", "scheduled", "ready_to_publish", "published"}:
+        return False, f"already {status}"
+    if status == "failed":
+        return False, "clip failed"
+    if status not in APPROVABLE_STATUSES:
+        return False, f"status {status} cannot be approved"
+    active_rerender = conn.execute(
+        """
+        SELECT id FROM rerender_jobs
+        WHERE candidate_id = ? AND status IN ('queued', 'running')
+        LIMIT 1
+        """,
+        (candidate_id,),
+    ).fetchone()
+    if active_rerender:
+        return False, "re-render in progress"
+    conn.execute(
+        "UPDATE clip_candidates SET status = 'approved', review_deadline_at = '' WHERE id = ?",
+        (candidate_id,),
+    )
+    return True, None
+
+
+def batch_approve_candidates(conn: sqlite3.Connection, candidate_ids: list[str]) -> dict[str, list]:
+    approved_ids: list[str] = []
+    skipped: list[dict[str, str]] = []
+    failed: list[dict[str, str]] = []
+    for candidate_id in candidate_ids:
+        ok, error = _approve_candidate_record(conn, candidate_id)
+        if ok:
+            approved_ids.append(candidate_id)
+            continue
+        entry = {"id": candidate_id, "error": error or "unknown error"}
+        if error in {"candidate not found"} or (error or "").startswith("failed"):
+            failed.append(entry)
+        else:
+            skipped.append(entry)
+    if approved_ids:
+        conn.commit()
+    return {"approved_ids": approved_ids, "skipped": skipped, "failed": failed}
 
 
 def _loads(value: str | None, fallback):
@@ -712,6 +764,21 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": "candidate not found"}, status=404)
                 return
             self._send_json({"candidate_id": candidate_id, "status": "approved"})
+            return
+
+        if parsed.path == "/api/batch-approve":
+            raw_ids = payload.get("candidate_ids")
+            if not isinstance(raw_ids, list):
+                self._send_json({"error": "candidate_ids must be an array"}, status=400)
+                return
+            candidate_ids = [str(value).strip() for value in raw_ids if str(value).strip()]
+            if not candidate_ids:
+                self._send_json({"error": "candidate_ids must be a non-empty array"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            result = batch_approve_candidates(conn, candidate_ids)
+            self._send_json(result)
             return
 
         if parsed.path == "/api/hold":
@@ -1449,6 +1516,91 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(result, status=202)
+            return
+
+        if parsed.path == "/api/caption-polish":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            load_env_file(ENV_FILE)
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            row = conn.execute(
+                """
+                SELECT c.*, r.metadata_json AS render_metadata_json
+                FROM clip_candidates c
+                LEFT JOIN render_jobs r ON r.id = (
+                  SELECT r2.id FROM render_jobs r2
+                  WHERE r2.candidate_id = c.id
+                  ORDER BY r2.created_at DESC, r2.id DESC
+                  LIMIT 1
+                )
+                WHERE c.id = ?
+                """,
+                (candidate_id,),
+            ).fetchone()
+            if not row:
+                self._send_json({"error": "candidate not found"}, status=404)
+                return
+            candidate = dict(row)
+            candidate["curation_metadata"] = _loads(candidate.get("curation_metadata_json"), {})
+            candidate["caption_corrections"] = _loads(candidate.get("caption_corrections_json"), {})
+            candidate["asr_metadata"] = _loads(candidate.get("asr_metadata_json"), {})
+            render_metadata = _loads(candidate.get("render_metadata_json"), {})
+            captions = candidate["caption_corrections"].get("edited_captions") or render_metadata.get("captions") or []
+            if not captions:
+                self._send_json({"error": "candidate has no captions to polish"}, status=400)
+                return
+            profile_id = str(candidate.get("profile_id") or "")
+            profile_row = conn.execute(
+                "SELECT id, niche, name FROM media_profiles WHERE id = ?",
+                (profile_id,),
+            ).fetchone()
+            profile = dict(profile_row) if profile_row else None
+            niche = str((profile or {}).get("niche") or "")
+            llm_provider = str(payload.get("llm_provider") or "deepseek").strip() or "deepseek"
+            try:
+                result = polish_candidate_captions(
+                    candidate,
+                    captions,
+                    llm_provider=llm_provider,
+                    niche=niche,
+                    profile_id=profile_id,
+                    profile=profile,
+                )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            except LLMError as exc:
+                self._send_json({"error": f"caption polish failed: {exc}"}, status=502)
+                return
+            next_status = candidate["status"]
+            if next_status not in {"approved", "scheduled", "ready_to_publish", "published"}:
+                next_status = "held"
+            conn.execute(
+                """
+                UPDATE clip_candidates
+                SET caption_corrections_json = ?, caption_source = 'ai_polish',
+                    status = ?, review_deadline_at = ''
+                WHERE id = ?
+                """,
+                (
+                    json.dumps(result["caption_corrections"], ensure_ascii=False),
+                    next_status,
+                    candidate_id,
+                ),
+            )
+            conn.commit()
+            self._send_json(
+                {
+                    "candidate_id": candidate_id,
+                    "status": next_status,
+                    "captions": result["captions"],
+                    "caption_corrections": result["caption_corrections"],
+                    "pipeline": result["pipeline"],
+                }
+            )
             return
 
         if parsed.path == "/api/metadata-refresh":

@@ -186,6 +186,127 @@ def extract_video_id(url: str) -> str:
     raise ValueError(f"cannot extract YouTube video id from {url}")
 
 
+def humanize_youtube_transcript_error(exc: BaseException) -> str:
+    name = exc.__class__.__name__
+    text = str(exc or "").strip()
+    lower = text.lower()
+    if name in {"TranscriptsDisabled"}:
+        return "This video has captions disabled on YouTube. Enable subtitles on the channel or use Transcribe from audio."
+    if name in {"NoTranscriptFound"}:
+        return (
+            "No YouTube subtitles are available for this video yet. "
+            "Fresh live replays often need 12–48 hours before auto-captions appear. "
+            "Try again later or use Transcribe from audio."
+        )
+    if name in {"VideoUnavailable", "VideoUnplayable", "InvalidVideoId"}:
+        return "This video is unavailable to the transcript service. Check the link or try Transcribe from audio."
+    if name in {"AgeRestricted"} or "age-restricted" in lower or "confirm your age" in lower:
+        return "This video is age-restricted. Export browser cookies or use Transcribe from audio."
+    if name in {"IpBlocked", "RequestBlocked", "PoTokenRequired"}:
+        return "YouTube blocked automated transcript access. Try again later or use Transcribe from audio."
+    if "could not retrieve a transcript" in lower or "no transcript" in lower:
+        return (
+            "No usable YouTube subtitles were found for this video. "
+            "Try again after captions appear on YouTube, or use Transcribe from audio."
+        )
+    if "github.com/jdepoix/youtube-transcript-api" in lower:
+        return (
+            "No YouTube subtitles are available for this video yet. "
+            "Try again after captions appear on YouTube, or use Transcribe from audio."
+        )
+    return text[:500] or "Could not fetch YouTube subtitles for this video."
+
+
+def probe_youtube_transcript(
+    video_id: str,
+    languages: list[str] | None = None,
+) -> dict[str, Any]:
+    requested = languages or ["id", "en"]
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        from youtube_transcript_api._errors import (
+            AgeRestricted,
+            NoTranscriptFound,
+            TranscriptsDisabled,
+            VideoUnavailable,
+        )
+    except ImportError as exc:
+        return {
+            "status": "unknown",
+            "message": "youtube-transcript-api is not installed on the media engine.",
+            "languages": [],
+            "requested_languages": requested,
+            "error": str(exc),
+        }
+
+    api = YouTubeTranscriptApi()
+    try:
+        listing = api.list(video_id)
+    except TranscriptsDisabled:
+        return {
+            "status": "disabled",
+            "message": humanize_youtube_transcript_error(TranscriptsDisabled(video_id)),
+            "languages": [],
+            "requested_languages": requested,
+        }
+    except NoTranscriptFound:
+        return {
+            "status": "missing",
+            "message": (
+                "No YouTube subtitles are available for this video yet. "
+                "Fresh live replays often need 12–48 hours before auto-captions appear. "
+                "Try again later or use Transcribe from audio."
+            ),
+            "languages": [],
+            "requested_languages": requested,
+        }
+    except VideoUnavailable:
+        return {
+            "status": "restricted",
+            "message": humanize_youtube_transcript_error(VideoUnavailable(video_id)),
+            "languages": [],
+            "requested_languages": requested,
+        }
+    except AgeRestricted:
+        return {
+            "status": "restricted",
+            "message": humanize_youtube_transcript_error(AgeRestricted(video_id)),
+            "languages": [],
+            "requested_languages": requested,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "unknown",
+            "message": humanize_youtube_transcript_error(exc),
+            "languages": [],
+            "requested_languages": requested,
+            "error": exc.__class__.__name__,
+        }
+
+    available = []
+    for transcript in listing:
+        language = str(getattr(transcript, "language_code", "") or getattr(transcript, "language", "") or "").strip()
+        if language:
+            available.append(language)
+    if not available:
+        return {
+            "status": "missing",
+            "message": (
+                "No YouTube subtitles are available for this video yet. "
+                "Fresh live replays often need 12–48 hours before auto-captions appear. "
+                "Try again later or use Transcribe from audio."
+            ),
+            "languages": [],
+            "requested_languages": requested,
+        }
+    return {
+        "status": "available",
+        "message": "YouTube subtitles are available.",
+        "languages": available[:12],
+        "requested_languages": requested,
+    }
+
+
 def _transcript_cache_path(video_id: str, languages: list[str]) -> Path:
     safe_languages = "-".join(language.replace("/", "_") for language in languages)
     return ARTIFACTS_DIR / "_cache" / "youtube_transcripts" / f"{video_id}_{safe_languages}.json"
@@ -204,7 +325,10 @@ def fetch_youtube_transcript(url: str, languages: list[str] | None = None, use_c
     except ImportError as exc:
         raise RuntimeError("youtube-transcript-api is required for live YouTube transcript ingestion") from exc
 
-    transcript = YouTubeTranscriptApi().fetch(video_id, languages=requested_languages)
+    try:
+        transcript = YouTubeTranscriptApi().fetch(video_id, languages=requested_languages)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(humanize_youtube_transcript_error(exc)) from exc
     entries: list[TranscriptEntry] = []
     for item in transcript:
         start_ms = int(item.start * 1000)
@@ -1055,3 +1179,98 @@ def download_youtube_section(url: str, profile_id: str, candidate: dict[str, Any
         _stamp_source_probe(candidate, last_usable)
         return last_usable
     raise RuntimeError(humanize_youtube_download_error(last_stderr))
+
+
+def download_youtube_media_for_transcription(url: str, profile_id: str, video_id: str) -> str:
+    """Download source media for Whisper curation when YouTube captions are missing."""
+    ytdlp = find_ytdlp()
+    out_dir = ARTIFACTS_DIR / profile_id / "_cache" / "curation_asr" / video_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stale in out_dir.glob("source.*"):
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+    output_template = out_dir / "source.%(ext)s"
+    cookies = _ytdlp_cookies_path()
+    ffmpeg = _ffmpeg_bin()
+    js_args = _yt_dlp_js_runtime_args()
+    tool_env = _yt_dlp_tool_env()
+    cmd = [
+        ytdlp,
+        "--no-update",
+        "-f",
+        "bestaudio[ext=m4a]/bestaudio/best[height<=720]/best",
+        "--merge-output-format",
+        "m4a",
+        "-o",
+        str(output_template),
+    ]
+    cmd.extend(js_args)
+    if ffmpeg:
+        cmd.extend(["--ffmpeg-location", ffmpeg])
+    if cookies and Path(cookies).is_file():
+        cmd.extend(["--cookies", cookies])
+    cmd.append(url)
+    result = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=tool_env)
+    if result.returncode != 0:
+        raise RuntimeError(humanize_youtube_download_error(f"{result.stderr or ''}\n{result.stdout or ''}"))
+    matches = sorted(out_dir.glob("source.*"), key=lambda path: path.stat().st_mtime, reverse=True)
+    if not matches:
+        raise RuntimeError("Download finished but no source media file was created.")
+    return str(matches[0])
+
+
+def fetch_curation_transcript_entries(
+    url: str,
+    *,
+    languages: list[str] | None,
+    curation_source: str = "youtube",
+    profile_id: str = "nourbit",
+    asr_model: str = "medium",
+    speech_language: str = "auto",
+    niche: str = "",
+) -> tuple[list[TranscriptEntry], dict[str, Any]]:
+    """Resolve clip-curation transcript from YouTube captions or local Whisper ASR."""
+    from .asr import load_or_create_asr_words
+    from .caption_pipeline import asr_initial_prompt
+    from .ingest_longform import words_to_transcript_entries
+
+    mode = (curation_source or "youtube").strip().lower()
+    if mode not in {"youtube", "audio", "auto"}:
+        mode = "youtube"
+    requested_languages = languages or ["id", "en"]
+    meta: dict[str, Any] = {"curation_source": mode, "requested_languages": requested_languages}
+
+    if mode in {"youtube", "auto"}:
+        try:
+            entries = fetch_youtube_transcript(url, languages=requested_languages)
+            if entries:
+                meta["resolved_via"] = "youtube"
+                return entries, meta
+        except RuntimeError as exc:
+            meta["youtube_error"] = str(exc)
+            if mode == "youtube":
+                raise
+
+    video_id = extract_video_id(url)
+    meta["resolved_via"] = "audio"
+    media_path = download_youtube_media_for_transcription(url, profile_id, video_id)
+    cache_json = ARTIFACTS_DIR / profile_id / "_cache" / "curation_asr" / video_id / f"{asr_model}_{speech_language}_words.json"
+    prompt = asr_initial_prompt(None, niche=niche, profile_id=profile_id, source_title="", source_channel="")
+    words, asr_meta = load_or_create_asr_words(
+        media_path,
+        str(cache_json),
+        model_name=asr_model,
+        language=speech_language,
+        initial_prompt=prompt,
+    )
+    entries = words_to_transcript_entries(words)
+    if len(entries) < 10:
+        raise RuntimeError(
+            "Audio transcription was too short to pick clip candidates. "
+            "Try a longer source video or wait for YouTube subtitles."
+        )
+    meta["asr"] = asr_meta
+    meta["media_path"] = media_path
+    return entries, meta

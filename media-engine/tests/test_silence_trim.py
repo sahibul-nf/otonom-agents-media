@@ -13,6 +13,7 @@ from media_engine.silence_trim import (
     remap_time_ms,
     remove_pause_from_captions,
     remove_pauses_batch_from_captions,
+    untrim_time_ms,
 )
 
 
@@ -78,6 +79,12 @@ class SilenceTrimPlanningTests(unittest.TestCase):
         self.assertEqual(remapped[1]["words"][0]["startMs"], 1000 + 140 + 100)
         # burn-in bridge restored
         self.assertEqual(remapped[0]["endMs"], remapped[1]["startMs"])
+
+    def test_untrim_inverts_remap_time(self):
+        keep = [(5000, 20_000)]
+        self.assertEqual(untrim_time_ms(0, keep), 5000)
+        self.assertEqual(untrim_time_ms(400, keep), 5400)
+        self.assertEqual(remap_time_ms(untrim_time_ms(1200, keep), keep), 1200)
 
     def test_plan_remove_pause_compresses_selected_window(self):
         config = SilenceTrimConfig(keep_silence_ms=140, edge_pad_ms=60, min_silence_ms=450)

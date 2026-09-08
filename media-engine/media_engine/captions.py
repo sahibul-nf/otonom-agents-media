@@ -193,14 +193,21 @@ def align_caption_timeline_start(
     *,
     max_leading_pad_ms: int = 120,
     shift_threshold_ms: int = 450,
+    max_shift_ms: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Pull captions earlier when the first spoken word starts noticeably after t=0."""
+    """Pull captions earlier when the first spoken word starts noticeably after t=0.
+
+    Large gaps on already silence-trimmed media usually mean Whisper skipped speech,
+    not dead air — do not slide later words onto the opening.
+    """
     if not captions:
         return []
     first_ms = _first_spoken_ms(captions)
     if first_ms is None or first_ms <= shift_threshold_ms:
         return captions
     shift = first_ms - max_leading_pad_ms
+    if max_shift_ms is not None and shift > max_shift_ms:
+        return captions
     return [_shift_caption_group(caption, shift) for caption in captions]
 
 
@@ -235,6 +242,7 @@ def normalize_caption_timeline_for_render(
     video_duration_ms: int | None = None,
     max_leading_pad_ms: int = 120,
     shift_threshold_ms: int = 450,
+    already_silence_trimmed: bool = False,
 ) -> list[dict[str, Any]]:
     """Rebase absolute source timestamps to clip zero, then trim leading dead air."""
     if not captions:
@@ -242,10 +250,12 @@ def normalize_caption_timeline_for_render(
     rebased = captions
     if captions_timeline_uses_source_offset(captions, clip_start_ms):
         rebased = rebase_captions_to_clip_zero(captions, clip_start_ms)
+    max_shift_ms = 400 if already_silence_trimmed else None
     return align_caption_timeline_start(
         rebased,
         max_leading_pad_ms=max_leading_pad_ms,
         shift_threshold_ms=shift_threshold_ms,
+        max_shift_ms=max_shift_ms,
     )
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import {Loader2, RefreshCcw, Trash2} from "lucide-react";
+import {CheckCircle2, Loader2, RefreshCcw, Trash2} from "lucide-react";
 
 export function ReviewSelectionChrome({
   active,
@@ -9,11 +9,13 @@ export function ReviewSelectionChrome({
   allSelected,
   deleting = false,
   rerendering = false,
+  approving = false,
   onEnter,
   onExit,
   onToggleAll,
   onDeleteSelected,
   onRerenderSelected,
+  onApproveSelected,
 }: {
   active: boolean;
   selectedCount: number;
@@ -21,17 +23,19 @@ export function ReviewSelectionChrome({
   allSelected: boolean;
   deleting?: boolean;
   rerendering?: boolean;
+  approving?: boolean;
   onEnter: () => void;
   onExit: () => void;
   onToggleAll: () => void;
   onDeleteSelected: () => void;
   onRerenderSelected?: () => void;
+  onApproveSelected?: () => void;
 }) {
   if (!totalSelectable) return null;
 
-  const busy = deleting || rerendering;
+  const busy = deleting || rerendering || approving;
   const chipClass =
-    "inline-flex h-8 shrink-0 items-center rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-[11px] font-semibold text-zinc-200 transition hover:border-cyan/[0.28] hover:text-white disabled:opacity-40";
+    "inline-flex h-9 shrink-0 items-center rounded-full border border-white/[0.10] bg-white/[0.04] px-3.5 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.28] hover:text-white disabled:opacity-40";
 
   if (!active) {
     return (
@@ -60,6 +64,17 @@ export function ReviewSelectionChrome({
         </button>
         {selectedCount > 0 ? (
           <>
+            {onApproveSelected ? (
+              <button
+                type="button"
+                onClick={onApproveSelected}
+                disabled={busy}
+                className="inline-flex h-8 items-center gap-1.5 rounded-full border border-teal/[0.35] bg-teal/[0.12] px-3.5 text-[11px] font-semibold text-teal transition hover:bg-teal/[0.18] disabled:opacity-40"
+              >
+                {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Approve {selectedCount}
+              </button>
+            ) : null}
             {onRerenderSelected ? (
               <button
                 type="button"

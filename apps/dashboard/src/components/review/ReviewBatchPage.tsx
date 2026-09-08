@@ -6,7 +6,7 @@ import {AlertTriangle, ArrowLeft, Loader2} from "lucide-react";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewQueueCard} from "@/components/review/ReviewQueueCard";
-import {apiGet, apiPost, canBatchRerenderClip, isClipRerendering, type BatchRerenderResult, type ClipCandidate, type DeleteCandidatesResult} from "@/lib/media-api";
+import {apiGet, apiPost, canBatchRerenderClip, canQuickApproveClip, isClipRerendering, type BatchApproveResult, type BatchRerenderResult, type ClipCandidate, type DeleteCandidatesResult} from "@/lib/media-api";
 import {groupFromClips, reviewEditorHref, reviewStatusTone} from "@/lib/review-groups";
 import {useReviewSelection} from "@/lib/use-review-selection";
 
@@ -40,6 +40,8 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [batchDeleting, setBatchDeleting] = useState(false);
   const [batchRerendering, setBatchRerendering] = useState(false);
+  const [batchApproving, setBatchApproving] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [error, setError] = useState("");
 
@@ -83,6 +85,91 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   function exitSelectionMode() {
     setSelectionMode(false);
     selection.clearSelection();
+  }
+
+  function markClipsApproved(approvedIds: string[]) {
+    const approved = new Set(approvedIds);
+    if (!approved.size) return;
+    setClips((items) =>
+      (items || []).map((item) =>
+        approved.has(item.id) ? {...item, status: "approved", review_deadline_at: ""} : item,
+      ),
+    );
+  }
+
+  async function approveClip(clip: ClipCandidate) {
+    if (!canQuickApproveClip(clip)) return;
+    setApprovingId(clip.id);
+    try {
+      await apiPost("approve", {candidate_id: clip.id});
+      markClipsApproved([clip.id]);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Approve failed");
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
+  async function approveSelected() {
+    const ids = Array.from(selection.selectedIds);
+    if (!ids.length) return;
+    const eligible = ids.filter((id) => {
+      const clip = group?.clips.find((item) => item.id === id);
+      return clip ? canQuickApproveClip(clip) : false;
+    });
+    if (!eligible.length) {
+      window.alert("No selected clips can be approved.");
+      return;
+    }
+    const skipped = ids.length - eligible.length;
+    const skipNote = skipped ? ` ${skipped} ineligible clip${skipped === 1 ? "" : "s"} will be skipped.` : "";
+    if (!window.confirm(`Approve ${eligible.length} selected clip${eligible.length === 1 ? "" : "s"} for scheduling?${skipNote}`)) {
+      return;
+    }
+    setBatchApproving(true);
+    try {
+      const result = await apiPost<BatchApproveResult>("batch-approve", {candidate_ids: eligible});
+      markClipsApproved(result.approved_ids);
+      exitSelectionMode();
+      const problems = result.skipped.length + result.failed.length;
+      if (problems) {
+        window.alert(`Approved ${result.approved_ids.length}; ${problems} skipped or failed.`);
+      }
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Batch approve failed");
+    } finally {
+      setBatchApproving(false);
+    }
+  }
+
+  async function approveAllInBatch() {
+    const eligible = (group?.clips || []).filter((clip) => canQuickApproveClip(clip));
+    if (!eligible.length) {
+      window.alert("No clips in this batch can be approved.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Approve all ${eligible.length} eligible clip${eligible.length === 1 ? "" : "s"} in this batch for scheduling?`,
+      )
+    ) {
+      return;
+    }
+    setBatchApproving(true);
+    try {
+      const result = await apiPost<BatchApproveResult>("batch-approve", {
+        candidate_ids: eligible.map((clip) => clip.id),
+      });
+      markClipsApproved(result.approved_ids);
+      const problems = result.skipped.length + result.failed.length;
+      if (problems) {
+        window.alert(`Approved ${result.approved_ids.length}; ${problems} skipped or failed.`);
+      }
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Batch approve failed");
+    } finally {
+      setBatchApproving(false);
+    }
   }
 
   async function deleteClip(clip: ClipCandidate) {
@@ -216,7 +303,9 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
             statusTone={reviewStatusTone}
             editHref={reviewEditorHref(only.id, sourceId)}
             deleting={deletingId === only.id}
+            approving={approvingId === only.id}
             onDelete={deleteClip}
+            onApprove={approveClip}
           />
         </div>
       </main>
@@ -225,15 +314,16 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
 
   const total = group.clips.length;
   const progressLabel = `${group.clearedCount}/${total} cleared`;
+  const approvableCount = group.clips.filter((clip) => canQuickApproveClip(clip)).length;
 
   return (
     <main className="min-h-screen bg-canvas-deep text-zinc-100">
       <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-canvas-deep/90 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
-        <div className="flex w-full items-start gap-3">
+        <div className="flex w-full items-center gap-3">
           <button
             type="button"
             onClick={() => router.push("/?section=review")}
-            className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
             aria-label="Back to Review"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -246,7 +336,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               <div className="grid h-full w-full place-items-center text-[10px] font-semibold uppercase tracking-wider text-zinc-600">Src</div>
             )}
           </div>
-          <div className="min-w-0 flex-1 pt-0.5">
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan">Source batch</p>
             <h1 className="truncate text-base font-semibold text-white sm:text-lg">{group.title}</h1>
             <p className="mt-0.5 truncate text-xs text-zinc-500">
@@ -255,7 +345,18 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
             </p>
           </div>
           {!selectionMode ? (
-            <div className="shrink-0 self-center">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {approvableCount > 0 ? (
+                <button
+                  type="button"
+                  disabled={batchApproving}
+                  onClick={() => void approveAllInBatch()}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-full border border-teal/[0.35] bg-teal/[0.12] px-3.5 text-xs font-semibold text-teal transition hover:bg-teal/[0.18] disabled:opacity-40"
+                >
+                  {batchApproving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Approve all{approvableCount < total ? ` (${approvableCount})` : ""}
+                </button>
+              ) : null}
               <ReviewSelectionChrome
                 active={false}
                 selectedCount={0}
@@ -278,10 +379,12 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               allSelected={selection.allSelected}
               deleting={batchDeleting}
               rerendering={batchRerendering}
+              approving={batchApproving}
               onEnter={() => setSelectionMode(true)}
               onExit={exitSelectionMode}
               onToggleAll={() => (selection.allSelected ? selection.clearSelection() : selection.selectAll())}
               onDeleteSelected={() => void deleteSelected()}
+              onApproveSelected={() => void approveSelected()}
               onRerenderSelected={() => void rerenderSelected()}
             />
           </div>
@@ -290,7 +393,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
 
       <section className="w-full px-4 py-6 sm:px-6 lg:px-8">
         <p className="mb-5 text-center text-sm text-zinc-500">
-          {selectionMode ? "Tap clips to select, then re-render, delete, or open Edit when done." : "Review each candidate, then open Edit for captions and finishing."}
+          {selectionMode ? "Tap clips to select, then approve, re-render, delete, or open Edit when done." : "Review each candidate, then approve quickly or open Edit for captions and finishing."}
         </p>
         <div
           className="mx-auto grid w-fit max-w-full gap-4 sm:gap-5"
@@ -303,7 +406,9 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               statusTone={reviewStatusTone}
               editHref={reviewEditorHref(clip.id, sourceId)}
               deleting={deletingId === clip.id}
+              approving={approvingId === clip.id}
               onDelete={deleteClip}
+              onApprove={approveClip}
               selectable
               selectionMode={selectionMode}
               selected={selection.isSelected(clip.id)}

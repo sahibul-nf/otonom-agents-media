@@ -62,7 +62,9 @@ import {
   type MakeShortsFromLongformResult,
   type DeleteCandidatesResult,
   type BatchRerenderResult,
+  type BatchApproveResult,
   canBatchRerenderClip,
+  canQuickApproveClip,
   isClipRerendering,
   PublishAttempt,
   PublishTarget,
@@ -348,6 +350,7 @@ type GenerateConfig = {
   renderer: string;
   quality: string;
   captionSource: string;
+  curationSource: string;
   asrModel: string;
   speechLanguage: string;
   transcriptLanguages: string;
@@ -467,6 +470,7 @@ MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPA
   --hyperframes-format ${config.hyperframesFormat} \\
   --quality ${config.quality} \\
   --caption-source ${config.captionSource} \\
+  --curation-source ${config.curationSource} \\
   --asr-model ${config.asrModel} \\
   --speech-language ${config.speechLanguage} \\
   --transcript-languages ${config.transcriptLanguages} \\
@@ -527,6 +531,7 @@ export function MediaStudioApp() {
     renderer: "hyperframes",
     quality: "production",
     captionSource: "hybrid",
+    curationSource: "auto",
     asrModel: "medium",
     speechLanguage: "auto",
     transcriptLanguages: "auto",
@@ -799,6 +804,7 @@ export function MediaStudioApp() {
           renderer: generateConfig.renderer,
           quality: generateConfig.quality,
           caption_source: generateConfig.captionSource,
+          curation_source: generateConfig.curationSource,
           asr_model: generateConfig.asrModel,
           speech_language: generateConfig.speechLanguage,
           transcript_languages: generateConfig.transcriptLanguages,
@@ -836,6 +842,7 @@ export function MediaStudioApp() {
         renderer: generateConfig.renderer,
         quality: generateConfig.quality,
         caption_source: generateConfig.captionSource,
+        curation_source: generateConfig.curationSource,
         asr_model: generateConfig.asrModel,
         speech_language: generateConfig.speechLanguage,
         transcript_languages: generateConfig.transcriptLanguages,
@@ -1126,6 +1133,82 @@ export function MediaStudioApp() {
       tone: "default",
       onConfirm: () => void performBatchRerender(eligible),
     });
+  }
+
+  function approveClip(clip: ClipCandidate) {
+    if (!canQuickApproveClip(clip)) return;
+    void performApproveClip(clip.id);
+  }
+
+  function approveSelectedClips(candidateIds: string[]) {
+    if (!candidateIds.length) return;
+    const eligible = candidateIds.filter((id) => {
+      const clip = clips.find((item) => item.id === id);
+      return clip ? canQuickApproveClip(clip) : false;
+    });
+    if (!eligible.length) {
+      pushToast("No selected clips can be approved", "error");
+      return;
+    }
+    const skipped = candidateIds.length - eligible.length;
+    setConfirmDialog({
+      title: `Approve ${eligible.length} clip${eligible.length === 1 ? "" : "s"}?`,
+      message: `Mark ${eligible.length} selected clip${eligible.length === 1 ? "" : "s"} as approved for scheduling.${skipped ? ` ${skipped} ineligible clip${skipped === 1 ? "" : "s"} will be skipped.` : ""}`,
+      confirmLabel: `Approve ${eligible.length}`,
+      tone: "default",
+      onConfirm: () => void performBatchApprove(eligible),
+    });
+  }
+
+  function markClipsApproved(approvedIds: string[]) {
+    const approved = new Set(approvedIds);
+    if (!approved.size) return;
+    setClips((items) =>
+      items.map((item) =>
+        approved.has(item.id) ? {...item, status: "approved", review_deadline_at: ""} : item,
+      ),
+    );
+  }
+
+  async function performApproveClip(candidateId: string) {
+    const key = `clip:${candidateId}:approve`;
+    try {
+      await runAction(key, "Approving clip…", () => apiPost("approve", {candidate_id: candidateId}), "Approved");
+      markClipsApproved([candidateId]);
+      setStatus("Clip approved");
+      pushToast("Clip approved", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Approve failed";
+      setStatus(message);
+      pushToast(message, "error");
+    }
+  }
+
+  async function performBatchApprove(candidateIds: string[]) {
+    const key = "review:batch-approve";
+    try {
+      const result = await runAction(
+        key,
+        `Approving ${candidateIds.length} clip${candidateIds.length === 1 ? "" : "s"}…`,
+        () => apiPost<BatchApproveResult>("batch-approve", {candidate_ids: candidateIds}),
+        `Approved ${candidateIds.length} clip${candidateIds.length === 1 ? "" : "s"}`,
+      );
+      markClipsApproved(result.approved_ids);
+      setBatchDeleteVersion((value) => value + 1);
+      const skipped = result.skipped.length + result.failed.length;
+      if (skipped) {
+        const message = `Approved ${result.approved_ids.length}; ${skipped} skipped or failed`;
+        setStatus(message);
+        pushToast(message, result.approved_ids.length ? "success" : "error");
+      } else {
+        setStatus(`Approved ${result.approved_ids.length} clip${result.approved_ids.length === 1 ? "" : "s"}`);
+        pushToast(`Approved ${result.approved_ids.length} clip${result.approved_ids.length === 1 ? "" : "s"}`, "success");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Batch approve failed";
+      setStatus(message);
+      pushToast(message, "error");
+    }
   }
 
   async function performBatchRerender(candidateIds: string[]) {
@@ -1687,7 +1770,9 @@ export function MediaStudioApp() {
               statusTone={statusTone}
               onClear={clearQueue}
               onDeleteClip={deleteClip}
+              onApproveClip={approveClip}
               onDeleteSelected={deleteSelectedClips}
+              onApproveSelected={approveSelectedClips}
               onRerenderSelected={rerenderSelectedClips}
               onMakeShorts={makeShortsFromClip}
             />

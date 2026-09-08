@@ -32,7 +32,7 @@ from .schedule_publisher import process_due_publishes
 from .shell_components import normalize_shell_components
 from .silence_trim import apply_silence_trim_for_render
 from .styles import load_style, load_style_for_render
-from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_youtube_transcript
+from .youtube_pipeline import choose_nourbit_premium_candidate, choose_nourbit_premium_candidates, download_youtube_section, fetch_curation_transcript_entries, fetch_youtube_transcript
 
 
 def progress(message: str) -> None:
@@ -586,8 +586,18 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
     load_env_file(args.env_file)
     conn = connect(args.db)
     profile, _source = load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
-    bar.step("fetching YouTube transcript")
-    entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
+    bar.step("fetching curation transcript")
+    languages = parse_languages(args.transcript_languages, niche=getattr(args, "niche", None) or profile.get("niche"), profile_id=args.profile)
+    curation_source = str(getattr(args, "curation_source", "youtube") or "youtube").strip().lower()
+    entries, curation_meta = fetch_curation_transcript_entries(
+        args.youtube_url,
+        languages=languages,
+        curation_source=curation_source,
+        profile_id=args.profile,
+        asr_model=getattr(args, "asr_model", "medium"),
+        speech_language=getattr(args, "speech_language", "auto"),
+        niche=getattr(args, "niche", None) or profile.get("niche") or "",
+    )
     style = load_style_for_render(
         args.style,
         hyperframes_template=getattr(args, "hyperframes_template", "auto"),
@@ -659,7 +669,7 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
             conn.commit()
             bar.step(f"[{index}/{len(candidates)}] failed {candidate['id']}: {message[:120]}")
     bar.step(f"batch complete: {len(renders)} rendered, {len(failures)} failed")
-    payload = {"count": len(renders), "renders": renders, "failures": failures}
+    payload = {"count": len(renders), "renders": renders, "failures": failures, "curation": curation_meta}
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     if not renders:
         raise SystemExit(1)
@@ -935,6 +945,7 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--brand-system-template-id", default="", help="Saved Brand System template id")
     premium_batch.add_argument("--hyperframes-format", choices=["auto", "short_9_16", "long_16_9"], default="auto")
     premium_batch.add_argument("--quality", choices=["draft", "production"], default="draft")
+    premium_batch.add_argument("--curation-source", choices=["youtube", "audio", "auto"], default="auto", help="Clip curation transcript: YouTube captions, audio Whisper, or auto fallback")
     premium_batch.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="hybrid")
     premium_batch.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
     premium_batch.add_argument("--speech-language", default="auto", help="Spoken language for Whisper: auto (detect), id, ar, en, …")

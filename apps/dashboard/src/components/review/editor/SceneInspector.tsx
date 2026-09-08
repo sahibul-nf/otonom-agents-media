@@ -53,7 +53,7 @@ export function SceneInspector(props: Props) {
   return (
     <aside className="flex min-h-[240px] shrink-0 lg:min-h-0 lg:py-3 lg:pr-3">
       {props.panelOpen ? (
-        <div className="mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.05] bg-black/25 shadow-[0_12px_40px_rgba(0,0,0,0.28)] backdrop-blur-md lg:w-[280px] lg:flex-none">
+        <div className="mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.05] bg-black/25 shadow-[0_12px_40px_rgba(0,0,0,0.28)] backdrop-blur-md lg:w-[300px] lg:flex-none">
           <div className="flex h-10 shrink-0 items-center justify-between px-4">
             <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-600">{activeTool?.label || "Tools"}</span>
             <button
@@ -147,7 +147,7 @@ function SceneFields({scene, plan, context, templates, onPlanChange}: Props & {s
   const templateOptions = Array.from(new Map(templateEntries).values());
   return (
     <div className="grid gap-4">
-      <p className="text-xs leading-5 text-zinc-500">Type the main scene text in the Script list. Use this panel for secondary settings.</p>
+      <p className="text-sm leading-6 text-zinc-500">Type the main scene text in the Script list. Use this panel for secondary settings.</p>
       <Field label="Narration">
         <textarea value={scene.narration || ""} disabled={disabled} onChange={(event) => update({narration: event.target.value})} className={`${inputClass} min-h-28 py-3`} placeholder="Voice-over narration" />
       </Field>
@@ -210,7 +210,7 @@ function SilenceFields({
 
   return (
     <div className="grid gap-4">
-      <p className="text-xs leading-5 text-zinc-500">
+      <p className="text-sm leading-6 text-zinc-500">
         Remove every Pause chip at or above a threshold — same keep-plan path as single Remove Pause.
       </p>
       <Field label="Remove gaps ≥ (seconds)">
@@ -259,10 +259,9 @@ function formatRemovedLabel(ms: number) {
 
 function MetadataFields(props: Props) {
   const metadataState = props.actionStates[`clip:${props.clip.id}:metadata`];
-  const rerenderState = props.actionStates[`clip:${props.clip.id}:rerender`];
   const canRerender = props.context.capability === "short" && props.context.can_rerender;
   const rendering = Boolean(props.context.job && ["queued", "running", "rendering", "processing"].includes(props.context.job.status));
-  const busy = metadataState?.status === "running" || rerenderState?.status === "running" || rendering;
+  const busy = metadataState?.status === "running" || rendering;
   const titleSource = String(props.clip.curation_metadata?.title_source || "");
   const subtitleSource = String(props.clip.curation_metadata?.subtitle_source || "");
   const heuristicHook = titleSource === "heuristic_span" || subtitleSource === "heuristic_span";
@@ -270,52 +269,30 @@ function MetadataFields(props: Props) {
   return (
     <div className="grid gap-5">
       <Field label="Title">
-        <p className="text-sm leading-6 text-white">{props.clip.title_hook || "Untitled"}</p>
+        <div className={readOnlyFieldClass}>{props.clip.title_hook || "Untitled"}</div>
       </Field>
       <Field label="Description">
-        <p className="text-sm leading-6 text-zinc-300">{props.clip.hook_subtitle || props.clip.viral_reason || "No description."}</p>
+        <div className={`${readOnlyFieldClass} min-h-[5.5rem] whitespace-pre-wrap`}>
+          {props.clip.hook_subtitle || props.clip.viral_reason || "No description."}
+        </div>
       </Field>
       {heuristicHook ? (
-        <p className="text-xs leading-5 text-amber-100/90">
-          Hook copy was auto-generated from transcript. Refresh with AI, then re-render so the on-video title updates.
+        <p className="text-sm leading-6 text-amber-100/90">
+          Hook copy was auto-generated from transcript. Refresh with AI, then use <span className="font-semibold text-white">Re-render</span> in the header so the on-video title updates.
         </p>
       ) : canRerender ? (
-        <p className="text-xs leading-5 text-zinc-500">
-          Hook title is baked into the rendered video. Use re-render after changing metadata.
+        <p className="text-sm leading-6 text-zinc-500">
+          Hook title is baked into the rendered video. After refreshing metadata, use <span className="font-semibold text-zinc-300">Re-render</span> in the header.
         </p>
-      ) : null}
-      <div className="grid gap-2">
-        <button
-          type="button"
-          onClick={() => props.onRefreshMetadata(canRerender)}
-          disabled={busy}
-          className={primaryButton}
-        >
-          {metadataState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-          {metadataState?.status === "running" ? "Refreshing…" : canRerender ? "Refresh & re-render" : "Refresh metadata"}
-        </button>
-        {canRerender ? (
-          <>
-            <button
-              type="button"
-              onClick={() => props.onRefreshMetadata(false)}
-              disabled={busy}
-              className={secondaryButton}
-            >
-              Refresh metadata only
-            </button>
-            <button type="button" onClick={props.onRerenderShort} disabled={busy} className={secondaryButton}>
-              {rerenderState?.status === "running" || rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-              {rendering || rerenderState?.status === "running" ? "Re-rendering…" : "Re-render video"}
-            </button>
-          </>
-        ) : null}
-      </div>
+      ) : (
+        <p className="text-sm leading-6 text-zinc-500">Regenerate hook title and description from the transcript with AI.</p>
+      )}
+      <button type="button" onClick={() => props.onRefreshMetadata(false)} disabled={busy} className={primaryButton}>
+        {metadataState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+        {metadataState?.status === "running" ? "Refreshing…" : "Refresh metadata"}
+      </button>
       {metadataState?.message && metadataState.status !== "running" ? (
-        <p className={`text-xs ${metadataState.status === "failed" ? "text-danger" : "text-cyan"}`}>{metadataState.message}</p>
-      ) : null}
-      {rerenderState?.message && rerenderState.status !== "running" ? (
-        <p className={`text-xs ${rerenderState.status === "failed" ? "text-danger" : "text-cyan"}`}>{rerenderState.message}</p>
+        <p className={`text-sm ${metadataState.status === "failed" ? "text-danger" : "text-cyan"}`}>{metadataState.message}</p>
       ) : null}
     </div>
   );
@@ -429,7 +406,7 @@ function QaFields({clip, context}: {clip: ClipCandidate; context: EditorContext}
 
 function Field({label, children}: {label: string; children: ReactNode}) {
   return (
-    <label className="grid gap-2 text-xs font-semibold text-zinc-500">
+    <label className="grid gap-2.5 text-sm font-semibold text-zinc-400">
       <span>{label}</span>
       {children}
     </label>
@@ -440,6 +417,11 @@ function Empty({text}: {text: string}) {
   return <p className="py-6 text-center text-xs leading-5 text-zinc-500">{text}</p>;
 }
 
-const inputClass = "w-full rounded-2xl border border-white/[0.06] bg-white/[0.03] px-3.5 text-sm text-zinc-100 outline-none transition focus:border-cyan/[0.28] focus:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50";
-const primaryButton = "inline-flex h-10 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink shadow-[0_10px_24px_rgba(102,232,249,0.16)] disabled:cursor-not-allowed disabled:opacity-45";
-const secondaryButton = "inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/[0.10] px-4 text-xs font-semibold text-zinc-200 transition hover:border-cyan/[0.28] hover:text-white disabled:cursor-not-allowed disabled:opacity-45";
+const inputClass =
+  "w-full min-h-11 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-[15px] leading-6 text-zinc-100 outline-none transition focus:border-cyan/[0.28] focus:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50";
+const readOnlyFieldClass =
+  "w-full rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-[15px] leading-6 text-zinc-100";
+const primaryButton =
+  "inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-bold text-ink shadow-[0_10px_24px_rgba(102,232,249,0.16)] disabled:cursor-not-allowed disabled:opacity-45";
+const secondaryButton =
+  "inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border border-white/[0.10] px-4 text-sm font-semibold text-zinc-200 transition hover:border-cyan/[0.28] hover:text-white disabled:cursor-not-allowed disabled:opacity-45";

@@ -27,6 +27,7 @@ VALID_RENDERERS = {"ffmpeg", "remotion", "hyperframes"}
 VALID_HYPERFRAMES_FORMATS = {"auto", "short_9_16", "long_16_9"}
 VALID_QUALITIES = {"draft", "production"}
 VALID_CAPTION_SOURCES = {"youtube", "whisper", "hybrid"}
+VALID_CURATION_SOURCES = {"youtube", "audio", "auto"}
 VALID_ASR_MODELS = {"small", "medium", "large-v3-turbo"}
 VALID_LLM_PROVIDERS = {"none", "openai", "deepseek", "groq"}
 VALID_LANGUAGES = {"id", "en", "ar", "ms", "auto"}
@@ -41,7 +42,7 @@ MODULE_TO_PIP_PACKAGE = {
 
 def _runtime_requirements(config: dict[str, Any]) -> list[str]:
     modules = ["youtube_transcript_api", "yt_dlp_ejs"]
-    if config.get("caption_source") in {"whisper", "hybrid"}:
+    if config.get("caption_source") in {"whisper", "hybrid"} or config.get("curation_source") in {"audio", "auto"}:
         modules.append("faster_whisper")
     return modules
 
@@ -50,7 +51,7 @@ def _runtime_tools(config: dict[str, Any]) -> list[str]:
     # All generation paths require section download from YouTube.
     tools = ["yt-dlp"]
     # Whisper + yt-dlp merge path both rely on ffmpeg being present.
-    if config.get("caption_source") in {"whisper", "hybrid"}:
+    if config.get("caption_source") in {"whisper", "hybrid"} or config.get("curation_source") in {"audio", "auto"}:
         tools.append("ffmpeg")
     return tools
 
@@ -309,6 +310,7 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "renderer": _choice(payload.get("renderer"), VALID_RENDERERS, "hyperframes"),
         "quality": _choice(payload.get("quality"), VALID_QUALITIES, "production"),
         "caption_source": _choice(payload.get("caption_source"), VALID_CAPTION_SOURCES, "hybrid"),
+        "curation_source": _choice(payload.get("curation_source"), VALID_CURATION_SOURCES, "auto"),
         "asr_model": _choice(payload.get("asr_model"), VALID_ASR_MODELS, "medium"),
         "speech_language": _language(payload.get("speech_language"), "auto"),
         "transcript_languages": _language_list(payload.get("transcript_languages"), "auto"),
@@ -359,6 +361,8 @@ def build_generation_command(config: dict[str, Any], validate_runtime: bool = Fa
         config["quality"],
         "--caption-source",
         config["caption_source"],
+        "--curation-source",
+        config["curation_source"],
         "--asr-model",
         config["asr_model"],
         "--speech-language",
@@ -537,6 +541,12 @@ def _humanize_engine_exception(line: str) -> str:
         )
     if "transcript is too short" in lower:
         return "This video’s transcript is too short to pick clip candidates. Try a longer source video."
+    if "no youtube subtitles" in lower or "transcribe from audio" in lower or "github.com/jdepoix/youtube-transcript-api" in lower:
+        return (
+            "No YouTube subtitles are available for this video yet. "
+            "Fresh live replays often need 12–48 hours for auto-captions. "
+            "Use Transcribe from audio when creating clips."
+        )
     return cleaned
 
 

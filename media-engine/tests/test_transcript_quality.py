@@ -2,10 +2,14 @@ import unittest
 
 from media_engine.transcript_quality import (
     DEVOTIONAL_GLOSSARY,
+    DEVOTIONAL_PHRASE_GLOSSARY,
     TECH_FINANCE_GLOSSARY,
+    apply_phrase_glossary,
     correct_asr_words,
     correct_text_with_glossary,
+    domain_vocabulary_hint,
     resolve_glossary,
+    resolve_phrase_glossary,
 )
 
 
@@ -61,6 +65,46 @@ class TranscriptQualityTests(unittest.TestCase):
 
         self.assertEqual(words[0]["text"], "alloh")
         self.assertEqual(metadata["correction_count"], 0)
+
+    def test_phrase_glossary_fixes_devotional_multi_word_typos(self):
+        words = [
+            {"text": "mentakbir", "startMs": 0, "endMs": 200},
+            {"text": "kena", "startMs": 200, "endMs": 400},
+            {"text": "cinta", "startMs": 400, "endMs": 600},
+        ]
+        corrected, corrections = apply_phrase_glossary(words, DEVOTIONAL_PHRASE_GLOSSARY)
+
+        self.assertEqual(corrected[0]["text"], "mentadbir")
+        self.assertEqual(corrected[1]["text"], "karena")
+        self.assertEqual(corrected[2]["text"], "cinta")
+        self.assertEqual(len(corrections), 1)
+
+    def test_correct_asr_words_applies_phrase_glossary_before_single_word(self):
+        words = [
+            {"text": "mentakbir", "startMs": 0, "endMs": 200, "confidence": 0.8},
+            {"text": "kena", "startMs": 200, "endMs": 400, "confidence": 0.8},
+            {"text": "cinta", "startMs": 400, "endMs": 600, "confidence": 0.8},
+        ]
+        corrected, metadata = correct_asr_words(
+            words,
+            glossary=DEVOTIONAL_GLOSSARY,
+            phrase_glossary=DEVOTIONAL_PHRASE_GLOSSARY,
+        )
+
+        self.assertEqual(corrected[0]["text"], "mentadbir")
+        self.assertEqual(corrected[1]["text"], "karena")
+        self.assertGreater(metadata["phrase_correction_count"], 0)
+
+    def test_resolve_phrase_glossary_uses_devotional_pack(self):
+        phrases = resolve_phrase_glossary(profile_id="nourbit")
+
+        self.assertIn("mentakbir kena cinta", phrases)
+
+    def test_domain_vocabulary_hint_for_devotional_pack(self):
+        hint = domain_vocabulary_hint(profile_id="nourbit")
+
+        self.assertIn("alastu bi rabbikum", hint)
+        self.assertIn("bala syahidna", hint)
 
 
 if __name__ == "__main__":
