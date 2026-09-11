@@ -7,8 +7,9 @@
     "dev:reuse": "DEV_REUSE=1 bash ./scripts/dev.sh",
     "health": "python3 ./scripts/system_health.py",
     "pm2:start": "pm2 start ./scripts/media-engine-pm2.config.cjs",
-    "pm2:restart": "pm2 restart otonom-media-api otonom-media-dashboard otonom-media-health",
-    "pm2:stop": "pm2 delete otonom-media-api otonom-media-dashboard otonom-media-health",
+    "pm2:restart": "pm2 restart otonom-media-api otonom-media-dashboard otonom-media-health otonom-media-publisher",
+    "pm2:stop": "pm2 delete otonom-media-api otonom-media-dashboard otonom-media-health otonom-media-publisher",
+    "dev:isolated": "bash ./scripts/dev-isolated.sh",
     "pm2:save": "pm2 save",
     "pm2:status": "pm2 list",
     "pm2:logs": "pm2 logs"

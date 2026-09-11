@@ -3,7 +3,7 @@
 import Link from "next/link";
 import {ArrowUpRight, Layers} from "lucide-react";
 import {ReviewQueueCard} from "@/components/review/ReviewQueueCard";
-import {reviewBatchHref, type ReviewClipGroup} from "@/lib/review-groups";
+import {formatReviewActivityAt, reviewBatchHref, type ReviewClipGroup} from "@/lib/review-groups";
 
 export function ReviewSourceGroup({
   group,
@@ -12,6 +12,7 @@ export function ReviewSourceGroup({
   onDelete,
   onApprove,
   onMakeShorts,
+  onSchedule,
   selectableIds,
   selectedIds,
   selectionMode = false,
@@ -23,6 +24,7 @@ export function ReviewSourceGroup({
   onDelete?: (clip: ReviewClipGroup["clips"][number]) => void;
   onApprove?: (clip: ReviewClipGroup["clips"][number]) => void;
   onMakeShorts?: (clip: ReviewClipGroup["clips"][number]) => void;
+  onSchedule?: (clip: ReviewClipGroup["clips"][number], scheduledAt: string) => void;
   selectableIds?: Set<string>;
   selectedIds?: Set<string>;
   selectionMode?: boolean;
@@ -41,6 +43,8 @@ export function ReviewSourceGroup({
         onDelete={onDelete}
         onApprove={onApprove}
         onMakeShorts={onMakeShorts}
+        onSchedule={onSchedule}
+        scheduling={actionStates?.[`clip:${clip.id}:schedule`]?.status === "running"}
         selectable={selectable}
         selectionMode={selectionMode}
         selected={Boolean(selectedIds?.has(clip.id))}
@@ -51,6 +55,7 @@ export function ReviewSourceGroup({
 
   const total = group.clips.length;
   const progressLabel = `${group.clearedCount}/${total} cleared`;
+  const activityLabel = formatReviewActivityAt(group.activityAt);
   const href = reviewBatchHref(group.sourceId);
 
   return (
@@ -82,6 +87,7 @@ export function ReviewSourceGroup({
           <div className="min-w-0">
             <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-white transition-colors group-hover/batch:text-cyan">{group.title}</h3>
             <p className="mt-1.5 truncate text-[11px] text-zinc-500">
+              {activityLabel ? `${activityLabel} · ` : ""}
               {group.channel ? `${group.channel} · ` : ""}
               {progressLabel}
             </p>

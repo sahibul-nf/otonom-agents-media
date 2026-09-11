@@ -118,6 +118,8 @@ export type ClipCandidate = {
     message?: string;
     error?: string;
   };
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type EditorCapability = "scene" | "short" | "imported_longform";
@@ -222,13 +224,36 @@ export type WatchChannel = {
 };
 
 export type CredentialStatus = {
-  platforms: Record<string, {ready: boolean; required_keys: string[]; missing_keys: string[]}>;
+  platforms: Record<
+    string,
+    {
+      ready: boolean;
+      required_keys: string[];
+      missing_keys: string[];
+      backend?: string;
+      postiz_integration_id?: string;
+      postiz_integration_name?: string;
+    }
+  >;
+  postiz?: {
+    connected: boolean;
+    api_url: string;
+    api_origin?: string;
+    channels?: Record<string, {id: string; name?: string; identifier?: string}>;
+  };
   settings: {
     nourbit_daily_content_cap: string;
     nourbit_default_publish_mode: string;
     comment_automation_enabled: string;
     comment_automation_mode: string;
   };
+};
+
+export type PostizIntegration = {
+  id: string;
+  name: string;
+  identifier?: string;
+  disabled?: boolean;
 };
 
 export type StyleProfile = {

@@ -2,6 +2,8 @@ import type {ClipCandidate} from "@/lib/media-api";
 
 const CLEARED_STATUSES = new Set(["approved", "scheduled", "ready_to_publish", "published"]);
 
+export type ReviewSortOrder = "newest" | "oldest";
+
 export type ReviewClipGroup = {
   key: string;
   sourceId: string;
@@ -13,7 +15,58 @@ export type ReviewClipGroup = {
   /** Multi-clip batches get header chrome; singles stay flat cards. */
   showHeader: boolean;
   clearedCount: number;
+  /** Latest clip activity timestamp (created/updated) for sorting and display. */
+  activityAt: string | null;
 };
+
+export function clipActivityAt(clip: ClipCandidate): number {
+  const raw = (clip.updated_at || clip.created_at || "").trim();
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+export function groupActivityAt(group: ReviewClipGroup): number {
+  if (!group.clips.length) return 0;
+  return Math.max(...group.clips.map(clipActivityAt));
+}
+
+export function latestClipActivityIso(clips: ClipCandidate[]): string | null {
+  let latest = "";
+  let latestMs = 0;
+  for (const clip of clips) {
+    const raw = (clip.updated_at || clip.created_at || "").trim();
+    const ms = Date.parse(raw);
+    if (!raw || Number.isNaN(ms)) continue;
+    if (ms >= latestMs) {
+      latestMs = ms;
+      latest = raw;
+    }
+  }
+  return latest || null;
+}
+
+export function formatReviewActivityAt(value: string | undefined | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Asia/Jakarta",
+  }).format(date);
+}
+
+export function sortReviewGroups(groups: ReviewClipGroup[], order: ReviewSortOrder): ReviewClipGroup[] {
+  const sorted = [...groups];
+  sorted.sort((left, right) => {
+    const diff = groupActivityAt(right) - groupActivityAt(left);
+    return order === "newest" ? diff : -diff;
+  });
+  return sorted;
+}
 
 function isGroupableSource(clip: ClipCandidate): boolean {
   if (clip.source?.groupable === false) return false;
@@ -67,6 +120,7 @@ export function groupFromClips(clips: ClipCandidate[], sourceId: string): Review
     clips: members,
     showHeader: members.length > 1,
     clearedCount,
+    activityAt: latestClipActivityIso(members),
   };
 }
 
@@ -102,6 +156,7 @@ export function groupReviewClips(clips: ClipCandidate[]): ReviewClipGroup[] {
       clips: members,
       showHeader: members.length > 1,
       clearedCount,
+      activityAt: latestClipActivityIso(members),
     };
   });
 }

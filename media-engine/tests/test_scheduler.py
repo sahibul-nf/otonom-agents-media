@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from media_engine.db import initialize
 from media_engine.schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
-from media_engine.scheduler import list_scheduled_posts, schedule_candidate_next, unschedule_candidate, update_schedule_platforms
+from media_engine.scheduler import list_scheduled_posts, schedule_candidate_next, unschedule_candidate, update_schedule, update_schedule_platforms
 
 
 class SchedulerTests(unittest.TestCase):
@@ -24,8 +24,16 @@ class SchedulerTests(unittest.TestCase):
             "INSERT INTO source_manifests VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
             ("src", "nourbit", "url", "community", "authorized_community", "ok", "[]", 1, "", "[]"),
         )
+        self._uses_postiz = [
+            patch("media_engine.postiz_sync.uses_postiz", return_value=False),
+            patch("media_engine.schedule_publisher.uses_postiz", return_value=False),
+        ]
+        for item in self._uses_postiz:
+            item.start()
 
     def tearDown(self):
+        for item in self._uses_postiz:
+            item.stop()
         self.conn.close()
 
     def add_clip(self, candidate_id="clip", status="approved"):
@@ -55,6 +63,20 @@ class SchedulerTests(unittest.TestCase):
         self.assertIn("2026-05-15T19:30", second["scheduled_at"])
         self.assertIn("2026-05-16T09:00", third["scheduled_at"])
 
+    def test_schedule_next_accepts_custom_datetime(self):
+        tz = ZoneInfo("Asia/Jakarta")
+        self.add_clip()
+        now = datetime(2026, 5, 15, 8, 0, tzinfo=tz)
+        scheduled = schedule_candidate_next(
+            self.conn,
+            "clip",
+            now=now,
+            scheduled_at="2026-05-20T14:45:00+07:00",
+        )
+        self.assertIn("2026-05-20T14:45", scheduled["scheduled_at"])
+        with self.assertRaises(ValueError):
+            schedule_candidate_next(self.conn, "clip", now=now, scheduled_at="2026-05-15T07:00:00+07:00")
+
     def test_only_approved_clips_can_be_scheduled(self):
         self.add_clip(status="rendered")
         with self.assertRaises(ValueError):
@@ -68,6 +90,25 @@ class SchedulerTests(unittest.TestCase):
         row = self.conn.execute("SELECT status FROM clip_candidates WHERE id = 'clip'").fetchone()
         self.assertEqual(row["status"], "approved")
         self.assertEqual(list_scheduled_posts(self.conn), [])
+
+    def test_unschedule_blocks_when_a_destination_is_live(self):
+        self.add_clip()
+        scheduled = schedule_candidate_next(
+            self.conn,
+            "clip",
+            platforms=["facebook_reels"],
+            now=datetime(2026, 5, 15, 8, 0, tzinfo=ZoneInfo("Asia/Jakarta")),
+        )
+        self.conn.execute(
+            "UPDATE scheduled_posts SET platform_results_json = ? WHERE id = ?",
+            (
+                '{"facebook_reels": {"status": "live", "backend": "postiz", "remote_id": "cmtty4e5j0000o57xio46nplv"}}',
+                scheduled["id"],
+            ),
+        )
+        self.conn.commit()
+        with self.assertRaises(ValueError):
+            unschedule_candidate(self.conn, "clip")
 
     def test_update_schedule_platforms_overrides_targets(self):
         self.add_clip("clip")
@@ -83,6 +124,20 @@ class SchedulerTests(unittest.TestCase):
 
         self.assertEqual(updated["platforms"], ["telegram_channel", "tiktok"])
         self.assertEqual(item["platforms"], ["telegram_channel", "tiktok"])
+
+    def test_update_schedule_persists_time(self):
+        self.add_clip("clip")
+        scheduled = schedule_candidate_next(
+            self.conn,
+            "clip",
+            platforms=["telegram_channel"],
+            now=datetime(2026, 5, 15, 8, 0, tzinfo=ZoneInfo("Asia/Jakarta")),
+        )
+        updated = update_schedule(self.conn, scheduled["id"], "2027-05-16T11:15+07:00")
+        item = list_scheduled_posts(self.conn)[0]
+        self.assertIn("2027-05-16T11:15", updated["scheduled_at"])
+        self.assertIn("2027-05-16T11:15", item["scheduled_at"])
+        self.assertEqual(updated["status"], "scheduled")
 
     def test_legacy_permission_attempts_are_archived(self):
         self.add_clip("clip")
@@ -173,7 +228,7 @@ class SchedulerTests(unittest.TestCase):
 
             calls = []
 
-            def fake_publish(platform, payload):
+            def fake_publish(platform, payload, **_kwargs):
                 calls.append(platform)
                 return {"platform": platform, "status": "published", "remote_id": f"{platform}_id"}
 
@@ -212,7 +267,7 @@ class SchedulerTests(unittest.TestCase):
             conn.commit()
             conn.close()
 
-            def fake_publish(platform, payload):
+            def fake_publish(platform, payload, **_kwargs):
                 if platform == "youtube_shorts":
                     from media_engine.live_publishers import LivePublishError
                     raise LivePublishError("youtube down")

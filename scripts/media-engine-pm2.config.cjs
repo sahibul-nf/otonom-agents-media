@@ -31,9 +31,10 @@ module.exports = {
       exec_mode: "fork",
       env: {
         TZ: "Asia/Jakarta",
-        NODE_ENV: "development",
+        NODE_ENV: "production",
         MEDIA_ENGINE_PORT: "8765",
         DASHBOARD_PORT: "3100",
+        DASHBOARD_MODE: "production",
       },
       error_file: "./logs/otonom-media-dashboard-error.log",
       out_file: "./logs/otonom-media-dashboard-out.log",

@@ -32,6 +32,9 @@ ACCOUNT_ENV_KEYS = {
     "TIKTOK_OPEN_ID",
     "YOUTUBE_REFRESH_TOKEN",
     "NOURBIT_YOUTUBE_CHANNEL_ID",
+    "POSTIZ_API_URL",
+    "POSTIZ_API_KEY",
+    "POSTIZ_CHANNEL_MAP",
 }
 
 PLATFORM_ACCOUNT_KEYS: dict[str, list[str]] = {
@@ -232,7 +235,10 @@ def ensure_default_migration(env_file: str | Path | None) -> dict[str, Any]:
 
 
 def credential_status_for_profile(profile_id: str) -> dict[str, Any]:
+    from .postiz_client import connection_status, uses_postiz
+
     profile_id = (profile_id or DEFAULT_MIGRATE_PROFILE).strip() or DEFAULT_MIGRATE_PROFILE
+    channel_map = connection_status(profile_id).get("channels") or {}
     vault = get_profile_secrets(profile_id)
     platforms: dict[str, Any] = {}
     for platform, key_groups in PLATFORM_REQUIRED_GROUPS.items():
@@ -249,14 +255,20 @@ def credential_status_for_profile(profile_id: str) -> dict[str, Any]:
                     break
             if not found:
                 missing.append("/".join(group))
+        postiz_ready = uses_postiz(platform, profile_id)
+        mapped = channel_map.get(platform) or {}
         platforms[platform] = {
-            "ready": not missing,
+            "ready": (not missing) or postiz_ready,
             "required_keys": ["/".join(group) for group in key_groups],
-            "missing_keys": missing,
+            "missing_keys": [] if postiz_ready else missing,
             "profile_id": profile_id,
+            "backend": "postiz" if postiz_ready else "native",
+            "postiz_integration_id": mapped.get("id", ""),
+            "postiz_integration_name": mapped.get("name", ""),
         }
     return {
         "profile_id": profile_id,
+        "postiz": connection_status(profile_id),
         "platforms": platforms,
         "settings": {
             "nourbit_daily_content_cap": os.environ.get("NOURBIT_DAILY_CONTENT_CAP", "2"),

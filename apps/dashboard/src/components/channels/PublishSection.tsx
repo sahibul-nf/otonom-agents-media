@@ -3,7 +3,7 @@
 import {Facebook, HelpCircle, Instagram, Linkedin, Loader2, MoreHorizontal, Send, Wifi, Youtube} from "lucide-react";
 import {type FormEvent, type ReactNode, useState} from "react";
 import {EmptyState} from "@/components/shared/StudioPrimitives";
-import {platformLabel, type CredentialStatus, type PublishAttempt, type PublishTarget} from "@/lib/media-api";
+import {platformLabel, type CredentialStatus, type PostizIntegration, type PublishAttempt, type PublishTarget} from "@/lib/media-api";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 
@@ -54,6 +54,7 @@ function PlatformActionMenu({
   onTestConnection,
   onStartOauth,
   onDisconnect,
+  onMapPostiz,
 }: {
   disabled?: boolean;
   ready: boolean;
@@ -62,6 +63,7 @@ function PlatformActionMenu({
   onTestConnection: (platform: string) => void;
   onStartOauth: (platform: string) => void;
   onDisconnect: (platform: string) => void;
+  onMapPostiz?: () => void;
 }) {
   return (
     <details className="group relative">
@@ -75,6 +77,7 @@ function PlatformActionMenu({
       </summary>
       <div className="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-2xl border border-white/[0.08] bg-surface-panel p-1 shadow-2xl backdrop-blur-xl">
         {ready ? <MenuAction onClick={() => onTestConnection(platform)}>Test connection</MenuAction> : null}
+        {onMapPostiz ? <MenuAction onClick={onMapPostiz}>Map Postiz channel</MenuAction> : null}
         {supportsOauth && ready ? <MenuAction onClick={() => onStartOauth(platform)}>Reconnect account</MenuAction> : null}
         <MenuAction danger onClick={() => onDisconnect(platform)}>
           Disconnect
@@ -263,6 +266,165 @@ function TelegramConnectDialog({
   );
 }
 
+function PostizConnectDialog({
+  open,
+  saving,
+  defaultUrl,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  saving?: boolean;
+  defaultUrl: string;
+  onClose: () => void;
+  onSave: (values: {api_url: string; api_key: string}) => void | Promise<void>;
+}) {
+  const [apiUrl, setApiUrl] = useState(defaultUrl);
+  const [apiKey, setApiKey] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!open) return null;
+
+  const busy = saving || submitting;
+  const canSubmit = Boolean(apiKey.trim()) && !busy;
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!canSubmit) return;
+    setSubmitting(true);
+    try {
+      await onSave({api_url: apiUrl.trim() || defaultUrl, api_key: apiKey.trim()});
+      setApiKey("");
+      onClose();
+    } catch {
+      // Parent surfaces the error.
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="postiz-connect-title">
+      <form onSubmit={handleSubmit} className="w-full max-w-md rounded-[28px] border border-white/[0.10] bg-surface-panel p-6 shadow-2xl">
+        <h3 id="postiz-connect-title" className="text-xl font-semibold text-white">
+          Connect Postiz
+        </h3>
+        <p className="mt-2 text-sm text-zinc-400">
+          Reveal + copy the key from Postiz Settings → Public API. Default host is the API subdomain; Connect also tries{" "}
+          <span className="text-zinc-300">postiz.nourdaily.com/api/public/v1</span>.
+        </p>
+        <label className="mt-5 block text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          API URL
+          <input
+            value={apiUrl}
+            onChange={(event) => setApiUrl(event.target.value)}
+            placeholder={defaultUrl}
+            className="mt-1.5 h-11 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan/40"
+          />
+        </label>
+        <label className="mt-4 block text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          API key
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            autoComplete="off"
+            className="mt-1.5 h-11 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan/40"
+          />
+        </label>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-11 rounded-full px-4 text-xs font-bold uppercase tracking-wider text-zinc-400">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="inline-flex h-11 items-center gap-2 rounded-full bg-cyan px-5 text-xs font-bold uppercase tracking-wider text-ink disabled:opacity-40"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Connect
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function PostizMapDialog({
+  open,
+  platform,
+  saving,
+  integrations,
+  loading,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  platform: string;
+  saving?: boolean;
+  integrations: PostizIntegration[];
+  loading?: boolean;
+  onClose: () => void;
+  onSave: (integration: PostizIntegration | null) => void | Promise<void>;
+}) {
+  const [selected, setSelected] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!open) return null;
+
+  const busy = saving || submitting;
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    const match = integrations.find((item) => item.id === selected) || null;
+    if (!match || busy) return;
+    setSubmitting(true);
+    try {
+      await onSave(match);
+      onClose();
+    } catch {
+      // Parent surfaces the error.
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 px-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <form onSubmit={handleSubmit} className="w-full max-w-md rounded-[28px] border border-white/[0.10] bg-surface-panel p-6 shadow-2xl">
+        <h3 className="text-xl font-semibold text-white">Map {platformLabel(platform)}</h3>
+        <p className="mt-2 text-sm text-zinc-400">Pick the Postiz channel that should receive this destination.</p>
+        <select
+          value={selected}
+          onChange={(event) => setSelected(event.target.value)}
+          disabled={loading || busy}
+          className="mt-5 h-11 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-3 text-sm text-white outline-none focus:border-cyan/40"
+        >
+          <option value="">{loading ? "Loading channels…" : "Select a channel"}</option>
+          {integrations.map((item) => (
+            <option key={item.id} value={item.id} disabled={item.disabled}>
+              {item.name}
+              {item.identifier ? ` · ${item.identifier}` : ""}
+            </option>
+          ))}
+        </select>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-11 rounded-full px-4 text-xs font-bold uppercase tracking-wider text-zinc-400">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!selected || busy}
+            className="h-11 rounded-full bg-cyan px-5 text-xs font-bold uppercase tracking-wider text-ink disabled:opacity-40"
+          >
+            Save map
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export function PublishSection({
   targets,
   credentials,
@@ -275,6 +437,10 @@ export function PublishSection({
   onStartOauth,
   onDisconnect,
   onSaveCredentials,
+  onConnectPostiz,
+  onDisconnectPostiz,
+  onMapPostiz,
+  onLoadPostizIntegrations,
   onUpdateDelivery,
   onRefresh,
   publicAccountLabel,
@@ -294,6 +460,10 @@ export function PublishSection({
   onStartOauth: (platform: string) => void;
   onDisconnect: (platform: string) => void;
   onSaveCredentials?: (platform: string, values: Record<string, string>) => void | Promise<void>;
+  onConnectPostiz?: (values: {api_url: string; api_key: string}) => void | Promise<void>;
+  onDisconnectPostiz?: () => void | Promise<void>;
+  onMapPostiz?: (platform: string, integration: PostizIntegration | null) => void | Promise<void>;
+  onLoadPostizIntegrations?: (platform: string) => Promise<PostizIntegration[]>;
   onUpdateDelivery?: (target: PublishTarget, patch: {daily_cap?: number; enabled?: boolean; mode?: string}) => void;
   onRefresh?: () => void;
   publicAccountLabel: (target: PublishTarget) => string;
@@ -303,6 +473,10 @@ export function PublishSection({
   statusTone: (status: string) => string;
 }) {
   const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
+  const [postizDialogOpen, setPostizDialogOpen] = useState(false);
+  const [mapPlatform, setMapPlatform] = useState("");
+  const [mapIntegrations, setMapIntegrations] = useState<PostizIntegration[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
   const latestByPlatform = new Map<string, PublishAttempt>();
   for (const attempt of attempts) {
     if (!latestByPlatform.has(attempt.platform)) latestByPlatform.set(attempt.platform, attempt);
@@ -311,6 +485,23 @@ export function PublishSection({
   const connectedCount = targets.filter((target) => credentials?.platforms[target.platform]?.ready).length;
   const recentLogs = Array.from(latestByPlatform.values());
   const telegramSaving = actionStates["credentials:telegram_channel"]?.status === "running";
+  const postizSaving = actionStates["postiz:connect"]?.status === "running";
+  const postizConnected = Boolean(credentials?.postiz?.connected);
+  const postizOrigin = credentials?.postiz?.api_origin || "https://api-postiz.nourdaily.com";
+
+  async function openMap(platform: string) {
+    setMapPlatform(platform);
+    setMapIntegrations([]);
+    if (!onLoadPostizIntegrations) return;
+    setMapLoading(true);
+    try {
+      setMapIntegrations(await onLoadPostizIntegrations(platform));
+    } catch {
+      setMapIntegrations([]);
+    } finally {
+      setMapLoading(false);
+    }
+  }
 
   return (
     <section className="grid gap-6 xl:grid-cols-[1fr_360px]">
@@ -319,6 +510,37 @@ export function PublishSection({
           <p className="text-sm text-zinc-400">
             {targets.length === 0 ? "No destinations yet" : `${connectedCount} of ${targets.length} connected`}
           </p>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-white/[0.08] bg-black/20 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">Postiz delivery</p>
+              <p className="mt-1 text-xs text-zinc-400">
+                {postizConnected
+                  ? "Workspace is connected. Map each destination to a Postiz channel."
+                  : "Connect once per workspace. No .env keys — the API key stays in this workspace vault."}
+              </p>
+            </div>
+            {postizConnected ? (
+              <button
+                type="button"
+                onClick={() => onDisconnectPostiz?.()}
+                className="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 hover:text-danger"
+              >
+                Disconnect
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!onConnectPostiz || postizSaving}
+                onClick={() => setPostizDialogOpen(true)}
+                className="inline-flex h-9 items-center rounded-full bg-cyan px-4 text-[10px] font-bold uppercase tracking-wider text-ink"
+              >
+                Connect Postiz
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -340,6 +562,8 @@ export function PublishSection({
             const recovery = publishActionHint(latest?.error);
             const supportsOauth = oauthPlatforms.has(target.platform);
             const isTelegram = target.platform === "telegram_channel";
+            const postizMapped = Boolean(credentials?.platforms[target.platform]?.postiz_integration_id);
+            const showPostizMap = postizConnected && !postizMapped && Boolean(onMapPostiz);
             const activeAction = [
               actionStates[`test:${target.platform}`],
               actionStates[`connect:${target.platform}`],
@@ -395,7 +619,13 @@ export function PublishSection({
                     {ready ? <span className="inline-flex h-2 w-2 rounded-full bg-teal shadow-[0_0_8px_rgba(0,194,183,0.5)] shrink-0" /> : null}
                   </div>
                   <p className="mt-1 text-xs text-zinc-400 font-medium truncate">
-                    {ready ? publicAccountLabel(target) : "Connect to publish from this workspace"}
+                    {postizMapped
+                      ? credentials?.platforms[target.platform]?.postiz_integration_name || "Postiz channel"
+                      : postizConnected
+                        ? "Map a Postiz channel (required to send via Postiz)"
+                        : ready
+                          ? publicAccountLabel(target)
+                          : "Connect to publish from this workspace"}
                   </p>
                 </div>
 
@@ -439,7 +669,17 @@ export function PublishSection({
                 ) : null}
 
                 <div className="mt-4 flex items-center gap-2">
-                  {(supportsOauth || isTelegram) && !ready ? (
+                  {showPostizMap ? (
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => void openMap(target.platform)}
+                      className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-cyan px-4 text-xs font-bold uppercase tracking-wider text-ink shadow-[0_8px_24px_rgba(102,232,249,0.18)] transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Map Postiz channel
+                    </button>
+                  ) : null}
+                  {(supportsOauth || isTelegram) && !ready && !showPostizMap ? (
                     <button
                       type="button"
                       disabled={isBusy || (isTelegram && !onSaveCredentials)}
@@ -484,7 +724,7 @@ export function PublishSection({
                     </button>
                   ) : null}
 
-                  {(ready || supportsOauth || isTelegram) && (
+                  {(ready || supportsOauth || isTelegram || postizConnected) && (
                     <PlatformActionMenu
                       disabled={isBusy}
                       ready={ready}
@@ -493,6 +733,7 @@ export function PublishSection({
                       onTestConnection={onTestConnection}
                       onStartOauth={onStartOauth}
                       onDisconnect={onDisconnect}
+                      onMapPostiz={postizConnected && onMapPostiz ? () => void openMap(target.platform) : undefined}
                     />
                   )}
                 </div>
@@ -535,6 +776,26 @@ export function PublishSection({
           saving={telegramSaving}
           onClose={() => setTelegramDialogOpen(false)}
           onSave={(values) => onSaveCredentials("telegram_channel", values)}
+        />
+      ) : null}
+      {onConnectPostiz ? (
+        <PostizConnectDialog
+          open={postizDialogOpen}
+          saving={postizSaving}
+          defaultUrl={postizOrigin}
+          onClose={() => setPostizDialogOpen(false)}
+          onSave={onConnectPostiz}
+        />
+      ) : null}
+      {onMapPostiz && mapPlatform ? (
+        <PostizMapDialog
+          open={Boolean(mapPlatform)}
+          platform={mapPlatform}
+          saving={actionStates[`postiz-map:${mapPlatform}`]?.status === "running"}
+          integrations={mapIntegrations}
+          loading={mapLoading}
+          onClose={() => setMapPlatform("")}
+          onSave={(integration) => onMapPostiz(mapPlatform, integration)}
         />
       ) : null}
     </section>

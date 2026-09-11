@@ -657,6 +657,17 @@ def publish_live_payload(platform: str, payload: dict[str, Any], profile_id: str
 
 
 def validate_platform_connection(platform: str, profile_id: str | None = None, timeout_seconds: int = 20) -> dict[str, Any]:
+    from .postiz_client import uses_postiz, validate_channel
+
+    if uses_postiz(platform, profile_id):
+        try:
+            return validate_channel(platform, profile_id=profile_id)
+        except Exception as exc:  # noqa: BLE001 - surface as connection test
+            from .postiz_client import PostizError
+
+            if isinstance(exc, PostizError):
+                raise LivePublishError(str(exc)) from exc
+            raise
     with use_profile_credentials(profile_id):
         if platform == "telegram_channel":
             return validate_telegram_connection(timeout_seconds=timeout_seconds)

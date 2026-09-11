@@ -75,6 +75,12 @@ def refresh_due_posts(conn: sqlite3.Connection, now: datetime | None = None) -> 
 
 def list_scheduled_posts(conn: sqlite3.Connection, profile_id: str = "nourbit") -> list[dict]:
     refresh_due_posts(conn)
+    try:
+        from .postiz_sync import reconcile_profile_schedules
+
+        reconcile_profile_schedules(conn, profile_id)
+    except Exception:
+        pass
     rows = conn.execute(
         """
         SELECT s.*, c.title_hook, c.viral_reason, c.start_ms, c.end_ms, c.status AS candidate_status,
@@ -194,6 +200,7 @@ def schedule_candidate_next(
     profile_id: str = "nourbit",
     platforms: list[str] | None = None,
     now: datetime | None = None,
+    scheduled_at: str | None = None,
 ) -> dict:
     candidate = conn.execute("SELECT id, profile_id, status FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
     if not candidate:
@@ -201,9 +208,16 @@ def schedule_candidate_next(
     if candidate["status"] not in {"approved", "scheduled", "ready_to_publish", "pending_auto_schedule"}:
         raise ValueError("only approved clips can be scheduled")
     profile_id = candidate["profile_id"] or profile_id
-    scheduled_at = next_available_slot(conn, profile_id=profile_id, now=now)
+    clock = (now or datetime.now(DEFAULT_TZ)).astimezone(DEFAULT_TZ)
+    if scheduled_at:
+        parsed = _parse_iso(scheduled_at)
+        if parsed <= clock:
+            raise ValueError("scheduled_at must be in the future")
+        scheduled_at_dt = parsed
+    else:
+        scheduled_at_dt = next_available_slot(conn, profile_id=profile_id, now=clock)
     schedule_id = f"sched_{uuid.uuid4().hex[:12]}"
-    platform_list = platforms or enabled_delivery_platforms(conn, profile_id, now=now)
+    platform_list = platforms or enabled_delivery_platforms(conn, profile_id, now=clock)
     if not platform_list:
         raise ValueError("no delivery platforms with remaining daily capacity")
     orientation = candidate_orientation_for_id(conn, candidate_id)
@@ -220,7 +234,7 @@ def schedule_candidate_next(
             schedule_id,
             candidate_id,
             profile_id,
-            _iso(scheduled_at),
+            _iso(scheduled_at_dt),
             "scheduled",
             SCHEDULED_PUBLISH,
             json.dumps(platform_list, ensure_ascii=False),
@@ -228,7 +242,10 @@ def schedule_candidate_next(
     )
     conn.execute("UPDATE clip_candidates SET status = 'scheduled' WHERE id = ?", (candidate_id,))
     conn.commit()
-    return {"id": schedule_id, "candidate_id": candidate_id, "scheduled_at": _iso(scheduled_at), "status": "scheduled"}
+    from .postiz_sync import sync_schedule_to_postiz
+
+    sync_schedule_to_postiz(conn, schedule_id)
+    return {"id": schedule_id, "candidate_id": candidate_id, "scheduled_at": _iso(scheduled_at_dt), "status": "scheduled"}
 
 
 def process_due_auto_schedule(conn: sqlite3.Connection, profile_id: str = "nourbit", now: datetime | None = None) -> list[dict]:
@@ -291,6 +308,9 @@ def update_schedule(conn: sqlite3.Connection, schedule_id: str, scheduled_at: st
     conn.commit()
     if result.rowcount == 0:
         raise ValueError("schedule not found")
+    from .postiz_sync import sync_schedule_to_postiz
+
+    sync_schedule_to_postiz(conn, schedule_id)
     return {"id": schedule_id, "scheduled_at": _iso(parsed), "status": "scheduled"}
 
 
@@ -312,7 +332,7 @@ def update_schedule_platforms(conn: sqlite3.Connection, schedule_id: str, platfo
     result = conn.execute(
         """
         UPDATE scheduled_posts
-        SET platforms_json = ?, platform_results_json = '{}', last_error = '', updated_at = CURRENT_TIMESTAMP
+        SET platforms_json = ?, last_error = '', updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
         (json.dumps(normalized, ensure_ascii=False), schedule_id),
@@ -320,10 +340,26 @@ def update_schedule_platforms(conn: sqlite3.Connection, schedule_id: str, platfo
     conn.commit()
     if result.rowcount == 0:
         raise ValueError("schedule not found")
+    from .postiz_sync import sync_schedule_to_postiz
+
+    sync_schedule_to_postiz(conn, schedule_id)
     return {"id": schedule_id, "platforms": normalized}
 
 
 def unschedule_candidate(conn: sqlite3.Connection, candidate_id: str) -> dict:
+    from .postiz_sync import cancel_postiz_for_candidate
+
+    row = conn.execute("SELECT status, platform_results_json FROM scheduled_posts WHERE candidate_id = ?", (candidate_id,)).fetchone()
+    if row:
+        if str(row["status"] or "") in {"published", "live"}:
+            raise ValueError("cannot unschedule a post that is already live")
+        try:
+            results = json.loads(row["platform_results_json"] or "{}")
+        except json.JSONDecodeError:
+            results = {}
+        if isinstance(results, dict) and any(str((item or {}).get("status") or "").lower() in {"live", "published"} for item in results.values() if isinstance(item, dict)):
+            raise ValueError("cannot unschedule: at least one destination is already live")
+    cancel_postiz_for_candidate(conn, candidate_id)
     result = conn.execute("DELETE FROM scheduled_posts WHERE candidate_id = ?", (candidate_id,))
     conn.execute(
         "UPDATE clip_candidates SET status = 'approved' WHERE id = ? AND status IN ('scheduled', 'ready_to_publish')",

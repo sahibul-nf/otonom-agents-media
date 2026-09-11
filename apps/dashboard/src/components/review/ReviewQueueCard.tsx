@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import {ArrowUpRight, CheckCircle2, Loader2, MoreHorizontal, Pause, Play, Scissors, Trash2, Volume2, VolumeX} from "lucide-react";
+import {ArrowUpRight, Calendar, CheckCircle2, Loader2, MoreHorizontal, Pause, Play, Scissors, Trash2, Volume2, VolumeX} from "lucide-react";
 import {useCallback, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent} from "react";
+import {ScheduleWhenFields} from "@/components/calendar/ScheduleWhenFields";
+import {fromJakartaDatetimeLocal, nextCadenceSlot, toJakartaDatetimeLocal} from "@/components/calendar/schedule-when";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {ReviewCardSelectToggle} from "@/components/review/ReviewCardSelectToggle";
 import {apiPath, canMakeShortsFromClip, canQuickApproveClip, clipAutonomyThreshold, clipHygieneFlags, clipHygieneGate, clipHygieneLabel, clipHygieneTone, clipMeetsAutonomyThreshold, clipOverallScore, type ClipCandidate, formatDuration, isClipRerendering, isExplainerClip} from "@/lib/media-api";
 import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
+import {formatReviewActivityAt} from "@/lib/review-groups";
 
 function readinessLabel(clip: ClipCandidate) {
   if (clip.status === "held") return "Captions unusable";
@@ -30,20 +33,24 @@ export function ReviewQueueCard({
   onDelete,
   onMakeShorts,
   onApprove,
+  onSchedule,
   selectable = false,
   selectionMode = false,
   selected = false,
   onToggleSelect,
   approving = false,
+  scheduling = false,
 }: {
   clip: ClipCandidate;
   statusTone: (status: string) => string;
   deleting?: boolean;
   approving?: boolean;
+  scheduling?: boolean;
   editHref?: string;
   onDelete?: (clip: ClipCandidate) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
   onApprove?: (clip: ClipCandidate) => void;
+  onSchedule?: (clip: ClipCandidate, scheduledAt: string) => void;
   selectable?: boolean;
   selectionMode?: boolean;
   selected?: boolean;
@@ -55,6 +62,7 @@ export function ReviewQueueCard({
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [when, setWhen] = useState(() => toJakartaDatetimeLocal(nextCadenceSlot()));
   const output = clip.output_path || clip.render_quality?.output_path;
   const source = output ? apiPath(`artifact?path=${encodeURIComponent(output)}`) : null;
   const duration = clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms;
@@ -68,6 +76,9 @@ export function ReviewQueueCard({
   const hygieneGate = clipHygieneGate(clip);
   const hygieneFlags = clipHygieneFlags(clip);
   const canApprove = Boolean(onApprove && canQuickApproveClip(clip));
+  const canSchedule = Boolean(onSchedule && clip.status === "approved" && !rerendering);
+  const menuBusy = deleting || approving || scheduling;
+  const activityLabel = formatReviewActivityAt(clip.updated_at || clip.created_at);
 
   const pauseThisPreview = useCallback(() => {
     const video = videoRef.current;
@@ -200,11 +211,11 @@ export function ReviewQueueCard({
             <ReviewCardSelectToggle selected={selected} onToggle={onToggleSelect!} label={clip.title_hook} />
           </div>
         ) : null}
-        {(onDelete || onApprove) && !selectionMode ? (
+        {(onDelete || onApprove || onSchedule) && !selectionMode ? (
           <div className="absolute right-2.5 top-2.5 z-[5]" ref={menuRef}>
             <button
               type="button"
-              disabled={deleting || approving}
+              disabled={menuBusy}
               onClick={(event) => {
                 event.stopPropagation();
                 setMenuOpen((open) => !open);
@@ -214,19 +225,19 @@ export function ReviewQueueCard({
               aria-expanded={menuOpen}
               aria-controls={menuId}
             >
-              {deleting || approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
+              {menuBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreHorizontal className="h-3.5 w-3.5" />}
             </button>
             {menuOpen ? (
               <div
                 id={menuId}
                 role="menu"
-                className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl"
+                className="absolute right-0 top-10 z-50 w-72 overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl"
               >
                 {canApprove ? (
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={deleting || approving || rerendering}
+                    disabled={menuBusy || rerendering}
                     onClick={(event) => {
                       event.stopPropagation();
                       setMenuOpen(false);
@@ -242,7 +253,7 @@ export function ReviewQueueCard({
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={deleting || approving}
+                    disabled={menuBusy}
                     onClick={(event) => {
                       event.stopPropagation();
                       setMenuOpen(false);
@@ -254,11 +265,33 @@ export function ReviewQueueCard({
                     Make shorts
                   </button>
                 ) : null}
+                {canSchedule ? (
+                  <div className="rounded-xl border border-white/[0.06] bg-black/25 p-2">
+                    <p className="mb-2 inline-flex items-center gap-1.5 px-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                      <Calendar className="h-3 w-3 text-cyan" />
+                      Schedule
+                    </p>
+                    <ScheduleWhenFields value={when} onChange={setWhen} disabled={scheduling} showCommit={false} />
+                    <button
+                      type="button"
+                      disabled={scheduling || !when}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSchedule?.(clip, fromJakartaDatetimeLocal(when));
+                        setMenuOpen(false);
+                      }}
+                      className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-full bg-cyan px-3 text-[10px] font-bold uppercase tracking-wider text-ink disabled:opacity-40"
+                    >
+                      {scheduling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Calendar className="h-3.5 w-3.5" />}
+                      Schedule
+                    </button>
+                  </div>
+                ) : null}
                 {onDelete ? (
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={deleting || approving}
+                    disabled={menuBusy}
                     onClick={(event) => {
                       event.stopPropagation();
                       setMenuOpen(false);
@@ -300,6 +333,7 @@ export function ReviewQueueCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-white">{clip.title_hook}</h3>
+            {activityLabel ? <p className="mt-1 text-[11px] text-zinc-500">{activityLabel}</p> : null}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {rerendering ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-cyan/[0.35] bg-cyan/[0.12] px-2.5 py-1 text-[10px] font-semibold text-cyan">

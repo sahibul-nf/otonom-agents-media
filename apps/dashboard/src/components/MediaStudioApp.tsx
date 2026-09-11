@@ -40,6 +40,7 @@ import {
   BrandTemplate,
   ClipCandidate,
   CredentialStatus,
+  PostizIntegration,
   DEFAULT_SHELL_COMPONENTS,
   isTemplateOnlyBrand,
   TEMPLATE_ONLY_BRAND,
@@ -117,12 +118,22 @@ function cleanPublishStatus(status?: string) {
   const labels: Record<string, string> = {
     ready: "Ready",
     published: "Posted",
-    failed: "Retry needed",
+    live: "Live",
+    accepted: "Sent to Postiz",
+    failed: "Postiz error",
     blocked: "Needs action",
     legacy_blocked: "Outdated",
     skipped: "Already posted (verified)",
     publishing: "Publishing",
     pending: "Waiting",
+    queued: "On Postiz calendar",
+    cooldown: "Cooling down",
+    blocked: "Needs action",
+    legacy_blocked: "Outdated",
+    skipped: "Already posted (verified)",
+    publishing: "Publishing",
+    pending: "Waiting",
+    queued: "On Postiz calendar",
     cooldown: "Cooling down",
   };
   return labels[status] || status.replaceAll("_", " ");
@@ -149,11 +160,15 @@ function formatClipStatus(status?: string) {
     held: "Held",
     pending_auto_schedule: "Auto queue",
     published: "Published",
+    accepted: "Sent to Postiz",
+    live: "Live",
+    queued: "On Postiz calendar",
     ready: "Ready",
     ready_to_publish: "Ready to publish",
     rendered: "Rendered",
     running: "Running",
     scheduled: "Scheduled",
+    partial_failed: "Partially published",
   };
   return labels[status] || status.replaceAll("_", " ");
 }
@@ -308,9 +323,9 @@ function renderEditorialTitle(title: string) {
 }
 
 function statusTone(status: string) {
-  if (["approved", "published", "ready", "rendered", "scheduled", "ready_to_publish", "completed", "pending_auto_schedule"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
-  if (["running", "queued", "starting", "triggering", "polling", "ingesting", "rendering", "planned"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
-  if (["failed", "rejected"].includes(status)) return "text-danger border-danger/[0.30] bg-danger/[0.10]";
+  if (["approved", "published", "live", "ready", "rendered", "scheduled", "ready_to_publish", "completed", "pending_auto_schedule"].includes(status)) return "text-teal border-teal/[0.30] bg-teal/[0.10]";
+  if (["running", "queued", "accepted", "starting", "triggering", "polling", "ingesting", "rendering", "planned"].includes(status)) return "text-cyan border-cyan/[0.30] bg-teal/[0.10]";
+  if (["failed", "rejected", "partial_failed"].includes(status)) return "text-danger border-danger/[0.30] bg-danger/[0.10]";
   if (["held"].includes(status)) return "text-warning border-warning/[0.30] bg-warning/[0.10]";
   if (["cooldown"].includes(status)) return "text-zinc-300 border-white/[0.14] bg-white/[0.04]";
   return "text-warning border-warning/[0.30] bg-warning/[0.10]";
@@ -1030,7 +1045,7 @@ export function MediaStudioApp() {
     }
   }
 
-  async function scheduleNext(id: string) {
+  async function scheduleNext(id: string, scheduledAt?: string) {
     const key = `clip:${id}:schedule`;
     const clip = clips.find((item) => item.id === id);
     const platforms = filterPlatformsForClip(publishSelection, clip);
@@ -1040,8 +1055,13 @@ export function MediaStudioApp() {
       return;
     }
     try {
-      await runAction(key, "Scheduling next slot...", () => apiPost("schedule-next", {candidate_id: id, platforms}), "Clip scheduled");
-      setStatus("Clip scheduled in next open slot");
+      await runAction(
+        key,
+        "Scheduling...",
+        () => apiPost("schedule-next", {candidate_id: id, platforms, ...(scheduledAt ? {scheduled_at: scheduledAt} : {})}),
+        "Clip scheduled",
+      );
+      setStatus(scheduledAt ? "Clip scheduled" : "Clip scheduled in next open slot");
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Schedule failed");
@@ -1056,6 +1076,28 @@ export function MediaStudioApp() {
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Platform update failed");
+    }
+  }
+
+  async function updateScheduleTime(scheduleId: string, scheduledAt: string) {
+    const key = `schedule:${scheduleId}:time`;
+    try {
+      await runAction(key, "Updating schedule time...", () => apiPost("schedule-update", {schedule_id: scheduleId, scheduled_at: scheduledAt}), "Schedule time updated");
+      setStatus("Schedule time updated");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Schedule update failed");
+    }
+  }
+
+  async function publishNow(scheduleId: string) {
+    const key = `schedule:${scheduleId}:publish-now`;
+    try {
+      await runAction(key, "Sending to Postiz...", () => apiPost("publish-now", {schedule_id: scheduleId, profile_id: profileId}), "Sent to Postiz");
+      setStatus("Accepted by Postiz — not live until each platform delivers");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Publish now failed");
     }
   }
 
@@ -1356,6 +1398,64 @@ export function MediaStudioApp() {
     }
   }
 
+  async function connectPostiz(values: {api_url: string; api_key: string}) {
+    try {
+      await runAction(
+        "postiz:connect",
+        "Connecting Postiz...",
+        () => apiPost("postiz-connect", {profile_id: profileId, ...values}),
+        "Postiz connected",
+      );
+      setStatus("Postiz connected");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Postiz connect failed");
+      throw error;
+    }
+  }
+
+  async function disconnectPostiz() {
+    try {
+      await runAction("postiz:disconnect", "Disconnecting Postiz...", () => apiPost("postiz-disconnect", {profile_id: profileId}), "Postiz disconnected");
+      setStatus("Postiz disconnected");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Postiz disconnect failed");
+    }
+  }
+
+  async function mapPostizChannel(platform: string, integration: PostizIntegration | null) {
+    try {
+      await runAction(
+        `postiz-map:${platform}`,
+        `Mapping ${platformLabel(platform)}...`,
+        () => apiPost("postiz-map", {profile_id: profileId, platform, integration}),
+        `${platformLabel(platform)} mapped`,
+      );
+      setStatus(`${platformLabel(platform)} mapped to Postiz`);
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Postiz map failed");
+      throw error;
+    }
+  }
+
+  async function loadPostizIntegrations(platform: string): Promise<PostizIntegration[]> {
+    const result = await apiGet<{integrations: PostizIntegration[]}>(`postiz-integrations?profile_id=${encodeURIComponent(profileId)}`);
+    const items = result.integrations || [];
+    const aliases: Record<string, string[]> = {
+      youtube_shorts: ["youtube"],
+      youtube_video: ["youtube"],
+      facebook_reels: ["facebook"],
+      tiktok: ["tiktok"],
+      telegram_channel: ["telegram"],
+      instagram_reels: ["instagram"],
+    };
+    const wanted = new Set(aliases[platform] || []);
+    const matched = items.filter((item) => wanted.has(String(item.identifier || "").toLowerCase()));
+    return matched.length ? matched : items;
+  }
+
   async function startOauthConnect(platform: string) {
     const key = `connect:${platform}`;
     try {
@@ -1496,6 +1596,14 @@ export function MediaStudioApp() {
     }, 3500);
     return () => window.clearInterval(timer);
   }, [hasActiveRerender]);
+
+  useEffect(() => {
+    if (section !== "calendar") return;
+    const timer = window.setInterval(() => {
+      void refreshAll();
+    }, 45000);
+    return () => window.clearInterval(timer);
+  }, [section]);
 
   const focusedWorkflow = section !== "dashboard";
 
@@ -1775,6 +1883,7 @@ export function MediaStudioApp() {
               onApproveSelected={approveSelectedClips}
               onRerenderSelected={rerenderSelectedClips}
               onMakeShorts={makeShortsFromClip}
+              onScheduleClip={(clip, scheduledAt) => void scheduleNext(clip.id, scheduledAt)}
             />
           )}
 
@@ -1785,10 +1894,14 @@ export function MediaStudioApp() {
               targets={activeTargets}
               selectedPlatforms={publishSelection}
               actionStates={actionStates}
+              credentials={credentials}
+              showRecoveryTools={typeof window !== "undefined" && new URLSearchParams(window.location.search).get("ops") === "1"}
               onToggleDefaultPlatform={togglePublishSelection}
               onSchedule={scheduleNext}
               onUnschedule={unscheduleClip}
               onUpdateSchedulePlatforms={updateSchedulePlatforms}
+              onUpdateScheduleTime={updateScheduleTime}
+              onPublishNow={publishNow}
               onPublishDue={() => publishDueNow(false)}
               onDryRunDue={() => publishDueNow(true)}
               formatSchedule={formatSchedule}
@@ -1813,6 +1926,10 @@ export function MediaStudioApp() {
               onStartOauth={startOauthConnect}
               onDisconnect={disconnectPlatform}
               onSaveCredentials={saveConnectionCredentials}
+              onConnectPostiz={connectPostiz}
+              onDisconnectPostiz={disconnectPostiz}
+              onMapPostiz={mapPostizChannel}
+              onLoadPostizIntegrations={loadPostizIntegrations}
               onUpdateDelivery={updateDeliverySettings}
               onRefresh={() => void refreshAll()}
               oauthPlatforms={oauthPlatforms}

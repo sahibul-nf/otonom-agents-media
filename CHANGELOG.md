@@ -2,7 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- Schedule queue polls Postiz every 45s while the Schedule tab is open; Unschedule is blocked once any destination is live so a Facebook timeout cannot cancel a live YouTube post.
+- Schedule/Postiz: reconcile treats Postiz posts with a `releaseURL` as live even when workflow `state` is still `ERROR` (common for Facebook Reels after Meta accepts the upload but Postiz times out).
+- Schedule/Postiz: reconcile now calls `GET /posts` with required `startDate`/`endDate` (was empty without them), polls live state, and marks parent `published` when Postiz-backed destinations are live even if native Telegram/TikTok are still `pending`.
+- Schedule/Postiz: loading Calendar polls Postiz post list and only marks a platform `live` (parent `published` when every routed dest is live) when Postiz says published; QUEUE still held in Otonom; false greens roll back.
+- Postiz sync keeps an existing calendar post when the slot is unchanged (on/off other accounts); stores Postiz post ids (cuid) instead of upload UUIDs so time edits can DELETE the old post instead of leaving a duplicate.
+
 ### Added
+- Review grid: each batch/single card shows Jakarta activity datetime; default sort is newest first with a Newest/Oldest toggle.
+- Waiting pool and Review card ⋯ menu: pick a custom datetime (or Next 09:00 / Next 19:30) before the first schedule.
+- Schedule queue cards: edit slot time (09:00 / 19:30 shortcuts), per-item **Publish now**, optional destination chips, and Postiz `type: schedule` calendar mirror so mapped channels appear before air time. Due-worker skips platforms already on Postiz (#93).
 - Create clips: YouTube transcript **pre-flight** on source resolve (CC available / missing / disabled badge), humanized errors when captions are absent, and **Transcribe from audio** curation fallback via Whisper when YouTube has no subtitles (#90).
 - Contextual Caption AI Polish: multi-word niche phrase glossary, LLM semantic reconstruction with timestamp re-alignment, and one-click **AI Polish** in the Review Editor for short clips.
 - `POST /api/caption-polish` endpoint to run glossary + LLM caption cleanup on existing clip captions.

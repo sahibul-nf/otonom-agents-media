@@ -1,11 +1,11 @@
 "use client";
 
-import {AlertTriangle} from "lucide-react";
+import {AlertTriangle, ArrowDownUp} from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
 import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewSourceGroup} from "@/components/review/ReviewSourceGroup";
 import type {ClipCandidate} from "@/lib/media-api";
-import {groupReviewClips} from "@/lib/review-groups";
+import {groupReviewClips, sortReviewGroups, type ReviewSortOrder} from "@/lib/review-groups";
 import {useReviewSelection} from "@/lib/use-review-selection";
 
 type ReviewFilter = {
@@ -34,6 +34,7 @@ export type ReviewStudioSectionProps = {
   onApproveSelected?: (candidateIds: string[]) => void;
   onRerenderSelected?: (candidateIds: string[]) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
+  onScheduleClip?: (clip: ClipCandidate, scheduledAt: string) => void;
 };
 
 export function ReviewStudioSection({
@@ -52,6 +53,7 @@ export function ReviewStudioSection({
   onApproveSelected,
   onRerenderSelected,
   onMakeShorts,
+  onScheduleClip,
   statusTone,
 }: ReviewStudioSectionProps) {
   const clearState = actionStates["queue:clear"];
@@ -59,7 +61,8 @@ export function ReviewStudioSection({
   const batchRerenderState = actionStates["review:batch-rerender"];
   const batchApproveState = actionStates["review:batch-approve"];
   const [selectionMode, setSelectionMode] = useState(false);
-  const groups = useMemo(() => groupReviewClips(clips), [clips]);
+  const [sortOrder, setSortOrder] = useState<ReviewSortOrder>("newest");
+  const groups = useMemo(() => sortReviewGroups(groupReviewClips(clips), sortOrder), [clips, sortOrder]);
   const batchCount = groups.filter((group) => group.showHeader).length;
   const selectableIds = useMemo(
     () => groups.filter((group) => !group.showHeader).flatMap((group) => group.clips.map((clip) => clip.id)),
@@ -100,6 +103,15 @@ export function ReviewStudioSection({
               {item.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setSortOrder((order) => (order === "newest" ? "oldest" : "newest"))}
+            title={sortOrder === "newest" ? "Showing newest first — click for oldest first" : "Showing oldest first — click for newest first"}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-surface px-3 text-xs font-semibold text-zinc-400 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan"
+          >
+            <ArrowDownUp className="h-3.5 w-3.5" />
+            {sortOrder === "newest" ? "Newest" : "Oldest"}
+          </button>
           {!selectionMode ? (
             <ReviewSelectionChrome
               active={false}
@@ -144,6 +156,7 @@ export function ReviewStudioSection({
                 onDelete={onDeleteClip}
                 onApprove={onApproveClip}
                 onMakeShorts={onMakeShorts}
+                onSchedule={onScheduleClip}
                 selectableIds={selectableSet}
                 selectedIds={selection.selectedIds}
                 selectionMode={selectionMode}

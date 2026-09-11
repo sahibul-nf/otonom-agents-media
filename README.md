@@ -51,7 +51,13 @@ Open `http://127.0.0.1:3100`. The dashboard proxies local engine calls through `
 
 ## PM2 Auto-Restart
 
-For Mac Mini uptime, you can run the stack under PM2 so it comes back after reboot or power loss:
+For Mac Mini uptime, run generate + Review + due-publish **natively under PM2**. Postiz stays in Docker/cloud for OAuth delivery. Full topology, worktree, and Postiz env: [`docs/local-ops.md`](docs/local-ops.md).
+
+Do **not** run `npm run dev` in the ops checkout while PM2 is live — it steals `:8765` / `:3100`. Use `npm run dev:isolated` in a git worktree instead.
+
+First dashboard production start needs a build (`cd apps/dashboard && npm run build`); PM2 then uses `next start`. `npm run pm2:restart` / `pm2:stop` include the publisher worker.
+
+Start (or restore after reboot):
 
 ```bash
 cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media"

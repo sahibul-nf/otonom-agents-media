@@ -42,6 +42,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   const [batchRerendering, setBatchRerendering] = useState(false);
   const [batchApproving, setBatchApproving] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [schedulingId, setSchedulingId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [error, setError] = useState("");
 
@@ -95,6 +96,19 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
         approved.has(item.id) ? {...item, status: "approved", review_deadline_at: ""} : item,
       ),
     );
+  }
+
+  async function scheduleClip(clip: ClipCandidate, scheduledAt: string) {
+    if (clip.status !== "approved") return;
+    setSchedulingId(clip.id);
+    try {
+      await apiPost("schedule-next", {candidate_id: clip.id, scheduled_at: scheduledAt});
+      await refresh();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Schedule failed");
+    } finally {
+      setSchedulingId(null);
+    }
   }
 
   async function approveClip(clip: ClipCandidate) {
@@ -304,8 +318,10 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
             editHref={reviewEditorHref(only.id, sourceId)}
             deleting={deletingId === only.id}
             approving={approvingId === only.id}
+            scheduling={schedulingId === only.id}
             onDelete={deleteClip}
             onApprove={approveClip}
+            onSchedule={scheduleClip}
           />
         </div>
       </main>
@@ -409,6 +425,8 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               approving={approvingId === clip.id}
               onDelete={deleteClip}
               onApprove={approveClip}
+              onSchedule={scheduleClip}
+              scheduling={schedulingId === clip.id}
               selectable
               selectionMode={selectionMode}
               selected={selection.isSelected(clip.id)}

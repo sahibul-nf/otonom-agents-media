@@ -15,6 +15,7 @@ from typing import Any
 from .db import DEFAULT_DB, connect, fetch_one, initialize
 from .env_loader import load_env_file
 from .live_publishers import LivePublishError, publish_live_payload, verify_published_remote
+from .postiz_client import POSTIZ_LIVE_STATUSES, PostizError, on_postiz_calendar, publish_video as publish_postiz_video, uses_postiz
 from .publishers import build_payload, create_dry_run_attempt
 from .rights import can_publish_candidate
 from .scheduler import DEFAULT_TZ, _iso, refresh_due_posts
@@ -47,7 +48,7 @@ def already_published(conn, candidate_id: str, platform: str) -> bool:
         FROM publish_attempts
         WHERE candidate_id = ?
           AND platform = ?
-          AND status = 'published'
+          AND status IN ('published', 'live')
         ORDER BY created_at DESC, id DESC
         LIMIT 1
         """,
@@ -58,7 +59,62 @@ def already_published(conn, candidate_id: str, platform: str) -> bool:
     payload = _loads(row["payload_json"], {}) if isinstance(row["payload_json"], str) else {}
     live = payload.get("live_result") if isinstance(payload, dict) else {}
     remote_id = str((live or {}).get("remote_id") or "")
+    if str((live or {}).get("backend") or "") == "postiz":
+        status = str((live or {}).get("status") or "")
+        return bool(remote_id) and status in POSTIZ_LIVE_STATUSES
     return verify_published_remote(platform, remote_id)
+
+
+LIVE_PUBLISH_STATUSES = POSTIZ_LIVE_STATUSES
+FAILED_PUBLISH_STATUSES = {"failed", "blocked"}
+HELD_PUBLISH_STATUSES = {"queued", "scheduled", "accepted", "skipped", "cooldown"}
+
+
+def _rollup_delivery_statuses(platforms: list[str], results: dict[str, Any]) -> list[str]:
+    statuses: list[str] = []
+    for platform in platforms:
+        result = results.get(platform) if isinstance(results.get(platform), dict) else {}
+        status = str((result or {}).get("status") or "").lower()
+        if (
+            status == "pending"
+            and not str((result or {}).get("backend") or "").strip()
+            and not str((result or {}).get("attempt_id") or "").strip()
+            and not str((result or {}).get("remote_id") or "").strip()
+        ):
+            continue
+        statuses.append(status)
+    return statuses
+
+
+def rollup_schedule_status(
+    platforms: list[str],
+    results: dict[str, Any],
+    *,
+    dry_run: bool = False,
+    fallback: str = "scheduled",
+) -> str:
+    if dry_run:
+        return fallback
+    if not platforms:
+        return "failed"
+    statuses = _rollup_delivery_statuses(platforms, results)
+    if not statuses:
+        return fallback
+    if all(status in LIVE_PUBLISH_STATUSES for status in statuses):
+        return "published"
+    failed = [status for status in statuses if status in FAILED_PUBLISH_STATUSES]
+    live = [status for status in statuses if status in LIVE_PUBLISH_STATUSES]
+    if failed and live:
+        return "partial_failed"
+    if failed:
+        if all(status in FAILED_PUBLISH_STATUSES for status in statuses):
+            return "failed"
+        return "partial_failed"
+    if any(status == "accepted" for status in statuses):
+        return "accepted"
+    if all(status in HELD_PUBLISH_STATUSES or status == "" for status in statuses):
+        return "scheduled"
+    return "scheduled"
 
 
 def in_retry_backoff(conn, candidate_id: str, platform: str, minutes: int = 10) -> bool:
@@ -167,6 +223,8 @@ def publish_candidate_platform(
     target: dict[str, Any],
     render_job: dict[str, Any] | None,
     dry_run: bool = False,
+    post_type: str = "now",
+    date_iso: str | None = None,
 ) -> dict[str, Any]:
     platform = target["platform"]
     if already_published(conn, candidate["id"], platform):
@@ -193,21 +251,32 @@ def publish_candidate_platform(
         return {"platform": platform, "status": attempt["status"], "attempt_id": attempt["id"], "payload": payload, "error": attempt["error"]}
 
     try:
-        result = publish_live_payload(platform, payload, profile_id=str(candidate.get("profile_id") or target.get("profile_id") or "").strip() or None)
-    except LivePublishError as exc:
+        profile_id = str(candidate.get("profile_id") or target.get("profile_id") or "").strip() or None
+        if uses_postiz(platform, profile_id):
+            result = publish_postiz_video(
+                platform,
+                payload,
+                profile_id=profile_id,
+                post_type=post_type,
+                date_iso=date_iso,
+            )
+        else:
+            result = publish_live_payload(platform, payload, profile_id=profile_id)
+    except (LivePublishError, PostizError) as exc:
         attempt = record_publish_attempt(conn, candidate["id"], platform, target["mode"], "failed", payload, str(exc))
         return {"platform": platform, "status": "failed", "error": str(exc), "attempt_id": attempt["id"]}
 
+    attempt_status = "published" if str(result.get("status") or "published") == "published" else str(result.get("status") or "queued")
     attempt = record_publish_attempt(
         conn,
         candidate["id"],
         platform,
         target["mode"],
-        "published",
+        attempt_status,
         {**payload, "live_result": result},
         "",
     )
-    return {"platform": platform, "status": "published", "attempt_id": attempt["id"], **result}
+    return {"platform": platform, "status": attempt_status, "attempt_id": attempt["id"], **result}
 
 
 def process_due_publishes(
@@ -226,6 +295,12 @@ def process_due_publishes(
     archive_legacy_permission_attempts(conn)
     now = (now or datetime.now(DEFAULT_TZ)).astimezone(DEFAULT_TZ)
     refresh_due_posts(conn, now=now)
+    try:
+        from .postiz_sync import reconcile_profile_schedules
+
+        reconcile_profile_schedules(conn, profile_id)
+    except Exception:
+        pass
     rows = conn.execute(
         """
         SELECT * FROM scheduled_posts
@@ -264,6 +339,17 @@ def process_due_publishes(
                 "SELECT * FROM publish_targets WHERE profile_id = ? AND platform = ?",
                 (candidate["profile_id"], platform),
             )
+            previous = existing_results.get(platform) if isinstance(existing_results.get(platform), dict) else {}
+            if on_postiz_calendar(previous) and not dry_run:
+                if str(previous.get("status") or "") in POSTIZ_LIVE_STATUSES:
+                    platform_results[platform] = {**previous, "platform": platform}
+                    continue
+                platform_results[platform] = {
+                    **previous,
+                    "platform": platform,
+                    "reason": "already on Postiz calendar",
+                }
+                continue
             if not source or not target:
                 platform_results[platform] = {"platform": platform, "status": "failed", "error": "source or publish target not found"}
                 continue
@@ -275,17 +361,12 @@ def process_due_publishes(
                 render_job,
                 dry_run=dry_run,
             )
-        statuses = [result.get("status") for result in platform_results.values()]
-        published_count = sum(1 for status in statuses if status in {"published", "skipped"})
-        failed_count = sum(1 for status in statuses if status in {"failed", "blocked"})
-        if dry_run:
-            final_status = "ready_to_publish"
-        elif published_count == len(platforms) and platforms:
-            final_status = "published"
-        elif published_count > 0 and failed_count > 0:
-            final_status = "partial_failed"
-        else:
-            final_status = "failed"
+        final_status = rollup_schedule_status(
+            platforms,
+            platform_results,
+            dry_run=dry_run,
+            fallback="ready_to_publish",
+        )
         last_error = "; ".join(
             str(result.get("error") or result.get("reason") or "")
             for result in platform_results.values()
@@ -304,6 +385,8 @@ def process_due_publishes(
             conn.execute("UPDATE clip_candidates SET status = 'published' WHERE id = ?", (candidate["id"],))
         elif final_status in {"partial_failed", "failed"}:
             conn.execute("UPDATE clip_candidates SET status = 'ready_to_publish' WHERE id = ?", (candidate["id"],))
+        else:
+            conn.execute("UPDATE clip_candidates SET status = 'scheduled' WHERE id = ?", (candidate["id"],))
         conn.commit()
         item = {
             "schedule_id": schedule["id"],
@@ -322,4 +405,97 @@ def process_due_publishes(
         "dry_run": dry_run,
         "count": len(processed),
         "processed": processed,
+    }
+
+
+def publish_schedule_now(
+    db_path: str | Path = DEFAULT_DB,
+    schedule_id: str = "",
+    candidate_id: str = "",
+    profile_id: str = "",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    from .postiz_sync import cancel_postiz_results
+
+    conn = connect(db_path)
+    initialize(conn)
+    if schedule_id:
+        row = fetch_one(conn, "SELECT * FROM scheduled_posts WHERE id = ?", (schedule_id,))
+    elif candidate_id:
+        row = fetch_one(conn, "SELECT * FROM scheduled_posts WHERE candidate_id = ?", (candidate_id,))
+    else:
+        conn.close()
+        raise ValueError("schedule_id or candidate_id is required")
+    if not row:
+        conn.close()
+        raise ValueError("schedule not found")
+    schedule = dict(row)
+    candidate = fetch_one(conn, "SELECT * FROM clip_candidates WHERE id = ?", (schedule["candidate_id"],))
+    if not candidate:
+        conn.close()
+        raise ValueError("candidate not found")
+    candidate = dict(candidate)
+    resolved_profile = str(schedule.get("profile_id") or candidate.get("profile_id") or profile_id or "").strip()
+    if not resolved_profile:
+        conn.close()
+        raise ValueError("profile_id is required")
+    source = fetch_one(conn, "SELECT * FROM source_manifests WHERE id = ?", (candidate["source_id"],))
+    render_job = latest_render_job(conn, candidate["id"])
+    platforms = _loads(schedule.get("platforms_json"), []) or []
+    existing = _loads(schedule.get("platform_results_json"), {}) or {}
+    platform_results: dict[str, Any] = {}
+    for platform in platforms:
+        previous = existing.get(platform) if isinstance(existing.get(platform), dict) else {}
+        if on_postiz_calendar(previous) and not dry_run:
+            cancel_postiz_results({platform: previous}, resolved_profile)
+        target = fetch_one(
+            conn,
+            "SELECT * FROM publish_targets WHERE profile_id = ? AND platform = ?",
+            (resolved_profile, platform),
+        )
+        if not source or not target:
+            platform_results[platform] = {"platform": platform, "status": "failed", "error": "source or publish target not found"}
+            continue
+        platform_results[platform] = publish_candidate_platform(
+            conn,
+            candidate,
+            dict(source),
+            dict(target),
+            render_job,
+            dry_run=dry_run,
+            post_type="now",
+        )
+    final_status = rollup_schedule_status(
+        platforms,
+        platform_results,
+        dry_run=dry_run,
+        fallback=str(schedule.get("status") or "scheduled"),
+    )
+    last_error = "; ".join(
+        str(result.get("error") or result.get("reason") or "")
+        for result in platform_results.values()
+        if result.get("status") in {"failed", "blocked"} and (result.get("error") or result.get("reason"))
+    )
+    published_at = _iso(datetime.now(DEFAULT_TZ)) if final_status == "published" else ""
+    conn.execute(
+        """
+        UPDATE scheduled_posts
+        SET status = ?, platform_results_json = ?, published_at = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (final_status, json.dumps(platform_results, ensure_ascii=False), published_at, last_error, schedule["id"]),
+    )
+    if final_status == "published":
+        conn.execute("UPDATE clip_candidates SET status = 'published' WHERE id = ?", (candidate["id"],))
+    elif final_status in {"accepted", "scheduled"}:
+        conn.execute("UPDATE clip_candidates SET status = 'scheduled' WHERE id = ?", (candidate["id"],))
+    conn.commit()
+    conn.close()
+    return {
+        "status": "ok",
+        "schedule_id": schedule["id"],
+        "candidate_id": candidate["id"],
+        "final_status": final_status,
+        "platform_results": platform_results,
+        "last_error": last_error,
     }

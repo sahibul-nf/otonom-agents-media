@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -11,8 +12,10 @@ from .duration_presets import resolve_duration_preset
 from .hyperframes_templates import normalize_hyperframes_template
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DB = ROOT / "data" / "media_engine.sqlite"
-ARTIFACTS_DIR = ROOT / "artifacts"
+_db_override = (os.environ.get("MEDIA_ENGINE_DB") or "").strip()
+DEFAULT_DB = Path(_db_override).expanduser() if _db_override else ROOT / "data" / "media_engine.sqlite"
+_artifacts_override = (os.environ.get("MEDIA_ENGINE_ARTIFACTS") or "").strip()
+ARTIFACTS_DIR = Path(_artifacts_override).expanduser() if _artifacts_override else ROOT / "artifacts"
 
 
 SCHEMA = """

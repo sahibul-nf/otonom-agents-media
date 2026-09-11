@@ -62,7 +62,7 @@ from .oauth_flow import OAuthFlowError, complete_oauth, start_oauth
 from .post_copy import build_post_caption, generate_post_caption, sanitize_post_caption
 from .publishers import build_payload, create_dry_run_attempt
 from .rerender import attach_active_rerender_jobs, create_batch_rerender_jobs, create_rerender_job, list_rerender_jobs
-from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes
+from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes, publish_schedule_now
 from .channel_watcher import (
     add_watch_channel,
     delete_watch_channel,
@@ -687,6 +687,27 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             query = parse_qs(parsed.query)
             profile_id = (query.get("profile_id", ["nourbit"])[0] or "nourbit").strip() or "nourbit"
             self._send_json(credential_status(profile_id))
+            return
+        if parsed.path == "/api/postiz":
+            _safe_load_env()
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", ["nourbit"])[0] or "nourbit").strip() or "nourbit"
+            from .postiz_client import connection_status
+
+            self._send_json(connection_status(profile_id))
+            return
+        if parsed.path == "/api/postiz-integrations":
+            _safe_load_env()
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", ["nourbit"])[0] or "nourbit").strip() or "nourbit"
+            from .postiz_client import PostizError, list_integrations, _public_integrations
+
+            try:
+                items = _public_integrations(list_integrations(profile_id))
+            except PostizError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json({"profile_id": profile_id, "integrations": items})
             return
         if parsed.path == "/api/connections":
             _safe_load_env()
@@ -1670,6 +1691,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     conn,
                     candidate_id,
                     platforms=platforms if isinstance(platforms, list) else None,
+                    scheduled_at=str(payload.get("scheduled_at") or "").strip() or None,
                 )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=400)
@@ -1730,14 +1752,73 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 limit = int(payload.get("limit") or 5)
             except (TypeError, ValueError):
                 limit = 5
+            profile_id = str(payload.get("profile_id") or "").strip()
+            if not profile_id:
+                self._send_json({"error": "profile_id is required"}, status=400)
+                return
             result = process_due_publishes(
                 db_path=DEFAULT_DB,
                 env_file=ENV_FILE if ENV_FILE.exists() else None,
-                profile_id=str(payload.get("profile_id") or "nourbit").strip() or "nourbit",
+                profile_id=profile_id,
                 limit=max(1, min(20, limit)),
                 dry_run=bool(payload.get("dry_run", False)),
                 notify=True,
             )
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/publish-now":
+            load_env_file(ENV_FILE)
+            schedule_id = str(payload.get("schedule_id") or "").strip()
+            candidate_id = str(payload.get("candidate_id") or "").strip()
+            try:
+                result = publish_schedule_now(
+                    db_path=DEFAULT_DB,
+                    schedule_id=schedule_id,
+                    candidate_id=candidate_id,
+                    profile_id=str(payload.get("profile_id") or "").strip(),
+                    dry_run=bool(payload.get("dry_run", False)),
+                )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/postiz-connect":
+            _safe_load_env()
+            from .postiz_client import PostizError, save_connection
+
+            profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
+            try:
+                postiz_url = str(payload.get("api_url") or "")
+                postiz_key = str(payload.get("api_key") or "")
+                result = save_connection(profile_id, api_url=postiz_url, api_key=postiz_key)
+            except PostizError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/postiz-disconnect":
+            profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
+            from .postiz_client import disconnect as disconnect_postiz
+
+            self._send_json(disconnect_postiz(profile_id))
+            return
+
+        if parsed.path == "/api/postiz-map":
+            _safe_load_env()
+            from .postiz_client import PostizError, map_platform
+
+            profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
+            platform = str(payload.get("platform") or "").strip()
+            integration = payload.get("integration") if isinstance(payload.get("integration"), dict) else None
+            try:
+                result = map_platform(profile_id, platform, integration)
+            except PostizError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
             self._send_json(result)
             return
 
@@ -1770,6 +1851,12 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             if not keys:
                 self._send_json({"error": "unsupported platform"}, status=400)
                 return
+            from .postiz_client import PostizError, map_platform
+
+            try:
+                map_platform(profile_id, platform, None)
+            except PostizError:
+                pass
             unset_profile_secrets(profile_id, keys)
             self._send_json({"platform": platform, "profile_id": profile_id, "status": "disconnected"})
             return
