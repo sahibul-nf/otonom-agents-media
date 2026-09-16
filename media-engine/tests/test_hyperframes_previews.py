@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from media_engine import hyperframes_previews
+from media_engine.hyperframes_renderer import build_hyperframes_index_html
 
 
 class HyperframesPreviewTests(unittest.TestCase):
@@ -111,6 +112,88 @@ class HyperframesPreviewTests(unittest.TestCase):
         self.assertEqual(contract["sourceAttribution"], "")
         self.assertNotEqual(contract["titleHook"], "Spiritual Reflective")
         self.assertIn("Allah", contract["titleHook"])
+
+    def test_brand_studio_contract_is_five_seconds_with_watermark(self):
+        style = {
+            "caption": {
+                "text_color": "#abcdef",
+                "highlight_word_color": "#112233",
+                "background_color": "#09090b",
+            },
+            "brand": {"watermark_text": "TechTalk"},
+        }
+        brand_system = {
+            "caption_style": "caption-editorial-emphasis",
+            "cta_overlay": "yt-lower-third",
+        }
+        contract = hyperframes_previews._brand_studio_preview_contract(
+            "spiritual_reflective",
+            "short_9_16",
+            1080,
+            1920,
+            "AI agents will change everything.",
+            style,
+            brand_system,
+        )
+
+        self.assertEqual(contract["durationMs"], 5000)
+        self.assertTrue(contract["shellComponents"]["watermark"])
+        self.assertEqual(contract["watermarkText"], "TechTalk")
+        self.assertEqual(contract["style"]["caption"]["text_color"], "#abcdef")
+        self.assertIn("AI agents", contract["captionText"])
+        self.assertNotIn("Allah", contract["captionText"])
+
+    def test_brand_studio_cache_key_changes_when_highlight_color_changes(self):
+        brand_system = {"caption_style": "caption-editorial-emphasis"}
+        style_a = {"caption": {"highlight_word_color": "#111111"}, "brand": {}}
+        style_b = {"caption": {"highlight_word_color": "#222222"}, "brand": {}}
+        key_a = hyperframes_previews.brand_studio_preview_cache_key(
+            "spiritual_reflective",
+            "short_9_16",
+            "Sample phrase",
+            style_a,
+            brand_system,
+        )
+        key_b = hyperframes_previews.brand_studio_preview_cache_key(
+            "spiritual_reflective",
+            "short_9_16",
+            "Sample phrase",
+            style_b,
+            brand_system,
+        )
+
+        self.assertNotEqual(key_a, key_b)
+
+    def test_brand_texture_layers_use_full_bleed_not_template_layer(self):
+        contract = hyperframes_previews._brand_studio_preview_contract(
+            "story_handwritten",
+            "short_9_16",
+            1080,
+            1920,
+            "Ketenangan hati hadir saat bersyukur.",
+            {"caption": {"font_family": "Caveat"}, "brand": {"watermark_text": "Brand Clips"}},
+            {"texture_effect": "vignette", "cta_overlay": "none"},
+        )
+        html = build_hyperframes_index_html(contract, "story_handwritten", "short_9_16")
+
+        self.assertIn('class="brand-texture-layer brand-vignette"', html)
+        self.assertNotIn('class="template-layer brand-vignette"', html)
+
+    def test_brand_texture_none_skips_overlay_layers(self):
+        contract = hyperframes_previews._brand_studio_preview_contract(
+            "story_handwritten",
+            "short_9_16",
+            1080,
+            1920,
+            "Ketenangan hati hadir saat bersyukur.",
+            {"caption": {"font_family": "Caveat"}, "brand": {"watermark_text": "Brand Clips"}},
+            {"texture_effect": "none", "cta_overlay": "none"},
+        )
+        html = build_hyperframes_index_html(contract, "story_handwritten", "short_9_16")
+
+        self.assertNotIn('class="brand-texture-layer brand-vignette"', html)
+        self.assertNotIn('class="brand-texture-layer brand-grain"', html)
+        self.assertNotIn('class="brand-texture-layer brand-shimmer"', html)
 
 
 if __name__ == "__main__":

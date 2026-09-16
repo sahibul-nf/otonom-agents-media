@@ -205,6 +205,32 @@ class GenerationJobTests(unittest.TestCase):
         self.assertIsNotNone(profile)
         self.assertEqual(source["source_url"], "https://youtube.com/watch?v=test")
 
+    @patch("media_engine.generation_jobs.build_generation_command", return_value=["python3", "-c", "print('{}')"])
+    def test_create_generation_job_persists_curation_source(self, _mock_command):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "media_engine.sqlite"
+            previous_db = db_module.DEFAULT_DB
+            previous_jobs_db = generation_jobs_module.DEFAULT_DB
+            db_module.DEFAULT_DB = db_path
+            generation_jobs_module.DEFAULT_DB = db_path
+            try:
+                create_generation_job(
+                    {
+                        "source_url": "https://youtube.com/watch?v=test",
+                        "count": 2,
+                        "curation_source": "audio",
+                    },
+                    start=False,
+                )
+                conn = connect(db_path)
+                row = conn.execute("SELECT curation_source FROM generation_jobs").fetchone()
+                conn.close()
+            finally:
+                db_module.DEFAULT_DB = previous_db
+                generation_jobs_module.DEFAULT_DB = previous_jobs_db
+
+        self.assertEqual(row["curation_source"], "audio")
+
     def test_reconcile_generation_jobs_marks_stale_running_jobs_failed(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             conn = connect(f"{tmpdir}/media_engine.sqlite")

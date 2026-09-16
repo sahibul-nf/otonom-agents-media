@@ -41,8 +41,11 @@ from .source_resolve import resolve_youtube_source
 from .review_grouping import enrich_review_rows_with_source
 from .hyperframes_catalog import list_hyperframes_catalog
 from .hyperframes_previews import (
+    brand_studio_preview_status,
     clear_template_preview_cache,
+    ensure_brand_studio_preview,
     ensure_hyperframes_template_preview,
+    ensure_preview_stock_path,
     list_hyperframes_preview_status,
     preview_status,
     prewarm_hyperframes_template_previews,
@@ -535,6 +538,34 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             self._send_media_file(preview)
             return
+        if parsed.path == "/api/hyperframes-template-stock":
+            query = parse_qs(parsed.query)
+            template_id = (query.get("template", [""])[0] or "").strip().replace("__", ":")
+            hyperframes_format = (query.get("format", ["short_9_16"])[0] or "short_9_16").strip()
+            if not template_id:
+                self._send_json({"error": "template is required"}, status=400)
+                return
+            try:
+                stock = ensure_preview_stock_path(template_id, hyperframes_format)
+            except (RuntimeError, ValueError, OSError) as exc:
+                self._send_json({"error": str(exc)}, status=503)
+                return
+            self._send_media_file(stock)
+            return
+        if parsed.path == "/api/brand-studio-preview":
+            query = parse_qs(parsed.query)
+            cache_key = (query.get("cache_key", [""])[0] or "").strip()
+            hyperframes_format = (query.get("format", ["short_9_16"])[0] or "short_9_16").strip()
+            if not cache_key:
+                self._send_json({"error": "cache_key is required"}, status=400)
+                return
+            status = brand_studio_preview_status(cache_key, hyperframes_format)
+            preview_path = status.get("path")
+            if not status.get("ready") or not preview_path:
+                self._send_json({"error": "preview not ready"}, status=404)
+                return
+            self._send_media_file(Path(preview_path))
+            return
         if parsed.path == "/api/hyperframes-template-preview-status":
             query = parse_qs(parsed.query)
             template_id = (query.get("template", [""])[0] or "").strip().replace("__", ":")
@@ -544,6 +575,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             include_brand = (query.get("include_brand", ["1"])[0] or "1") not in {"0", "false", "False"}
             self._send_json(list_hyperframes_preview_status(include_brand=include_brand))
+            return
+        if parsed.path == "/api/brand-studio-preview-status":
+            query = parse_qs(parsed.query)
+            cache_key = (query.get("cache_key", [""])[0] or "").strip()
+            hyperframes_format = (query.get("format", ["short_9_16"])[0] or "short_9_16").strip()
+            if not cache_key:
+                self._send_json({"error": "cache_key is required"}, status=400)
+                return
+            self._send_json(brand_studio_preview_status(cache_key, hyperframes_format))
             return
         if parsed.path == "/api/genres":
             query = parse_qs(parsed.query)
@@ -1115,6 +1155,32 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             try:
                 result = prewarm_hyperframes_template_previews(include_brand=include_brand, template_id=template_id)
             except RuntimeError as exc:
+                self._send_json({"error": str(exc)}, status=503)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/brand-studio-preview-render":
+            starter_template = str(payload.get("starter_template") or payload.get("hyperframes_template") or "").strip()
+            hyperframes_format = str(payload.get("hyperframes_format") or payload.get("format") or "short_9_16").strip()
+            sample_phrase = str(payload.get("sample_phrase") or "").strip()
+            style = payload.get("style")
+            brand_system = payload.get("brand_system")
+            if not starter_template:
+                self._send_json({"error": "starter_template is required"}, status=400)
+                return
+            if not isinstance(style, dict) or not isinstance(brand_system, dict):
+                self._send_json({"error": "style and brand_system are required"}, status=400)
+                return
+            try:
+                result = ensure_brand_studio_preview(
+                    starter_template,
+                    hyperframes_format,
+                    sample_phrase,
+                    style,
+                    brand_system,
+                )
+            except (RuntimeError, ValueError, OSError) as exc:
                 self._send_json({"error": str(exc)}, status=503)
                 return
             self._send_json(result)
@@ -1692,6 +1758,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     candidate_id,
                     platforms=platforms if isinstance(platforms, list) else None,
                     scheduled_at=str(payload.get("scheduled_at") or "").strip() or None,
+                    republish=bool(payload.get("republish", False)),
                 )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=400)
@@ -1778,6 +1845,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     candidate_id=candidate_id,
                     profile_id=str(payload.get("profile_id") or "").strip(),
                     dry_run=bool(payload.get("dry_run", False)),
+                    force=bool(payload.get("force", False)),
                 )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=400)

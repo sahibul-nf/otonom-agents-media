@@ -34,7 +34,10 @@ export type ReviewStudioSectionProps = {
   onApproveSelected?: (candidateIds: string[]) => void;
   onRerenderSelected?: (candidateIds: string[]) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
-  onScheduleClip?: (clip: ClipCandidate, scheduledAt: string) => void;
+  onScheduleClip?: (clip: ClipCandidate, scheduledAt: string, platforms: string[]) => void;
+  onPublishClipNow?: (clip: ClipCandidate, platforms: string[], options?: {republish?: boolean}) => void;
+  publishTargets?: string[];
+  defaultPublishPlatforms?: (clip: ClipCandidate) => string[];
 };
 
 export function ReviewStudioSection({
@@ -54,6 +57,9 @@ export function ReviewStudioSection({
   onRerenderSelected,
   onMakeShorts,
   onScheduleClip,
+  onPublishClipNow,
+  publishTargets,
+  defaultPublishPlatforms,
   statusTone,
 }: ReviewStudioSectionProps) {
   const clearState = actionStates["queue:clear"];
@@ -62,7 +68,11 @@ export function ReviewStudioSection({
   const batchApproveState = actionStates["review:batch-approve"];
   const [selectionMode, setSelectionMode] = useState(false);
   const [sortOrder, setSortOrder] = useState<ReviewSortOrder>("newest");
-  const groups = useMemo(() => sortReviewGroups(groupReviewClips(clips), sortOrder), [clips, sortOrder]);
+  const flattenGroups = filter === "published" || filter === "scheduled";
+  const groups = useMemo(
+    () => sortReviewGroups(groupReviewClips(clips, {flatten: flattenGroups}), sortOrder),
+    [clips, flattenGroups, sortOrder],
+  );
   const batchCount = groups.filter((group) => group.showHeader).length;
   const selectableIds = useMemo(
     () => groups.filter((group) => !group.showHeader).flatMap((group) => group.clips.map((clip) => clip.id)),
@@ -81,13 +91,13 @@ export function ReviewStudioSection({
   }
 
   return (
-    <section className="mx-auto grid w-full max-w-[1180px] gap-5">
+    <section className="grid w-full gap-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
           <p className="text-sm leading-6 text-zinc-400">Open a batch to review siblings from one source, or edit a single clip.</p>
           <p className="mt-1 text-xs font-medium text-zinc-600">
             {clips.length} result{clips.length === 1 ? "" : "s"} in this view
-            {batchCount ? ` · ${batchCount} source batch${batchCount === 1 ? "" : "es"}` : ""}
+            {!flattenGroups && batchCount ? ` · ${batchCount} source batch${batchCount === 1 ? "" : "es"}` : ""}
           </p>
           </div>
         <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1">
@@ -146,23 +156,25 @@ export function ReviewStudioSection({
         />
       ) : null}
       {clips.length ? (
-        <div className="columns-1 gap-4 sm:columns-2 xl:columns-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {groups.map((group) => (
-            <div key={group.key} className="mb-4 break-inside-avoid">
-              <ReviewSourceGroup
-                group={group}
-          statusTone={statusTone}
-                actionStates={actionStates}
-                onDelete={onDeleteClip}
-                onApprove={onApproveClip}
-                onMakeShorts={onMakeShorts}
-                onSchedule={onScheduleClip}
-                selectableIds={selectableSet}
-                selectedIds={selection.selectedIds}
-                selectionMode={selectionMode}
-                onToggleSelect={selection.toggle}
-              />
-                </div>
+            <ReviewSourceGroup
+              key={group.key}
+              group={group}
+              statusTone={statusTone}
+              actionStates={actionStates}
+              onDelete={onDeleteClip}
+              onApprove={onApproveClip}
+              onMakeShorts={onMakeShorts}
+              onSchedule={onScheduleClip}
+              onPublishNow={onPublishClipNow}
+              publishTargets={publishTargets}
+              defaultPublishPlatforms={defaultPublishPlatforms}
+              selectableIds={selectableSet}
+              selectedIds={selection.selectedIds}
+              selectionMode={selectionMode}
+              onToggleSelect={selection.toggle}
+            />
           ))}
         </div>
       ) : (

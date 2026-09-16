@@ -3,13 +3,27 @@
 ## [Unreleased]
 
 ### Fixed
+- Create/Generate: `curation_source` is now persisted on `generation_jobs` for post-run auditing; CLI copy includes `--profile`, `--source-id`, and `--niche`.
+- Post copy: captions auto-enrich during curation when an LLM key exists, with workspace-aware prompts, per-platform length limits at publish, and heuristic fallback when the model fails.
+- TikTok via Postiz: send `autoAddMusic` as `yes`/`no` (not boolean) so `/public/v1/posts` no longer returns HTTP 400.
+- Schedule queue cards: denser layout — slot + title + compact destination chips; time editor and extra destinations stay collapsed; cooling-down is a short chip (`wait 12m`); Postiz errors are humanized instead of raw JSON.
 - Schedule queue polls Postiz every 45s while the Schedule tab is open; Unschedule is blocked once any destination is live so a Facebook timeout cannot cancel a live YouTube post.
 - Schedule/Postiz: reconcile treats Postiz posts with a `releaseURL` as live even when workflow `state` is still `ERROR` (common for Facebook Reels after Meta accepts the upload but Postiz times out).
 - Schedule/Postiz: reconcile now calls `GET /posts` with required `startDate`/`endDate` (was empty without them), polls live state, and marks parent `published` when Postiz-backed destinations are live even if native Telegram/TikTok are still `pending`.
 - Schedule/Postiz: loading Calendar polls Postiz post list and only marks a platform `live` (parent `published` when every routed dest is live) when Postiz says published; QUEUE still held in Otonom; false greens roll back.
 - Postiz sync keeps an existing calendar post when the slot is unchanged (on/off other accounts); stores Postiz post ids (cuid) instead of upload UUIDs so time edits can DELETE the old post instead of leaving a duplicate.
 
+### Changed
+- Brand Builder: one-line captions with a hugging plate; Recipe Sample removed from the stage; product-facing copy.
+- Brand Builder: inspector reorganized into Presets, Identity, Captions, and Finishing tabs; stage toolbar split into canvas controls and playback tiers; outro CTA decoupled from captions with explicit None option; shimmer sweep removed from live preview.
+
 ### Added
+- Brand Builder: live compositor on sample stock footage with Identity overlay; optional Recipe sample (gallery MP4) and **Render 5s look** brand-aware HyperFrames draft with cache.
+- Brand Builder: Recipe vs Brand overlay stage modes so Identity captions no longer stack on baked-in recipe video; HUD and render chips stay off the phone.
+- Create: **Auto** default for Content Angles (per-clip LLM angle selection); genre pack label shown in Advanced.
+- Create: visual template picker moved above Advanced (template-first); Templates gallery adds text search; browse modal shows template status badges.
+- Review card ⋯ menu: compact actions below the preview; Schedule / Publish / Reschedule / Republish open a destination dialog instead of overlaying the video.
+- Published clips can **Reschedule** (new slot) or **Republish** (new Postiz delivery; live posts stay up).
 - Review grid: each batch/single card shows Jakarta activity datetime; default sort is newest first with a Newest/Oldest toggle.
 - Waiting pool and Review card ⋯ menu: pick a custom datetime (or Next 09:00 / Next 19:30) before the first schedule.
 - Schedule queue cards: edit slot time (09:00 / 19:30 shortcuts), per-item **Publish now**, optional destination chips, and Postiz `type: schedule` calendar mirror so mapped channels appear before air time. Due-worker skips platforms already on Postiz (#93).
@@ -18,6 +32,8 @@
 - `POST /api/caption-polish` endpoint to run glossary + LLM caption cleanup on existing clip captions.
 
 ### Changed
+- Review: removed redundant **Repair** filter tab (`held` clips stay in **Review** with a Captions unusable badge); header and grid re-centered with a stable 3-column layout.
+- Review **Published** / **Scheduled** tabs no longer group clips into source-batch tiles — each clip gets its own card with the correct status badge and preview.
 - Production caption pipeline now runs phrase glossary correction and full LLM reconstruction (when `llm_provider` is set) before caption grouping.
 - ASR initial prompt includes domain vocabulary hints per niche pack (devotional, tech & finance).
 

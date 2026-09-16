@@ -246,6 +246,7 @@ SCHEMA_UPGRADES = {
         "log_text": "TEXT NOT NULL DEFAULT ''",
         "result_json": "TEXT NOT NULL DEFAULT '{}'",
         "error": "TEXT NOT NULL DEFAULT ''",
+        "curation_source": "TEXT NOT NULL DEFAULT 'auto'",
         "updated_at": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
     },
     "scheduled_posts": {

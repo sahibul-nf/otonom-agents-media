@@ -58,6 +58,8 @@ export type MediaPreviewFrameProps = {
   ariaLabel?: string;
   /** Cap width to Review grid card footprint (17.5rem) */
   gridMatch?: boolean;
+  /** Applied to the <video> element (default object-contain for Review cards). */
+  videoClassName?: string;
 };
 
 export function MediaPreviewFrame({
@@ -91,6 +93,7 @@ export function MediaPreviewFrame({
   ariaLabel,
   posterSeekSeconds = 0,
   gridMatch = false,
+  videoClassName = "object-contain",
 }: MediaPreviewFrameProps) {
   const hasVideo = Boolean(src);
   const spacingClass = spacing === "card" ? "mb-2.5" : spacing === "compact" ? "mb-4" : "";
@@ -121,7 +124,7 @@ export function MediaPreviewFrame({
           key={videoKey ?? src ?? undefined}
           ref={videoRef}
           src={src!}
-          className="absolute inset-0 h-full w-full object-contain"
+          className={`absolute inset-0 h-full w-full ${videoClassName}`}
           muted={muted}
           loop={loop}
           playsInline={playsInline}

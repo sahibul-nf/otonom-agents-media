@@ -57,6 +57,11 @@ class PostizClientTests(unittest.TestCase):
         self.assertEqual(settings["__type"], "youtube")
         self.assertEqual(settings["title"], "Iman")
 
+    def test_tiktok_settings_use_postiz_yes_no_strings(self):
+        settings = settings_for_platform("tiktok", title="Hook", caption="body")
+        self.assertEqual(settings["__type"], "tiktok")
+        self.assertEqual(settings["autoAddMusic"], "no")
+
     def test_create_post_body_includes_uploaded_media(self):
         body = build_create_post_body(
             integration_id="int1",

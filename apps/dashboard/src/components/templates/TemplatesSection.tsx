@@ -62,6 +62,7 @@ export function TemplatesSection({
   renderEmptyState: (title: string, text: string) => ReactNode;
 }) {
   const [filter, setFilter] = useState<(typeof templateFilters)[number]>("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [frame, setFrame] = useState<TemplateFrame>("short");
   const [selectedId, setSelectedId] = useState(currentTemplate === "auto" ? templates[0]?.id || "" : currentTemplate);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -70,7 +71,13 @@ export function TemplatesSection({
     () => templates.filter((template) => templateSupportsFormat(template, formatKey)),
     [templates, formatKey],
   );
-  const visible = templatesForFrame.filter((template) => filter === "All" || template.category === filter);
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const visible = templatesForFrame.filter((template) => {
+    if (filter !== "All" && template.category !== filter) return false;
+    if (!normalizedSearch) return true;
+    const haystack = `${template.label} ${template.category} ${template.best_for} ${template.id}`.toLowerCase();
+    return haystack.includes(normalizedSearch);
+  });
   const selected = visible.find((template) => template.id === selectedId) || visible[0] || templatesForFrame[0];
   const selectedRecipe = selected ? getRecipeTheme(selected.id) : null;
   const ready = Boolean(engineHealth?.hyperframes.ready);
@@ -178,6 +185,18 @@ export function TemplatesSection({
         ) : null}
 
         <div className="sticky top-[4.5rem] z-10 -mx-1 mt-5 rounded-[20px] border border-white/[0.08] bg-surface/95 px-3 py-3 backdrop-blur-md sm:px-4">
+          <div className="mb-3">
+            <label className="grid gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              Search templates
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search by name, category, or use case…"
+                className="h-10 rounded-full border border-white/[0.08] bg-black/24 px-4 text-sm font-normal normal-case tracking-normal text-zinc-200 outline-none transition focus:border-cyan/[0.30]"
+              />
+            </label>
+          </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Browse by niche</p>

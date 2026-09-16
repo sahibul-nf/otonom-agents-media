@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 
+GENRE_AUTO = "auto"
+
 GENRE_OPTIONS: dict[str, dict[str, str]] = {
     "story": {"label": "Story", "description": "Narrative moments, examples, anecdotes, or memorable analogies."},
     "advice": {"label": "Advice", "description": "Practical reminders and takeaways the viewer can use."},
@@ -76,6 +78,16 @@ def pack_defaults(pack_id: str | None = None, profile_id: str | None = None, nic
     return list(GENRE_PACKS[pack]["defaults"])
 
 
+def genres_is_auto(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() == GENRE_AUTO
+    if isinstance(value, (list, tuple, set)):
+        return any(str(part).strip().lower() == GENRE_AUTO for part in value)
+    return False
+
+
 def _parse_genre_parts(value: Any) -> list[str]:
     if value is None or value == "":
         return []
@@ -85,6 +97,8 @@ def _parse_genre_parts(value: Any) -> list[str]:
         parts = [str(part).strip() for part in value]
     else:
         return []
+    if any(part.lower() == GENRE_AUTO for part in parts):
+        return [GENRE_AUTO]
     seen: set[str] = set()
     genres: list[str] = []
     for part in parts:
@@ -100,6 +114,8 @@ def normalize_genres(
     niche: str | None = None,
     pack_id: str | None = None,
 ) -> list[str]:
+    if genres_is_auto(value):
+        return [GENRE_AUTO]
     known = _parse_genre_parts(value)
     if known:
         return known
@@ -125,14 +141,21 @@ def genre_catalog(
     return {
         "pack": pack,
         "pack_label": meta["label"],
-        "defaults": list(meta["defaults"]),
+        "defaults": [GENRE_AUTO],
+        "supports_auto": True,
         "options": genre_options(),
     }
 
 
 def genre_prompt_phrase(genres: list[str]) -> str:
+    if genres_is_auto(genres):
+        return ""
     labels = [GENRE_OPTIONS[genre]["label"] for genre in genres if genre in GENRE_OPTIONS]
     return ", ".join(labels)
+
+
+def genre_catalog_labels() -> str:
+    return ", ".join(GENRE_OPTIONS[key]["label"] for key in UNIVERSAL_CATALOG)
 
 
 def uses_devotional_tone(

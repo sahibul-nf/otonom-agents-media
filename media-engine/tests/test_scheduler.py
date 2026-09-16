@@ -82,6 +82,23 @@ class SchedulerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             schedule_candidate_next(self.conn, "clip")
 
+    def test_published_clip_reschedules_with_republish_flag(self):
+        self.add_clip(status="published")
+        with self.assertRaises(ValueError):
+            schedule_candidate_next(self.conn, "clip")
+        scheduled = schedule_candidate_next(
+            self.conn,
+            "clip",
+            republish=True,
+            platforms=["telegram_channel"],
+            now=datetime(2026, 5, 15, 8, 0, tzinfo=ZoneInfo("Asia/Jakarta")),
+            scheduled_at="2026-05-20T14:45:00+07:00",
+        )
+        row = self.conn.execute("SELECT status FROM clip_candidates WHERE id = 'clip'").fetchone()
+        self.assertEqual(row["status"], "scheduled")
+        self.assertEqual(scheduled["status"], "scheduled")
+        self.assertIn("2026-05-20T14:45", scheduled["scheduled_at"])
+
     def test_unschedule_returns_candidate_to_approved(self):
         self.add_clip()
         schedule_candidate_next(self.conn, "clip", now=datetime(2026, 5, 15, 8, 0, tzinfo=ZoneInfo("Asia/Jakarta")))

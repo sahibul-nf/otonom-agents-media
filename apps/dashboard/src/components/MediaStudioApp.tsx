@@ -128,13 +128,6 @@ function cleanPublishStatus(status?: string) {
     pending: "Waiting",
     queued: "On Postiz calendar",
     cooldown: "Cooling down",
-    blocked: "Needs action",
-    legacy_blocked: "Outdated",
-    skipped: "Already posted (verified)",
-    publishing: "Publishing",
-    pending: "Waiting",
-    queued: "On Postiz calendar",
-    cooldown: "Cooling down",
   };
   return labels[status] || status.replaceAll("_", " ");
 }
@@ -376,7 +369,6 @@ type GenerateConfig = {
 const reviewFilters = [
   {id: "all", label: "All", hint: "Every clip that is still visible in this workspace.", statuses: []},
   {id: "review", label: "Review", hint: "Clips waiting for approve or skip — not caption copy-edit.", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
-  {id: "repair", label: "Repair", hint: "Rare: captions too broken to auto-queue.", statuses: ["held"]},
   {id: "scheduled", label: "Scheduled", hint: "Approved clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
   {id: "published", label: "Published", hint: "Clips already sent to a live channel.", statuses: ["published"]},
 ] as const;
@@ -467,12 +459,16 @@ function shellComponentsForTemplate(templates: HyperframesTemplate[], templateId
   return template?.shell_components ? {...DEFAULT_SHELL_COMPONENTS, ...template.shell_components} : {...DEFAULT_SHELL_COMPONENTS};
 }
 
-function productionCommand(config: GenerateConfig) {
+function productionCommand(config: GenerateConfig, profileId: string, niche: string) {
+  const videoMatch = config.sourceUrl.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+  const sourceId = videoMatch ? `${profileId}_${videoMatch[1]}` : `${profileId}_source`;
   const shellLine = isTemplateOnlyBrand(config.brandTemplate, defaultTemplate)
     ? ""
     : `  --shell-components '${JSON.stringify(config.shellComponents)}' \\\n`;
-  return `cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media/media-engine"
+  return `cd media-engine
 MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPATH=. "\${MEDIA_ENGINE_PYTHON}" -m media_engine.cli premium-batch \\
+  --profile "${profileId}" \\
+  --source-id "${sourceId}" \\
   --youtube-url "${config.sourceUrl}" \\
   --count ${config.count} \\
   --clip-length-preset ${config.clipLength} \\
@@ -491,6 +487,7 @@ MEDIA_ENGINE_PYTHON="\${MEDIA_ENGINE_PYTHON:-./.venv-tools/bin/python}" PYTHONPA
   --transcript-languages ${config.transcriptLanguages} \\
   --style ${config.brandTemplate} \\
 ${shellLine}  --llm-provider ${config.llmProvider} \\
+  --niche "${niche}" \\
   --env-file ../.env.local`;
 }
 
@@ -538,7 +535,7 @@ export function MediaStudioApp() {
     clipLength: "auto",
     clipMinSeconds: 20,
     clipMaxSeconds: 180,
-    genres: ["story", "advice", "social_commentary"],
+    genres: ["auto"],
     brandTemplate: TEMPLATE_ONLY_BRAND,
     hyperframesTemplate: "auto",
     brandSystemTemplateId: "",
@@ -566,9 +563,13 @@ export function MediaStudioApp() {
     [clips, profileId],
   );
   const selected = useMemo(() => profileClips.find((clip) => clip.id === selectedId) || profileClips[0], [profileClips, selectedId]);
+  const reviewFilter = filter === "repair" ? "review" : filter;
   const filtered = useMemo(
-    () => profileClips.filter((clip) => matchesReviewFilter(clip, filter)).filter((clip) => showPublished || filter === "published" || clip.status !== "published"),
-    [profileClips, filter, showPublished],
+    () =>
+      profileClips
+        .filter((clip) => matchesReviewFilter(clip, reviewFilter))
+        .filter((clip) => showPublished || reviewFilter === "published" || clip.status !== "published"),
+    [profileClips, reviewFilter, showPublished],
   );
   const activeTargets = useMemo(
     () => targets.filter((target) => publishPlatforms.includes(target.platform) && (!target.profile_id || target.profile_id === profileId)),
@@ -601,7 +602,11 @@ export function MediaStudioApp() {
     engineReady,
     hasTemplate,
   });
-  const command = productionCommand(generateConfig);
+  const command = productionCommand(
+    generateConfig,
+    profileId,
+    profiles.find((profile) => profile.id === profileId)?.niche || "",
+  );
 
   function pushToast(message: string, tone: ToastMessage["tone"] = "info") {
     const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -692,7 +697,7 @@ export function MediaStudioApp() {
       setGenrePackLabel(genreCatalog.pack_label);
       setGenerateConfig((current) => {
         const allowed = new Set(genreCatalog.options.map((item) => item.id));
-        const kept = current.genres.filter((id) => allowed.has(id));
+        const kept = current.genres.filter((id) => allowed.has(id) || id === "auto");
         return {...current, genres: kept.length ? kept : genreCatalog.defaults};
       });
       setEngineHealth(engineRows);
@@ -862,6 +867,8 @@ export function MediaStudioApp() {
         speech_language: generateConfig.speechLanguage,
         transcript_languages: generateConfig.transcriptLanguages,
         llm_provider: generateConfig.llmProvider,
+        niche: profiles.find((profile) => profile.id === profileId)?.niche || "",
+        workspace_name: profiles.find((profile) => profile.id === profileId)?.name || "",
       },
     }), "Watch channel added");
     await refreshAll();
@@ -1045,10 +1052,10 @@ export function MediaStudioApp() {
     }
   }
 
-  async function scheduleNext(id: string, scheduledAt?: string) {
+  async function scheduleNext(id: string, scheduledAt?: string, platformsOverride?: string[], republish = false) {
     const key = `clip:${id}:schedule`;
     const clip = clips.find((item) => item.id === id);
-    const platforms = filterPlatformsForClip(publishSelection, clip);
+    const platforms = filterPlatformsForClip(platformsOverride?.length ? platformsOverride : publishSelection, clip);
     if (!platforms.length) {
       setStatus("No publish destinations match this clip format. Enable YouTube Video for long-form or Shorts/Reels for vertical clips in Channels.");
       pushToast("No compatible publish destinations for this clip", "info");
@@ -1057,9 +1064,15 @@ export function MediaStudioApp() {
     try {
       await runAction(
         key,
-        "Scheduling...",
-        () => apiPost("schedule-next", {candidate_id: id, platforms, ...(scheduledAt ? {scheduled_at: scheduledAt} : {})}),
-        "Clip scheduled",
+        republish ? "Rescheduling..." : "Scheduling...",
+        () =>
+          apiPost("schedule-next", {
+            candidate_id: id,
+            platforms,
+            ...(scheduledAt ? {scheduled_at: scheduledAt} : {}),
+            ...(republish ? {republish: true} : {}),
+          }),
+        republish ? "Clip rescheduled" : "Clip scheduled",
       );
       setStatus(scheduledAt ? "Clip scheduled" : "Clip scheduled in next open slot");
       await refreshAll();
@@ -1099,6 +1112,48 @@ export function MediaStudioApp() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Publish now failed");
     }
+  }
+
+  async function publishClipNow(id: string, platforms: string[], republish = false) {
+    const key = `clip:${id}:publish-now`;
+    const clip = clips.find((item) => item.id === id);
+    const resolvedPlatforms = filterPlatformsForClip(platforms, clip);
+    if (!resolvedPlatforms.length) {
+      setStatus("No publish destinations match this clip format. Enable YouTube Video for long-form or Shorts/Reels for vertical clips in Channels.");
+      pushToast("No compatible publish destinations for this clip", "info");
+      return;
+    }
+    const existingSchedule = schedule.find((item) => item.candidate_id === id);
+    const force = republish || clip?.status === "published";
+    try {
+      await runAction(key, force ? "Republishing to Postiz..." : "Sending to Postiz...", async () => {
+        if (clip?.status === "approved" || force) {
+          await apiPost("schedule-next", {
+            candidate_id: id,
+            platforms: resolvedPlatforms,
+            ...(force ? {republish: true} : {}),
+          });
+        } else if (existingSchedule) {
+          const samePlatforms =
+            resolvedPlatforms.length === existingSchedule.platforms.length &&
+            resolvedPlatforms.every((platform) => existingSchedule.platforms.includes(platform));
+          if (!samePlatforms) {
+            await apiPost("schedule-platforms", {schedule_id: existingSchedule.id, platforms: resolvedPlatforms});
+          }
+        }
+        await apiPost("publish-now", {candidate_id: id, profile_id: profileId, ...(force ? {force: true} : {})});
+      }, force ? "Republished to Postiz" : "Sent to Postiz");
+      setStatus("Accepted by Postiz — not live until each platform delivers");
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Publish now failed");
+    }
+  }
+
+  function defaultPublishPlatformsForClip(clip: ClipCandidate) {
+    const existingSchedule = schedule.find((item) => item.candidate_id === clip.id);
+    const base = existingSchedule?.platforms?.length ? existingSchedule.platforms : publishSelection;
+    return filterPlatformsForClip(base, clip);
   }
 
   function togglePublishSelection(platform: string) {
@@ -1701,7 +1756,11 @@ export function MediaStudioApp() {
 
       <main className="min-w-0 pb-32 lg:pl-[280px] lg:pb-0">
         <header className="sticky top-0 z-20 overflow-hidden border-b border-white/[0.06] bg-canvas-deep/[0.82] px-5 py-4 backdrop-blur-xl lg:px-8">
-          <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div
+            className={`flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between ${
+              section === "review" ? "mx-auto w-full max-w-[1180px]" : section === "generate" ? "mx-auto w-full max-w-4xl" : ""
+            }`}
+          >
             <div className="min-w-0">
               <div className="mb-2 lg:hidden">
                 <WorkspaceSwitcher
@@ -1866,25 +1925,34 @@ export function MediaStudioApp() {
           )}
 
           {section === "review" && (
-            <ReviewStudioSection
-              clips={filtered}
-              filter={filter}
-              showPublished={showPublished}
-              selectionResetKey={`${profileId}:${filter}:${showPublished}:${batchDeleteVersion}`}
-              reviewFilters={reviewFilters}
-              actionStates={actionStates}
-              setFilter={setFilter}
-              setShowPublished={setShowPublished}
-              statusTone={statusTone}
-              onClear={clearQueue}
-              onDeleteClip={deleteClip}
-              onApproveClip={approveClip}
-              onDeleteSelected={deleteSelectedClips}
-              onApproveSelected={approveSelectedClips}
-              onRerenderSelected={rerenderSelectedClips}
-              onMakeShorts={makeShortsFromClip}
-              onScheduleClip={(clip, scheduledAt) => void scheduleNext(clip.id, scheduledAt)}
-            />
+            <div className="mx-auto w-full max-w-[1180px]">
+              <ReviewStudioSection
+                clips={filtered}
+                filter={reviewFilter}
+                showPublished={showPublished}
+                selectionResetKey={`${profileId}:${reviewFilter}:${showPublished}:${batchDeleteVersion}`}
+                reviewFilters={reviewFilters}
+                actionStates={actionStates}
+                setFilter={setFilter}
+                setShowPublished={setShowPublished}
+                statusTone={statusTone}
+                onClear={clearQueue}
+                onDeleteClip={deleteClip}
+                onApproveClip={approveClip}
+                onDeleteSelected={deleteSelectedClips}
+                onApproveSelected={approveSelectedClips}
+                onRerenderSelected={rerenderSelectedClips}
+                onMakeShorts={makeShortsFromClip}
+                onScheduleClip={(clip, scheduledAt, platforms) =>
+                  void scheduleNext(clip.id, scheduledAt, platforms, clip.status === "published")
+                }
+                onPublishClipNow={(clip, platforms, options) =>
+                  void publishClipNow(clip.id, platforms, Boolean(options?.republish || clip.status === "published"))
+                }
+                publishTargets={activeTargets.map((target) => target.platform)}
+                defaultPublishPlatforms={defaultPublishPlatformsForClip}
+              />
+            </div>
           )}
 
           {section === "calendar" && (

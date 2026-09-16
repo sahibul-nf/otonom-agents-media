@@ -1,9 +1,10 @@
 "use client";
 
 import {useRouter} from "next/navigation";
-import {ArrowUpRight, CheckCircle2, Layers3, Loader2, Palette, Settings2, Sparkles, Trash2} from "lucide-react";
-import {useEffect, useState} from "react";
+import {ArrowUpRight, CheckCircle2, Copy, Layers3, Loader2, Palette, Pencil, Search, Settings2, Sparkles, Trash2, Wand2} from "lucide-react";
+import {useEffect, useMemo, useState} from "react";
 import {brandPresets} from "@/components/brand/BrandBuilderWorkspace";
+import {apiGet} from "@/lib/media-api";
 import type {AutonomySettings, BrandTemplate, HyperframesCatalog, HyperframesTemplate, StyleProfile} from "@/lib/media-api";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
@@ -52,6 +53,40 @@ function autonomyModeMeta(mode?: string | null) {
   return AUTONOMY_MODES.find((item) => item.id === id) || AUTONOMY_MODES[0];
 }
 
+type SavedStyleMeta = {
+  highlightColor: string;
+  backgroundColor: string;
+  textColor: string;
+  fontFamily: string;
+  fontSize: number;
+  starterTemplate: string;
+};
+
+function hexFromColor(value: unknown, fallback: string) {
+  const text = String(value || "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(text)) return text.toLowerCase();
+  const rgba = text.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  return rgba ? `#${rgba.slice(1, 4).map((part) => Number(part).toString(16).padStart(2, "0")).join("")}`.toLowerCase() : fallback;
+}
+
+function metaFromStyle(source: StyleProfile): SavedStyleMeta {
+  const caption = source.caption || {};
+  const brandSystem = source.brand_system || {};
+  return {
+    highlightColor: hexFromColor(caption.highlight_word_color, "#00ff36"),
+    backgroundColor: hexFromColor(caption.background_color, "#111214"),
+    textColor: hexFromColor(caption.text_color, "#ffffff"),
+    fontFamily: String(caption.font_family || "Sora"),
+    fontSize: Number(caption.font_size || 54),
+    starterTemplate: String(brandSystem.starter_template || "spiritual_reflective"),
+  };
+}
+
+function brandIdFromPath(path: string) {
+  const slug = path.split("/").pop()?.replace(/\.json$/, "") || "";
+  return `brand:${slug}`;
+}
+
 function presetIcon(presetId: string) {
   if (presetId === "editorial" || presetId === "ember_sunset" || presetId === "align_minimal") {
     return <Sparkles className="h-5 w-5" />;
@@ -91,14 +126,54 @@ export function BrandSection({
   useEffect(() => {
     setDraftGraceHours(graceHours);
   }, [graceHours]);
-  const savedStyles = templates.filter((template) => /custom_/i.test(template.path));
+  const savedStyles = useMemo(
+    () => templates.filter((template) => /custom_/i.test(template.path)),
+    [templates],
+  );
+  const savedStylePathsKey = useMemo(
+    () => savedStyles.map((template) => template.path).sort().join("|"),
+    [savedStyles],
+  );
   const catalogReady = hyperframesCatalog?.items.filter((item) => item.status === "production-ready").length || 0;
+  const [savedSearch, setSavedSearch] = useState("");
+  const [styleMeta, setStyleMeta] = useState<Record<string, SavedStyleMeta>>({});
 
   useEffect(() => {
-    const starterTemplate = window.localStorage.getItem(STARTER_STORAGE_KEY);
-    if (!starterTemplate) return;
-    router.push(`/brand/builder?starter=${encodeURIComponent(starterTemplate)}`);
-  }, [router]);
+    if (!savedStylePathsKey) {
+      setStyleMeta({});
+      return;
+    }
+    const paths = savedStylePathsKey.split("|");
+    let cancelled = false;
+    async function loadMeta() {
+      const entries = await Promise.all(
+        paths.map(async (path) => {
+          try {
+            const loaded = await apiGet<StyleProfile>(`style?path=${encodeURIComponent(path)}`);
+            return [path, metaFromStyle(loaded)] as const;
+          } catch {
+            return [path, metaFromStyle({caption: {}, brand_system: {}})] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setStyleMeta(Object.fromEntries(entries));
+    }
+    void loadMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [savedStylePathsKey]);
+
+  const filteredSavedStyles = useMemo(() => {
+    const query = savedSearch.trim().toLowerCase();
+    if (!query) return savedStyles;
+    return savedStyles.filter((template) => {
+      const meta = styleMeta[template.path];
+      const haystack = [template.label, meta?.fontFamily, meta?.starterTemplate].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [savedSearch, savedStyles, styleMeta]);
 
   function openPreset(preset: (typeof brandPresets)[number]) {
     window.localStorage.setItem(STARTER_STORAGE_KEY, preset.starterTemplate);
@@ -111,6 +186,24 @@ export function BrandSection({
 
   function openBlankBuilder() {
     router.push("/brand/builder?starter=spiritual_reflective");
+  }
+
+  function duplicateSavedTemplate(template: BrandTemplate) {
+    router.push(`/brand/builder?base=${encodeURIComponent(template.path)}&duplicate=1`);
+  }
+
+  function useSavedTemplateInCreate(template: BrandTemplate) {
+    const brandId = brandIdFromPath(template.path);
+    window.localStorage.setItem(
+      "otonom.generateBrandHandoff",
+      JSON.stringify({
+        brandTemplate: template.path,
+        hyperframesTemplate: brandId,
+        brandSystemTemplateId: brandId,
+        renderer: "hyperframes",
+      }),
+    );
+    router.push("/?section=generate");
   }
 
   return (
@@ -192,41 +285,94 @@ export function BrandSection({
           </div>
         </div>
 
+        {savedStyles.length > 3 ? (
+          <label className="mb-4 flex items-center gap-2 rounded-full border border-white/[0.08] bg-black/20 px-3 py-2">
+            <Search className="h-3.5 w-3.5 text-zinc-500" />
+            <input
+              type="search"
+              value={savedSearch}
+              onChange={(event) => setSavedSearch(event.target.value)}
+              placeholder="Search saved styles"
+              className="min-w-0 flex-1 bg-transparent text-sm text-zinc-200 outline-none placeholder:text-zinc-600"
+            />
+          </label>
+        ) : null}
+
         {savedStyles.length ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            {savedStyles.map((template) => (
-              <div
-                key={template.id}
-                className="group flex min-w-0 items-center gap-2 rounded-[22px] border border-white/[0.06] bg-black/15 p-2 text-left transition hover:border-cyan/[0.22] hover:bg-black/25"
-              >
-                <button
-                  type="button"
-                  onClick={() => openSavedTemplate(template)}
-                  className="flex min-w-0 flex-1 items-center gap-4 rounded-[18px] p-2 text-left"
+            {filteredSavedStyles.map((template) => {
+              const meta = styleMeta[template.path];
+              const starterLabel =
+                hyperframesTemplates.find((item) => item.id === meta?.starterTemplate)?.label || meta?.starterTemplate || "Brand system";
+              return (
+                <article
+                  key={template.id}
+                  className="group rounded-[22px] border border-white/[0.06] bg-black/15 p-4 text-left transition hover:border-cyan/[0.22] hover:bg-black/25"
                 >
-                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/[0.06] bg-black/30 text-cyan">
-                    <Sparkles className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-white transition-colors group-hover:text-cyan">
-                      {template.label}
+                  <div className="flex items-start gap-3">
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-white/[0.06] bg-black/30 text-cyan">
+                      <Sparkles className="h-4 w-4" />
                     </span>
-                    <span className="mt-1 block truncate text-[11px] text-zinc-500">Brand system · edit in Builder</span>
-                  </span>
-                  <ArrowUpRight className="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-cyan" />
-                </button>
-                {onDeleteTemplate ? (
-                  <button
-                    type="button"
-                    onClick={() => onDeleteTemplate(template)}
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/[0.08] text-zinc-500 transition hover:border-danger/35 hover:bg-danger/[0.08] hover:text-danger"
-                    aria-label={`Delete ${template.label}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                ) : null}
-              </div>
-            ))}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-white transition-colors group-hover:text-cyan">{template.label}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-3.5 w-3.5 rounded-full border border-white/10" style={{background: meta?.highlightColor || "#00ff36"}} title="Highlight" />
+                          <span className="h-3.5 w-3.5 rounded-full border border-white/10" style={{background: meta?.backgroundColor || "#111214"}} title="Plate" />
+                          <span className="h-3.5 w-3.5 rounded-full border border-white/10" style={{background: meta?.textColor || "#ffffff"}} title="Text" />
+                        </span>
+                        <span className="rounded-full border border-white/[0.08] px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
+                          {meta?.fontFamily || "Sora"} · {meta?.fontSize || 54}px
+                        </span>
+                        <span className="rounded-full border border-cyan/20 bg-cyan/[0.08] px-2 py-0.5 text-[10px] font-semibold text-cyan">
+                          {starterLabel}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-white/[0.05] pt-3">
+                    <button
+                      type="button"
+                      onClick={() => openSavedTemplate(template)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/[0.08] px-3 text-[11px] font-semibold text-zinc-300 transition hover:border-cyan/30 hover:text-white"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => duplicateSavedTemplate(template)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/[0.08] px-3 text-[11px] font-semibold text-zinc-300 transition hover:border-cyan/30 hover:text-white"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => useSavedTemplateInCreate(template)}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-cyan/25 bg-cyan/[0.08] px-3 text-[11px] font-semibold text-cyan transition hover:bg-cyan/[0.14]"
+                    >
+                      <Wand2 className="h-3.5 w-3.5" />
+                      Use in Create
+                    </button>
+                    {onDeleteTemplate ? (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteTemplate(template)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-white/[0.08] px-3 text-[11px] font-semibold text-zinc-500 transition hover:border-danger/35 hover:bg-danger/[0.08] hover:text-danger"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : filteredSavedStyles.length === 0 && savedStyles.length ? (
+          <div className="grid min-h-[7.5rem] place-items-center rounded-[22px] border border-dashed border-white/[0.08] bg-black/10 px-6 py-8 text-center">
+            <p className="text-sm font-medium text-zinc-400">No saved styles match “{savedSearch.trim()}”</p>
           </div>
         ) : (
           <div className="grid min-h-[7.5rem] place-items-center rounded-[22px] border border-dashed border-white/[0.08] bg-black/10 px-6 py-8 text-center">

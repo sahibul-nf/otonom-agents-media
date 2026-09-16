@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import {ArrowUpRight, Calendar, CheckCircle2, Loader2, MoreHorizontal, Pause, Play, Scissors, Trash2, Volume2, VolumeX} from "lucide-react";
+import {ArrowUpRight, Calendar, CheckCircle2, Loader2, MoreHorizontal, Pause, Play, RefreshCw, Scissors, Trash2, Volume2, VolumeX, Zap} from "lucide-react";
 import {useCallback, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent} from "react";
-import {ScheduleWhenFields} from "@/components/calendar/ScheduleWhenFields";
-import {fromJakartaDatetimeLocal, nextCadenceSlot, toJakartaDatetimeLocal} from "@/components/calendar/schedule-when";
 import {MediaPreviewFrame} from "@/components/shared/MediaPreviewFrame";
 import {ReviewCardSelectToggle} from "@/components/review/ReviewCardSelectToggle";
+import {ReviewDistributeDialog, type ReviewDistributeIntent} from "@/components/review/ReviewDistributeDialog";
 import {apiPath, canMakeShortsFromClip, canQuickApproveClip, clipAutonomyThreshold, clipHygieneFlags, clipHygieneGate, clipHygieneLabel, clipHygieneTone, clipMeetsAutonomyThreshold, clipOverallScore, type ClipCandidate, formatDuration, isClipRerendering, isExplainerClip} from "@/lib/media-api";
 import {claimReviewPreviewPlayback, releaseReviewPreviewPlayback} from "@/lib/review-preview-audio";
 import {formatReviewActivityAt} from "@/lib/review-groups";
@@ -34,23 +33,31 @@ export function ReviewQueueCard({
   onMakeShorts,
   onApprove,
   onSchedule,
+  onPublishNow,
+  publishTargets = [],
+  defaultPublishPlatforms = [],
   selectable = false,
   selectionMode = false,
   selected = false,
   onToggleSelect,
   approving = false,
   scheduling = false,
+  publishing = false,
 }: {
   clip: ClipCandidate;
   statusTone: (status: string) => string;
   deleting?: boolean;
   approving?: boolean;
   scheduling?: boolean;
+  publishing?: boolean;
+  publishTargets?: string[];
+  defaultPublishPlatforms?: string[];
   editHref?: string;
   onDelete?: (clip: ClipCandidate) => void;
   onMakeShorts?: (clip: ClipCandidate) => void;
   onApprove?: (clip: ClipCandidate) => void;
-  onSchedule?: (clip: ClipCandidate, scheduledAt: string) => void;
+  onSchedule?: (clip: ClipCandidate, scheduledAt: string, platforms: string[]) => void;
+  onPublishNow?: (clip: ClipCandidate, platforms: string[], options?: {republish?: boolean}) => void;
   selectable?: boolean;
   selectionMode?: boolean;
   selected?: boolean;
@@ -62,7 +69,7 @@ export function ReviewQueueCard({
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [when, setWhen] = useState(() => toJakartaDatetimeLocal(nextCadenceSlot()));
+  const [distributeIntent, setDistributeIntent] = useState<ReviewDistributeIntent | null>(null);
   const output = clip.output_path || clip.render_quality?.output_path;
   const source = output ? apiPath(`artifact?path=${encodeURIComponent(output)}`) : null;
   const duration = clip.render_quality?.duration_ms || clip.end_ms - clip.start_ms;
@@ -76,8 +83,14 @@ export function ReviewQueueCard({
   const hygieneGate = clipHygieneGate(clip);
   const hygieneFlags = clipHygieneFlags(clip);
   const canApprove = Boolean(onApprove && canQuickApproveClip(clip));
+  const isPublished = clip.status === "published";
+  const isScheduled = clip.status === "scheduled" || clip.status === "ready_to_publish";
   const canSchedule = Boolean(onSchedule && clip.status === "approved" && !rerendering);
-  const menuBusy = deleting || approving || scheduling;
+  const canReschedule = Boolean(onSchedule && (isScheduled || isPublished) && !rerendering);
+  const canPublish = Boolean(onPublishNow && (clip.status === "approved" || isScheduled) && !rerendering);
+  const canRepublish = Boolean(onPublishNow && isPublished && !rerendering);
+  const hasCardMenu = Boolean(onDelete || canApprove || onSchedule || onPublishNow || (canMakeShortsFromClip(clip) && onMakeShorts));
+  const menuBusy = deleting || approving || scheduling || publishing;
   const activityLabel = formatReviewActivityAt(clip.updated_at || clip.created_at);
 
   const pauseThisPreview = useCallback(() => {
@@ -89,6 +102,11 @@ export function ReviewQueueCard({
   useEffect(() => {
     return () => releaseReviewPreviewPlayback(pauseThisPreview);
   }, [pauseThisPreview]);
+
+  function openDistribute(intent: ReviewDistributeIntent) {
+    setMenuOpen(false);
+    setDistributeIntent(intent);
+  }
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -211,7 +229,7 @@ export function ReviewQueueCard({
             <ReviewCardSelectToggle selected={selected} onToggle={onToggleSelect!} label={clip.title_hook} />
           </div>
         ) : null}
-        {(onDelete || onApprove || onSchedule) && !selectionMode ? (
+        {hasCardMenu && !selectionMode ? (
           <div className="absolute right-2.5 top-2.5 z-[5]" ref={menuRef}>
             <button
               type="button"
@@ -231,19 +249,18 @@ export function ReviewQueueCard({
               <div
                 id={menuId}
                 role="menu"
-                className="absolute right-0 top-10 z-50 w-72 overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl"
+                className="absolute right-0 top-10 z-50 w-56 overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl"
               >
                 {canApprove ? (
                   <button
                     type="button"
                     role="menuitem"
                     disabled={menuBusy || rerendering}
-                    onClick={(event) => {
-                      event.stopPropagation();
+                    onClick={() => {
                       setMenuOpen(false);
                       onApprove?.(clip);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-teal transition hover:bg-teal/[0.08] disabled:opacity-40"
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-teal transition hover:bg-teal/[0.08] disabled:opacity-40"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     Approve
@@ -254,50 +271,74 @@ export function ReviewQueueCard({
                     type="button"
                     role="menuitem"
                     disabled={menuBusy}
-                    onClick={(event) => {
-                      event.stopPropagation();
+                    onClick={() => {
                       setMenuOpen(false);
                       onMakeShorts(clip);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-cyan transition hover:bg-cyan/[0.08] disabled:opacity-40"
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-cyan transition hover:bg-cyan/[0.08] disabled:opacity-40"
                   >
                     <Scissors className="h-3.5 w-3.5" />
                     Make shorts
                   </button>
                 ) : null}
                 {canSchedule ? (
-                  <div className="rounded-xl border border-white/[0.06] bg-black/25 p-2">
-                    <p className="mb-2 inline-flex items-center gap-1.5 px-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                      <Calendar className="h-3 w-3 text-cyan" />
-                      Schedule
-                    </p>
-                    <ScheduleWhenFields value={when} onChange={setWhen} disabled={scheduling} showCommit={false} />
-                    <button
-                      type="button"
-                      disabled={scheduling || !when}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onSchedule?.(clip, fromJakartaDatetimeLocal(when));
-                        setMenuOpen(false);
-                      }}
-                      className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-full bg-cyan px-3 text-[10px] font-bold uppercase tracking-wider text-ink disabled:opacity-40"
-                    >
-                      {scheduling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Calendar className="h-3.5 w-3.5" />}
-                      Schedule
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={menuBusy}
+                    onClick={() => openDistribute("schedule")}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-40"
+                  >
+                    <Calendar className="h-3.5 w-3.5 text-cyan" />
+                    Schedule
+                  </button>
+                ) : null}
+                {canReschedule ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={menuBusy}
+                    onClick={() => openDistribute("reschedule")}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-40"
+                  >
+                    <Calendar className="h-3.5 w-3.5 text-cyan" />
+                    Reschedule
+                  </button>
+                ) : null}
+                {canPublish ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={menuBusy}
+                    onClick={() => openDistribute("publish")}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-40"
+                  >
+                    <Zap className="h-3.5 w-3.5 text-cyan" />
+                    Publish now
+                  </button>
+                ) : null}
+                {canRepublish ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={menuBusy}
+                    onClick={() => openDistribute("republish")}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-40"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 text-cyan" />
+                    Republish
+                  </button>
                 ) : null}
                 {onDelete ? (
                   <button
                     type="button"
                     role="menuitem"
                     disabled={menuBusy}
-                    onClick={(event) => {
-                      event.stopPropagation();
+                    onClick={() => {
                       setMenuOpen(false);
                       onDelete(clip);
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-danger transition hover:bg-danger/[0.08] disabled:opacity-40"
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-danger transition hover:bg-danger/[0.08] disabled:opacity-40"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Delete clip
@@ -382,20 +423,38 @@ export function ReviewQueueCard({
             </div>
           </div>
           <Link
-            href={editorHref}
-            onClick={(event) => {
-              if (selectionMode || rerendering) event.preventDefault();
-            }}
-            aria-disabled={selectionMode || rerendering}
-            tabIndex={selectionMode || rerendering ? -1 : undefined}
-            className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan ${
-              selectionMode || rerendering ? "pointer-events-none opacity-35" : "hover:border-cyan/[0.30] hover:text-cyan"
-            }`}
-          >
-            Edit <ArrowUpRight className="h-3.5 w-3.5" />
-          </Link>
+              href={editorHref}
+              onClick={(event) => {
+                if (selectionMode || rerendering) event.preventDefault();
+              }}
+              aria-disabled={selectionMode || rerendering}
+              tabIndex={selectionMode || rerendering ? -1 : undefined}
+              className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan ${
+                selectionMode || rerendering ? "pointer-events-none opacity-35" : "hover:border-cyan/[0.30] hover:text-cyan"
+              }`}
+            >
+              Edit <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
         </div>
       </div>
+      {distributeIntent ? (
+        <ReviewDistributeDialog
+          clip={clip}
+          intent={distributeIntent}
+          publishTargets={publishTargets}
+          defaultPlatforms={defaultPublishPlatforms}
+          busy={scheduling || publishing}
+          onClose={() => setDistributeIntent(null)}
+          onSchedule={(scheduledAt, platforms) => {
+            setDistributeIntent(null);
+            onSchedule?.(clip, scheduledAt, platforms);
+          }}
+          onPublish={(platforms) => {
+            setDistributeIntent(null);
+            onPublishNow?.(clip, platforms, {republish: distributeIntent === "republish" || isPublished});
+          }}
+        />
+      ) : null}
     </article>
   );
 }

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .genres import resolve_genre_pack, uses_devotional_tone, workspace_curation_context
+from .post_copy import enrich_candidates_post_copy
 from .llm import LLMError, call_llm_json
 from .overlay_copy import overlay_slots_for_candidate
 from .scoring import score_candidate_text
@@ -260,8 +261,10 @@ def enrich_candidates_metadata(
     niche: str = "",
     workspace_name: str = "",
     profile_id: str = "",
+    profile: dict[str, Any] | None = None,
+    source: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    return [
+    enriched = [
         enrich_candidate_metadata(
             candidate,
             llm_provider=llm_provider,
@@ -271,6 +274,15 @@ def enrich_candidates_metadata(
         )
         for candidate in candidates
     ]
+    return enrich_candidates_post_copy(
+        enriched,
+        llm_provider=llm_provider,
+        profile_id=workspace_id or profile_id,
+        niche=niche,
+        workspace_name=workspace_name,
+        profile=profile,
+        source=source,
+    )
 
 
 def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> dict[str, Any]:

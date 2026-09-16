@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Privacy Policy for Nourbit social publishing via Postiz (Nour Daily).">
+  <title>Privacy Policy — Nourbit / Postiz</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0b0d10;
+      --card: #12151a;
+      --text: #e8eaed;
+      --muted: #9aa0a6;
+      --accent: #66e8f9;
+      --border: rgba(255, 255, 255, 0.08);
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f8;
+        --card: #ffffff;
+        --text: #1a1c1e;
+        --muted: #5f6368;
+        --border: rgba(0, 0, 0, 0.08);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 4rem;
+    }
+    header {
+      margin-bottom: 2rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.75rem;
+      letter-spacing: -0.02em;
+    }
+    .meta { color: var(--muted); font-size: 0.95rem; }
+    h2 {
+      margin: 2rem 0 0.75rem;
+      font-size: 1.1rem;
+      color: var(--accent);
+    }
+    p, li { color: var(--text); }
+    p { margin: 0 0 1rem; }
+    ul { margin: 0 0 1rem; padding-left: 1.25rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+      margin: 1rem 0;
+      font-size: 0.95rem;
+    }
+    footer {
+      margin-top: 2.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Privacy Policy</h1>
+      <p class="meta">Nourbit · Nour Daily · <a href="https://postiz.nourdaily.com">postiz.nourdaily.com</a></p>
+      <p class="meta">Last updated: September 12, 2026</p>
+    </header>
+
+    <p>
+      This Privacy Policy describes how <strong>Nour Daily</strong> (“we”, “us”) collects, uses, and protects
+      information when you use our self-hosted social media scheduling service at
+      <a href="https://postiz.nourdaily.com">https://postiz.nourdaily.com</a> (the “Service”), including the
+      <strong>Nourbit</strong> publishing workflow operated through this Service.
+    </p>
+
+    <h2>1. Who operates the Service</h2>
+    <p>
+      The Service is operated by Nour Daily for internal content operations and authorized team members.
+      The Service is not offered as a public multi-tenant SaaS product.
+    </p>
+
+    <h2>2. Information we collect</h2>
+    <p>Depending on which platforms you connect, we may collect:</p>
+    <ul>
+      <li><strong>Account information</strong> — name, email, and login credentials for the Service itself.</li>
+      <li>
+        <strong>TikTok (Login Kit &amp; Content Posting API)</strong> — OAuth access and refresh tokens,
+        open ID, display name, avatar, profile information, and account statistics when you connect your
+        TikTok creator account. We also process video files, captions, and publishing metadata you submit
+        for scheduling or direct posting.
+      </li>
+      <li>
+        <strong>Other social platforms</strong> — similar OAuth tokens and profile identifiers for channels
+        you choose to connect (for example YouTube, Facebook, Telegram).
+      </li>
+      <li>
+        <strong>Technical data</strong> — server logs (IP address, timestamps, request metadata) required
+        to operate and secure the Service.
+      </li>
+    </ul>
+
+    <h2>3. How we use information</h2>
+    <p>We use collected information only to:</p>
+    <ul>
+      <li>Authenticate you and maintain your session on the Service.</li>
+      <li>Connect and manage social media integrations you authorize.</li>
+      <li>Schedule, publish, or upload content you explicitly approve.</li>
+      <li>Display connected account identity in the dashboard (for example channel name and avatar).</li>
+      <li>Monitor delivery status, errors, and operational health of the Service.</li>
+      <li>Comply with legal obligations and protect against abuse.</li>
+    </ul>
+    <div class="card">
+      We do <strong>not</strong> sell your personal data. We do not use TikTok data for advertising profiles
+      or unrelated analytics products.
+    </div>
+
+    <h2>4. Legal basis &amp; your control</h2>
+    <p>
+      We process data based on your consent when you connect a social account and confirm a publish action.
+      You control what is posted: content is only sent to TikTok or other platforms after you schedule or
+      confirm publishing in the Service.
+    </p>
+    <p>
+      You may disconnect any integration at any time from the Service settings. Disconnecting revokes our
+      ability to post on your behalf using stored tokens.
+    </p>
+
+    <h2>5. Data storage &amp; retention</h2>
+    <p>
+      Data is stored on infrastructure controlled by Nour Daily (self-hosted servers). OAuth tokens and
+      scheduling records are retained while your integration remains active and as needed to complete
+      pending publishes. You may request deletion of your account data by contacting us (see Section 9).
+    </p>
+
+    <h2>6. Sharing with third parties</h2>
+    <p>We share data only with:</p>
+    <ul>
+      <li><strong>Platform APIs you connect</strong> (for example TikTok, YouTube, Meta, Telegram) to perform
+        actions you request.</li>
+      <li><strong>Infrastructure providers</strong> (for example hosting, DNS, tunneling) that process data
+        solely to deliver the Service.</li>
+    </ul>
+    <p>We do not share data with data brokers or unrelated third-party marketers.</p>
+
+    <h2>7. Security</h2>
+    <p>
+      We use industry-standard measures including HTTPS, access controls, and restricted server access.
+      No method of transmission or storage is 100% secure; we work to protect data proportionate to the
+      sensitivity of OAuth credentials and media assets.
+    </p>
+
+    <h2>8. Children</h2>
+    <p>The Service is not directed to children under 13. We do not knowingly collect data from children.</p>
+
+    <h2>9. Contact &amp; data requests</h2>
+    <p>
+      For privacy questions, data access, or deletion requests, contact:
+      <a href="mailto:sahibulnf@nourdaily.com">sahibulnf@nourdaily.com</a>
+    </p>
+
+    <h2>10. Changes</h2>
+    <p>
+      We may update this policy from time to time. The “Last updated” date at the top will reflect changes.
+      Continued use of the Service after updates constitutes acceptance of the revised policy.
+    </p>
+
+    <footer>
+      <a href="/terms">Terms of Service</a> ·
+      <a href="https://postiz.nourdaily.com">Back to Postiz</a>
+    </footer>
+  </div>
+</body>
+</html>

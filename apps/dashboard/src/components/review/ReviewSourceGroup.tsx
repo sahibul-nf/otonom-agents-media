@@ -13,6 +13,9 @@ export function ReviewSourceGroup({
   onApprove,
   onMakeShorts,
   onSchedule,
+  onPublishNow,
+  publishTargets,
+  defaultPublishPlatforms,
   selectableIds,
   selectedIds,
   selectionMode = false,
@@ -24,7 +27,10 @@ export function ReviewSourceGroup({
   onDelete?: (clip: ReviewClipGroup["clips"][number]) => void;
   onApprove?: (clip: ReviewClipGroup["clips"][number]) => void;
   onMakeShorts?: (clip: ReviewClipGroup["clips"][number]) => void;
-  onSchedule?: (clip: ReviewClipGroup["clips"][number], scheduledAt: string) => void;
+  onSchedule?: (clip: ReviewClipGroup["clips"][number], scheduledAt: string, platforms: string[]) => void;
+  onPublishNow?: (clip: ReviewClipGroup["clips"][number], platforms: string[], options?: {republish?: boolean}) => void;
+  publishTargets?: string[];
+  defaultPublishPlatforms?: (clip: ReviewClipGroup["clips"][number]) => string[];
   selectableIds?: Set<string>;
   selectedIds?: Set<string>;
   selectionMode?: boolean;
@@ -44,7 +50,11 @@ export function ReviewSourceGroup({
         onApprove={onApprove}
         onMakeShorts={onMakeShorts}
         onSchedule={onSchedule}
+        onPublishNow={onPublishNow}
+        publishTargets={publishTargets}
+        defaultPublishPlatforms={defaultPublishPlatforms?.(clip)}
         scheduling={actionStates?.[`clip:${clip.id}:schedule`]?.status === "running"}
+        publishing={actionStates?.[`clip:${clip.id}:publish-now`]?.status === "running"}
         selectable={selectable}
         selectionMode={selectionMode}
         selected={Boolean(selectedIds?.has(clip.id))}

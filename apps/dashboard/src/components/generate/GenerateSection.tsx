@@ -17,6 +17,30 @@ import {
   type HyperframesTemplate,
 } from "./types";
 
+const GENRE_AUTO = "auto";
+
+function genresIsAuto(genres: string[]) {
+  return genres.includes(GENRE_AUTO);
+}
+
+function friendlyTemplateStatus(status?: string) {
+  switch (status) {
+    case "ready":
+    case "production-ready":
+      return "Ready";
+    case "draft":
+      return "Draft";
+    case "experimental":
+    case "beta":
+      return "Beta";
+    case "unavailable":
+    case "error":
+      return "Unavailable";
+    default:
+      return status ? "Available" : "Ready";
+  }
+}
+
 type GenerateConfigLike = {
   sourceUrl: string;
   count: number;
@@ -178,7 +202,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   hyperframesCatalog: _hyperframesCatalog,
   durationPresets,
   genres,
-  genrePackLabel: _genrePackLabel,
+  genrePackLabel,
   jobs,
   engineHealth,
   actionState,
@@ -307,10 +331,16 @@ export function GenerateSection<T extends GenerateConfigLike>({
   ];
   const templateShellDefaults = shellComponentsFromTemplate(selectedTemplate);
   const latestProgress = Math.max(0, Math.min(100, latest?.progress || 0));
-  const selectedGenreCount = genreOptions.filter((genre) => config.genres.includes(genre.id)).length;
+  const genresAuto = genresIsAuto(config.genres);
+  const manualGenreCount = genreOptions.filter((genre) => config.genres.includes(genre.id)).length;
   const toggleGenre = (id: string) => {
-    const next = config.genres.includes(id) ? config.genres.filter((item) => item !== id) : [...config.genres, id];
-    update({genres: next.length ? next : [id]});
+    if (config.genres.includes(id)) {
+      const next = config.genres.filter((item) => item !== id && item !== GENRE_AUTO);
+      update({genres: next.length ? next : [GENRE_AUTO]});
+      return;
+    }
+    const manual = config.genres.filter((item) => item !== GENRE_AUTO);
+    update({genres: [...manual, id]});
   };
 
   return (
@@ -452,6 +482,66 @@ export function GenerateSection<T extends GenerateConfigLike>({
                 })}
               </div>
             </div>
+            <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-semibold text-white">Visual template</h4>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                    Layout, overlays, and motion. Caption font, watermark, and CTA overlays come from a saved brand style in Advanced.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTemplatePickerOpen(true)}
+                  className="inline-flex h-9 items-center gap-2 rounded-full border border-cyan/[0.24] bg-black/20 px-3 text-xs font-semibold text-cyan"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Browse
+                </button>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px]">
+                <SelectTile
+                  label="Template"
+                  value={config.hyperframesTemplate}
+                  options={hyperframesTemplateOptions}
+                  onChange={(value) => {
+                    const picked = templatesForFormat.find((template) => template.id === value)
+                      ?? hyperframesTemplates.find((template) => template.id === value);
+                    update({
+                      renderer: "hyperframes",
+                      hyperframesTemplate: value,
+                      brandSystemTemplateId: picked?.source === "brand_system" ? value : "",
+                      brandTemplate:
+                        picked?.source === "brand_system" && picked?.brand_template_path
+                          ? picked.brand_template_path
+                          : templateOnlyBrand
+                            ? TEMPLATE_ONLY_BRAND
+                            : config.brandTemplate,
+                      shellComponents: shellComponentsFromTemplate(picked),
+                    });
+                  }}
+                />
+                <SelectTile
+                  label="Format"
+                  value={config.hyperframesFormat}
+                  options={[
+                    {value: "short_9_16", label: "Short 9:16"},
+                    {value: "long_16_9", label: "Long 16:9"},
+                    {value: "auto", label: "Auto"},
+                  ]}
+                  onChange={(value) => update({hyperframesFormat: value})}
+                />
+              </div>
+              {selectedTemplate ? (
+                <p className="mt-2 text-xs text-zinc-500">
+                  Using <span className="text-zinc-300">{selectedTemplate.label}</span>
+                  {selectedTemplate.source === "brand_system" ? " · includes saved caption style" : " · set caption style in Advanced if needed"}
+                </p>
+              ) : config.hyperframesTemplate === "auto" ? (
+                <p className="mt-2 text-xs text-zinc-500">Auto picks a recipe from your content angles and workspace niche.</p>
+              ) : null}
+            </div>
+
             <div className="mt-5 grid gap-3">
               <SlideToConfirm
                 label={hasActiveJob ? "Generating…" : "Slide to generate"}
@@ -524,69 +614,11 @@ export function GenerateSection<T extends GenerateConfigLike>({
             <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
               Advanced
               <span className="ml-2 text-xs font-medium text-zinc-500">
-                template · duration · angles · captions
+                duration · angles · captions
               </span>
             </summary>
 
             <div className="mt-4 grid gap-5 border-t border-white/[0.06] pt-4">
-              <div>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <h4 className="font-semibold text-white">Visual template</h4>
-                    <p className="mt-1 text-xs leading-5 text-zinc-500">Recipe layout, overlays, and motion from the template gallery.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setTemplatePickerOpen(true)}
-                    className="inline-flex h-9 items-center gap-2 rounded-full border border-cyan/[0.24] bg-black/20 px-3 text-xs font-semibold text-cyan"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Browse
-                  </button>
-                </div>
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px]">
-                  <SelectTile
-                    label="Template"
-                    value={config.hyperframesTemplate}
-                    options={hyperframesTemplateOptions}
-                    onChange={(value) => {
-                      const picked = templatesForFormat.find((template) => template.id === value)
-                        ?? hyperframesTemplates.find((template) => template.id === value);
-                      update({
-                        renderer: "hyperframes",
-                        hyperframesTemplate: value,
-                        brandSystemTemplateId: picked?.source === "brand_system" ? value : "",
-                        brandTemplate:
-                          picked?.source === "brand_system" && picked?.brand_template_path
-                            ? picked.brand_template_path
-                            : templateOnlyBrand
-                              ? TEMPLATE_ONLY_BRAND
-                              : config.brandTemplate,
-                        shellComponents: shellComponentsFromTemplate(picked),
-                      });
-                    }}
-                  />
-                  <SelectTile
-                    label="Format"
-                    value={config.hyperframesFormat}
-                    options={[
-                      {value: "short_9_16", label: "Short 9:16"},
-                      {value: "long_16_9", label: "Long 16:9"},
-                      {value: "auto", label: "Auto"},
-                    ]}
-                    onChange={(value) => update({hyperframesFormat: value})}
-                  />
-                </div>
-                {selectedTemplate ? (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Using <span className="text-zinc-300">{selectedTemplate.label}</span>
-                    {selectedTemplate.source === "brand_system" ? " · includes saved caption style" : " · caption style is set below"}
-                  </p>
-                ) : config.hyperframesTemplate === "auto" ? (
-                  <p className="mt-2 text-xs text-zinc-500">Auto picks a recipe from your content angles and workspace niche.</p>
-                ) : null}
-              </div>
-
               <div>
                 <h4 className="mb-3 font-semibold text-white">Clip length</h4>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -621,14 +653,29 @@ export function GenerateSection<T extends GenerateConfigLike>({
               </div>
 
               <div>
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-3 flex items-center justify-between gap-3">
                   <h4 className="font-semibold text-white">Content angles</h4>
-                  <span className="text-xs text-zinc-500">{selectedGenreCount} selected</span>
+                  <span className="text-xs text-zinc-500">
+                    {genresAuto ? "Auto" : `${manualGenreCount} selected`}
+                    {genrePackLabel ? ` · ${genrePackLabel} pack` : ""}
+                  </span>
                 </div>
-                <p className="mb-3 text-xs leading-5 text-zinc-500">How to cut this batch. Niche and brand voice come from the workspace, not extra chips.</p>
+                <p className="mb-3 text-xs leading-5 text-zinc-500">
+                  How to cut this batch. Auto lets the model pick the best angle per clip; manual chips steer the whole batch.
+                </p>
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => update({genres: [GENRE_AUTO]})}
+                    className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition ${genresAuto ? "border-cyan bg-teal/[0.16] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
+                    aria-pressed={genresAuto}
+                    title="Let the model pick the best content angle for each clip."
+                  >
+                    {genresAuto ? <BadgeCheck className="h-4 w-4 text-cyan" /> : null}
+                    Auto
+                  </button>
                   {genreOptions.map((genre) => {
-                    const active = config.genres.includes(genre.id);
+                    const active = !genresAuto && config.genres.includes(genre.id);
                     return (
                       <button
                         key={genre.id}
@@ -872,7 +919,12 @@ export function GenerateSection<T extends GenerateConfigLike>({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-cyan">{template.category}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan">{template.category}</p>
+                        <span className="rounded-full border border-white/[0.10] bg-black/30 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
+                          {friendlyTemplateStatus(template.status)}
+                        </span>
+                      </div>
                       <h4 className="mt-1 truncate text-lg font-semibold text-white">{template.label}</h4>
                     </div>
                     {active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-cyan" /> : null}

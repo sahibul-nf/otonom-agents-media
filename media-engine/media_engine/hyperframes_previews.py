@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -23,7 +24,10 @@ from .hyperframes_templates import (
 )
 
 PREVIEW_ROOT = ARTIFACTS_DIR / "hyperframes_template_previews"
+BRAND_STUDIO_PREVIEW_ROOT = ARTIFACTS_DIR / "hyperframes_brand_studio_previews"
 PREVIEW_CONTRACT_VERSION = 3
+BRAND_STUDIO_PREVIEW_CONTRACT_VERSION = 2
+BRAND_STUDIO_PREVIEW_SECONDS = 5
 # Gallery previews show recipe overlay + captions only — no shared shell hook/brand/CTA chrome.
 PREVIEW_SHELL_COMPONENTS = {"hook": False, "watermark": False, "source": False, "cta": False}
 
@@ -249,6 +253,24 @@ def _write_preview_source(path: Path, width: int, height: int, template_id: str)
         raise RuntimeError(f"ffmpeg preview source failed: {result.stderr[-1200:]}")
 
 
+def ensure_preview_stock_path(template_id: str, hyperframes_format: str = "short_9_16") -> Path:
+    stock = preview_stock_path(template_id)
+    if stock and stock.exists():
+        return stock
+    width, height, _ = dimensions_for_format(hyperframes_format)
+    cache = (
+        ARTIFACTS_DIR
+        / "hyperframes_template_stock_cache"
+        / template_id.replace(":", "__")
+        / f"{width}x{height}.mp4"
+    )
+    if cache.exists() and cache.stat().st_size > 0:
+        return cache
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    _write_preview_source(cache, width, height, template_id)
+    return cache
+
+
 def _preview_copy_for_template(template: dict[str, Any]) -> dict[str, Any]:
     category = str(template.get("category") or "Official")
     label = str(template.get("label") or "Template preview")
@@ -350,6 +372,218 @@ def _preview_copy_for_template(template: dict[str, Any]) -> dict[str, Any]:
         "titleHook": hook_line,
         "subtitle": subtitle_line,
     }
+
+
+def brand_studio_preview_cache_key(
+    starter_template: str,
+    hyperframes_format: str,
+    sample_phrase: str,
+    style: dict[str, Any],
+    brand_system: dict[str, Any],
+) -> str:
+    payload = {
+        "starter_template": starter_template,
+        "hyperframes_format": hyperframes_format,
+        "sample_phrase": sample_phrase,
+        "style": style,
+        "brand_system": brand_system,
+        "contract_version": BRAND_STUDIO_PREVIEW_CONTRACT_VERSION,
+    }
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return digest[:24]
+
+
+def brand_studio_preview_path(cache_key: str, hyperframes_format: str) -> Path:
+    normalized_format = normalize_hyperframes_format(hyperframes_format)
+    if normalized_format == "auto":
+        normalized_format = "short_9_16"
+    return BRAND_STUDIO_PREVIEW_ROOT / cache_key / normalized_format / "preview.mp4"
+
+
+def brand_studio_preview_status(cache_key: str, hyperframes_format: str) -> dict[str, Any]:
+    output = brand_studio_preview_path(cache_key, hyperframes_format)
+    metadata_path = output.parent / "preview-metadata.json"
+    metadata: dict[str, Any] = {}
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            metadata = {}
+    ready = output.exists() and output.stat().st_size > 0 and metadata.get("contract_version") == BRAND_STUDIO_PREVIEW_CONTRACT_VERSION
+    renderer_ready, unavailable_reason = preview_renderer_ready()
+    preview_url = f"/api/media/brand-studio-preview?cache_key={cache_key}&format={normalize_hyperframes_format(hyperframes_format)}"
+    return {
+        "cache_key": cache_key,
+        "format": normalize_hyperframes_format(hyperframes_format),
+        "ready": ready,
+        "renderer_ready": renderer_ready,
+        "unavailable_reason": unavailable_reason if not renderer_ready else "",
+        "preview_url": preview_url if ready else "",
+        "path": str(output) if ready else "",
+        "size": output.stat().st_size if ready else 0,
+    }
+
+
+def _captions_from_phrase(sample_phrase: str, duration_ms: int) -> tuple[list[dict[str, Any]], str, str]:
+    text = " ".join(sample_phrase.strip().split()) or "Your brand caption preview."
+    words = text.split()
+    if not words:
+        words = ["Preview"]
+    start_ms = 400
+    end_ms = max(start_ms + 1, duration_ms - 200)
+    step = max(1, (end_ms - start_ms) // max(1, len(words)))
+    word_rows = []
+    cursor = start_ms
+    for word_index, word in enumerate(words):
+        word_end = end_ms if word_index == len(words) - 1 else cursor + step
+        word_rows.append({"text": word, "startMs": cursor, "endMs": word_end})
+        cursor = word_end
+    captions = [{"text": text, "startMs": start_ms, "endMs": end_ms, "words": word_rows}]
+    return captions, text, ""
+
+
+def _brand_studio_shell_components(brand_system: dict[str, Any]) -> dict[str, bool]:
+    cta_overlay = str(brand_system.get("cta_overlay") or "").strip().lower()
+    return {
+        "hook": False,
+        "watermark": True,
+        "source": False,
+        "cta": bool(cta_overlay and cta_overlay != "none"),
+    }
+
+
+def _brand_studio_preview_contract(
+    starter_template: str,
+    hyperframes_format: str,
+    width: int,
+    height: int,
+    sample_phrase: str,
+    style: dict[str, Any],
+    brand_system: dict[str, Any],
+) -> dict[str, Any]:
+    template = resolve_hyperframes_template(starter_template)
+    duration_ms = BRAND_STUDIO_PREVIEW_SECONDS * 1000
+    captions, hook_line, subtitle_line = _captions_from_phrase(sample_phrase, duration_ms)
+    caption_style = style.get("caption") if isinstance(style.get("caption"), dict) else {}
+    brand = style.get("brand") if isinstance(style.get("brand"), dict) else {}
+    shell_components = _brand_studio_shell_components(brand_system)
+    watermark_text = str(brand.get("watermark_text") or "").strip() or "Brand Clips"
+    cta_overlay = str(brand_system.get("cta_overlay") or "").strip().lower()
+    cta_text = "Follow"
+    if "yt" in cta_overlay or "youtube" in cta_overlay:
+        cta_text = "Subscribe"
+    elif "instagram" in cta_overlay:
+        cta_text = "Follow on Instagram"
+    elif "tiktok" in cta_overlay:
+        cta_text = "Follow on TikTok"
+    merged_style = {
+        **style,
+        "brand_system": brand_system,
+        "caption": {
+            **caption_style,
+            "preset": str(brand_system.get("caption_style") or caption_style.get("preset") or template["caption_style"]),
+        },
+        "shell_components": shell_components,
+    }
+    return {
+        "composition": "HyperFramesBrandStudioPreview",
+        "width": width,
+        "height": height,
+        "fps": 30,
+        "durationMs": duration_ms,
+        "candidateId": f"brand_studio_{template['id']}",
+        "sourceVideoPath": "media/source.mp4",
+        "sourceUrl": "preview://brand-studio-fixture",
+        "sourceAttribution": "",
+        "startMs": 0,
+        "endMs": duration_ms,
+        "startTimecode": "00:00:00",
+        "endTimecode": f"00:00:0{BRAND_STUDIO_PREVIEW_SECONDS}",
+        "titleHook": hook_line,
+        "subtitle": subtitle_line,
+        "overlay": heuristic_overlay_slots(hook_line, subtitle_line),
+        "captionText": sample_phrase.strip() or hook_line,
+        "captions": captions,
+        "captionEvents": [],
+        "captionDiagnostics": {"eventCount": 0, "maxConcurrentEvents": 0, "overlapCount": 0},
+        "visualBeats": [],
+        "watermarkText": watermark_text,
+        "ctaText": cta_text if shell_components["cta"] else "",
+        "hookSubtitle": subtitle_line,
+        "stylePreset": "hyperframes_brand_studio_preview",
+        "style": merged_style,
+        "shellComponents": shell_components,
+        "cropStrategy": "template_preview",
+        "captionStyle": str(brand_system.get("caption_style") or template["caption_style"]),
+        "genres": [],
+        "hyperframesTemplate": template["id"],
+        "hyperframesFormat": hyperframes_format,
+        "templateVersion": template["version"],
+        "effectsUsed": template["effects"],
+        "componentsUsed": template.get("components_used", []),
+        "blocksUsed": template.get("blocks_used", []),
+    }
+
+
+def ensure_brand_studio_preview(
+    starter_template: str,
+    hyperframes_format: str,
+    sample_phrase: str,
+    style: dict[str, Any],
+    brand_system: dict[str, Any],
+) -> dict[str, Any]:
+    cache_key = brand_studio_preview_cache_key(starter_template, hyperframes_format, sample_phrase, style, brand_system)
+    output = brand_studio_preview_path(cache_key, hyperframes_format)
+    metadata_path = output.parent / "preview-metadata.json"
+    if output.exists() and output.stat().st_size > 0 and metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if metadata.get("contract_version") == BRAND_STUDIO_PREVIEW_CONTRACT_VERSION:
+                status = brand_studio_preview_status(cache_key, hyperframes_format)
+                return {**status, "cached": True}
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    require_hyperframes_runtime()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    width, height, resolved_format = dimensions_for_format(hyperframes_format)
+    project_dir = output.parent / "project"
+    media_dir = project_dir / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    source = media_dir / "source.mp4"
+    if not source.exists():
+        _write_preview_source(source, width, height, starter_template)
+
+    contract = _brand_studio_preview_contract(
+        starter_template,
+        resolved_format,
+        width,
+        height,
+        sample_phrase,
+        style,
+        brand_system,
+    )
+    (project_dir / "index.html").write_text(
+        build_hyperframes_index_html(contract, starter_template, resolved_format, genres=[]),
+        encoding="utf-8",
+    )
+    checks = render_hyperframes_project(project_dir, output, quality="draft")
+    (output.parent / "preview-metadata.json").write_text(
+        json.dumps(
+            {
+                "cache_key": cache_key,
+                "starter_template": starter_template,
+                "format": resolved_format,
+                "checks": checks,
+                "contract_version": BRAND_STUDIO_PREVIEW_CONTRACT_VERSION,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    status = brand_studio_preview_status(cache_key, hyperframes_format)
+    return {**status, "cached": False}
 
 
 def _preview_contract(template_id: str, hyperframes_format: str, width: int, height: int) -> dict[str, Any]:

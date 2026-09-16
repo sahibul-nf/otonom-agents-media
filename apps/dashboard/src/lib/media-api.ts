@@ -342,6 +342,7 @@ export type HyperframesTemplate = {
   production_checks?: Record<string, string>;
   recipe_module?: string;
   preview_source_video?: string;
+  preview_source_url?: string;
   font_family?: string;
   motion_preset?: string;
   color_grade?: string;
@@ -628,6 +629,41 @@ export async function prewarmHyperframesTemplatePreview(templateId: string, incl
   });
 }
 
+export type BrandStudioPreviewStatus = {
+  cache_key: string;
+  format: string;
+  ready: boolean;
+  renderer_ready?: boolean;
+  unavailable_reason?: string;
+  preview_url?: string;
+  path?: string;
+  size?: number;
+  cached?: boolean;
+};
+
+export function hyperframesTemplateStockUrl(
+  template: Pick<HyperframesTemplate, "id" | "preview_source_url">,
+  hyperframesFormat: "short_9_16" | "long_16_9" = "short_9_16",
+): string | null {
+  if (template.preview_source_url) {
+    if (template.preview_source_url.includes("format=")) return template.preview_source_url;
+    return `${template.preview_source_url}&format=${encodeURIComponent(hyperframesFormat)}`;
+  }
+  if (!template.id) return null;
+  const safeId = encodeURIComponent(template.id.replace(":", "__"));
+  return apiPath(`hyperframes-template-stock?template=${safeId}&format=${encodeURIComponent(hyperframesFormat)}`);
+}
+
+export async function requestBrandStudioPreviewRender(payload: {
+  starter_template: string;
+  hyperframes_format: string;
+  sample_phrase: string;
+  style: Record<string, unknown>;
+  brand_system: Record<string, unknown>;
+}): Promise<BrandStudioPreviewStatus> {
+  return apiPost<BrandStudioPreviewStatus>("brand-studio-preview-render", payload);
+}
+
 export function formatDuration(ms?: number) {
   if (!ms) return "-";
   const seconds = Math.round(ms / 1000);
@@ -657,6 +693,76 @@ export function platformLabel(platform: string) {
     telegram_channel: "Telegram Channel",
   };
   return labels[platform] || platform;
+}
+
+export function platformShortLabel(platform: string) {
+  const labels: Record<string, string> = {
+    facebook_reels: "Reels",
+    youtube_shorts: "Shorts",
+    youtube_video: "YouTube",
+    tiktok: "TikTok",
+    telegram_channel: "Telegram",
+  };
+  return labels[platform] || platformLabel(platform);
+}
+
+export function humanizePublishError(raw?: string) {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  const jsonMatch = text.match(/\{[\s\S]*\}$/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as {message?: unknown};
+      const message = parsed.message;
+      if (Array.isArray(message) && message.length) {
+        return String(message[0]);
+      }
+      if (typeof message === "string" && message.trim()) {
+        return message.trim();
+      }
+    } catch {
+      // keep original
+    }
+  }
+  return text.replace(/^tiktok:\s*/i, "").replace(/^Postiz POST \S+ failed:\s*/i, "");
+}
+
+export function cleanPublishStatus(status?: string) {
+  if (!status) return "Not run";
+  const labels: Record<string, string> = {
+    ready: "Ready",
+    published: "Posted",
+    live: "Live",
+    accepted: "Sent to Postiz",
+    failed: "Postiz error",
+    blocked: "Needs action",
+    legacy_blocked: "Outdated",
+    skipped: "Already posted (verified)",
+    publishing: "Publishing",
+    pending: "Waiting",
+    queued: "On Postiz calendar",
+    cooldown: "Cooling down",
+  };
+  return labels[status] || status.replaceAll("_", " ");
+}
+
+export function publishStatusHint(
+  status?: string,
+  result?: {error?: string; reason?: string},
+): string | undefined {
+  switch (status) {
+    case "cooldown":
+      return "Paused ~12 min after a failed send. Wait, then Publish now again.";
+    case "queued":
+      return "On Postiz calendar — will post at the scheduled slot unless you Publish now.";
+    case "skipped":
+      return result?.reason || "Already verified live on this platform.";
+    case "failed":
+    case "blocked":
+      return result?.error || result?.reason || undefined;
+    default:
+      return result?.error || result?.reason || undefined;
+  }
 }
 
 const PORTRAIT_ONLY_PLATFORMS = new Set(["youtube_shorts", "facebook_reels", "tiktok"]);

@@ -2,10 +2,12 @@ import unittest
 from unittest.mock import patch
 
 from media_engine.genres import (
+    GENRE_AUTO,
     UNIVERSAL_CATALOG,
     genre_catalog,
     genre_options,
     genre_prompt_phrase,
+    genres_is_auto,
     normalize_genres,
     resolve_genre_pack,
     uses_devotional_tone,
@@ -29,7 +31,8 @@ class GenrePackTests(unittest.TestCase):
         self.assertEqual(nourbit, workspace)
         self.assertNotIn("kajian", [item["id"] for item in techtalk["options"]])
         self.assertNotIn("markets", [item["id"] for item in techtalk["options"]])
-        self.assertEqual(techtalk["defaults"], ["advice", "opinion", "explainer"])
+        self.assertEqual(techtalk["defaults"], [GENRE_AUTO])
+        self.assertTrue(techtalk["supports_auto"])
         self.assertIn("story", nourbit)
 
     def test_empty_genres_use_angle_defaults_not_niche_chips(self):
@@ -61,6 +64,35 @@ class GenrePackTests(unittest.TestCase):
         self.assertFalse(uses_devotional_tone(["advice"], profile_id="workspace"))
         self.assertTrue(uses_devotional_tone(["advice"], profile_id="nourbit"))
         self.assertTrue(uses_devotional_tone(["kajian"]))
+
+    def test_auto_sentinel_skips_pack_defaults(self):
+        self.assertTrue(genres_is_auto(["auto"]))
+        self.assertEqual(normalize_genres(["auto"], profile_id="nourbit"), [GENRE_AUTO])
+        self.assertEqual(genre_prompt_phrase([GENRE_AUTO]), "")
+
+    def test_llm_prompt_uses_per_clip_angles_when_auto(self):
+        captured: dict[str, str] = {}
+
+        def fake_llm(_provider: str, system: str, user: str):
+            captured["system"] = system
+            captured["user"] = user
+            return {"clips": []}
+
+        entries = [TranscriptEntry(index * 1000, (index + 1) * 1000, "pasar AI bisnis") for index in range(20)]
+        with patch("media_engine.youtube_pipeline.call_llm_json", side_effect=fake_llm):
+            llm_rank_suggestions(
+                entries,
+                2,
+                "deepseek",
+                genres=[GENRE_AUTO],
+                profile_id="workspace",
+                niche="tech & finance for builders",
+                workspace_name="TechTalk Intel",
+            )
+
+        self.assertIn("content_angle", captured["system"])
+        self.assertIn("Story", captured["user"])
+        self.assertNotIn("Content angles for this batch", captured["user"])
 
     def test_workspace_context_for_curation(self):
         text = workspace_curation_context("TechTalk Intel", "tech & finance edutainment")

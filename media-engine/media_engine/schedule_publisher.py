@@ -225,11 +225,12 @@ def publish_candidate_platform(
     dry_run: bool = False,
     post_type: str = "now",
     date_iso: str | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     platform = target["platform"]
-    if already_published(conn, candidate["id"], platform):
+    if not force and already_published(conn, candidate["id"], platform):
         return {"platform": platform, "status": "skipped", "reason": "already posted (verified)"}
-    if in_retry_backoff(conn, candidate["id"], platform, minutes=12):
+    if not force and in_retry_backoff(conn, candidate["id"], platform, minutes=12):
         return {"platform": platform, "status": "cooldown", "reason": "cooldown after recent failure"}
 
     guard = can_publish_candidate(source, target, candidate)
@@ -414,6 +415,7 @@ def publish_schedule_now(
     candidate_id: str = "",
     profile_id: str = "",
     dry_run: bool = False,
+    force: bool = False,
 ) -> dict[str, Any]:
     from .postiz_sync import cancel_postiz_results
 
@@ -447,7 +449,11 @@ def publish_schedule_now(
     for platform in platforms:
         previous = existing.get(platform) if isinstance(existing.get(platform), dict) else {}
         if on_postiz_calendar(previous) and not dry_run:
-            cancel_postiz_results({platform: previous}, resolved_profile)
+            previous_status = str(previous.get("status") or "").lower()
+            if force and previous_status in POSTIZ_LIVE_STATUSES:
+                pass
+            else:
+                cancel_postiz_results({platform: previous}, resolved_profile)
         target = fetch_one(
             conn,
             "SELECT * FROM publish_targets WHERE profile_id = ? AND platform = ?",
@@ -464,6 +470,7 @@ def publish_schedule_now(
             render_job,
             dry_run=dry_run,
             post_type="now",
+            force=force,
         )
     final_status = rollup_schedule_status(
         platforms,

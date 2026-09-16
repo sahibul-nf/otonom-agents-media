@@ -99,6 +99,7 @@ class HyperframesTemplate:
             "preview_status": _aggregate_preview_status(self.id, formats),
             "preview_cache_ready": _preview_cache_ready(self.id, formats),
             "preview_urls": _preview_urls(self.id, formats),
+            "preview_source_url": _preview_source_url(self.id),
             "preview_video_urls": _official_preview_urls(self.id, formats),
             "production_checks": {
                 "lint": "required",
@@ -617,6 +618,7 @@ def _saved_brand_system_templates() -> list[dict[str, Any]]:
                 "preview_status": _aggregate_preview_status(public_id, formats),
                 "preview_cache_ready": _preview_cache_ready(public_id, formats),
                 "preview_urls": _preview_urls(public_id, formats),
+                "preview_source_url": _preview_source_url(starter_id),
                 "preview_video_urls": _official_preview_urls(starter_id, formats) or _official_preview_urls(public_id, formats),
                 "production_checks": {
                     "lint": "required",
@@ -650,6 +652,11 @@ def _preview_urls(template_id: str, formats: list[str]) -> dict[str, str]:
         item: f"/api/media/hyperframes-template-preview?template={safe_id}&format={item}"
         for item in formats
     }
+
+
+def _preview_source_url(template_id: str) -> str:
+    safe_id = template_id.replace(":", "__")
+    return f"/api/media/hyperframes-template-stock?template={safe_id}"
 
 
 def _official_preview_urls(template_id: str, formats: list[str]) -> dict[str, str]:

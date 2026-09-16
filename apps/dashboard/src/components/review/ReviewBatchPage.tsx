@@ -6,9 +6,11 @@ import {AlertTriangle, ArrowLeft, Loader2} from "lucide-react";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewQueueCard} from "@/components/review/ReviewQueueCard";
-import {apiGet, apiPost, canBatchRerenderClip, canQuickApproveClip, isClipRerendering, type BatchApproveResult, type BatchRerenderResult, type ClipCandidate, type DeleteCandidatesResult} from "@/lib/media-api";
+import {apiGet, apiPost, canBatchRerenderClip, canQuickApproveClip, filterPlatformsForClip, isClipRerendering, type BatchApproveResult, type BatchRerenderResult, type ClipCandidate, type DeleteCandidatesResult, type ScheduledPost} from "@/lib/media-api";
 import {groupFromClips, reviewEditorHref, reviewStatusTone} from "@/lib/review-groups";
 import {useReviewSelection} from "@/lib/use-review-selection";
+
+const publishPlatforms = ["telegram_channel", "youtube_shorts", "youtube_video", "facebook_reels", "tiktok"];
 
 /** Max columns by viewport — iPad portrait stays 2-up. */
 function maxBatchColumnsForWidth(width: number) {
@@ -43,13 +45,19 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   const [batchApproving, setBatchApproving] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [schedule, setSchedule] = useState<ScheduledPost[]>([]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
     try {
-      const rows = await apiGet<ClipCandidate[]>("review");
+      const [rows, scheduled] = await Promise.all([
+        apiGet<ClipCandidate[]>("review"),
+        apiGet<ScheduledPost[]>("schedule"),
+      ]);
       setClips(rows);
+      setSchedule(scheduled);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn’t load this batch.");
@@ -98,16 +106,60 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
     );
   }
 
-  async function scheduleClip(clip: ClipCandidate, scheduledAt: string) {
-    if (clip.status !== "approved") return;
+  async function scheduleClip(clip: ClipCandidate, scheduledAt: string, platforms: string[]) {
+    if (!["approved", "scheduled", "ready_to_publish", "published"].includes(clip.status)) return;
     setSchedulingId(clip.id);
     try {
-      await apiPost("schedule-next", {candidate_id: clip.id, scheduled_at: scheduledAt});
+      await apiPost("schedule-next", {
+        candidate_id: clip.id,
+        scheduled_at: scheduledAt,
+        platforms,
+        ...(clip.status === "published" ? {republish: true} : {}),
+      });
       await refresh();
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Schedule failed");
     } finally {
       setSchedulingId(null);
+    }
+  }
+
+  function defaultPublishPlatformsForClip(clip: ClipCandidate) {
+    const existingSchedule = schedule.find((item) => item.candidate_id === clip.id);
+    const base = existingSchedule?.platforms?.length ? existingSchedule.platforms : publishPlatforms;
+    return filterPlatformsForClip(base, clip);
+  }
+
+  async function publishClip(clip: ClipCandidate, platforms: string[], options?: {republish?: boolean}) {
+    const resolvedPlatforms = filterPlatformsForClip(platforms, clip);
+    if (!resolvedPlatforms.length) {
+      window.alert("No compatible publish destinations for this clip.");
+      return;
+    }
+    const existingSchedule = schedule.find((item) => item.candidate_id === clip.id);
+    const force = Boolean(options?.republish || clip.status === "published");
+    setPublishingId(clip.id);
+    try {
+      if (clip.status === "approved" || force) {
+        await apiPost("schedule-next", {
+          candidate_id: clip.id,
+          platforms: resolvedPlatforms,
+          ...(force ? {republish: true} : {}),
+        });
+      } else if (existingSchedule) {
+        const samePlatforms =
+          resolvedPlatforms.length === existingSchedule.platforms.length &&
+          resolvedPlatforms.every((platform) => existingSchedule.platforms.includes(platform));
+        if (!samePlatforms) {
+          await apiPost("schedule-platforms", {schedule_id: existingSchedule.id, platforms: resolvedPlatforms});
+        }
+      }
+      await apiPost("publish-now", {candidate_id: clip.id, ...(force ? {force: true} : {})});
+      await refresh();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Publish now failed");
+    } finally {
+      setPublishingId(null);
     }
   }
 
@@ -322,6 +374,10 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
             onDelete={deleteClip}
             onApprove={approveClip}
             onSchedule={scheduleClip}
+            onPublishNow={publishClip}
+            publishTargets={publishPlatforms}
+            defaultPublishPlatforms={defaultPublishPlatformsForClip(only)}
+            publishing={publishingId === only.id}
           />
         </div>
       </main>
@@ -426,7 +482,11 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               onDelete={deleteClip}
               onApprove={approveClip}
               onSchedule={scheduleClip}
+              onPublishNow={publishClip}
+              publishTargets={publishPlatforms}
+              defaultPublishPlatforms={defaultPublishPlatformsForClip(clip)}
               scheduling={schedulingId === clip.id}
+              publishing={publishingId === clip.id}
               selectable
               selectionMode={selectionMode}
               selected={selection.isSelected(clip.id)}

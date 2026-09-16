@@ -235,6 +235,16 @@ video {
   animation: brand-studio-intro-in 1.5s ease-out both;
 }
 
+@keyframes brand-studio-recipe-cue {
+  0% { opacity: 0; transform: translateY(8px) scale(0.98); }
+  12%, 78% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+
+.brand-studio-recipe-cue {
+  animation: brand-studio-recipe-cue 2.6s ease-out both;
+}
+
 .template-card .template-preview-hover *,
 .template-card .template-preview-hover::before,
 .template-card .template-preview-hover::after {

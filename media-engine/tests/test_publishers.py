@@ -25,7 +25,7 @@ def json_dumps(value):
 
 class PublisherTests(unittest.TestCase):
     def test_build_tiktok_payload_defaults_private(self):
-        candidate = {"id": "clip1", "title_hook": "Hook", "viral_reason": "Reason"}
+        candidate = {"id": "clip1", "profile_id": "nourbit", "title_hook": "Hook", "viral_reason": "Reason"}
         render_job = {"output_path": "/tmp/clip.mp4", "metadata_json": '{"subtitle": "Warm subtitle"}'}
         payload = build_payload("tiktok", candidate, render_job)
         self.assertEqual(payload["visibility"], "private")

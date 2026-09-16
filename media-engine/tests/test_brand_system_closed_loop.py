@@ -58,6 +58,85 @@ class BrandSystemClosedLoopTests(unittest.TestCase):
             self.assertEqual(resolved["recipe_module"], "neon_seize_future")
             self.assertEqual(resolved["brand_template_path"], "profiles/custom_demo_brand.json")
 
+    def test_save_brand_template_preserves_caption_position_and_uppercase(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            default_style = {
+                "id": "default_workspace_style",
+                "caption": {
+                    "preset": "mozi",
+                    "font_family": "Sora",
+                    "font_size": 54,
+                    "text_color": "#ffffff",
+                    "stroke_width": 10,
+                    "highlight_word_color": "#00ff36",
+                    "background_color": "rgba(0,0,0,0.58)",
+                    "position": "bottom",
+                    "uppercase": False,
+                },
+                "brand": {},
+            }
+            (profiles / "default_workspace_style.json").write_text(json.dumps(default_style), encoding="utf-8")
+            with patch("media_engine.styles.ROOT", root), patch("media_engine.styles.PROFILES_DIR", profiles), patch(
+                "media_engine.styles.DEFAULT_STYLE_PATH", profiles / "default_workspace_style.json"
+            ):
+                saved = save_brand_system_template(
+                    "Positioned Brand",
+                    {
+                        "caption": {
+                            "font_family": "Poppins",
+                            "font_size": 56,
+                            "position": "top",
+                            "uppercase": True,
+                        },
+                        "brand": {"watermark_text": "Top WM"},
+                    },
+                    {"starter_template": "eva_neon_cyber", "texture_effect": "shimmer-sweep"},
+                )
+                loaded = load_style(saved["path"])
+            self.assertEqual(loaded["caption"]["position"], "top")
+            self.assertTrue(loaded["caption"]["uppercase"])
+            self.assertEqual(loaded["brand"]["watermark_text"], "Top WM")
+
+            candidate = {
+                "id": "c1",
+                "start_ms": 0,
+                "end_ms": 25000,
+                "title_hook": "Hook",
+                "viral_reason": "reason",
+                "hook_subtitle": "sub",
+                "transcript_span": "hello world",
+                "timed_captions": [
+                    {
+                        "startMs": 0,
+                        "endMs": 12000,
+                        "text": "hello",
+                        "words": [{"text": "hello", "startMs": 0, "endMs": 12000}],
+                    },
+                    {
+                        "startMs": 12000,
+                        "endMs": 24000,
+                        "text": "world",
+                        "words": [{"text": "world", "startMs": 12000, "endMs": 24000}],
+                    },
+                ],
+            }
+            with tempfile.NamedTemporaryFile(suffix=".mp4") as media:
+                contract = build_premium_render_contract(
+                    candidate,
+                    {"id": "workspace", "watermark_text": "Profile WM", "cta_text": "Follow"},
+                    media.name,
+                    "https://example.com",
+                    "Source",
+                    style=loaded,
+                )
+            self.assertEqual(contract["watermarkText"], "Top WM")
+            html = build_hyperframes_index_html(contract, "eva_neon_cyber", "short_9_16")
+            self.assertIn("Poppins", html)
+            self.assertIn("Top WM", html)
+
     def test_save_overwrite_keeps_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

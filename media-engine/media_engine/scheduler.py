@@ -201,12 +201,14 @@ def schedule_candidate_next(
     platforms: list[str] | None = None,
     now: datetime | None = None,
     scheduled_at: str | None = None,
+    republish: bool = False,
 ) -> dict:
     candidate = conn.execute("SELECT id, profile_id, status FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
     if not candidate:
         raise ValueError("candidate not found")
     if candidate["status"] not in {"approved", "scheduled", "ready_to_publish", "pending_auto_schedule"}:
-        raise ValueError("only approved clips can be scheduled")
+        if not (republish and candidate["status"] == "published"):
+            raise ValueError("only approved clips can be scheduled")
     profile_id = candidate["profile_id"] or profile_id
     clock = (now or datetime.now(DEFAULT_TZ)).astimezone(DEFAULT_TZ)
     if scheduled_at:

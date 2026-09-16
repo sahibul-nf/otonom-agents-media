@@ -422,9 +422,9 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
             INSERT INTO generation_jobs
               (id, profile_id, source_id, source_url, count, clip_length_preset, clip_min_seconds,
                clip_max_seconds, genres_json, brand_template, hyperframes_template,
-               brand_system_template_id, hyperframes_format, renderer, quality, caption_source, asr_model, speech_language, transcript_languages,
+               brand_system_template_id, hyperframes_format, renderer, quality, caption_source, curation_source, asr_model, speech_language, transcript_languages,
                llm_provider, status, progress, command, result_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -443,6 +443,7 @@ def create_generation_job(payload: dict[str, Any], start: bool = True) -> dict[s
                 config["renderer"],
                 config["quality"],
                 config["caption_source"],
+                config["curation_source"],
                 config["asr_model"],
                 config["speech_language"],
                 config["transcript_languages"],

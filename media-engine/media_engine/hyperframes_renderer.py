@@ -193,12 +193,30 @@ def _shell_css(
       --shell-source-color: var(--template-secondary);
       --shell-hook-subtitle: rgba(255,255,255,0.84);
     }}
-    video {{ width: 100%; height: 100%; object-fit: cover; filter: {video_filter}; }}
+    video {{
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      filter: {video_filter};
+    }}
     .shade {{
       position: absolute;
       inset: 0;
+      z-index: 1;
       background: linear-gradient(180deg, rgba(0,0,0,0.58) 0%, rgba(0,0,0,0.12) 28%, rgba(0,0,0,0.18) 55%, rgba(0,0,0,0.76) 100%);
       pointer-events: none;
+    }}
+    .brand-texture-layer {{
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      pointer-events: none;
+      z-index: 2;
     }}
     .template-layer {{
       box-sizing: border-box;
@@ -284,16 +302,15 @@ def _shell_css(
       box-shadow: 0 16px 44px rgba(0,0,0,0.38);
     }}
     .brand-grain {{
-      position: absolute; inset: 0; pointer-events: none; opacity: 0.22; mix-blend-mode: overlay;
+      opacity: 0.22; mix-blend-mode: overlay;
       background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
       background-size: 180px 180px;
     }}
     .brand-vignette {{
-      position: absolute; inset: 0; pointer-events: none;
       background: radial-gradient(ellipse 70% 65% at 50% 45%, transparent 42%, rgba(0,0,0,.55) 100%);
     }}
     .brand-shimmer {{
-      position: absolute; inset: 0; pointer-events: none; overflow: hidden;
+      overflow: hidden;
     }}
     .brand-shimmer::before {{
       content: "";
@@ -433,16 +450,17 @@ def _brand_system_layers(style: dict[str, Any]) -> str:
     brand_system = style.get("brand_system") if isinstance(style.get("brand_system"), dict) else {}
     if not brand_system:
         return ""
-    texture = str(brand_system.get("texture_effect") or "").lower()
-    cta = str(brand_system.get("cta_overlay") or "").lower()
+    texture = str(brand_system.get("texture_effect") or "none").lower()
+    cta = str(brand_system.get("cta_overlay") or "none").lower()
     layers: list[str] = []
-    if "grain" in texture:
-        layers.append('<div class="template-layer brand-grain" aria-hidden="true"></div>')
-    if "vignette" in texture or (texture and "grain" not in texture and "shimmer" not in texture):
-        layers.append('<div class="template-layer brand-vignette" aria-hidden="true"></div>')
-    if "shimmer" in texture:
-        layers.append('<div class="template-layer brand-shimmer" aria-hidden="true"></div>')
-    if cta:
+    if texture not in {"", "none"}:
+        if "grain" in texture:
+            layers.append('<div class="brand-texture-layer brand-grain" aria-hidden="true"></div>')
+        if "vignette" in texture:
+            layers.append('<div class="brand-texture-layer brand-vignette" aria-hidden="true"></div>')
+        if "shimmer" in texture:
+            layers.append('<div class="brand-texture-layer brand-shimmer" aria-hidden="true"></div>')
+    if cta and cta != "none":
         label = "Follow"
         mark = "●"
         if "yt" in cta or "youtube" in cta:

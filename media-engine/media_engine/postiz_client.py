@@ -259,7 +259,7 @@ def settings_for_platform(platform: str, *, title: str, caption: str) -> dict[st
             "duet": False,
             "stitch": False,
             "comment": True,
-            "autoAddMusic": False,
+            "autoAddMusic": "no",
             "brand_content_toggle": False,
             "brand_organic_toggle": False,
             "content_posting_method": "DIRECT_POST",

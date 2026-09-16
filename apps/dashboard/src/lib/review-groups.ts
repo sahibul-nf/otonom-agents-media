@@ -124,7 +124,32 @@ export function groupFromClips(clips: ClipCandidate[], sourceId: string): Review
   };
 }
 
-export function groupReviewClips(clips: ClipCandidate[]): ReviewClipGroup[] {
+function flatReviewGroups(clips: ClipCandidate[]): ReviewClipGroup[] {
+  return clips.map((clip) => {
+    const source = clip.source;
+    const title = (source?.title || "").trim() || clip.title_hook || "Clip";
+    const channel = (source?.channel || "").trim();
+    const thumbnailUrl = (source?.thumbnail_url || "").trim();
+    const sourceUrl = (source?.url || "").trim();
+    return {
+      key: `clip:${clip.id}`,
+      sourceId: (clip.source_id || source?.id || clip.id).trim(),
+      title,
+      channel,
+      thumbnailUrl,
+      sourceUrl,
+      clips: [clip],
+      showHeader: false,
+      clearedCount: CLEARED_STATUSES.has(clip.status) ? 1 : 0,
+      activityAt: latestClipActivityIso([clip]),
+    };
+  });
+}
+
+/** Status tabs (Published / Scheduled) show one card per clip so badges and previews stay consistent. */
+export function groupReviewClips(clips: ClipCandidate[], options?: {flatten?: boolean}): ReviewClipGroup[] {
+  if (options?.flatten) return flatReviewGroups(clips);
+
   const order: string[] = [];
   const buckets = new Map<string, ClipCandidate[]>();
 

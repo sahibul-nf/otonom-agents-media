@@ -17,7 +17,15 @@ from .autonomy import is_duplicate_candidate
 from .captions import build_word_timeline, group_word_captions
 from .db import ARTIFACTS_DIR, ROOT
 from .duration_presets import DurationPreset, duration_prompt_phrase, resolve_duration_strategy
-from .genres import genre_prompt_phrase, normalize_genres, uses_devotional_tone, workspace_curation_context
+from .genres import (
+    GENRE_OPTIONS,
+    genre_catalog_labels,
+    genre_prompt_phrase,
+    genres_is_auto,
+    normalize_genres,
+    uses_devotional_tone,
+    workspace_curation_context,
+)
 from .llm import LLMError, call_llm_json
 from .overlay_copy import overlay_slots_for_candidate
 from .rendering import ms_to_timecode
@@ -676,6 +684,9 @@ def build_candidate(
     else:
         viral_reason = hook_subtitle
         reason_source = subtitle_source
+    content_angle = str((llm_suggestion or {}).get("content_angle") or "").strip().lower()
+    if content_angle not in GENRE_OPTIONS:
+        content_angle = ""
     caption_style = style.get("caption", {})
     ai_style = style.get("ai", {})
     word_timeline = build_word_timeline(
@@ -721,6 +732,7 @@ def build_candidate(
         "selected_duration_ms": end_ms - start_ms,
         "duration_reason": duration_reason(duration_preset, end_ms - start_ms, boundary_score),
         "genres": genres,
+        "content_angle": content_angle,
         "boundary_confidence": boundary_score,
         "opening_strength": opening_score,
         "title_source": title_source,
@@ -766,11 +778,17 @@ def llm_rank_suggestions(
         return []
     duration_preset = duration_preset or resolve_duration_strategy("auto")
     genres = normalize_genres(genres, profile_id=profile_id, niche=niche)
+    auto_angles = genres_is_auto(genres)
     transcript = "\n".join(f"{ms_to_timecode(entry.start_ms)} {entry.text}" for entry in entries[:600])
     system_prompt = (
         "Anda adalah kurator clip pendek. Balas hanya JSON murni dengan key clips. "
         "Setiap clip berisi start_time, end_time, title_hook, hook_subtitle, viral_reason, "
-        "dan overlay {kicker, headline, subhead, stamp, line_a, line_b} dari transcript clip itu. "
+        + (
+            "content_angle (pilih satu id dari katalog: story, advice, opinion, explainer, social_commentary, history, tutorial), "
+            if auto_angles
+            else ""
+        )
+        + "dan overlay {kicker, headline, subhead, stamp, line_a, line_b} dari transcript clip itu. "
         "Batas karakter overlay: kicker 28, headline 56, subhead 80, stamp 22, line_a 32, line_b 32. "
         "Jangan pakai copy dummy katalog (contoh More clarity, MUSTARD MODE, LEVEL UP, BOOST YOUR BUSINESS). "
         "Niche dan brand voice datang dari workspace, bukan dari daftar genre kustom."
@@ -782,11 +800,16 @@ def llm_rank_suggestions(
         if uses_devotional_tone(genres, profile_id, niche)
         else "Utamakan konteks utuh, opini yang jelas, dan bahasa natural sesuai sumber. Jangan memaksa hook iman/devotional."
     )
+    angle_instruction = (
+        f"Pilih content_angle terbaik per clip dari katalog ini: {genre_catalog_labels()}. "
+        if auto_angles
+        else (f"Content angles for this batch: {angle_line}. " if angle_line else "")
+    )
     user_prompt = (
         f"Pilih hingga {count} momen terbaik (jangan lebih dari {count}) "
         f"berdurasi {duration_prompt_phrase(duration_preset)} untuk short/reels dari transcript ini. "
         + (f"{context} " if context else "")
-        + (f"Content angles for this batch: {angle_line}. " if angle_line else "")
+        + angle_instruction
         + "Lebih sedikit clip yang utuh lebih baik daripada memaksa kuota. "
         + tone
         + " hook_subtitle harus terasa hangat, singkat, tidak kaku, maksimal 18 kata.\n\n"

@@ -573,6 +573,8 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
         workspace_id=args.profile,
         niche=getattr(args, "niche", None) or profile.get("niche"),
         workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
+        profile=profile,
+        source=_source,
     )
     for candidate in candidates:
         insert_candidate(conn, candidate)
@@ -632,6 +634,8 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         workspace_id=args.profile,
         niche=getattr(args, "niche", None) or profile.get("niche"),
         workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
+        profile=profile,
+        source=_source,
     )
     attribution = args.source_attribution or "Source: Channel clip"
     renders: list[dict[str, Any]] = []
