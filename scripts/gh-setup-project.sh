@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# solo-dev-ai-kit:managed
 # Creates GitHub Project and links repo. Writes GH_PROJECT_NUM to .workflow-kit.env when possible.
 set -euo pipefail
 
@@ -113,7 +114,9 @@ echo ""
 echo "Project: $PROJECT_URL (number $PROJECT_NUM)"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ -x "$SCRIPT_DIR/gh-ensure-project-status-qa.sh" ]]; then
+if [[ -x "$SCRIPT_DIR/gh-ensure-project-status.sh" ]]; then
+  GH_PROJECT_NUM="$PROJECT_NUM" "$SCRIPT_DIR/gh-ensure-project-status.sh" || true
+elif [[ -x "$SCRIPT_DIR/gh-ensure-project-status-qa.sh" ]]; then
   GH_PROJECT_NUM="$PROJECT_NUM" "$SCRIPT_DIR/gh-ensure-project-status-qa.sh" || true
 fi
 

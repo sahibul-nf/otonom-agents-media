@@ -1,28 +1,31 @@
-# Git Workflow
+# Git workflow (Otonom Media)
+
+Canonical delivery flow: **`AGENTS.md`**, **`docs/github-workflow.md`**.
 
 ## Branching
 
-- `main`: stable local baseline.
-- `feature/<short-name>`: implementation work.
-- `ops/<short-name>`: deployment or credential plumbing.
+- **`main`**: single integration + production branch (`SINGLE_BRANCH=true` in `.workflow-kit.env`).
+- Optional short-lived branches: `feat/<short-name>`, `fix/<short-name>` — merge to **`main`**, then `git push origin main`.
+- Do **not** use a separate `dev` branch unless it exists in `git branch -a`.
 
-## Commit Rules
+## Commits
 
 - Commit source, docs, tests, templates, and sanitized examples.
-- Do not commit runtime data, generated videos, archives, SQLite databases, logs, `.env` files, or platform tokens.
-- Keep media engine work isolated under `media-engine/` until shared modules are intentionally extracted.
+- Do not commit runtime data, generated videos, SQLite DBs, logs, `.env`, or tokens.
+- Media engine work stays under `media-engine/` unless shared modules are intentionally extracted.
+- AI agents commit **only when you ask**.
 
-## Useful Commands
-
-```bash
-git status --short
-python3 scripts/secret_scan.py
-PYTHONPATH=media-engine python3 -m unittest discover -s media-engine/tests -v
-```
-
-## First Setup
+## Hooks & checks
 
 ```bash
 git config core.hooksPath .githooks
-git status --short
+python3 scripts/secret_scan.py
+cd media-engine && PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+## GitHub board (after push)
+
+```bash
+./scripts/gh-sync-project-status.sh --qa N   # shipped, needs staging QA
+./scripts/gh-sync-project-status.sh          # closed issues → Done on board
 ```

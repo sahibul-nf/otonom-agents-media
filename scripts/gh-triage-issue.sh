@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+# solo-dev-ai-kit:managed
 # Create a GitHub issue and add it to the project board.
+#
 # Usage:
 #   ./scripts/gh-triage-issue.sh --title "[Bug]: …" --body-file /tmp/body.md --labels "bug,priority:high"
+#
+# Validates body via gh-validate-issue-body.sh. Duplicate open title → returns existing URL, exit 0.
+# See: docs/issue-body.example.md · scripts/README.md
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,6 +36,11 @@ done
 
 [[ -n "$TITLE" ]] || { echo "Missing --title" >&2; exit 1; }
 [[ -n "$BODY_FILE" && -f "$BODY_FILE" ]] || { echo "Missing --body-file or --body" >&2; exit 1; }
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -x "$SCRIPT_DIR/gh-validate-issue-body.sh" ]]; then
+  "$SCRIPT_DIR/gh-validate-issue-body.sh" --body-file "$BODY_FILE"
+fi
 
 if gh issue list --repo "$REPO" --state open --search "$TITLE in:title" --json title \
   | jq -e --arg t "$TITLE" '.[] | select(.title==$t)' >/dev/null 2>&1; then

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# solo-dev-ai-kit:managed
 # Source from other workflow-kit scripts. Loads .workflow-kit.env from repo root.
 _load_config() {
   local root="${1:-.}"
@@ -16,4 +17,6 @@ _load_config() {
   INTEGRATION_BRANCH="${INTEGRATION_BRANCH:-dev}"
   PRODUCTION_BRANCH="${PRODUCTION_BRANCH:-main}"
   SINGLE_BRANCH="${SINGLE_BRANCH:-false}"
+  APP_STACK="${APP_STACK:-web}"
+  VERIFY_MAX_ROUNDS="${VERIFY_MAX_ROUNDS:-3}"
 }

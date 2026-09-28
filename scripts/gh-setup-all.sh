@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# solo-dev-ai-kit:managed
 # One-shot GitHub setup: labels → project board → QA column.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,7 +16,22 @@ fi
 
 cd "$ROOT"
 ./scripts/gh-create-labels.sh "$REPO"
-./scripts/gh-setup-project.sh "$REPO" || true
+
+if ! ./scripts/gh-setup-project.sh "$REPO"; then
+  echo "error: gh-setup-project.sh failed for $REPO" >&2
+  echo "Check: gh auth status && gh auth refresh -h github.com -s repo,project,read:project" >&2
+  exit 1
+fi
+
+if [[ -f "$ROOT/.workflow-kit.env" ]]; then
+  # shellcheck disable=SC1090
+  source "$ROOT/.workflow-kit.env"
+  if [[ -z "${GH_PROJECT_NUM:-}" ]]; then
+    echo "warning: GH_PROJECT_NUM was not written to .workflow-kit.env" >&2
+  else
+    echo "Project number saved: GH_PROJECT_NUM=$GH_PROJECT_NUM"
+  fi
+fi
 
 echo ""
 echo "Setup pass complete. See docs/github-workflow.md"

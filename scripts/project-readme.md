@@ -1,39 +1,35 @@
-# Otonom Media delivery — dev board
+<!-- solo-dev-ai-kit:managed -->
+# Otonom Media delivery — project board
 
-Solo dev + AI workflow for **sahibul-nf/otonom-agents-media**.
+Dev board for **sahibul-nf/otonom-agents-media** (solo dev + AI workflow).
 
-## Daily rhythm
+## Flow
 
-1. Open **Kanban** — pick **Focus = This week** (or move one from Backlog).
-2. Drag **Status** to *In Progress* → branch `feat/…` → PR with `Fixes #N`.
-3. After merge or staging deploy, drag to **QA** until you confirm in a real session.
-4. **Done** when verified; AI runs `./scripts/gh-close-verified-issue.sh` when you confirm *works* / *ok*.
-5. **Push `main` before `main`** when CI tests only run on integration branch.
-6. User-visible work → `CHANGELOG.md` when it matters.
+1. **Triage** → issue on board (**Backlog** / **Todo**).
+2. Human moves to **Ready for AI** when autonomous work is authorized (or implement via chat).
+3. Agent implements → **AI Working** → self-verify → **AI Review** → PR.
+4. Human reviews PR → **Human Review** / **QA**.
+5. Merge → confirm *works* → close issue → **Done**.
 
-## Status (Kanban)
+## Status columns
 
 | Status | When |
 |--------|------|
-| **Backlog** | Not started |
-| **In Progress** | Active branch |
-| **QA** | On staging — confirming acceptance |
-| **Done** | Verified |
+| **Backlog** / **Todo** | Triaged, not started |
+| **Ready for AI** | Human authorized orchestrator/agent pickup |
+| **AI Working** / **In Progress** | Active implementation |
+| **AI Review** / **QA** | Automated verify done — PR ready |
+| **Human Review** / **QA** | Human reviews diff |
+| **Done** | Shipped |
 
-If **QA** is missing: `./scripts/gh-ensure-project-status-qa.sh`
+```bash
+./scripts/gh-ensure-project-status.sh   # add columns without moving cards
+./scripts/gh-set-issue-status.sh N ai-working
+```
 
-## Custom fields
+## Fields
 
-| Field | Values |
-|-------|--------|
-| **Priority** | High · Medium · Low |
-| **Focus** | This week · Backlog · Icebox |
+- **Priority:** High · Medium · Low (synced from issue labels)
+- **Focus:** This week · Backlog · Icebox
 
-## Links
-
-- [Repo issues](https://github.com/sahibul-nf/otonom-agents-media/issues)
-- [github-workflow.md](https://github.com/sahibul-nf/otonom-agents-media/blob/main/docs/github-workflow.md)
-
-## AI prompt
-
-`Implement #N acceptance criteria`
+See `AGENTS.md` and `docs/github-workflow.md`.

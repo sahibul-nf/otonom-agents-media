@@ -1,3 +1,4 @@
+# solo-dev-ai-kit:managed
 name: Feature
 description: New capability or meaningful improvement
 title: "[Feature]: "
@@ -17,10 +18,16 @@ body:
       description: What should be true when done? (present tense)
     validations:
       required: true
+  - type: markdown
+    attributes:
+      value: |
+        ## Acceptance criteria
+        Use unchecked checklist items (`- [ ]`). AI close-out checks these boxes.
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance criteria
+      label: Checklist items
+      description: One `- [ ]` line per criterion (do not remove the heading above)
       placeholder: |
         - [ ] …
         - [ ] …

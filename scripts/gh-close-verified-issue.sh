@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
-# After user confirms QA, check acceptance criteria and post closing comment.
+# solo-dev-ai-kit:managed
+# After human QA: check AC boxes, post comment, close issue, set board Done.
 #
 # Usage:
 #   ./scripts/gh-close-verified-issue.sh 14 --comment-file /tmp/close-14.md
+#   ./scripts/gh-close-verified-issue.sh 14 --comment "Verified on staging" --no-close
+#
+# Flags:
+#   --no-check-ac   Skip checking AC boxes in issue body
+#   --no-close      Comment only; do not close issue or set board Done
+#
+# Template: docs/close-comment.example.md
+# Exit: 0 success; 1 missing args or gh failure
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,12 +24,15 @@ ISSUE=""
 COMMENT=""
 COMMENT_FILE=""
 CHECK_AC=1
+DO_CLOSE=1
+SET_DONE=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --comment) COMMENT="$2"; shift 2 ;;
     --comment-file) COMMENT_FILE="$2"; shift 2 ;;
     --no-check-ac) CHECK_AC=0; shift ;;
+    --no-close) DO_CLOSE=0; SET_DONE=0; shift ;;
     -*) echo "Unknown arg: $1" >&2; exit 1 ;;
     *)
       if [[ -z "$ISSUE" ]]; then ISSUE="$1"; shift; else echo "Unexpected arg: $1" >&2; exit 1; fi
@@ -59,5 +71,21 @@ if [[ -n "$COMMENT_FILE" ]]; then
 else
   gh issue comment "$ISSUE" --repo "$REPO" --body "$COMMENT"
 fi
-
 echo "Posted closing comment on #$ISSUE"
+
+if [[ "$SET_DONE" -eq 1 ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if [[ -x "$SCRIPT_DIR/gh-set-issue-status.sh" ]]; then
+    "$SCRIPT_DIR/gh-set-issue-status.sh" "$ISSUE" done || true
+  fi
+fi
+
+if [[ "$DO_CLOSE" -eq 1 ]]; then
+  STATE="$(gh issue view "$ISSUE" --repo "$REPO" --json state --jq .state)"
+  if [[ "$STATE" == "OPEN" ]]; then
+    gh issue close "$ISSUE" --repo "$REPO"
+    echo "Closed issue #$ISSUE"
+  else
+    echo "Issue #$ISSUE already closed"
+  fi
+fi

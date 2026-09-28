@@ -1,3 +1,7 @@
+# Local solo-dev-ai-kit clone (bootstrap only)
+.workflow-kit-upstream/
+.workflow-kit/env.backup
+
 # OS/editor noise
 .DS_Store
 .idea/

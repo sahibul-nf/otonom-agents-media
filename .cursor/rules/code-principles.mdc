@@ -1,7 +1,8 @@
 ---
-alwaysApply: true
+alwaysApply: false
 description: Core code principles and best practices
 ---
+<!-- solo-dev-ai-kit:managed -->
 
 # Code Principles & Best Practices
 

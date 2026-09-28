@@ -1,6 +1,7 @@
 ---
 trigger: always_on
 ---
+<!-- solo-dev-ai-kit:managed -->
 
 # Code Principles
 

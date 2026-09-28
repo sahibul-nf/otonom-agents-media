@@ -1,3 +1,4 @@
+# solo-dev-ai-kit:managed
 name: Bug report
 description: Something broken or a regression
 title: "[Bug]: "
@@ -8,6 +9,7 @@ body:
     attributes:
       value: |
         Describe what you **see** today — not which commit caused it.
+        The acceptance criteria section below is required for AI close-out.
   - type: textarea
     id: current-behavior
     attributes:
@@ -28,11 +30,18 @@ body:
       placeholder: |
         1. …
         2. …
+  - type: markdown
+    attributes:
+      value: |
+        ## Acceptance criteria
+        Use unchecked checklist items (`- [ ]`). AI close-out checks these boxes.
   - type: textarea
     id: acceptance
     attributes:
-      label: Acceptance criteria
-      description: Checklist for AI close-out (use `- [ ]` lines under ## Acceptance criteria in issue body if editing manually)
+      label: Checklist items
+      description: One `- [ ]` line per criterion (do not remove the heading above)
       placeholder: |
         - [ ] …
         - [ ] …
+    validations:
+      required: true

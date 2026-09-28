@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Board setup: Priority + Focus fields, sync from issue labels.
-# Usage: ./scripts/gh-configure-project.sh [owner/repo]
+# solo-dev-ai-kit:managed
+# Board setup: title, readme, Priority + Focus fields, sync from issue labels.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,10 +15,15 @@ PROJECT_TITLE="${GH_PROJECT_TITLE:-Project delivery}"
 
 PROJECT_ID="$(gh project view "$PROJECT_NUM" --owner "$OWNER" --format json --jq .id)"
 
-# Title only — avoid `gh project edit --readme` (broken UpdateProjectV2 query in some gh versions).
+README_FILE="$(dirname "$0")/project-readme.md"
+if [[ ! -f "$README_FILE" ]]; then
+  README_FILE="$ROOT/scripts/project-readme.md"
+fi
+
 gh project edit "$PROJECT_NUM" --owner "$OWNER" \
   --title "$PROJECT_TITLE" \
-  --description "Dev board for $REPO — solo dev + AI workflow." >/dev/null 2>&1 || true
+  --description "Dev board for $REPO — solo dev + AI workflow." \
+  --readme "$(cat "$README_FILE")"
 
 ensure_field() {
   local name="$1"
@@ -36,54 +41,73 @@ ensure_field() {
 ensure_field "Priority" "High,Medium,Low"
 ensure_field "Focus" "This week,Backlog,Icebox"
 
-echo "Syncing project items from issue labels …"
-python3 - "$OWNER" "$PROJECT_NUM" "$PROJECT_ID" <<'PY'
-import json, subprocess, sys
+field_option_id() {
+  local field_name="$1"
+  local option_name="$2"
+  gh project field-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+    | jq -r --arg fn "$field_name" --arg on "$option_name" \
+      '.fields[] | select(.name==$fn) | .options[]? | select(.name==$on) | .id'
+}
 
-owner, project_num, project_id = sys.argv[1:4]
+PRIORITY_FIELD="$(gh project field-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+  | jq -r '.fields[] | select(.name=="Priority") | .id')"
+FOCUS_FIELD="$(gh project field-list "$PROJECT_NUM" --owner "$OWNER" --format json \
+  | jq -r '.fields[] | select(.name=="Focus") | .id')"
 
-def run(args):
-    r = subprocess.run(args, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise SystemExit(r.stderr[-800:] or f"failed: {args}")
-    return r.stdout
+priority_option() {
+  case "$1" in
+    high) field_option_id "Priority" "High" ;;
+    medium) field_option_id "Priority" "Medium" ;;
+    low) field_option_id "Priority" "Low" ;;
+    *) field_option_id "Priority" "Medium" ;;
+  esac
+}
 
-fields = {f["name"]: f for f in json.loads(run(["gh", "project", "field-list", project_num, "--owner", owner, "--format", "json"]))["fields"]}
-priority_field = fields["Priority"]["id"]
-focus_field = fields["Focus"]["id"]
-pri_opts = {o["name"]: o["id"] for o in fields["Priority"].get("options") or []}
-foc_opts = {o["name"]: o["id"] for o in fields["Focus"].get("options") or []}
+focus_option() {
+  case "$1" in
+    week) field_option_id "Focus" "This week" ;;
+    backlog) field_option_id "Focus" "Backlog" ;;
+    icebox) field_option_id "Focus" "Icebox" ;;
+    *) field_option_id "Focus" "Backlog" ;;
+  esac
+}
 
-items = json.loads(run(["gh", "project", "item-list", project_num, "--owner", owner, "--format", "json", "--limit", "100"]))["items"]
-for item in items:
-    number = (item.get("content") or {}).get("number")
-    if not number:
-        continue
-    labels = ",".join(item.get("labels") or [])
-    if "priority:high" in labels:
-        pri, focus = "High", "This week"
-    elif "priority:low" in labels:
-        pri, focus = "Low", "Icebox"
-    else:
-        pri, focus = "Medium", "Backlog"
-    for field_id, opt_id in ((priority_field, pri_opts[pri]), (focus_field, foc_opts[focus])):
-        subprocess.run(
-            [
-                "gh", "project", "item-edit",
-                "--id", item["id"],
-                "--project-id", project_id,
-                "--field-id", field_id,
-                "--single-select-option-id", opt_id,
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    print(f"  #{number} → Priority={pri} Focus={focus}")
-PY
+label_priority() {
+  local labels="$1"
+  [[ "$labels" == *"priority:high"* ]] && echo high && return
+  [[ "$labels" == *"priority:low"* ]] && echo low && return
+  echo medium
+}
+
+echo "Syncing project items from open issues …"
+gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json --limit 100 \
+  | jq -c '.items[]' | while read -r row; do
+  item_id="$(echo "$row" | jq -r '.id')"
+  number="$(echo "$row" | jq -r '.content.number // empty')"
+  labels="$(echo "$row" | jq -r '[.labels[]?] | join(",")')"
+  [[ -z "$number" ]] && continue
+
+  pri="$(label_priority "$labels")"
+  if [[ "$pri" == "high" ]]; then
+    focus=week
+  elif [[ "$pri" == "low" ]]; then
+    focus=icebox
+  else
+    focus=backlog
+  fi
+
+  pri_id="$(priority_option "$pri")"
+  foc_id="$(focus_option "$focus")"
+  [[ -n "$pri_id" ]] && gh project item-edit --id "$item_id" --project-id "$PROJECT_ID" \
+    --field-id "$PRIORITY_FIELD" --single-select-option-id "$pri_id" >/dev/null
+  [[ -n "$foc_id" ]] && gh project item-edit --id "$item_id" --project-id "$PROJECT_ID" \
+    --field-id "$FOCUS_FIELD" --single-select-option-id "$foc_id" >/dev/null
+
+  gh issue edit "$number" --repo "$REPO" --add-assignee @me 2>/dev/null || true
+  echo "  #$number → Priority=$pri Focus=$focus"
+done
 
 URL="$(gh project view "$PROJECT_NUM" --owner "$OWNER" --format json --jq .url)"
 echo ""
 echo "Board ready: $URL"
-echo "Add Priority + Focus columns in the project view if they are hidden."
-echo "Filter Focus = 'This week' for the current sprint."
+echo "Use Kanban view · filter Focus = 'This week' for your sprint."

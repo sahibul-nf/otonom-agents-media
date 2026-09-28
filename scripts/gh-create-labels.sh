@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# solo-dev-ai-kit:managed
 # Creates standard workflow labels (idempotent). Extra labels via EXTRA_LABELS env.
 # EXTRA_LABELS format: name:color:description|name:color:description
 set -euo pipefail
@@ -27,6 +28,13 @@ create_label "enhancement" "a2eeef" "New feature or improvement"
 create_label "priority:high" "B60205" "Do soon — blocks testing or demo"
 create_label "priority:medium" "D93F0B" "Important but not blocking"
 create_label "priority:low" "0E8A16" "Polish / later"
+
+# Metadata only — Project Status authorizes AI execution, not labels.
+create_label "complexity:easy" "C5DEF5" "Low-risk scope — metadata for orchestrators"
+create_label "complexity:medium" "BFD4F2" "Moderate scope — metadata for orchestrators"
+create_label "complexity:hard" "F9D0C4" "High scope — metadata for orchestrators"
+create_label "ai-blocked" "E99695" "Agent blocked — needs human decision (metadata only)"
+create_label "ai-needs-human" "FEF2C0" "Agent needs human input before continuing (metadata only)"
 
 if [[ "${HAS_CLIENT_REPORTS:-false}" == "true" ]]; then
   create_label "client-facing" "FBCA04" "Worth mentioning in progress reports when shipped"
