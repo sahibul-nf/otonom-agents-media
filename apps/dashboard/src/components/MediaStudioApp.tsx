@@ -76,6 +76,7 @@ import {
   StyleProfile,
   WatchChannel,
 } from "@/lib/media-api";
+import {isPublishPlatformDisabled, oauthPlatforms, publishDestinationPlatforms, publishPlatforms} from "@/lib/publish-platforms";
 
 type Section = "dashboard" | "generate" | "explainer" | "templates" | "review" | "calendar" | "publish" | "brand";
 type NextAction = {
@@ -104,8 +105,6 @@ type ConfirmDialogState = {
   tone?: "danger" | "default";
   onConfirm: () => void;
 };
-const publishPlatforms = ["telegram_channel", "youtube_shorts", "youtube_video", "facebook_reels", "tiktok"];
-const oauthPlatforms = new Set(["youtube_shorts", "youtube_video", "facebook_reels", "tiktok"]);
 const PROFILE_STORAGE_KEY = "otonom.activeProfileId";
 
 function readStoredProfileId() {
@@ -572,12 +571,19 @@ export function MediaStudioApp() {
     [profileClips, reviewFilter, showPublished],
   );
   const activeTargets = useMemo(
-    () => targets.filter((target) => publishPlatforms.includes(target.platform) && (!target.profile_id || target.profile_id === profileId)),
+    () =>
+      targets.filter(
+        (target) =>
+          publishDestinationPlatforms.includes(target.platform as (typeof publishDestinationPlatforms)[number]) &&
+          (!target.profile_id || target.profile_id === profileId),
+      ),
     [targets, profileId],
   );
   const approved = profileClips.filter((clip) => clip.status === "approved").length;
   const scheduledCount = profileClips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
-  const readyPlatforms = credentials ? Object.values(credentials.platforms).filter((item) => item.ready).length : 0;
+  const readyPlatforms = credentials
+    ? Object.entries(credentials.platforms).filter(([platform, item]) => item.ready && !isPublishPlatformDisabled(platform)).length
+    : 0;
   const hasTemplate = hyperframesTemplates.length > 0 || generateConfig.hyperframesTemplate !== "auto";
   const engineReady = Boolean(engineHealth?.hyperframes.ready);
   const nextAction = getNextAction({

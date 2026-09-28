@@ -236,6 +236,7 @@ def ensure_default_migration(env_file: str | Path | None) -> dict[str, Any]:
 
 def credential_status_for_profile(profile_id: str) -> dict[str, Any]:
     from .postiz_client import connection_status, uses_postiz
+    from .publish_platforms import disabled_publish_platform_reason, is_publish_platform_disabled
 
     profile_id = (profile_id or DEFAULT_MIGRATE_PROFILE).strip() or DEFAULT_MIGRATE_PROFILE
     channel_map = connection_status(profile_id).get("channels") or {}
@@ -255,12 +256,15 @@ def credential_status_for_profile(profile_id: str) -> dict[str, Any]:
                     break
             if not found:
                 missing.append("/".join(group))
+        unavailable = is_publish_platform_disabled(platform)
         postiz_ready = uses_postiz(platform, profile_id)
         mapped = channel_map.get(platform) or {}
         platforms[platform] = {
-            "ready": (not missing) or postiz_ready,
+            "ready": False if unavailable else ((not missing) or postiz_ready),
+            "unavailable": unavailable,
+            "unavailable_reason": disabled_publish_platform_reason(platform) if unavailable else "",
             "required_keys": ["/".join(group) for group in key_groups],
-            "missing_keys": [] if postiz_ready else missing,
+            "missing_keys": [] if postiz_ready or unavailable else missing,
             "profile_id": profile_id,
             "backend": "postiz" if postiz_ready else "native",
             "postiz_integration_id": mapped.get("id", ""),

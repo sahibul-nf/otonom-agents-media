@@ -808,7 +808,6 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     "youtube_shorts": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
                     "youtube_video": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
                     "facebook_reels": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
-                    "tiktok": {"mode": "oauth", "action": "connect", "disconnect_supported": True},
                 },
             })
             return
@@ -1969,6 +1968,11 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/oauth-start":
             _safe_load_env()
             platform = str(payload.get("platform", "")).strip()
+            from .publish_platforms import disabled_publish_platform_reason, is_publish_platform_disabled
+
+            if is_publish_platform_disabled(platform):
+                self._send_json({"platform": platform, "error": disabled_publish_platform_reason(platform)}, status=400)
+                return
             profile_id = str(payload.get("profile_id") or "nourbit").strip() or "nourbit"
             host, port = self.server.server_address  # type: ignore[attr-defined]
             server_base = f"http://{host}:{port}"

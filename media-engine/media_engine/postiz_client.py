@@ -132,6 +132,10 @@ def postiz_connected(profile_id: str | None = None) -> bool:
 
 
 def uses_postiz(platform: str, profile_id: str | None = None) -> bool:
+    from .publish_platforms import is_publish_platform_disabled
+
+    if is_publish_platform_disabled(platform):
+        return False
     if publish_backend() == "native":
         return False
     return bool(postiz_api_key(profile_id) and channel_id_for_platform(platform, profile_id))
@@ -196,6 +200,10 @@ def disconnect(profile_id: str) -> dict[str, Any]:
 
 
 def map_platform(profile_id: str, platform: str, integration: dict[str, Any] | None) -> dict[str, Any]:
+    from .publish_platforms import disabled_publish_platform_reason, is_publish_platform_disabled
+
+    if is_publish_platform_disabled(platform):
+        raise PostizError(disabled_publish_platform_reason(platform))
     if platform not in PLATFORM_IDENTIFIERS:
         raise PostizError(f"unsupported platform: {platform}")
     current = channel_map(profile_id)
@@ -484,6 +492,120 @@ def create_post(body: dict[str, Any], profile_id: str | None = None) -> dict[str
     return payload
 
 
+def _walk_post_values(value: Any) -> list[str]:
+    chunks: list[str] = []
+    if isinstance(value, str):
+        chunks.append(value)
+    elif isinstance(value, dict):
+        for nested in value.values():
+            chunks.extend(_walk_post_values(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            chunks.extend(_walk_post_values(nested))
+    return chunks
+
+
+def is_public_release_url(url: str, platform: str = "") -> bool:
+    text = str(url or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if "googleapis.com" in lowered or "/upload/youtube/" in lowered:
+        return False
+    host = urlparse(text).netloc.lower()
+    platform_key = str(platform or "").strip().lower()
+    if platform_key.startswith("youtube") or "youtube" in host or host == "youtu.be":
+        return any(
+            marker in lowered
+            for marker in ("youtube.com/watch", "youtu.be/", "youtube.com/shorts/", "youtube.com/live/")
+        )
+    if platform_key == "facebook_reels" or "facebook.com" in host or "fb.watch" in host:
+        return "facebook.com" in host or "fb.watch" in host
+    if platform_key == "tiktok" or "tiktok.com" in host:
+        return "tiktok.com" in host
+    if platform_key == "telegram_channel" or "t.me" in host:
+        return "t.me" in host
+    if not platform_key:
+        if "facebook.com/reel" in lowered or "fb.watch" in lowered:
+            return True
+        if any(marker in lowered for marker in ("youtube.com/watch", "youtu.be/", "youtube.com/shorts/")):
+            return True
+        return bool(host) and "googleapis.com" not in host
+    return False
+
+
+def postiz_auth_failure_message(post: dict[str, Any], platform: str = "") -> str:
+    platform_key = str(platform or "").strip().lower()
+    blob = " ".join(_walk_post_values(post)).lower()
+    youtube_context = platform_key.startswith("youtube") or "youtube.googleapis.com" in blob or "youtube/v3" in blob
+    if not youtube_context:
+        return ""
+    if any(
+        marker in blob
+        for marker in (
+            "invalid_token",
+            "invalid credentials",
+            "autherror",
+            "www-authenticate",
+            "unauthorized",
+        )
+    ):
+        return "YouTube credentials expired. Reconnect YouTube in Postiz (Google OAuth), then retry Shorts."
+    return ""
+
+
+def postiz_delivery_failure_message(post: dict[str, Any], platform: str = "") -> str:
+    auth = postiz_auth_failure_message(post, platform=platform)
+    if auth:
+        return auth
+    state = _postiz_release_state(post)
+    if state in {"error", "failed"}:
+        for chunk in _walk_post_values(post):
+            text = chunk.strip()
+            if 5 < len(text) < 240 and not text.startswith("http"):
+                return text
+        return "Postiz reported an error for this destination. Check Postiz worker logs, then retry."
+    return ""
+
+
+def map_postiz_delivery_status(post: dict[str, Any], platform: str | None = None) -> str:
+    # Postiz can keep state=ERROR after Meta already accepted the upload (worker timeout, late releaseURL).
+    # Only treat releaseURL as live when it is a public watch page — not YouTube upload API URLs.
+    platform_key = str(platform or "").strip().lower()
+    if postiz_auth_failure_message(post, platform=platform_key):
+        return "failed"
+    state = _postiz_release_state(post)
+    url = str(post.get("releaseURL") or post.get("url") or "").strip()
+    if state in {"published", "ok", "success", "posted"}:
+        return "live"
+    if url and is_public_release_url(url, platform_key):
+        return "live"
+    if state in {"error", "failed", "canceled", "cancelled"}:
+        return "failed"
+    return "queued"
+
+
+def reconcile_platform_result(
+    previous: dict[str, Any],
+    remote_post: dict[str, Any],
+    platform: str,
+) -> dict[str, Any]:
+    mapped = map_postiz_delivery_status(remote_post, platform=platform)
+    next_row: dict[str, Any] = {**previous, "status": mapped, "backend": "postiz"}
+    if mapped == "live":
+        url = str(remote_post.get("releaseURL") or remote_post.get("url") or previous.get("remote_url") or "")
+        if url and is_public_release_url(url, platform):
+            next_row["remote_url"] = url
+        next_row.pop("error", None)
+    else:
+        next_row.pop("remote_url", None)
+        if mapped == "failed":
+            message = postiz_delivery_failure_message(remote_post, platform=platform)
+            if message:
+                next_row["error"] = message
+    return next_row
+
+
 def flatten_postiz_posts(payload: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     if isinstance(payload, list):
@@ -502,20 +624,6 @@ def flatten_postiz_posts(payload: Any) -> list[dict[str, Any]]:
         if isinstance(item, dict):
             items.append(item)
     return items
-
-
-def map_postiz_delivery_status(post: dict[str, Any]) -> str:
-    # Postiz can keep state=ERROR after Meta/YouTube already accepted the upload (worker timeout,
-    # late releaseURL, etc.). A release URL is stronger proof than the workflow flag.
-    url = str(post.get("releaseURL") or post.get("url") or "").strip()
-    if url:
-        return "live"
-    state = _postiz_release_state(post)
-    if state in {"published", "ok", "success", "posted"}:
-        return "live"
-    if state in {"error", "failed", "canceled", "cancelled"}:
-        return "failed"
-    return "queued"
 
 
 def index_posts_by_id(posts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -637,6 +745,7 @@ def publish_video(
     remote_id = extract_remote_id(result, exclude={media.get("id", "")})
     status = "queued" if kind == "schedule" else "accepted"
     remote_url = ""
+    error = ""
     polled = None
     if remote_id:
         try:
@@ -644,11 +753,16 @@ def publish_video(
         except PostizError:
             polled = None
     if polled:
-        state = _postiz_release_state(polled)
-        if state in {"published", "ok", "success"}:
+        mapped = map_postiz_delivery_status(polled, platform=platform)
+        if mapped == "live":
             status = "live"
             remote_url = str(polled.get("releaseURL") or polled.get("url") or result.get("url") or "")
-    return {
+            if remote_url and not is_public_release_url(remote_url, platform):
+                remote_url = ""
+        elif mapped == "failed":
+            status = "failed"
+            error = postiz_delivery_failure_message(polled, platform=platform)
+    payload_out: dict[str, Any] = {
         "platform": platform,
         "status": status,
         "backend": "postiz",
@@ -658,3 +772,6 @@ def publish_video(
         "postiz_media": media,
         "raw": result,
     }
+    if error:
+        payload_out["error"] = error
+    return payload_out

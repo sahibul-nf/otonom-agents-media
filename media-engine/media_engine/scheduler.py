@@ -179,8 +179,12 @@ def enabled_delivery_platforms(conn: sqlite3.Connection, profile_id: str, now: d
         for platform in platforms:
             counts[platform] = counts.get(platform, 0) + 1
 
+    from .publish_platforms import is_operator_publish_platform
+
     selected: list[str] = []
     for row in targets:
+        if not is_operator_publish_platform(str(row["platform"] or "")):
+            continue
         if "enabled" in row.keys() and not int(row["enabled"] or 0):
             continue
         if row["mode"] == "off":
@@ -219,7 +223,9 @@ def schedule_candidate_next(
     else:
         scheduled_at_dt = next_available_slot(conn, profile_id=profile_id, now=clock)
     schedule_id = f"sched_{uuid.uuid4().hex[:12]}"
-    platform_list = platforms or enabled_delivery_platforms(conn, profile_id, now=clock)
+    from .publish_platforms import filter_operator_platforms
+
+    platform_list = filter_operator_platforms(platforms or enabled_delivery_platforms(conn, profile_id, now=clock))
     if not platform_list:
         raise ValueError("no delivery platforms with remaining daily capacity")
     orientation = candidate_orientation_for_id(conn, candidate_id)

@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- Schedule/Postiz: YouTube 401 / invalid Google token no longer shows **Shorts LIVE** when the upload API URL or authError is present; chip shows **error** with reconnect-in-Postiz copy (Facebook reel `releaseURL` + ERROR still counts as live).
+
 ### Changed
+- TikTok on **Publish** stays visible but **Unavailable** (no OAuth, schedule, or Postiz map) while TikTok rejects personal/internal developer apps for production API access.
 - Heuristic and LLM metadata skip family-blessing litanies and ASR junk (`hadratu qutblah`); titles should state the teaching, not “Berkahi keluarga…”.
 - Review inbox masonry keeps **3 column slots** on wide screens when a tab has only 1–2 clips (e.g. Published) so card width matches All/Review instead of stretching two-up.
 - Review Editor **Metadata** tab: title and description are editable; **Save changes** persists hook copy (`hook-metadata` API).

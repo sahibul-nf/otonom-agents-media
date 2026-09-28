@@ -11,7 +11,7 @@ import {apiGet, apiPost, canBatchRerenderClip, canQuickApproveClip, filterPlatfo
 import {groupFromClips, reviewEditorHref, reviewStatusTone} from "@/lib/review-groups";
 import {useReviewSelection} from "@/lib/use-review-selection";
 
-const publishPlatforms = ["telegram_channel", "youtube_shorts", "youtube_video", "facebook_reels", "tiktok"];
+import {publishPlatforms} from "@/lib/publish-platforms";
 
 /** Max columns by viewport — iPad portrait stays 2-up. */
 function maxBatchColumnsForWidth(width: number) {

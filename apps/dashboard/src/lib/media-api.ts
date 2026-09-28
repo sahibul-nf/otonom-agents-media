@@ -257,6 +257,8 @@ export type CredentialStatus = {
     string,
     {
       ready: boolean;
+      unavailable?: boolean;
+      unavailable_reason?: string;
       required_keys: string[];
       missing_keys: string[];
       backend?: string;
@@ -826,6 +828,15 @@ export function platformShortLabel(platform: string) {
 export function humanizePublishError(raw?: string) {
   const text = String(raw || "").trim();
   if (!text) return "";
+  const lowered = text.toLowerCase();
+  if (
+    lowered.includes("invalid credentials")
+    || lowered.includes("invalid_token")
+    || lowered.includes("autherror")
+    || (lowered.includes("youtube") && lowered.includes("reconnect"))
+  ) {
+    return "YouTube credentials expired. Reconnect YouTube in Postiz (Google OAuth), then retry.";
+  }
   const jsonMatch = text.match(/\{[\s\S]*\}$/);
   if (jsonMatch) {
     try {

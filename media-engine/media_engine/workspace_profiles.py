@@ -9,18 +9,21 @@ from typing import Any
 
 from .credential_vault import delete_profile_vault, ensure_profile_vault
 from .db import DEFAULT_WORKSPACE_PROFILE_ID, ensure_media_profile, fetch_all, fetch_one
+from .publish_platforms import is_publish_platform_disabled
 
 PROTECTED_PROFILE_IDS = frozenset({"nourbit", DEFAULT_WORKSPACE_PROFILE_ID})
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
 
 # Live publish destinations shown on Channels (matches dashboard publishPlatforms).
-DEFAULT_PUBLISH_PLATFORMS: tuple[tuple[str, str], ...] = (
+_DEFAULT_PUBLISH_PLATFORM_LABELS: tuple[tuple[str, str], ...] = (
     ("telegram_channel", "{name} Telegram"),
     ("youtube_shorts", "{name} YouTube Shorts"),
     ("youtube_video", "{name} YouTube Video"),
     ("facebook_reels", "{name} Facebook Reels"),
     ("tiktok", "{name} TikTok"),
 )
+
+DEFAULT_PUBLISH_PLATFORMS: tuple[tuple[str, str], ...] = _DEFAULT_PUBLISH_PLATFORM_LABELS
 
 
 class WorkspaceProfileError(ValueError):
@@ -83,14 +86,21 @@ def _row_to_profile(row: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def _insert_publish_target(conn: sqlite3.Connection, profile_id: str, platform: str, label: str) -> None:
+    unavailable = is_publish_platform_disabled(platform)
     conn.execute(
         """
         INSERT INTO publish_targets
           (profile_id, platform, account_label, mode, require_approval,
            ai_disclosure_required, daily_cap, enabled)
-        VALUES (?, ?, ?, 'review_required', 1, 0, 2, 1)
+        VALUES (?, ?, ?, ?, 1, 0, 2, ?)
         """,
-        (profile_id, platform, label),
+        (
+            profile_id,
+            platform,
+            label,
+            "off" if unavailable else "review_required",
+            0 if unavailable else 1,
+        ),
     )
 
 

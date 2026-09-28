@@ -393,11 +393,17 @@ def list_publish_targets(conn: sqlite3.Connection, profile_id: str | None = None
         )
     else:
         rows = fetch_all(conn, "SELECT * FROM publish_targets ORDER BY profile_id ASC, platform ASC, id ASC")
+    from .publish_platforms import is_operator_publish_platform
+
+    filtered: list[dict[str, Any]] = []
     for row in rows:
+        if not is_operator_publish_platform(str(row.get("platform") or "")):
+            continue
         row["enabled"] = bool(row.get("enabled", 1))
         row["require_approval"] = bool(row.get("require_approval", 1))
         row["ai_disclosure_required"] = bool(row.get("ai_disclosure_required", 0))
-    return rows
+        filtered.append(row)
+    return filtered
 
 
 def update_publish_target(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:

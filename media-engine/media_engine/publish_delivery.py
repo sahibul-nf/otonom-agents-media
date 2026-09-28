@@ -8,14 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from .db import fetch_one
+from .publish_platforms import OPERATOR_PUBLISH_PLATFORMS
 
-ALL_DELIVERY_PLATFORMS: tuple[str, ...] = (
-    "telegram_channel",
-    "youtube_shorts",
-    "youtube_video",
-    "facebook_reels",
-    "tiktok",
-)
+ALL_DELIVERY_PLATFORMS: tuple[str, ...] = OPERATOR_PUBLISH_PLATFORMS
 
 PORTRAIT_ONLY_PLATFORMS = frozenset({"youtube_shorts", "facebook_reels", "tiktok"})
 LANDSCAPE_ONLY_PLATFORMS = frozenset({"youtube_video"})

@@ -334,7 +334,11 @@ def process_due_publishes(
         platforms = _loads(schedule.get("platforms_json"), []) or []
         existing_results = _loads(schedule.get("platform_results_json"), {}) or {}
         platform_results: dict[str, Any] = dict(existing_results)
+        from .publish_platforms import is_operator_publish_platform
+
         for platform in platforms:
+            if not is_operator_publish_platform(platform):
+                continue
             target = fetch_one(
                 conn,
                 "SELECT * FROM publish_targets WHERE profile_id = ? AND platform = ?",

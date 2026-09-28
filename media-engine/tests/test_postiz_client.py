@@ -15,17 +15,24 @@ from media_engine.postiz_client import (
     delete_post,
     extract_remote_id,
     integrations_for_platform,
+    is_public_release_url,
     list_posts,
     map_platform,
     map_postiz_delivery_status,
     normalize_postiz_api_url,
+    postiz_auth_failure_message,
+    reconcile_platform_result,
     sanitize_api_key,
     settings_for_platform,
     uses_postiz,
     validate_channel,
 )
 from media_engine.postiz_sync import reconcile_profile_schedules, same_schedule_slot
-from media_engine.schedule_publisher import rollup_schedule_status
+from media_engine.schedule_publisher import (
+    process_due_publishes,
+    publish_candidate_platform,
+    rollup_schedule_status,
+)
 
 
 class PostizClientTests(unittest.TestCase):
@@ -154,6 +161,41 @@ class PostizClientTests(unittest.TestCase):
             ),
             "live",
         )
+
+    def test_youtube_upload_api_url_is_not_public_release(self):
+        upload = "https://youtube.googleapis.com/upload/youtube/v3/videos?part=id&uploadType=multipart"
+        self.assertFalse(is_public_release_url(upload, "youtube_shorts"))
+        self.assertEqual(
+            map_postiz_delivery_status(
+                {"state": "ERROR", "releaseURL": upload},
+                platform="youtube_shorts",
+            ),
+            "failed",
+        )
+
+    def test_youtube_auth_error_maps_failed_with_message(self):
+        post = {
+            "state": "ERROR",
+            "log": {
+                "errors": [
+                    {
+                        "message": "Invalid Credentials",
+                        "reason": "authError",
+                        "domain": "global",
+                    }
+                ]
+            },
+        }
+        self.assertEqual(map_postiz_delivery_status(post, platform="youtube_shorts"), "failed")
+        self.assertIn("Reconnect YouTube", postiz_auth_failure_message(post, platform="youtube_shorts"))
+        row = reconcile_platform_result(
+            {"platform": "youtube_shorts", "status": "live", "remote_id": "p1"},
+            post,
+            "youtube_shorts",
+        )
+        self.assertEqual(row["status"], "failed")
+        self.assertIn("Reconnect YouTube", row.get("error", ""))
+        self.assertNotIn("remote_url", row)
 
     def test_list_posts_requires_date_range(self):
         with patch("media_engine.postiz_client._request_json") as mock_request:
@@ -295,7 +337,13 @@ class PostizClientTests(unittest.TestCase):
         conn.commit()
         with patch("media_engine.postiz_sync.postiz_api_key", return_value="key"), patch(
             "media_engine.postiz_sync.list_posts",
-            return_value=[{"id": remote_id, "state": "PUBLISHED", "releaseURL": "https://fb.example/p"}],
+            return_value=[
+                {
+                    "id": remote_id,
+                    "state": "PUBLISHED",
+                    "releaseURL": "https://www.facebook.com/reel/123",
+                }
+            ],
         ):
             reconcile_profile_schedules(conn, "nourbit")
         schedule = conn.execute("SELECT status, platform_results_json FROM scheduled_posts WHERE id = 'sched'").fetchone()
@@ -303,7 +351,7 @@ class PostizClientTests(unittest.TestCase):
         result = json.loads(schedule["platform_results_json"])["facebook_reels"]
         self.assertEqual(schedule["status"], "published")
         self.assertEqual(result["status"], "live")
-        self.assertEqual(result["remote_url"], "https://fb.example/p")
+        self.assertEqual(result["remote_url"], "https://www.facebook.com/reel/123")
         self.assertEqual(clip["status"], "published")
         conn.close()
 
@@ -336,14 +384,16 @@ class PostizVaultTests(unittest.TestCase):
                 "POSTIZ_API_KEY": "key-n",
             },
         )
-        map_platform("nourbit", "tiktok", {"id": "int_tt", "name": "Nourbit TT", "identifier": "tiktok"})
-        self.assertEqual(channel_id_for_platform("tiktok", "nourbit"), "int_tt")
-        self.assertTrue(uses_postiz("tiktok", "nourbit"))
-        self.assertFalse(uses_postiz("tiktok", "workspace"))
-        self.assertFalse(uses_postiz("youtube_shorts", "nourbit"))
+        map_platform("nourbit", "youtube_shorts", {"id": "int_yt", "name": "Nourbit YT", "identifier": "youtube"})
+        self.assertEqual(channel_id_for_platform("youtube_shorts", "nourbit"), "int_yt")
+        self.assertTrue(uses_postiz("youtube_shorts", "nourbit"))
+        self.assertFalse(uses_postiz("youtube_shorts", "workspace"))
+        with self.assertRaises(PostizError):
+            map_platform("nourbit", "tiktok", {"id": "int_tt", "name": "Nourbit TT", "identifier": "tiktok"})
+        self.assertFalse(uses_postiz("tiktok", "nourbit"))
 
         with patch.dict(os.environ, {"PUBLISH_BACKEND": "native"}, clear=False):
-            self.assertFalse(uses_postiz("tiktok", "nourbit"))
+            self.assertFalse(uses_postiz("youtube_shorts", "nourbit"))
 
     def test_credential_status_ready_when_postiz_mapped(self):
         vault.set_profile_secrets("nourbit", {"POSTIZ_API_KEY": "key-n"})
@@ -353,6 +403,7 @@ class PostizVaultTests(unittest.TestCase):
         self.assertTrue(status["platforms"]["youtube_shorts"]["ready"])
         self.assertEqual(status["platforms"]["youtube_shorts"]["backend"], "postiz")
         self.assertFalse(status["platforms"]["tiktok"]["ready"])
+        self.assertTrue(status["platforms"]["tiktok"]["unavailable"])
 
     def test_validate_channel_blocks_disabled_integration(self):
         vault.set_profile_secrets("nourbit", {"POSTIZ_API_KEY": "key-n"})

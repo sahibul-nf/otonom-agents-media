@@ -3,6 +3,7 @@
 import {Facebook, HelpCircle, Instagram, Linkedin, Loader2, MoreHorizontal, Send, Wifi, Youtube} from "lucide-react";
 import {type FormEvent, type ReactNode, useState} from "react";
 import {EmptyState} from "@/components/shared/StudioPrimitives";
+import {disabledPublishPlatformReason, isPublishPlatformDisabled} from "@/lib/publish-platforms";
 import {platformLabel, type CredentialStatus, type PostizIntegration, type PublishAttempt, type PublishTarget} from "@/lib/media-api";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
@@ -482,7 +483,8 @@ export function PublishSection({
     if (!latestByPlatform.has(attempt.platform)) latestByPlatform.set(attempt.platform, attempt);
   }
 
-  const connectedCount = targets.filter((target) => credentials?.platforms[target.platform]?.ready).length;
+  const connectableTargets = targets.filter((target) => !isPublishPlatformDisabled(target.platform));
+  const connectedCount = connectableTargets.filter((target) => credentials?.platforms[target.platform]?.ready).length;
   const recentLogs = Array.from(latestByPlatform.values());
   const telegramSaving = actionStates["credentials:telegram_channel"]?.status === "running";
   const postizSaving = actionStates["postiz:connect"]?.status === "running";
@@ -508,7 +510,9 @@ export function PublishSection({
       <div className="rounded-[32px] border border-white/[0.08] bg-surface/30 p-6 backdrop-blur-md">
         <div className="flex items-center justify-between gap-3 pb-5 border-b border-white/[0.06]">
           <p className="text-sm text-zinc-400">
-            {targets.length === 0 ? "No destinations yet" : `${connectedCount} of ${targets.length} connected`}
+            {targets.length === 0
+              ? "No destinations yet"
+              : `${connectedCount} of ${connectableTargets.length} connected`}
           </p>
         </div>
 
@@ -548,7 +552,7 @@ export function PublishSection({
             <div className="sm:col-span-2">
               <EmptyState
                 title="No publish destinations yet"
-                text="Load the four default platforms for this workspace, then connect each account."
+                text="Load default destinations for this workspace, then connect each available account."
                 actionLabel={onRefresh ? "Load destinations" : undefined}
                 onAction={onRefresh}
               />
@@ -556,7 +560,10 @@ export function PublishSection({
           ) : null}
 
           {targets.map((target) => {
-            const ready = Boolean(credentials?.platforms[target.platform]?.ready);
+            const unavailable = isPublishPlatformDisabled(target.platform);
+            const unavailableReason =
+              credentials?.platforms[target.platform]?.unavailable_reason || disabledPublishPlatformReason(target.platform);
+            const ready = !unavailable && Boolean(credentials?.platforms[target.platform]?.ready);
             const selectedForPublish = selectedPlatforms.includes(target.platform);
             const latest = latestByPlatform.get(target.platform);
             const recovery = publishActionHint(latest?.error);
@@ -586,9 +593,11 @@ export function PublishSection({
               <div
                 key={target.platform}
                 className={`relative rounded-[26px] border p-5 transition-all duration-300 ${
-                  ready && selectedForPublish
-                    ? "border-cyan/[0.30] bg-cyan/[0.03]"
-                    : "border-white/[0.06] bg-black/15 hover:border-white/[0.12] hover:bg-black/24"
+                  unavailable
+                    ? "border-white/[0.05] bg-black/10 opacity-90"
+                    : ready && selectedForPublish
+                      ? "border-cyan/[0.30] bg-cyan/[0.03]"
+                      : "border-white/[0.06] bg-black/15 hover:border-white/[0.12] hover:bg-black/24"
                 }`}
                 style={{
                   boxShadow: ready && selectedForPublish ? `0 12px 30px -10px ${pt.glow}` : "none",
@@ -601,7 +610,9 @@ export function PublishSection({
                   >
                     {getPlatformIcon(target.platform)}
                   </div>
-                  {ready ? (
+                  {unavailable ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90">Unavailable</span>
+                  ) : ready ? (
                     <SwitchControl
                       checked={selectedForPublish}
                       disabled={isBusy}
@@ -618,14 +629,16 @@ export function PublishSection({
                     <h4 className="font-semibold text-base text-white truncate">{platformLabel(target.platform)}</h4>
                     {ready ? <span className="inline-flex h-2 w-2 rounded-full bg-teal shadow-[0_0_8px_rgba(0,194,183,0.5)] shrink-0" /> : null}
                   </div>
-                  <p className="mt-1 text-xs text-zinc-400 font-medium truncate">
-                    {postizMapped
-                      ? credentials?.platforms[target.platform]?.postiz_integration_name || "Postiz channel"
-                      : postizConnected
-                        ? "Map a Postiz channel (required to send via Postiz)"
-                        : ready
-                          ? publicAccountLabel(target)
-                          : "Connect to publish from this workspace"}
+                  <p className={`mt-1 text-xs text-zinc-400 font-medium ${unavailable ? "line-clamp-3" : "truncate"}`}>
+                    {unavailable
+                      ? unavailableReason
+                      : postizMapped
+                        ? credentials?.platforms[target.platform]?.postiz_integration_name || "Postiz channel"
+                        : postizConnected
+                          ? "Map a Postiz channel (required to send via Postiz)"
+                          : ready
+                            ? publicAccountLabel(target)
+                            : "Connect to publish from this workspace"}
                   </p>
                 </div>
 
@@ -669,7 +682,7 @@ export function PublishSection({
                 ) : null}
 
                 <div className="mt-4 flex items-center gap-2">
-                  {showPostizMap ? (
+                  {!unavailable && showPostizMap ? (
                     <button
                       type="button"
                       disabled={isBusy}
@@ -679,7 +692,7 @@ export function PublishSection({
                       Map Postiz channel
                     </button>
                   ) : null}
-                  {(supportsOauth || isTelegram) && !ready && !showPostizMap ? (
+                  {!unavailable && (supportsOauth || isTelegram) && !ready && !showPostizMap ? (
                     <button
                       type="button"
                       disabled={isBusy || (isTelegram && !onSaveCredentials)}
@@ -703,7 +716,7 @@ export function PublishSection({
                     </button>
                   ) : null}
 
-                  {ready ? (
+                  {!unavailable && ready ? (
                     <button
                       type="button"
                       disabled={isBusy}
@@ -724,7 +737,7 @@ export function PublishSection({
                     </button>
                   ) : null}
 
-                  {(ready || supportsOauth || isTelegram || postizConnected) && (
+                  {!unavailable && (ready || supportsOauth || isTelegram || postizConnected) && (
                     <PlatformActionMenu
                       disabled={isBusy}
                       ready={ready}

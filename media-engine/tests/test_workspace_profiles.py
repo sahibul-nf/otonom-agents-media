@@ -77,6 +77,12 @@ class WorkspaceProfileTests(unittest.TestCase):
             platforms,
             ["facebook_reels", "telegram_channel", "tiktok", "youtube_shorts", "youtube_video"],
         )
+        tiktok = self.conn.execute(
+            "SELECT enabled, mode FROM publish_targets WHERE profile_id = ? AND platform = 'tiktok'",
+            (created["id"],),
+        ).fetchone()
+        self.assertEqual(int(tiktok[0]), 0)
+        self.assertEqual(tiktok[1], "off")
 
     def test_list_profiles_seeds_empty_workspace_targets(self):
         count = self.conn.execute(

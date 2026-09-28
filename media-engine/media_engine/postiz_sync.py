@@ -16,7 +16,7 @@ from .postiz_client import (
     index_posts_by_id,
     is_postiz_post_id,
     list_posts,
-    map_postiz_delivery_status,
+    reconcile_platform_result,
     on_postiz_calendar,
     postiz_api_key,
     publish_video,
@@ -207,10 +207,24 @@ def sync_schedule_to_postiz(conn, schedule_id: str) -> dict[str, Any]:
     return {"id": schedule_id, "synced": True, "platform_results": results, "last_error": last_error}
 
 
+def _rollup_last_error(results: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for platform, row in results.items():
+        if not isinstance(row, dict):
+            continue
+        if row.get("status") not in {"failed", "blocked"}:
+            continue
+        message = str(row.get("error") or row.get("reason") or "").strip()
+        if message:
+            parts.append(f"{platform}: {message}")
+    return "; ".join(parts)
+
+
 def _persist_rollup(conn, schedule: dict[str, Any], results: dict[str, Any]) -> None:
     platforms = _loads(schedule.get("platforms_json"), []) or []
     final_status = rollup_schedule_status(platforms if isinstance(platforms, list) else [], results)
     published_at = str(schedule.get("published_at") or "")
+    last_error = _rollup_last_error(results)
     if final_status == "published":
         if not published_at:
             published_at = datetime.now(timezone.utc).isoformat()
@@ -221,13 +235,18 @@ def _persist_rollup(conn, schedule: dict[str, Any], results: dict[str, Any]) -> 
     else:
         published_at = ""
         candidate_status = "scheduled"
+        if not any(
+            isinstance(row, dict) and row.get("status") in {"failed", "blocked"}
+            for row in results.values()
+        ):
+            last_error = ""
     conn.execute(
         """
         UPDATE scheduled_posts
-        SET status = ?, platform_results_json = ?, published_at = ?, updated_at = CURRENT_TIMESTAMP
+        SET status = ?, platform_results_json = ?, published_at = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         """,
-        (final_status, json.dumps(results, ensure_ascii=False), published_at, schedule["id"]),
+        (final_status, json.dumps(results, ensure_ascii=False), published_at, last_error, schedule["id"]),
     )
     conn.execute(
         "UPDATE clip_candidates SET status = ? WHERE id = ?",
@@ -281,16 +300,13 @@ def reconcile_profile_schedules(conn, profile_id: str) -> None:
             if remote_post is None:
                 results[platform] = previous
                 continue
-            mapped = map_postiz_delivery_status(remote_post)
-            next_row = {**previous, "status": mapped, "backend": "postiz"}
-            if mapped == "live":
-                url = str(remote_post.get("releaseURL") or remote_post.get("url") or previous.get("remote_url") or "")
-                if url:
-                    next_row["remote_url"] = url
-            else:
-                next_row.pop("remote_url", None)
+            next_row = reconcile_platform_result(previous, remote_post, platform)
             results[platform] = next_row
-            if next_row.get("status") != previous.get("status") or next_row.get("remote_url") != previous.get("remote_url"):
+            if (
+                next_row.get("status") != previous.get("status")
+                or next_row.get("remote_url") != previous.get("remote_url")
+                or next_row.get("error") != previous.get("error")
+            ):
                 changed = True
         if changed:
             _persist_rollup(conn, schedule, results)

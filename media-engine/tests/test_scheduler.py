@@ -136,11 +136,11 @@ class SchedulerTests(unittest.TestCase):
             now=datetime(2026, 5, 15, 8, 0, tzinfo=ZoneInfo("Asia/Jakarta")),
         )
 
-        updated = update_schedule_platforms(self.conn, scheduled["id"], ["telegram_channel", "tiktok"])
+        updated = update_schedule_platforms(self.conn, scheduled["id"], ["telegram_channel", "facebook_reels"])
         item = list_scheduled_posts(self.conn)[0]
 
-        self.assertEqual(updated["platforms"], ["telegram_channel", "tiktok"])
-        self.assertEqual(item["platforms"], ["telegram_channel", "tiktok"])
+        self.assertEqual(updated["platforms"], ["telegram_channel", "facebook_reels"])
+        self.assertEqual(item["platforms"], ["telegram_channel", "facebook_reels"])
 
     def test_update_schedule_persists_time(self):
         self.add_clip("clip")
