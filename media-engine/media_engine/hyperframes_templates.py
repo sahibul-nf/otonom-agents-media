@@ -486,6 +486,8 @@ def hyperframes_template_ids() -> set[str]:
 
 def normalize_hyperframes_template(value: Any) -> str:
     template_id = ALIASES.get(str(value or AUTO_TEMPLATE_ID).strip(), str(value or AUTO_TEMPLATE_ID).strip())
+    if template_id.startswith("brand:") and _saved_brand_template_by_id(template_id):
+        return template_id
     if template_id == AUTO_TEMPLATE_ID or template_id in TEMPLATE_BY_ID or _saved_brand_template_by_id(template_id):
         return template_id
     return AUTO_TEMPLATE_ID
@@ -567,6 +569,92 @@ def resolve_hyperframes_template(
     return TEMPLATE_BY_ID[DEFAULT_TEMPLATE_ID].renderer_dict()
 
 
+def _build_brand_system_template_record(
+    path: Path,
+    payload: dict[str, Any],
+    brand_system: dict[str, Any],
+) -> dict[str, Any]:
+    template_id = str(payload.get("id") or path.stem)
+    label = str(payload.get("label") or path.stem.replace("_", " ").title())
+    formats = ["short_9_16", "long_16_9"]
+    public_id = f"brand:{template_id}"
+    relative_path = str(path.relative_to(ROOT))
+    starter_id = resolve_starter_template_id(brand_system.get("starter_template"))
+    starter = TEMPLATE_BY_ID[starter_id]
+    return {
+        "id": public_id,
+        "label": label,
+        "category": "Brand",
+        "best_for": "Saved brand system template for reusable HyperFrames production.",
+        "effects": [
+            str(brand_system.get("texture_effect") or "brand texture"),
+            str(brand_system.get("transition_family") or "brand transition"),
+            str(brand_system.get("cta_overlay") or "brand CTA"),
+        ],
+        "caption_style": str(brand_system.get("caption_style") or payload.get("caption", {}).get("style") or "Brand captions"),
+        "default_genres": [],
+        "status": "ready",
+        "tone": str(brand_system.get("motion_intensity") or "Brand controlled"),
+        "source": "brand_system",
+        "formats": formats,
+        "components_used": [
+            str(brand_system.get("caption_style") or "caption-pill-karaoke"),
+            str(brand_system.get("texture_effect") or "vignette"),
+        ],
+        "blocks_used": [str(brand_system.get("cta_overlay") or "yt-lower-third")],
+        "brand_template_path": relative_path,
+        "starter_template": starter_id,
+        "recipe_module": starter.recipe_module or starter_id,
+        "preview_source_video": starter.preview_source_video,
+        "preview_seconds": PREVIEW_SECONDS,
+        "preview_status": _aggregate_preview_status(public_id, formats),
+        "preview_cache_ready": _preview_cache_ready(public_id, formats),
+        "preview_urls": _preview_urls(public_id, formats),
+        "preview_source_url": _preview_source_url(starter_id),
+        "preview_video_urls": _official_preview_urls(starter_id, formats) or _official_preview_urls(public_id, formats),
+        "production_checks": {
+            "lint": "required",
+            "inspect": "required",
+            "render_preview": "required",
+        },
+    }
+
+
+def _load_brand_system_template_by_public_id(template_id: str) -> dict[str, Any] | None:
+    """Resolve saved brands for render even when hidden from public catalog APIs."""
+    if not template_id.startswith("brand:"):
+        return None
+    stem = template_id.removeprefix("brand:")
+    profiles = ROOT / "profiles"
+    paths: list[Path] = []
+    direct = profiles / f"{stem}.json"
+    if direct.exists():
+        paths.append(direct)
+    for path in sorted(profiles.glob("custom_*.json")):
+        if path not in paths:
+            paths.append(path)
+    for path in paths:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        file_id = str(payload.get("id") or path.stem)
+        if template_id != f"brand:{file_id}" and path.stem != stem:
+            continue
+        brand_system = payload.get("brand_system") if isinstance(payload.get("brand_system"), dict) else {}
+        if not brand_system:
+            continue
+        return _build_brand_system_template_record(path, payload, brand_system)
+    return None
+
+
+def list_saved_brand_system_templates() -> list[dict[str, Any]]:
+    """Public catalog entries for profiles/custom_*.json with a brand_system block."""
+    return _saved_brand_system_templates()
+
+
 def _saved_brand_system_templates() -> list[dict[str, Any]]:
     profiles = ROOT / "profiles"
     templates: list[dict[str, Any]] = []
@@ -576,65 +664,11 @@ def _saved_brand_system_templates() -> list[dict[str, Any]]:
             payload = json.loads(raw)
         except (OSError, json.JSONDecodeError):
             continue
-        if _contains_private_legacy_branding(raw):
-            continue
         brand_system = payload.get("brand_system") if isinstance(payload.get("brand_system"), dict) else {}
         if not brand_system:
             continue
-        template_id = str(payload.get("id") or path.stem)
-        label = str(payload.get("label") or path.stem.replace("_", " ").title())
-        formats = ["short_9_16", "long_16_9"]
-        public_id = f"brand:{template_id}"
-        relative_path = str(path.relative_to(ROOT))
-        starter_id = resolve_starter_template_id(brand_system.get("starter_template"))
-        starter = TEMPLATE_BY_ID[starter_id]
-        templates.append(
-            {
-                "id": public_id,
-                "label": label,
-                "category": "Brand",
-                "best_for": "Saved brand system template for reusable HyperFrames production.",
-                "effects": [
-                    str(brand_system.get("texture_effect") or "brand texture"),
-                    str(brand_system.get("transition_family") or "brand transition"),
-                    str(brand_system.get("cta_overlay") or "brand CTA"),
-                ],
-                "caption_style": str(brand_system.get("caption_style") or payload.get("caption", {}).get("style") or "Brand captions"),
-                "default_genres": [],
-                "status": "ready",
-                "tone": str(brand_system.get("motion_intensity") or "Brand controlled"),
-                "source": "brand_system",
-                "formats": formats,
-                "components_used": [
-                    str(brand_system.get("caption_style") or "caption-pill-karaoke"),
-                    str(brand_system.get("texture_effect") or "vignette"),
-                ],
-                "blocks_used": [str(brand_system.get("cta_overlay") or "yt-lower-third")],
-                "brand_template_path": relative_path,
-                "starter_template": starter_id,
-                "recipe_module": starter.recipe_module or starter_id,
-                "preview_source_video": starter.preview_source_video,
-                "preview_seconds": PREVIEW_SECONDS,
-                "preview_status": _aggregate_preview_status(public_id, formats),
-                "preview_cache_ready": _preview_cache_ready(public_id, formats),
-                "preview_urls": _preview_urls(public_id, formats),
-                "preview_source_url": _preview_source_url(starter_id),
-                "preview_video_urls": _official_preview_urls(starter_id, formats) or _official_preview_urls(public_id, formats),
-                "production_checks": {
-                    "lint": "required",
-                    "inspect": "required",
-                    "render_preview": "required",
-                },
-            }
-        )
+        templates.append(_build_brand_system_template_record(path, payload, brand_system))
     return templates
-
-
-def _contains_private_legacy_branding(raw: str) -> bool:
-    """Prevent local/private legacy profiles from leaking into public template APIs."""
-    private_terms = ("nourbit",)
-    lower = raw.lower()
-    return any(term in lower for term in private_terms)
 
 
 def _saved_brand_template_by_id(template_id: str) -> dict[str, Any] | None:
@@ -643,7 +677,7 @@ def _saved_brand_template_by_id(template_id: str) -> dict[str, Any] | None:
     for template in _saved_brand_system_templates():
         if template["id"] == template_id:
             return template
-    return None
+    return _load_brand_system_template_by_public_id(template_id)
 
 
 def _preview_urls(template_id: str, formats: list[str]) -> dict[str, str]:

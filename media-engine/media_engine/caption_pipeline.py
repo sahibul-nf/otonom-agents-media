@@ -49,7 +49,9 @@ def build_reconstruct_system_prompt(
         f"You clean {domain} ASR captions (spoken language: {language_hint}). Reply JSON only: "
         '{"text":"..."}. Fix spelling and niche terminology, remove repeated stutters/disfluencies, '
         "add natural punctuation and capitalization. Keep the speaker's words and word order. "
-        "Do not replace spoken phrases with title, kicker, or synonym rewrites."
+        "Do not replace spoken phrases with title, kicker, or synonym rewrites. "
+        "Never insert names, titles, or glossary terms that are not already in raw_transcript. "
+        "Ignore any vocabulary lists; they are not spoken text."
     )
 
 
@@ -90,6 +92,22 @@ def asr_initial_prompt(
     ]
     hint = ". ".join(part for part in parts if part)
     return (hint or "Multilingual speech, names, numbers, technical terms").strip()[:500]
+
+
+def reconstruct_llm_context(
+    candidate: dict[str, Any] | None = None,
+    *,
+    source_title: str = "",
+) -> str:
+    """Short clip hint for reconstruct — no domain vocabulary dump (that leaks into captions)."""
+    payload = candidate or {}
+    metadata = payload.get("curation_metadata") if isinstance(payload.get("curation_metadata"), dict) else {}
+    parts = [
+        str(source_title or metadata.get("source_title") or "").strip(),
+        str(payload.get("title_hook") or "").strip(),
+        str(payload.get("transcript_span") or "").strip()[:160],
+    ]
+    return ". ".join(part for part in parts if part)[:320]
 
 
 def apply_youtube_text(
@@ -200,7 +218,10 @@ def reconstruct_timed_captions_llm(
     raw_text = " ".join(str(word.get("text") or "").strip() for word in words if str(word.get("text") or "").strip())
     if not raw_text:
         return list(words), {"llm_reconstructed": False, "llm_skipped": True}
-    payload = {"context": context[:320], "raw_transcript": raw_text[:4000]}
+    payload = {"raw_transcript": raw_text[:4000]}
+    hint = str(context or "").strip()[:320]
+    if hint:
+        payload["clip_title"] = hint
     system_prompt = build_reconstruct_system_prompt(
         detected_language=detected_language,
         niche=niche,
@@ -213,6 +234,12 @@ def reconstruct_timed_captions_llm(
     cleaned = str(result.get("text") or "").strip() if isinstance(result, dict) else ""
     if not cleaned:
         return list(words), {"llm_reconstructed": False, "llm_error": True}
+    if not reconstructed_text_is_grounded(raw_text, cleaned):
+        return list(words), {
+            "llm_reconstructed": False,
+            "llm_rejected_ungrounded": True,
+            "llm_output_preview": cleaned[:240],
+        }
     aligned = align_words_to_reconstructed_text(words, cleaned)
     removed = max(0, len(words) - len(aligned))
     return aligned, {
@@ -264,6 +291,21 @@ def align_words_to_reconstructed_text(
     if orig_index < len(original_words):
         aligned.extend(dict(word) for word in original_words[orig_index:])
     return aligned if aligned else list(original_words)
+
+
+def reconstructed_text_is_grounded(raw_text: str, cleaned_text: str) -> bool:
+    raw_tokens = [_normalize_align_token(token) for token in split_words(raw_text)]
+    raw_tokens = [token for token in raw_tokens if token]
+    if not raw_tokens:
+        return True
+    for token in split_words(cleaned_text):
+        norm = _normalize_align_token(token)
+        if len(norm) < 5:
+            continue
+        if any(SequenceMatcher(None, norm, original).ratio() >= 0.62 for original in raw_tokens):
+            continue
+        return False
+    return True
 
 
 def flatten_caption_segments_to_words(captions: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -352,7 +394,7 @@ def polish_candidate_captions(
     metadata = candidate.get("curation_metadata") if isinstance(candidate.get("curation_metadata"), dict) else {}
     asr_metadata = candidate.get("asr_metadata") if isinstance(candidate.get("asr_metadata"), dict) else {}
     detected_language = str(asr_metadata.get("detected_language") or asr_metadata.get("language") or "").strip() or None
-    context = asr_initial_prompt(candidate, niche=niche, profile_id=profile_id, source_title=str(metadata.get("source_title") or ""))
+    context = reconstruct_llm_context(candidate, source_title=str(metadata.get("source_title") or ""))
     polished_captions, pipeline = polish_caption_words(
         words,
         llm_provider=llm_provider,
@@ -429,7 +471,7 @@ def build_production_captions(
         words, llm_meta = reconstruct_timed_captions_llm(
             words,
             llm_provider,
-            context=asr_initial_prompt(candidate, niche=niche, profile_id=profile_id),
+            context=reconstruct_llm_context(candidate),
             detected_language=detected_language,
             niche=niche,
             profile_id=profile_id,
@@ -438,7 +480,7 @@ def build_production_captions(
         words, llm_meta = polish_uncertain_words(
             words,
             llm_provider,
-            context=asr_initial_prompt(candidate, niche=niche, profile_id=profile_id),
+            context=reconstruct_llm_context(candidate),
             detected_language=detected_language,
             niche=niche,
             profile_id=profile_id,

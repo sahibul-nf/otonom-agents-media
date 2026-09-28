@@ -52,7 +52,12 @@ from .hyperframes_previews import (
     schedule_builtin_preview_prewarm,
 )
 from .hyperframes_renderer import check_hyperframes_runtime
-from .hyperframes_templates import list_hyperframes_templates
+from .hyperframes_templates import (
+    TEMPLATE_BY_ID,
+    _saved_brand_template_by_id,
+    list_hyperframes_templates,
+    normalize_hyperframes_template,
+)
 from .live_publishers import (
     LivePublishError,
     publish_live_payload,
@@ -60,7 +65,7 @@ from .live_publishers import (
 )
 from .llm import LLMError
 from .models import PUBLISH_MODES
-from .metadata_refresh import refresh_candidate_metadata
+from .metadata_refresh import refresh_candidate_metadata, save_candidate_hook_metadata
 from .oauth_flow import OAuthFlowError, complete_oauth, start_oauth
 from .post_copy import build_post_caption, generate_post_caption, sanitize_post_caption
 from .publishers import build_payload, create_dry_run_attempt
@@ -96,7 +101,7 @@ from .scheduler import (
 )
 from .longform_shorts import LongformShortsError, make_shorts_from_longform
 from .publish_delivery import candidate_delivery_orientation, latest_render_job
-from .styles import delete_brand_template, load_style, save_brand_system_template, save_style_template
+from .styles import delete_brand_template, load_style, resolve_brand_asset_path, save_brand_system_template, save_style_template
 
 
 ENV_FILE = ROOT.parent / ".env.local"
@@ -272,6 +277,32 @@ def _normalize_clip_status(row: dict) -> dict:
     return row
 
 
+def _editor_look_from_render_metadata(render_metadata: dict) -> dict[str, str]:
+    hyperframes_template = str(render_metadata.get("hyperframesTemplate") or "auto").strip() or "auto"
+    brand_system_template_id = str(render_metadata.get("brandSystemTemplateId") or "").strip()
+    if not brand_system_template_id and hyperframes_template.startswith("brand:"):
+        brand_system_template_id = hyperframes_template
+    brand_template_path = ""
+    label = hyperframes_template.replace("_", " ").title() if hyperframes_template not in {"", "auto"} else "Default look"
+    if not brand_system_template_id and hyperframes_template not in {"", "auto"}:
+        catalog = TEMPLATE_BY_ID.get(normalize_hyperframes_template(hyperframes_template))
+        if catalog:
+            label = catalog.label
+    if brand_system_template_id.startswith("brand:"):
+        saved = _saved_brand_template_by_id(brand_system_template_id)
+        if saved:
+            brand_template_path = str(saved.get("brand_template_path") or "")
+            label = str(saved.get("label") or label)
+        else:
+            label = brand_system_template_id.removeprefix("brand:").replace("_", " ").title()
+    return {
+        "hyperframes_template": hyperframes_template,
+        "brand_system_template_id": brand_system_template_id,
+        "brand_template_path": brand_template_path,
+        "label": label,
+    }
+
+
 def get_editor_context(candidate_id: str, *, db_path: str | Path = DEFAULT_DB) -> dict:
     candidate_id = str(candidate_id or "").strip()
     if not candidate_id:
@@ -376,6 +407,8 @@ def get_editor_context(candidate_id: str, *, db_path: str | Path = DEFAULT_DB) -
                     "status": str(rerender["status"]),
                     "error": str(rerender["error"] or ""),
                 }
+        if render_metadata:
+            context["look"] = _editor_look_from_render_metadata(render_metadata)
     return context
 
 
@@ -507,6 +540,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             query = parse_qs(parsed.query)
             profile_id = (query.get("profile_id", [""])[0] or "").strip() or None
             self._send_json({"channels": list_watch_channels(conn, profile_id=profile_id)})
+            return
+        if parsed.path == "/api/brand-asset":
+            query = parse_qs(parsed.query)
+            try:
+                asset = resolve_brand_asset_path(query.get("path", [""])[0] or "")
+            except (ValueError, OSError) as exc:
+                self._send_json({"error": str(exc)}, status=404)
+                return
+            self._send_media_file(asset)
             return
         if parsed.path == "/api/style":
             query = parse_qs(parsed.query)
@@ -1533,6 +1575,8 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             candidate = dict(row)
             metadata = _loads(candidate.get("curation_metadata_json"), {})
+            candidate["curation_metadata"] = metadata
+            enrich_review_rows_with_source(conn, [candidate])
             try:
                 generated = generate_post_caption(
                     candidate,
@@ -1566,11 +1610,19 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             load_env_file(ENV_FILE)
             try:
+                hf_rerender = str(payload.get("hyperframes_template") or "").strip() or None
+                brand_rerender_raw = payload.get("brand_system_template_id")
+                if hf_rerender and not hf_rerender.startswith("brand:"):
+                    brand_rerender = str(brand_rerender_raw or "").strip()
+                else:
+                    brand_rerender = str(brand_rerender_raw or "").strip() or None
                 result = create_rerender_job(
                     candidate_id,
                     renderer=str(payload.get("renderer") or "hyperframes"),
                     quality=str(payload.get("quality") or "production"),
                     style_path=str(payload.get("style") or "") or None,
+                    hyperframes_template=hf_rerender,
+                    brand_system_template_id=brand_rerender,
                     force_source_refresh=bool(payload.get("force_source_refresh", False)),
                     regenerate_captions=bool(payload.get("regenerate_captions", False)),
                 )
@@ -1708,6 +1760,30 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                         quality=str(payload.get("quality") or "production"),
                         style_path=str(payload.get("style") or "") or None,
                     )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/hook-metadata":
+            candidate_id = str(payload.get("candidate_id", "")).strip()
+            title_hook = str(payload.get("title_hook", "")).strip()
+            hook_subtitle = str(payload.get("hook_subtitle", "")).strip()
+            viral_reason = str(payload.get("viral_reason", "")).strip()
+            if not candidate_id:
+                self._send_json({"error": "candidate_id is required"}, status=400)
+                return
+            conn = connect(DEFAULT_DB)
+            initialize(conn)
+            try:
+                result = save_candidate_hook_metadata(
+                    conn,
+                    candidate_id,
+                    title_hook,
+                    hook_subtitle,
+                    viral_reason=viral_reason,
+                )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=400)
                 return

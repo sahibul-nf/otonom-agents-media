@@ -2,7 +2,31 @@
 
 ## [Unreleased]
 
-### Fixed
+### Changed
+- Heuristic and LLM metadata skip family-blessing litanies and ASR junk (`hadratu qutblah`); titles should state the teaching, not “Berkahi keluarga…”.
+- Review inbox masonry keeps **3 column slots** on wide screens when a tab has only 1–2 clips (e.g. Published) so card width matches All/Review instead of stretching two-up.
+- Review Editor **Metadata** tab: title and description are editable; **Save changes** persists hook copy (`hook-metadata` API).
+- Refresh metadata accepts Indonesian paraphrase from the LLM (same as Generate post with AI) and falls back to local copy instead of failing on word-overlap.
+- Review Editor inspector (QA and other tools) can scroll inside the right rail so content is not clipped by the Timeline.
+- Review Editor **QA** tab: **AI & captions** panel shows writing model, curation/reconstruct LLM status, ASR, and a note that job `llm_cost` is only an estimate.
+- Review Editor **Look** tab: re-render can switch **preset HyperFrames templates** (built-in recipes) as well as saved brand templates; captions and trim are unchanged.
+- Review Editor **Look**: preset and saved-brand pickers use the same template browser modal as Create; saved brand list matches Brand page (`brand-templates` and hyperframes share the same `custom_*.json` + `brand_system` catalog).
+
+- Post copy Generate with AI uses the YouTube channel name; `Source: Channel clip` is stripped and no longer prompted.
+- Heuristic clip titles skip opening Arabic/liturgical clauses so Metadata is not “Warfal hujub” / first-dua fragments.
+- HyperFrames captions sit above grain/vignette texture (`z-index: 220`).
+- Review card sizing restored to original layout: inbox uses `sm:2` / `xl:3` grid (full column width); batch page uses `22rem` columns; review content width back to `1180px`.
+- Review Editor Look tab: template preview uses the HyperFrames video preview player (API returns MP4, not a static image); preview only when a new preset/brand is selected; clearer preset vs brand copy and link to Templates.
+- Create clip: source overlay on rendered shorts now uses the resolved YouTube channel name (`Source: …`) instead of the placeholder `Source: Channel clip` when Shell → Source is enabled.
+- Brand Builder: saved watermark and Identity fields persist when reopening a template (removed legacy filter that reset “Nourbit” watermarks to “Brand Clips”; Update merges into the existing `custom_*.json`).
+- Brand Builder render: intro and subscribe (CTA) beats no longer overlap — recipe intro overlay exits before the social card enters; CTA hold is clamped to ~2s on short and long clips.
+- Brand Builder: live preview now sequences intro, caption, and subscribe windows (approximate); Rendered tab is labeled exact timing.
+- Brand Builder: empty social logo uses channel initials instead of the default HeyGen avatar on render.
+- Brand Builder: X Post Card CTA deferred (hidden from Subscribe picker; saved `x-post` values normalize to None; vendored composition kept as experimental).
+- Brand Builder render: portrait social CTAs (`tiktok-follow`, `instagram-follow`) now composite at full native canvas (1080×1920) instead of a shrunk bottom strip, so the follow card is visible on 9:16 renders.
+- Brand Builder render: OSS composition files (`compositions/tiktok-follow.html`, etc.) are now copied into the preview project before HyperFrames render — previously the HTML referenced blocks that 404'd during capture.
+- Brand Builder render: social CTA blocks use inspect-safe slide offsets and hide inactive button labels so HyperFrames layout check no longer fails on `clipped_text` / `text_box_overflow`.
+- Brand Builder Identity: optional **Social CTA** fields — username/handle, follower count, and profile logo — customize TikTok/Instagram/YouTube subscribe widgets on render.
 - Create/Generate: `curation_source` is now persisted on `generation_jobs` for post-run auditing; CLI copy includes `--profile`, `--source-id`, and `--niche`.
 - Post copy: captions auto-enrich during curation when an LLM key exists, with workspace-aware prompts, per-platform length limits at publish, and heuristic fallback when the model fails.
 - TikTok via Postiz: send `autoAddMusic` as `yes`/`no` (not boolean) so `/public/v1/posts` no longer returns HTTP 400.
@@ -14,10 +38,17 @@
 - Postiz sync keeps an existing calendar post when the slot is unchanged (on/off other accounts); stores Postiz post ids (cuid) instead of upload UUIDs so time edits can DELETE the old post instead of leaving a duplicate.
 
 ### Changed
+- Brand Builder: Intro control is now **None** | **Template hook** | **YouTube lower-third (open)**; Brand Studio preview render bumped to 8s (contract v10).
+- HyperFrames OSS catalog: official blocks and components (`yt-lower-third`, `tiktok-follow`, captions, grain/vignette/shimmer) are vendored under `media-engine/render/hyperframes/compositions/` and wired into renders via `data-composition-src` — no more `brand-social-pill` placeholder CTAs.
+- Brand Builder: Finishing pickers list **installed** OSS catalog items; texture effects support multi-select; optional extra overlay blocks (up to 3); transition no-op dropdown removed.
+- HyperFrames catalog API is derived from the vendored `oss-manifest.json` (only installed items are selectable).
+- HyperFrames templates: template overlays now enter, drift, and exit on a GSAP lifecycle instead of staying frozen; Brand Studio uses short hook overlays (not duplicate caption text).
 - Brand Builder: one-line captions with a hugging plate; Recipe Sample removed from the stage; product-facing copy.
 - Brand Builder: inspector reorganized into Presets, Identity, Captions, and Finishing tabs; stage toolbar split into canvas controls and playback tiers; outro CTA decoupled from captions with explicit None option; shimmer sweep removed from live preview.
 
 ### Added
+- Create: selecting a saved brand with Visual **Auto** uses that brand’s Builder preset recipe (`brand_system.starter_template`) and sets `brand_system_template_id` for Review re-renders (including workspace brands not listed in the public template gallery).
+- Review Editor (short clips): **Look** inspector tab to pick a saved brand template and **Re-render** with new overlays/CTA while keeping captions and trim.
 - Brand Builder: live compositor on sample stock footage with Identity overlay; optional Recipe sample (gallery MP4) and **Render 5s look** brand-aware HyperFrames draft with cache.
 - Brand Builder: Recipe vs Brand overlay stage modes so Identity captions no longer stack on baked-in recipe video; HUD and render chips stay off the phone.
 - Create: **Auto** default for Content Angles (per-clip LLM angle selection); genre pack label shown in Advanced.

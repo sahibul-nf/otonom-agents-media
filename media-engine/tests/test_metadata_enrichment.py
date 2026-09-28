@@ -21,6 +21,18 @@ class MetadataEnrichmentTests(unittest.TestCase):
         self.assertGreaterEqual(len(title.split()), 4)
         self.assertNotIn("ringkasan isi clip:", subtitle.lower())
 
+    def test_title_skips_opening_liturgical_clause(self):
+        span = (
+            "Ya Allah. Warfal hujub. Hijab azzahir, hijab al-batin. "
+            "Dari qalbu kami, dari sir kami, sehingga kami memandang ya Allah."
+        )
+        title = title_for_span(span)
+        subtitle = hook_subtitle_for_span(span, title)
+        self.assertNotIn("Warfal", title)
+        self.assertNotIn("hujub", title.lower())
+        self.assertNotEqual(subtitle.lower().rstrip("."), "warfal hujub")
+        self.assertTrue(any(token in title.lower() for token in ("qalbu", "memandang", "sir")))
+
     def test_needs_enrichment_for_heuristic_sources(self):
         self.assertTrue(
             needs_metadata_enrichment(
@@ -61,6 +73,34 @@ class MetadataEnrichmentTests(unittest.TestCase):
 
         self.assertEqual(candidate["title_hook"], "Kenapa Inflasi AS Masih Bandel?")
         self.assertEqual(candidate["curation_metadata"]["title_source"], "llm_deepseek")
+
+    def test_title_uses_later_teaching_not_opening_clause(self):
+        span = (
+            "Ya Allah warfal hujub azzahir. "
+            "Engkau lah yang memberi. "
+            "Ya Allah, berkahi kami dengan kenal Allah di dunia, berjumpa engkau dan berjumpa Rasulullah di akhirat."
+        )
+        title = title_for_span(span)
+        self.assertNotIn("warfal", title.lower())
+        self.assertTrue(any(token in title.lower() for token in ("kenal", "dunia", "rasulullah")))
+        self.assertNotIn("keluarga", title.lower())
+        self.assertNotIn("pasangan", title.lower())
+
+    def test_title_skips_family_blessing_litany(self):
+        span = (
+            "Ya Allah, berkahi kami dengan kenal Allah di dunia, berjumpa engkau dan berjumpa Rasulullah di akhirat. "
+            "Berkahi keluarga kami ya Allah, berkahi pasangan kami ya Allah, pasangan keturunan kami ya Allah. "
+            "Hadratu qutblah Engkau ya Allah sehingga kami merasakan dekatnya nikmatnya."
+        )
+        title = title_for_span(span)
+        subtitle = hook_subtitle_for_span(span, title)
+        self.assertNotIn("keluarga", title.lower())
+        self.assertNotIn("pasangan", title.lower())
+        self.assertNotIn("keturunan", title.lower())
+        self.assertLess(title.lower().split().count("allah"), 3)
+        self.assertNotIn("hadratu", subtitle.lower())
+        self.assertNotIn("qutblah", subtitle.lower())
+        self.assertTrue(any(token in title.lower() for token in ("kenal", "dunia", "rasulullah", "berjumpa")))
 
     def test_metadata_editor_prompt_is_niche_aware(self):
         devotional = metadata_editor_system_prompt(workspace_id="nourbit", niche="islamic")

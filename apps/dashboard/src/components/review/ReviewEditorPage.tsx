@@ -6,16 +6,18 @@ import {ArrowLeft, ChevronLeft, ChevronRight, Loader2, MoreHorizontal} from "luc
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {EditorHeaderActions} from "@/components/review/editor/EditorHeaderActions";
 import {ReviewEditorWorkspace} from "@/components/review/editor/ReviewEditorWorkspace";
-import {captionIndexAtSeconds, captionRelativeSeconds, isRenderingContext, joinCaptionsFromSegments, redistributeCaptionDocument, type ActionState, type InspectorTab} from "@/components/review/editor/types";
+import {captionIndexAtSeconds, captionRelativeSeconds, editorLookFromContext, isRenderingContext, joinCaptionsFromSegments, pendingLookDirty, redistributeCaptionDocument, type ActionState, type InspectorTab, type PendingEditorLook} from "@/components/review/editor/types";
 import {
   apiGet,
   apiPost,
   canMakeShortsFromClip,
+  fetchHyperframesTemplatesWithBrands,
   type CaptionPolishResult,
   type ClipCandidate,
   type EditorContext,
   type ExplainerScene,
   type ExplainerScenePlan,
+  type BrandTemplate,
   type HyperframesTemplate,
   type MakeShortsFromLongformResult,
   type PublishTarget,
@@ -32,6 +34,7 @@ type MetadataRefreshResult = {
   curation_metadata?: ClipCandidate["curation_metadata"];
   rerender_job?: RerenderJob;
 };
+type HookMetadataSaveResult = MetadataRefreshResult;
 
 export function ReviewEditorPage({
   clipId,
@@ -51,11 +54,16 @@ export function ReviewEditorPage({
   const [cleanPlan, setCleanPlan] = useState<ExplainerScenePlan>();
   const [draftPlan, setDraftPlan] = useState<ExplainerScenePlan>();
   const [templates, setTemplates] = useState<HyperframesTemplate[]>([]);
+  const [brandLibrary, setBrandLibrary] = useState<BrandTemplate[]>([]);
   const [schedulePlatforms, setSchedulePlatforms] = useState<string[]>([]);
   const [cleanCaptionDraft, setCleanCaptionDraft] = useState("");
   const [captionDraft, setCaptionDraft] = useState("");
   const [cleanPostCopy, setCleanPostCopy] = useState("");
   const [postCopyDraft, setPostCopyDraft] = useState("");
+  const [cleanMetadataTitle, setCleanMetadataTitle] = useState("");
+  const [metadataTitleDraft, setMetadataTitleDraft] = useState("");
+  const [cleanMetadataSubtitle, setCleanMetadataSubtitle] = useState("");
+  const [metadataSubtitleDraft, setMetadataSubtitleDraft] = useState("");
   const [selectedSceneId, setSelectedSceneId] = useState<string>();
   const [selectedCaptionIndex, setSelectedCaptionIndex] = useState<number>();
   const [activeInspectorTab, setActiveInspectorTab] = useState<InspectorTab>("scene");
@@ -67,11 +75,22 @@ export function ReviewEditorPage({
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [previewEpoch, setPreviewEpoch] = useState(0);
+  const [cleanLookBaseline, setCleanLookBaseline] = useState<PendingEditorLook>(() => editorLookFromContext());
+  const [pendingLook, setPendingLook] = useState<PendingEditorLook>(() => editorLookFromContext());
 
   const planDirty = useMemo(() => JSON.stringify(draftPlan) !== JSON.stringify(cleanPlan), [cleanPlan, draftPlan]);
   const captionsDirty = captionDraft !== cleanCaptionDraft;
   const postCopyDirty = postCopyDraft !== cleanPostCopy;
-  const dirty = planDirty || captionsDirty || postCopyDirty;
+  const metadataDirty = metadataTitleDraft !== cleanMetadataTitle || metadataSubtitleDraft !== cleanMetadataSubtitle;
+  const lookDirty = useMemo(() => pendingLookDirty(pendingLook, cleanLookBaseline), [cleanLookBaseline, pendingLook]);
+  const contentDirty = planDirty || captionsDirty || postCopyDirty || metadataDirty;
+  const dirty = contentDirty || lookDirty;
+
+  const syncLookFromContext = useCallback((next: EditorContext) => {
+    const baseline = editorLookFromContext(next.look);
+    setCleanLookBaseline(baseline);
+    setPendingLook(baseline);
+  }, []);
   const rendering = isRenderingContext(context || undefined);
 
   const applyContext = useCallback((next: EditorContext, resetPlan: boolean) => {
@@ -85,7 +104,7 @@ export function ReviewEditorPage({
       if (next.capability === "scene") return current === "scene" || current === "metadata" || current === "post" || current === "qa" ? current : "scene";
       if (next.capability === "short") {
         if (current === "scene" || current === "captions") return next.can_trim ? "trim" : "silence";
-        if (current === "silence" || current === "trim" || current === "metadata" || current === "post" || current === "qa") return current;
+        if (current === "silence" || current === "look" || current === "trim" || current === "metadata" || current === "post" || current === "qa") return current;
         return next.can_trim ? "trim" : "silence";
       }
       return current === "scene" || current === "captions" || current === "trim" || current === "silence" ? "metadata" : current;
@@ -94,34 +113,42 @@ export function ReviewEditorPage({
 
   const loadInitial = useCallback(async () => {
     try {
-      const [reviewItems, editorContext, targets, nextTemplates] = await Promise.all([
+      const [reviewItems, editorContext, targets, templateBundle] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<EditorContext>(`editor-context?candidate_id=${encodeURIComponent(clipId)}`),
         apiGet<PublishTarget[]>("targets"),
-        apiGet<HyperframesTemplate[]>("hyperframes-templates"),
+        fetchHyperframesTemplatesWithBrands(),
       ]);
       const nextClip = reviewItems.find((item) => item.id === clipId) || null;
       setClips(reviewItems);
       setClip(nextClip);
-      setTemplates(nextTemplates);
+      setTemplates(templateBundle.templates);
+      setBrandLibrary(templateBundle.brandLibrary);
       setSchedulePlatforms(targets.filter((target) => target.mode !== "off").map((target) => target.platform));
       if (nextClip) {
         const captions = joinCaptionsFromSegments(nextClip.captions || []);
         const postCopy = nextClip.post_caption || "";
+        const metadataTitle = nextClip.title_hook || "";
+        const metadataSubtitle = nextClip.hook_subtitle || nextClip.viral_reason || "";
         setCleanCaptionDraft(captions);
         setCaptionDraft(captions);
         setCleanPostCopy(postCopy);
         setPostCopyDraft(postCopy);
+        setCleanMetadataTitle(metadataTitle);
+        setMetadataTitleDraft(metadataTitle);
+        setCleanMetadataSubtitle(metadataSubtitle);
+        setMetadataSubtitleDraft(metadataSubtitle);
         if (editorContext.capability !== "scene" && (captions || nextClip.transcript_span?.trim())) {
           setSelectedCaptionIndex(0);
         }
       }
       applyContext(editorContext, true);
+      syncLookFromContext(editorContext);
     } catch {
       setClip(null);
       setContext(null);
     }
-  }, [applyContext, clipId]);
+  }, [applyContext, clipId, syncLookFromContext]);
 
   const refreshClip = useCallback(async () => {
     const reviewItems = await apiGet<ClipCandidate[]>("review");
@@ -131,23 +158,39 @@ export function ReviewEditorPage({
     if (nextClip) {
       const captions = joinCaptionsFromSegments(nextClip.captions || []);
       const postCopy = nextClip.post_caption || "";
+      const metadataTitle = nextClip.title_hook || "";
+      const metadataSubtitle = nextClip.hook_subtitle || nextClip.viral_reason || "";
       setCaptionDraft((current) => current === cleanCaptionDraft ? captions : current);
       setCleanCaptionDraft(captions);
       setPostCopyDraft((current) => current === cleanPostCopy ? postCopy : current);
       setCleanPostCopy(postCopy);
+      setMetadataTitleDraft((current) => current === cleanMetadataTitle ? metadataTitle : current);
+      setCleanMetadataTitle(metadataTitle);
+      setMetadataSubtitleDraft((current) => current === cleanMetadataSubtitle ? metadataSubtitle : current);
+      setCleanMetadataSubtitle(metadataSubtitle);
     }
-  }, [cleanCaptionDraft, cleanPostCopy, clipId]);
+  }, [cleanCaptionDraft, cleanMetadataSubtitle, cleanMetadataTitle, cleanPostCopy, clipId]);
 
   useEffect(() => {
     void loadInitial();
   }, [loadInitial]);
 
   useEffect(() => {
-    if (!dirty) return;
+    if (activeInspectorTab !== "look") return;
+    void fetchHyperframesTemplatesWithBrands()
+      .then((bundle) => {
+        setTemplates(bundle.templates);
+        setBrandLibrary(bundle.brandLibrary);
+      })
+      .catch(() => undefined);
+  }, [activeInspectorTab]);
+
+  useEffect(() => {
+    if (!contentDirty) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  }, [contentDirty]);
 
   useEffect(() => {
     if (!rendering) return;
@@ -158,6 +201,7 @@ export function ReviewEditorPage({
           applyContext(next, !dirty);
           if (!stillRendering) {
             await refreshClip();
+            syncLookFromContext(next);
             setPreviewEpoch((value) => value + 1);
             setSeekRequest({id: Date.now(), seconds: 0});
             setPlaybackRequest({id: Date.now(), action: "pause"});
@@ -172,7 +216,7 @@ export function ReviewEditorPage({
         .catch(() => undefined);
     }, 2_000);
     return () => window.clearInterval(timer);
-  }, [applyContext, clipId, dirty, refreshClip, rendering]);
+  }, [applyContext, clipId, dirty, refreshClip, rendering, syncLookFromContext]);
 
   useEffect(() => {
     if (!clip?.captions?.length) return;
@@ -200,12 +244,23 @@ export function ReviewEditorPage({
 
   async function queueRerender() {
     if (!context?.can_rerender || context.capability !== "short" || !clip) return;
-    const job = await apiPost<RerenderJob>("rerender", {
+    const payload: Record<string, string> = {
       candidate_id: clip.id,
       renderer: "hyperframes",
       quality: "production",
       style: "auto",
-    });
+    };
+    if (lookDirty) {
+      if (pendingLook.brand_system_template_id) {
+        payload.hyperframes_template = pendingLook.brand_system_template_id;
+        payload.brand_system_template_id = pendingLook.brand_system_template_id;
+        if (pendingLook.brand_template_path) payload.style = pendingLook.brand_template_path;
+      } else if (pendingLook.hyperframes_template && pendingLook.hyperframes_template !== "auto") {
+        payload.hyperframes_template = pendingLook.hyperframes_template;
+        payload.brand_system_template_id = "";
+      }
+    }
+    const job = await apiPost<RerenderJob>("rerender", payload);
     await applyRerenderJob(job);
   }
 
@@ -219,6 +274,11 @@ export function ReviewEditorPage({
       quality: "production",
       style: "auto",
     });
+    const subtitle = result.hook_subtitle || result.viral_reason || "";
+    setCleanMetadataTitle(result.title_hook);
+    setMetadataTitleDraft(result.title_hook);
+    setCleanMetadataSubtitle(subtitle);
+    setMetadataSubtitleDraft(subtitle);
     setClip((current) =>
       current
         ? {
@@ -291,7 +351,7 @@ export function ReviewEditorPage({
 
   function navigate(href?: string) {
     if (!href) return;
-    if (dirty && !window.confirm("Discard unsaved editor changes?")) return;
+    if (contentDirty && !window.confirm("Discard unsaved editor changes?")) return;
     router.push(href);
   }
 
@@ -342,6 +402,34 @@ export function ReviewEditorPage({
         setCleanPostCopy(postCopyDraft);
         setClip((current) => current ? {...current, post_caption: postCopyDraft} : current);
       }
+      if (metadataDirty && clip) {
+        const title = metadataTitleDraft.trim();
+        const subtitle = metadataSubtitleDraft.trim();
+        if (!title) {
+          throw new Error("Title is required");
+        }
+        const result = await apiPost<HookMetadataSaveResult>("hook-metadata", {
+          candidate_id: clip.id,
+          title_hook: title,
+          hook_subtitle: subtitle,
+        });
+        setCleanMetadataTitle(result.title_hook);
+        setMetadataTitleDraft(result.title_hook);
+        const savedSubtitle = result.hook_subtitle || result.viral_reason || "";
+        setCleanMetadataSubtitle(savedSubtitle);
+        setMetadataSubtitleDraft(savedSubtitle);
+        setClip((current) =>
+          current
+            ? {
+                ...current,
+                title_hook: result.title_hook,
+                hook_subtitle: result.hook_subtitle,
+                viral_reason: result.viral_reason,
+                curation_metadata: result.curation_metadata || current.curation_metadata,
+              }
+            : current,
+        );
+      }
     }, "Editor changes saved", false);
   }
 
@@ -369,7 +457,7 @@ export function ReviewEditorPage({
           <div className="flex min-w-0 items-center gap-2.5">
             <button type="button" onClick={() => navigate(backHref)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-400 transition hover:bg-white/[0.06] hover:text-white" aria-label={backLabel}><ArrowLeft className="h-4 w-4" /></button>
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold tracking-tight text-white">{draftPlan?.title || clip.title_hook}</h1>
+              <h1 className="truncate text-sm font-semibold tracking-tight text-white">{draftPlan?.title || metadataTitleDraft || clip.title_hook}</h1>
               <p className="truncate text-[11px] text-zinc-600">{Math.max(clipIndex, 0) + 1}/{navClips.length || 1} · canvas</p>
             </div>
           </div>
@@ -381,7 +469,8 @@ export function ReviewEditorPage({
             <EditorHeaderActions
               clip={clip}
               context={context}
-              dirty={dirty}
+              dirty={contentDirty}
+              lookChanged={lookDirty}
               rendering={rendering}
               actionStates={actionStates}
               onSave={() => void saveAllChanges()}
@@ -436,19 +525,24 @@ export function ReviewEditorPage({
           context={context}
           draftPlan={draftPlan}
           templates={templates}
+          brandLibrary={brandLibrary}
           selectedSceneId={selectedSceneId}
           selectedCaptionIndex={selectedCaptionIndex}
           activeInspectorTab={activeInspectorTab}
           inspectorPanelOpen={inspectorPanelOpen}
           captionDraft={captionDraft}
           postCopyDraft={postCopyDraft}
+          metadataTitleDraft={metadataTitleDraft}
+          metadataSubtitleDraft={metadataSubtitleDraft}
           currentSeconds={currentSeconds}
           seekRequest={seekRequest}
           playbackRequest={playbackRequest}
           isPlaying={isPlaying}
-          dirty={dirty}
+          dirty={contentDirty}
           rendering={rendering}
           actionStates={actionStates}
+          pendingLook={pendingLook}
+          onPendingLookChange={setPendingLook}
           onSelectScene={(id) => { setSelectedSceneId(id); setActiveInspectorTab("scene"); setInspectorPanelOpen(true); }}
           onSelectCaption={(index) => {
             setSelectedCaptionIndex(index);
@@ -495,6 +589,8 @@ export function ReviewEditorPage({
           })}
           onCaptionDraftChange={setCaptionDraft}
           onPostCopyChange={setPostCopyDraft}
+          onMetadataTitleChange={setMetadataTitleDraft}
+          onMetadataSubtitleChange={setMetadataSubtitleDraft}
           onSeek={(seconds) => setSeekRequest({id: Date.now(), seconds})}
           onTogglePlayback={() => setPlaybackRequest({id: Date.now(), action: "toggle"})}
           onPlaybackChange={setIsPlaying}

@@ -78,13 +78,67 @@ function isGroupableSource(clip: ClipCandidate): boolean {
   return true;
 }
 
+/** Group legacy clips that share a YouTube video but have generic `*_source` ids. */
+export function youtubeVideoGroupKey(clip: ClipCandidate): string | null {
+  const url = (clip.source?.url || "").trim();
+  if (!url) return null;
+  const match = url.match(/(?:[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/)([\w-]{11})/i);
+  return match ? `yt:${match[1]}` : null;
+}
+
 export function reviewGroupKey(clip: ClipCandidate): string {
-  if (!isGroupableSource(clip)) return `clip:${clip.id}`;
-  return (clip.source_id || clip.source?.id || `clip:${clip.id}`).trim();
+  const ytKey = youtubeVideoGroupKey(clip);
+  if (ytKey) return ytKey;
+  if (isGroupableSource(clip)) {
+    return (clip.source_id || clip.source?.id || `clip:${clip.id}`).trim();
+  }
+  return `clip:${clip.id}`;
+}
+
+function isGenericBatchTitle(title: string): boolean {
+  const normalized = title.trim().toLowerCase();
+  if (!normalized || normalized === "clip batch") return true;
+  return normalized.includes("youtube.com/watch") || normalized === "youtube.com";
+}
+
+/** Title, thumb, and URL when generation job metadata is missing on the lead clip. */
+export function resolveGroupCosmetics(members: ClipCandidate[], _groupKey: string) {
+  const lead = members[0];
+  const source = lead?.source;
+  let title = (source?.title || "").trim() || lead?.title_hook || "Clip batch";
+  let channel = (source?.channel || "").trim();
+  let thumbnailUrl = (source?.thumbnail_url || "").trim();
+  let sourceUrl = (source?.url || "").trim();
+
+  for (const clip of members) {
+    const clipSource = clip.source;
+    if (!channel && clipSource?.channel) channel = clipSource.channel.trim();
+    if (!thumbnailUrl && clipSource?.thumbnail_url) thumbnailUrl = clipSource.thumbnail_url.trim();
+    if (!sourceUrl && clipSource?.url) sourceUrl = clipSource.url.trim();
+    const clipTitle = (clipSource?.title || "").trim();
+    if (isGenericBatchTitle(title) && clipTitle && !isGenericBatchTitle(clipTitle)) {
+      title = clipTitle;
+    }
+  }
+
+  if (isGenericBatchTitle(title)) {
+    const hook = members.find((clip) => (clip.title_hook || "").trim())?.title_hook;
+    if (hook) title = hook.trim();
+  }
+
+  return {title, channel, thumbnailUrl, sourceUrl};
 }
 
 export function reviewBatchHref(sourceId: string) {
   return `/review/batch/${encodeURIComponent(sourceId)}`;
+}
+
+export function clipMatchesReviewGroupKey(clip: ClipCandidate, groupKey: string): boolean {
+  const key = groupKey.trim();
+  if (!key) return false;
+  if (key.startsWith("yt:")) return youtubeVideoGroupKey(clip) === key;
+  if (key.startsWith("clip:")) return `clip:${clip.id}` === key;
+  return (clip.source_id || clip.source?.id || "").trim() === key;
 }
 
 export function reviewEditorHref(clipId: string, sourceId?: string) {
@@ -97,26 +151,21 @@ export function reviewEditorHref(clipId: string, sourceId?: string) {
 export function clipsForSourceId(clips: ClipCandidate[], sourceId: string): ClipCandidate[] {
   const target = sourceId.trim();
   if (!target) return [];
-  return clips.filter((clip) => (clip.source_id || clip.source?.id || "").trim() === target);
+  return clips.filter((clip) => clipMatchesReviewGroupKey(clip, target));
 }
 
 export function groupFromClips(clips: ClipCandidate[], sourceId: string): ReviewClipGroup | null {
   const members = clipsForSourceId(clips, sourceId);
   if (!members.length) return null;
-  const lead = members[0];
-  const source = lead?.source;
-  const title = (source?.title || "").trim() || lead?.title_hook || "Clip batch";
-  const channel = (source?.channel || "").trim();
-  const thumbnailUrl = (source?.thumbnail_url || "").trim();
-  const sourceUrl = (source?.url || "").trim();
+  const cosmetics = resolveGroupCosmetics(members, sourceId);
   const clearedCount = members.filter((clip) => CLEARED_STATUSES.has(clip.status)).length;
   return {
     key: sourceId,
     sourceId,
-    title,
-    channel,
-    thumbnailUrl,
-    sourceUrl,
+    title: cosmetics.title,
+    channel: cosmetics.channel,
+    thumbnailUrl: cosmetics.thumbnailUrl,
+    sourceUrl: cosmetics.sourceUrl,
     clips: members,
     showHeader: members.length > 1,
     clearedCount,
@@ -166,18 +215,16 @@ export function groupReviewClips(clips: ClipCandidate[], options?: {flatten?: bo
     const members = buckets.get(key) || [];
     const lead = members[0];
     const source = lead?.source;
-    const title = (source?.title || "").trim() || lead?.title_hook || "Clip batch";
-    const channel = (source?.channel || "").trim();
-    const thumbnailUrl = (source?.thumbnail_url || "").trim();
-    const sourceUrl = (source?.url || "").trim();
+    const cosmetics = resolveGroupCosmetics(members, key);
     const clearedCount = members.filter((clip) => CLEARED_STATUSES.has(clip.status)).length;
+    const sourceId = key.startsWith("yt:") ? key : (lead?.source_id || source?.id || key).trim();
     return {
       key,
-      sourceId: (lead?.source_id || source?.id || key).trim(),
-      title,
-      channel,
-      thumbnailUrl,
-      sourceUrl,
+      sourceId,
+      title: cosmetics.title,
+      channel: cosmetics.channel,
+      thumbnailUrl: cosmetics.thumbnailUrl,
+      sourceUrl: cosmetics.sourceUrl,
       clips: members,
       showHeader: members.length > 1,
       clearedCount,

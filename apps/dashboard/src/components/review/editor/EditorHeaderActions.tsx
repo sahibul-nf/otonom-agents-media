@@ -8,6 +8,7 @@ export function EditorHeaderActions({
   clip,
   context,
   dirty,
+  lookChanged = false,
   rendering,
   actionStates,
   onSave,
@@ -20,6 +21,7 @@ export function EditorHeaderActions({
   clip: ClipCandidate;
   context: EditorContext;
   dirty: boolean;
+  lookChanged?: boolean;
   rendering: boolean;
   actionStates: EditorActionStates;
   onSave: () => void;
@@ -36,16 +38,17 @@ export function EditorHeaderActions({
   const scheduling = actionStates[`clip:${clip.id}:schedule`]?.status === "running";
   const scheduleMode = clip.status === "approved";
   const canDecide = ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status);
-  const decideDisabled = dirty || rendering || saving || (scheduleMode ? scheduling : !canDecide || approving);
+  const decideDisabled = dirty || lookChanged || rendering || saving || (scheduleMode ? scheduling : !canDecide || approving);
   const renderError = context.job?.error || context.render?.error;
+  const statusLabel = renderError || (rendering ? "Rendering…" : lookChanged ? "Look changed" : dirty ? "Unsaved" : "Saved");
   const showRender = context.capability === "scene" && context.can_rerender && !dirty && context.job?.status === "planned";
   const showShortRerender = context.capability === "short" && context.can_rerender && !dirty && Boolean(onRerender);
   const showCaptionPolish = context.capability === "short" && Boolean(clip.captions?.length) && Boolean(onPolishCaptions);
 
   return (
     <div className="flex min-w-0 items-center gap-1.5 rounded-full border border-white/[0.06] bg-black/25 p-1 backdrop-blur-md sm:gap-2 sm:px-1.5">
-      <span className={`hidden px-2 text-[11px] font-medium sm:inline ${renderError ? "text-danger" : dirty ? "text-warning" : "text-zinc-500"}`}>
-        {renderError || (rendering ? "Rendering…" : dirty ? "Unsaved" : "Saved")}
+      <span className={`hidden px-2 text-[11px] font-medium sm:inline ${renderError ? "text-danger" : dirty || lookChanged ? "text-warning" : "text-zinc-500"}`}>
+        {statusLabel}
       </span>
       <button type="button" onClick={onSave} disabled={!dirty || saving || rendering} className={ghostChip}>
         {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}

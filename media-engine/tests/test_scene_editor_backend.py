@@ -80,6 +80,47 @@ class SceneEditorBackendTests(unittest.TestCase):
                 self.assertTrue(short["can_trim"])
                 self.assertNotIn("plan", short)
 
+    def test_short_editor_context_includes_look_from_latest_render(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = root / "test.sqlite"
+            artifacts = root / "artifacts"
+            with self._patched(db_path, artifacts):
+                _created, candidate_id = self._create_candidate(db_path)
+                conn = db_mod.connect(db_path)
+                contract = {
+                    "hyperframesTemplate": "spiritual_reflective",
+                    "brandSystemTemplateId": "",
+                    "hyperframesFormat": "short_9_16",
+                }
+                conn.execute(
+                    "UPDATE clip_candidates SET curation_metadata_json = '{}', caption_source = 'youtube' WHERE id = ?",
+                    (candidate_id,),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO render_jobs
+                      (id, candidate_id, preset, crop_strategy, caption_style, status, output_path, metadata_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "render_short_1",
+                        candidate_id,
+                        "premium",
+                        "center",
+                        "caption",
+                        "rendered",
+                        str(artifacts / "out.mp4"),
+                        json.dumps(contract),
+                    ),
+                )
+                conn.commit()
+                conn.close()
+                context = review_server.get_editor_context(candidate_id, db_path=db_path)
+                self.assertEqual(context["capability"], "short")
+                self.assertIn("look", context)
+                self.assertEqual(context["look"]["hyperframes_template"], "spiritual_reflective")
+
     def test_save_normalizes_reorder_add_delete_and_preserves_hidden_media(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

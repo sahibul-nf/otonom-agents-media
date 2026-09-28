@@ -1,4 +1,5 @@
 import type {
+  BrandTemplate,
   CaptionSegment,
   ClipCandidate,
   EditorCapability,
@@ -14,7 +15,57 @@ export type ActionState = {
   message: string;
 };
 
-export type InspectorTab = "scene" | "captions" | "trim" | "silence" | "metadata" | "post" | "qa";
+export type InspectorTab = "scene" | "captions" | "trim" | "silence" | "look" | "metadata" | "post" | "qa";
+
+export type PendingEditorLook = {
+  brand_system_template_id: string;
+  brand_template_path: string;
+  hyperframes_template: string;
+  label: string;
+};
+
+export function editorLookFromContext(look?: EditorContext["look"]): PendingEditorLook {
+  return {
+    hyperframes_template: look?.hyperframes_template || "auto",
+    brand_system_template_id: look?.brand_system_template_id || "",
+    brand_template_path: look?.brand_template_path || "",
+    label: look?.label || "Current look",
+  };
+}
+
+export function pendingLookDirty(current: PendingEditorLook, baseline: PendingEditorLook) {
+  return (
+    current.brand_system_template_id !== baseline.brand_system_template_id
+    || current.brand_template_path !== baseline.brand_template_path
+    || current.hyperframes_template !== baseline.hyperframes_template
+  );
+}
+
+export function lookSelectValue(current: PendingEditorLook, baseline: PendingEditorLook): string {
+  if (!pendingLookDirty(current, baseline)) return "__current__";
+  if (current.brand_system_template_id) return `brand:${current.brand_system_template_id}`;
+  if (current.hyperframes_template && current.hyperframes_template !== "auto") {
+    return `recipe:${current.hyperframes_template}`;
+  }
+  return "__current__";
+}
+
+export function pendingLookFromTemplate(template: HyperframesTemplate): PendingEditorLook {
+  if (template.source === "brand_system") {
+    return {
+      hyperframes_template: template.id,
+      brand_system_template_id: template.id,
+      brand_template_path: template.brand_template_path || "",
+      label: template.label,
+    };
+  }
+  return {
+    hyperframes_template: template.id,
+    brand_system_template_id: "",
+    brand_template_path: "",
+    label: template.label,
+  };
+}
 
 export type EditorActionStates = Record<string, ActionState>;
 
@@ -23,12 +74,15 @@ export type ReviewEditorWorkspaceProps = {
   context: EditorContext;
   draftPlan?: ExplainerScenePlan;
   templates: HyperframesTemplate[];
+  brandLibrary: BrandTemplate[];
   selectedSceneId?: string;
   selectedCaptionIndex?: number;
   activeInspectorTab: InspectorTab;
   inspectorPanelOpen: boolean;
   captionDraft: string;
   postCopyDraft: string;
+  metadataTitleDraft: string;
+  metadataSubtitleDraft: string;
   currentSeconds: number;
   seekRequest?: PreviewSeekRequest;
   playbackRequest?: PreviewPlaybackRequest;
@@ -48,6 +102,8 @@ export type ReviewEditorWorkspaceProps = {
   onMoveScene: (sceneId: string, direction: -1 | 1) => void;
   onCaptionDraftChange: (value: string) => void;
   onPostCopyChange: (value: string) => void;
+  onMetadataTitleChange: (value: string) => void;
+  onMetadataSubtitleChange: (value: string) => void;
   onSeek: (seconds: number) => void;
   onTogglePlayback: () => void;
   onPlaybackChange: (playing: boolean) => void;
@@ -58,6 +114,8 @@ export type ReviewEditorWorkspaceProps = {
   onSaveBoundary: (startMs: number, endMs: number, rerenderAfter: boolean) => void;
   onRerenderShort: () => void;
   onBatchRemovePauses: (minGapMs: number) => void;
+  pendingLook?: PendingEditorLook;
+  onPendingLookChange?: (look: PendingEditorLook) => void;
   previewEpoch?: number;
 };
 

@@ -36,6 +36,52 @@ SOURCES_DIR = Path(__file__).resolve().parent.parent / "sources"
 
 HASHTAG_RE = re.compile(r"(?<!\w)#[\w\u00c0-\u024f\u0600-\u06ff_]+", re.UNICODE)
 
+SOURCE_ATTRIBUTION_PLACEHOLDER = "Source: Channel clip"
+
+
+def format_source_attribution(channel: str, prefix: str = "Source:") -> str:
+    name = str(channel or "").strip()
+    if not name:
+        return ""
+    pref = str(prefix or "Source:").strip() or "Source:"
+    if pref.endswith(":"):
+        return f"{pref} {name}"
+    return f"{pref}: {name}"
+
+
+def is_placeholder_source_attribution(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    return text.casefold() == SOURCE_ATTRIBUTION_PLACEHOLDER.casefold() or text.casefold() in {
+        "source: channel",
+        "source: channel clip",
+    }
+
+
+def _channel_from_candidate(candidate: dict[str, Any] | None) -> str:
+    if not isinstance(candidate, dict):
+        return ""
+    source = candidate.get("source")
+    if isinstance(source, dict):
+        channel = str(source.get("channel") or "").strip()
+        if channel:
+            return channel
+    render = candidate.get("render_metadata")
+    if isinstance(render, dict):
+        attr = str(render.get("sourceAttribution") or "").strip()
+        if attr and not is_placeholder_source_attribution(attr):
+            return attr.removeprefix("Source:").strip()
+    return ""
+
+
+def _usable_source_attribution(raw: str, candidate: dict[str, Any] | None = None) -> str:
+    text = str(raw or "").strip()
+    if text and not is_placeholder_source_attribution(text):
+        return text
+    channel = _channel_from_candidate(candidate)
+    return format_source_attribution(channel)
+
 
 @dataclass(frozen=True)
 class PostCopyContext:
@@ -43,7 +89,7 @@ class PostCopyContext:
     workspace_name: str = ""
     niche: str = ""
     cta_text: str = ""
-    source_attribution: str = "Source: Channel clip"
+    source_attribution: str = ""
     attribution_rule: str = ""
 
 
@@ -104,10 +150,9 @@ def resolve_post_copy_context(
     cta_text = str((profile_payload or {}).get("cta_text") or "").strip()
     attribution_rule = str((source_payload or {}).get("attribution_rule") or "").strip()
     channel = str((source_payload or {}).get("channel") or (source_payload or {}).get("label") or "").strip()
-    if channel:
-        source_attribution = f"Source: {channel}"
-    else:
-        source_attribution = "Source: Channel clip"
+    if not channel:
+        channel = _channel_from_candidate({"source": source_payload} if source_payload else {})
+    source_attribution = format_source_attribution(channel)
     return PostCopyContext(
         profile_id=profile_id,
         workspace_name=resolved_name,
@@ -115,6 +160,15 @@ def resolve_post_copy_context(
         cta_text=cta_text,
         source_attribution=source_attribution,
         attribution_rule=attribution_rule,
+    )
+
+
+def _context_from_candidate(candidate: dict[str, Any]) -> PostCopyContext:
+    source = candidate.get("source") if isinstance(candidate.get("source"), dict) else None
+    return resolve_post_copy_context(
+        profile_id=str(candidate.get("profile_id") or ""),
+        source_id=str(candidate.get("source_id") or ""),
+        source=source,
     )
 
 
@@ -198,6 +252,12 @@ def sanitize_post_caption(text: str, limit: int = MAX_POST_COPY_CHARS, max_hasht
     return body.strip()
 
 
+def _strip_placeholder_attribution(text: str) -> str:
+    cleaned = re.sub(r"(?im)^source:\s*channel(?:\s+clip)?\s*$", "", str(text or ""))
+    cleaned = re.sub(r"(?i)\bsource:\s*channel(?:\s+clip)?\b", "", cleaned)
+    return sanitize_post_caption(cleaned)
+
+
 def _compact_lines(lines: list[str], limit: int | None = None) -> str:
     text = "\n\n".join(line.strip() for line in lines if line and line.strip())
     if limit is None or len(text) <= limit:
@@ -219,13 +279,10 @@ def build_post_caption(
     metadata = _candidate_metadata(candidate)
     override = str(metadata.get("post_caption_override") or "").strip()
     if override:
-        return sanitize_post_caption(override, limit)
+        return sanitize_post_caption(_strip_placeholder_attribution(override), limit)
 
-    ctx = context or resolve_post_copy_context(
-        profile_id=str(candidate.get("profile_id") or ""),
-        source_id=str(candidate.get("source_id") or ""),
-    )
-    attribution = (source_attribution or ctx.source_attribution).strip() or "Source: Channel clip"
+    ctx = context or _context_from_candidate(candidate)
+    attribution = _usable_source_attribution(source_attribution or ctx.source_attribution, candidate)
     title = str(candidate.get("title_hook") or "").strip()
     subtitle = (
         str(candidate.get("hook_subtitle") or "").strip()
@@ -233,7 +290,10 @@ def build_post_caption(
         or str(candidate.get("viral_reason") or "").strip()
     )
     hashtags = " ".join(default_hashtags_for_context(ctx))
-    lines = [title, subtitle, attribution, hashtags]
+    lines = [title, subtitle]
+    if attribution:
+        lines.append(attribution)
+    lines.append(hashtags)
     return _compact_lines(lines, limit)
 
 
@@ -242,7 +302,7 @@ def _local_generated_post_caption(
     render_job: dict[str, Any] | None = None,
     context: PostCopyContext | None = None,
 ) -> str:
-    ctx = context or resolve_post_copy_context(profile_id=str(candidate.get("profile_id") or ""))
+    ctx = context or _context_from_candidate(candidate)
     title = str(candidate.get("title_hook") or "").strip()
     subtitle = (
         str(candidate.get("hook_subtitle") or "").strip()
@@ -259,6 +319,9 @@ def _local_generated_post_caption(
         body = f"{body}\n\n{excerpt}..."
     if ctx.cta_text and ctx.cta_text.lower() not in body.lower():
         body = f"{body}\n\n{ctx.cta_text}"
+    attribution = _usable_source_attribution(ctx.source_attribution, candidate)
+    if attribution:
+        body = f"{body}\n\n{attribution}"
     hashtags = " ".join(default_hashtags_for_context(ctx))
     return sanitize_post_caption(f"{body}\n\n{hashtags}")
 
@@ -271,10 +334,7 @@ def generate_post_caption(
 ) -> dict[str, str | int]:
     """Generate short social post copy with LLM output and heuristic fallback."""
     metadata = _candidate_metadata(candidate)
-    ctx = context or resolve_post_copy_context(
-        profile_id=str(candidate.get("profile_id") or ""),
-        source_id=str(candidate.get("source_id") or ""),
-    )
+    ctx = context or _context_from_candidate(candidate)
     provider = _available_provider(preferred_provider or str(metadata.get("llm_provider") or ""))
     if provider == "none":
         raise LLMError("post copy generation failed: no LLM provider key available")
@@ -298,8 +358,10 @@ def generate_post_caption(
         rules.append(f"End with this CTA when space allows: {ctx.cta_text}")
     if ctx.attribution_rule:
         rules.append(f"Follow this attribution rule: {ctx.attribution_rule}")
-    elif ctx.source_attribution:
+    elif ctx.source_attribution and not is_placeholder_source_attribution(ctx.source_attribution):
         rules.append(f"Include a short source line like: {ctx.source_attribution}")
+    else:
+        rules.append("Do not invent a source line. Never write 'Source: Channel clip'.")
 
     user_prompt = json.dumps(
         {
@@ -329,6 +391,7 @@ def generate_post_caption(
     if not isinstance(result, dict):
         raise LLMError("post copy generation failed: LLM response is not JSON object")
     caption = sanitize_post_caption(str(result.get("post_caption") or ""))
+    caption = _strip_placeholder_attribution(caption)
     if not caption:
         caption = _local_generated_post_caption(candidate, render_job, ctx)
         return {

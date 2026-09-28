@@ -3,6 +3,7 @@ import unittest
 from media_engine.hyperframes_recipes import LayoutContext, get_recipe
 from media_engine.overlay_copy import (
     FORBIDDEN_OVERLAY_COPY,
+    brand_studio_overlay_slots,
     heuristic_overlay_slots,
     merge_overlay_slots,
     overlay_slots_for_candidate,
@@ -50,6 +51,14 @@ def _candidate(**overrides):
 
 
 class OverlayCopyTests(unittest.TestCase):
+    def test_brand_studio_slots_use_short_hook_not_full_caption(self):
+        phrase = "Ketenangan hati hadir saat bersyukur."
+        slots = brand_studio_overlay_slots(phrase, "Spiritual")
+        self.assertEqual(slots["kicker"], "Reflection")
+        self.assertEqual(slots["headline"], "Ketenangan hati hadir")
+        self.assertNotEqual(slots["headline"], phrase)
+        self.assertEqual(slots.get("subhead", ""), "")
+
     def test_heuristic_slots_from_title_and_subtitle(self):
         slots = heuristic_overlay_slots("Fed pivot changes the tape", "Rates still lead risk")
         self.assertEqual(slots["headline"], "Fed pivot changes the tape")

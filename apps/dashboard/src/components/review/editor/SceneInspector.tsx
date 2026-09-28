@@ -3,6 +3,7 @@
 import {CheckCircle2, Clapperboard,
   FileText,
   Loader2,
+  Palette,
   RefreshCcw,
   Scissors,
   ShieldCheck,
@@ -12,8 +13,12 @@ import {CheckCircle2, Clapperboard,
 } from "lucide-react";
 import {useMemo, useState, type ReactNode} from "react";
 import type {ClipCandidate, EditorContext, ExplainerScene, ExplainerScenePlan, HyperframesTemplate} from "@/lib/media-api";
-import {clipAutonomyThreshold, clipHygieneFlags, clipHygieneGate, clipHygieneLabel, clipHygieneTone, clipMeetsAutonomyThreshold, clipOverallScore} from "@/lib/media-api";
-import {CAPTION_PAUSE_GAP_MS, captionWordPauseMarks, type ActionState, type EditorActionStates, type InspectorTab} from "@/components/review/editor/types";
+import {clipAutonomyThreshold, clipHygieneFlags, clipHygieneGate, clipHygieneLabel, clipHygieneTone, clipMeetsAutonomyThreshold, clipOverallScore, savedBrandKitsForUi, templateSupportsFormat} from "@/lib/media-api";
+import {qaCaptionPipelineLines, qaCaptionPipelineSummary} from "@/lib/caption-pipeline-status";
+import type {BrandTemplate} from "@/lib/media-api";
+import {CAPTION_PAUSE_GAP_MS, captionWordPauseMarks, editorLookFromContext, pendingLookDirty, pendingLookFromTemplate, type ActionState, type EditorActionStates, type InspectorTab, type PendingEditorLook} from "@/components/review/editor/types";
+import {HyperframesTemplatePickerModal} from "@/components/templates/HyperframesTemplatePickerModal";
+import {TemplatePreview} from "@/components/templates/TemplatePreview";
 
 type Props = {
   clip: ClipCandidate;
@@ -23,17 +28,24 @@ type Props = {
   activeTab: InspectorTab;
   panelOpen: boolean;
   postCopyDraft: string;
+  metadataTitleDraft: string;
+  metadataSubtitleDraft: string;
   templates: HyperframesTemplate[];
+  brandLibrary: BrandTemplate[];
   actionStates: EditorActionStates;
   onTabChange: (tab: InspectorTab) => void;
   onPanelOpenChange: (open: boolean) => void;
   onPlanChange: (plan: ExplainerScenePlan) => void;
   onPostCopyChange: (value: string) => void;
+  onMetadataTitleChange: (value: string) => void;
+  onMetadataSubtitleChange: (value: string) => void;
   onGeneratePostCopy: () => void;
   onRefreshMetadata: (rerenderAfter?: boolean) => void;
   onSaveBoundary: (startMs: number, endMs: number, rerenderAfter: boolean) => void;
   onRerenderShort: () => void;
   onBatchRemovePauses: (minGapMs: number) => void;
+  pendingLook?: PendingEditorLook;
+  onPendingLookChange?: (look: PendingEditorLook) => void;
 };
 
 export function SceneInspector(props: Props) {
@@ -51,9 +63,9 @@ export function SceneInspector(props: Props) {
   }
 
   return (
-    <aside className="flex min-h-[240px] shrink-0 lg:min-h-0 lg:py-3 lg:pr-3">
+    <aside className="flex h-full min-h-[240px] max-h-full shrink-0 lg:min-h-0 lg:py-3 lg:pr-3">
       {props.panelOpen ? (
-        <div className="mr-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.05] bg-black/25 shadow-[0_12px_40px_rgba(0,0,0,0.28)] backdrop-blur-md lg:w-[300px] lg:flex-none">
+        <div className="mr-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.05] bg-black/25 shadow-[0_12px_40px_rgba(0,0,0,0.28)] backdrop-blur-md lg:w-[300px] lg:flex-none">
           <div className="flex h-10 shrink-0 items-center justify-between px-4">
             <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-600">{activeTool?.label || "Tools"}</span>
             <button
@@ -72,6 +84,17 @@ export function SceneInspector(props: Props) {
                 clip={props.clip}
                 state={props.actionStates[`clip:${props.clip.id}:remove-pauses-batch`]}
                 onApply={props.onBatchRemovePauses}
+              />
+            ) : null}
+            {props.activeTab === "look" && props.pendingLook && props.onPendingLookChange ? (
+              <LookFields
+                context={props.context}
+                templates={props.templates}
+                brandLibrary={props.brandLibrary}
+                pendingLook={props.pendingLook}
+                rerenderState={props.actionStates[`clip:${props.clip.id}:rerender`]}
+                onPendingLookChange={props.onPendingLookChange}
+                onRerenderShort={props.onRerenderShort}
               />
             ) : null}
             {props.activeTab === "metadata" ? <MetadataFields {...props} /> : null}
@@ -125,6 +148,7 @@ function inspectorTools(context: EditorContext): {id: InspectorTab; label: strin
     if (context.can_trim) tools.push({id: "trim", label: "Trim", short: "Trim", icon: Scissors});
     tools.push(
       {id: "silence", label: "Silence", short: "Pause", icon: Timer},
+      {id: "look", label: "Look", short: "Look", icon: Palette},
       {id: "metadata", label: "Metadata", short: "Meta", icon: FileText},
       {id: "post", label: "Post copy", short: "Post", icon: Sparkles},
       {id: "qa", label: "QA", short: "QA", icon: ShieldCheck},
@@ -257,6 +281,158 @@ function formatRemovedLabel(ms: number) {
   return `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)}s`;
 }
 
+function mergeBrandTemplatesForLook(
+  templates: HyperframesTemplate[],
+  brandLibrary: BrandTemplate[],
+  look?: EditorContext["look"],
+): HyperframesTemplate[] {
+  const items = savedBrandKitsForUi(templates, brandLibrary);
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const brandId = (look?.brand_system_template_id || "").trim();
+  if (brandId.startsWith("brand:") && !byId.has(brandId)) {
+    byId.set(brandId, {
+      id: brandId,
+      label: look?.label || brandId.replace("brand:", "").replace(/_/g, " "),
+      category: "Brand",
+      best_for: "Saved brand system template",
+      effects: [],
+      caption_style: "Brand captions",
+      default_genres: [],
+      status: "ready",
+      tone: "Brand",
+      source: "brand_system",
+      brand_template_path: look?.brand_template_path,
+      formats: ["short_9_16", "long_16_9"],
+    });
+  }
+  return [...byId.values()];
+}
+
+function LookFields({
+  context,
+  templates,
+  brandLibrary,
+  pendingLook,
+  rerenderState,
+  onPendingLookChange,
+  onRerenderShort,
+}: {
+  context: EditorContext;
+  templates: HyperframesTemplate[];
+  brandLibrary: BrandTemplate[];
+  pendingLook: PendingEditorLook;
+  rerenderState?: ActionState;
+  onPendingLookChange: (look: PendingEditorLook) => void;
+  onRerenderShort: () => void;
+}) {
+  const lookBaseline = useMemo(() => editorLookFromContext(context.look), [context.look]);
+  const brandTemplates = useMemo(
+    () => mergeBrandTemplatesForLook(templates, brandLibrary, context.look),
+    [templates, brandLibrary, context.look],
+  );
+  const recipeTemplates = useMemo(
+    () => templates.filter((item) => item.source !== "brand_system" && templateSupportsFormat(item, "short_9_16")),
+    [templates],
+  );
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [brandPickerOpen, setBrandPickerOpen] = useState(false);
+  const lookDirty = pendingLookDirty(pendingLook, lookBaseline);
+  const activeId = lookDirty
+    ? (pendingLook.brand_system_template_id || pendingLook.hyperframes_template)
+    : "";
+  const previewTemplate = lookDirty
+    ? (templates.find((item) => item.id === activeId) || brandTemplates.find((item) => item.id === activeId))
+    : undefined;
+  const rendering = Boolean(context.job && ["queued", "running", "rendering", "processing"].includes(context.job.status));
+  const rerendering = rerenderState?.status === "running" || rendering;
+  const locked = !context.can_rerender || rerendering;
+  const selectedLabel = lookDirty ? pendingLook.label : (context.look?.label || "Default look");
+
+  return (
+    <div className="grid gap-3">
+      <div className="rounded-2xl border border-white/[0.06] bg-black/25 px-3 py-2.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">On this clip</p>
+        <p className="mt-1 truncate text-sm font-semibold text-white">{context.look?.label || "Default look"}</p>
+        <p className="mt-1 text-[11px] leading-4 text-zinc-500">Captions and trim stay. Re-render only swaps the visual style.</p>
+      </div>
+
+      <div className="grid gap-2">
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => setPresetPickerOpen(true)}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-cyan/[0.24] bg-black/20 px-3 text-xs font-semibold text-cyan disabled:opacity-40"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          Browse preset templates
+        </button>
+        <button
+          type="button"
+          disabled={locked}
+          onClick={() => setBrandPickerOpen(true)}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 disabled:opacity-40 hover:border-cyan/[0.22] hover:text-white"
+        >
+          <Palette className="h-3.5 w-3.5" />
+          Browse saved brands ({brandTemplates.length})
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Selected for re-render</p>
+        <p className="mt-1 truncate text-sm font-semibold text-white">{selectedLabel}</p>
+        {lookDirty ? (
+          <button type="button" onClick={() => onPendingLookChange(editorLookFromContext(context.look))} disabled={locked} className="mt-2 text-[11px] font-semibold text-zinc-500 hover:text-zinc-300">
+            Reset to current look
+          </button>
+        ) : (
+          <p className="mt-1 text-[11px] text-zinc-600">Pick a preset or brand above to change the look.</p>
+        )}
+      </div>
+
+      {lookDirty && previewTemplate ? (
+        <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-black/30">
+          <TemplatePreview template={previewTemplate} compact frame="short" gridCard hideFooterLabel spacing="none" flush />
+        </div>
+      ) : null}
+
+      {rerenderState?.message && rerenderState.status !== "running" ? (
+        <p className={`text-xs ${rerenderState.status === "failed" ? "text-danger" : "text-cyan"}`}>{rerenderState.message}</p>
+      ) : null}
+      <button type="button" onClick={onRerenderShort} disabled={locked || !lookDirty} className={secondaryButton}>
+        {rerendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+        {rerendering ? "Rendering…" : "Re-render with this look"}
+      </button>
+
+      <HyperframesTemplatePickerModal
+        open={presetPickerOpen}
+        title="Choose preset template"
+        subtitle="Built-in recipes for caption motion, grade, and overlays."
+        templates={recipeTemplates}
+        selectedId={lookDirty && !pendingLook.brand_system_template_id ? activeId : undefined}
+        frame="short"
+        onClose={() => setPresetPickerOpen(false)}
+        onSelect={(template) => {
+          onPendingLookChange(pendingLookFromTemplate(template));
+          setPresetPickerOpen(false);
+        }}
+      />
+      <HyperframesTemplatePickerModal
+        open={brandPickerOpen}
+        title="Choose saved brand"
+        subtitle="Watermark, fonts, CTA, and starter recipe from Brand Builder."
+        templates={brandTemplates}
+        selectedId={lookDirty ? pendingLook.brand_system_template_id || undefined : undefined}
+        frame="short"
+        onClose={() => setBrandPickerOpen(false)}
+        onSelect={(template) => {
+          onPendingLookChange(pendingLookFromTemplate(template));
+          setBrandPickerOpen(false);
+        }}
+      />
+    </div>
+  );
+}
+
 function MetadataFields(props: Props) {
   const metadataState = props.actionStates[`clip:${props.clip.id}:metadata`];
   const canRerender = props.context.capability === "short" && props.context.can_rerender;
@@ -265,28 +441,42 @@ function MetadataFields(props: Props) {
   const titleSource = String(props.clip.curation_metadata?.title_source || "");
   const subtitleSource = String(props.clip.curation_metadata?.subtitle_source || "");
   const heuristicHook = titleSource === "heuristic_span" || subtitleSource === "heuristic_span";
+  const manualHook = titleSource === "manual_edit" || subtitleSource === "manual_edit";
 
   return (
     <div className="grid gap-5">
       <Field label="Title">
-        <div className={readOnlyFieldClass}>{props.clip.title_hook || "Untitled"}</div>
+        <input
+          value={props.metadataTitleDraft}
+          maxLength={160}
+          disabled={busy}
+          onChange={(event) => props.onMetadataTitleChange(event.target.value)}
+          className={inputClass}
+          placeholder="On-video hook title"
+        />
       </Field>
       <Field label="Description">
-        <div className={`${readOnlyFieldClass} min-h-[5.5rem] whitespace-pre-wrap`}>
-          {props.clip.hook_subtitle || props.clip.viral_reason || "No description."}
-        </div>
+        <textarea
+          value={props.metadataSubtitleDraft}
+          maxLength={500}
+          disabled={busy}
+          onChange={(event) => props.onMetadataSubtitleChange(event.target.value)}
+          className={`${inputClass} min-h-[5.5rem] py-3`}
+          placeholder="Warm subtitle shown in metadata and overlays"
+        />
       </Field>
-      {heuristicHook ? (
+      <p className="text-sm leading-6 text-zinc-500">
+        Use <span className="font-semibold text-zinc-300">Save changes</span> in the header to keep edits. After you change the hook title, use{" "}
+        <span className="font-semibold text-zinc-300">Re-render</span> so the rendered video updates.
+      </p>
+      {heuristicHook && !manualHook ? (
         <p className="text-sm leading-6 text-amber-100/90">
-          Hook copy was auto-generated from transcript. Refresh with AI, then use <span className="font-semibold text-white">Re-render</span> in the header so the on-video title updates.
+          Hook copy was auto-generated from transcript. Edit above or refresh with AI.
         </p>
-      ) : canRerender ? (
-        <p className="text-sm leading-6 text-zinc-500">
-          Hook title is baked into the rendered video. After refreshing metadata, use <span className="font-semibold text-zinc-300">Re-render</span> in the header.
-        </p>
-      ) : (
+      ) : null}
+      {!canRerender && !heuristicHook ? (
         <p className="text-sm leading-6 text-zinc-500">Regenerate hook title and description from the transcript with AI.</p>
-      )}
+      ) : null}
       <button type="button" onClick={() => props.onRefreshMetadata(false)} disabled={busy} className={primaryButton}>
         {metadataState?.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
         {metadataState?.status === "running" ? "Refreshing…" : "Refresh metadata"}
@@ -334,6 +524,8 @@ function QaFields({clip, context}: {clip: ClipCandidate; context: EditorContext}
     },
     {label: "Boundary", value: scores.boundary, threshold: thresholds.boundary ?? thresholds.boundary_threshold},
   ].filter((item) => typeof item.value === "number");
+  const pipelineLines = qaCaptionPipelineLines(clip);
+  const pipelineSummary = qaCaptionPipelineSummary(clip);
 
   return (
     <div className="grid gap-4">
@@ -385,6 +577,26 @@ function QaFields({clip, context}: {clip: ClipCandidate; context: EditorContext}
             );
           })}
         </ul>
+      ) : null}
+      {pipelineLines.length ? (
+        <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">AI & captions</p>
+          {pipelineSummary ? (
+            <p className="mt-2 text-[11px] leading-5 text-amber-100/90">{pipelineSummary}</p>
+          ) : null}
+          <ul className="mt-3 grid gap-1.5">
+            {pipelineLines.map((item) => (
+              <li key={item.label} className="flex items-start justify-between gap-3 text-[11px] leading-5">
+                <span className="shrink-0 text-zinc-500">{item.label}</span>
+                <span
+                  className={`text-right ${item.tone === "ok" ? "text-teal" : item.tone === "warn" ? "text-amber-200" : "text-zinc-400"}`}
+                >
+                  {item.value}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       <p className="text-sm leading-6 text-zinc-400">Check the opening, cuts, captions, audio, and final frame before approval.</p>
       {Object.keys(checks).length ? (

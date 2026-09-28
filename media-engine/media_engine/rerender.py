@@ -17,6 +17,7 @@ from .db import ARTIFACTS_DIR, DEFAULT_DB, ROOT, connect, fetch_one, initialize,
 from .render_quality import build_render_quality_report
 from .rendering import PREMIUM_PRESET, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .silence_trim import apply_silence_trim_for_render, probe_duration_ms, source_already_silence_trimmed
+from .post_copy import format_source_attribution, is_placeholder_source_attribution, resolve_post_copy_context
 from .styles import is_template_only_style, load_style_for_render
 from .youtube_pipeline import download_youtube_section
 
@@ -50,6 +51,44 @@ def _find_source_clip(profile_id: str, candidate_id: str, render_metadata: dict[
     if matches:
         return str(matches[-1])
     raise ValueError("source clip is missing; regenerate the batch before rerendering")
+
+
+def _resolve_source_attribution_for_rerender(
+    conn,
+    candidate: dict[str, Any],
+    profile: dict[str, Any],
+    render_metadata: dict[str, Any],
+) -> str:
+    stored = str(render_metadata.get("sourceAttribution") or "").strip()
+    if stored and not is_placeholder_source_attribution(stored):
+        return stored
+    ctx = resolve_post_copy_context(
+        profile_id=str(candidate.get("profile_id") or ""),
+        profile=profile,
+        source_id=str(candidate.get("source_id") or ""),
+    )
+    if ctx.source_attribution and not is_placeholder_source_attribution(ctx.source_attribution):
+        return ctx.source_attribution
+    curation = candidate.get("curation_metadata") if isinstance(candidate.get("curation_metadata"), dict) else {}
+    channel = str(curation.get("source_channel") or curation.get("channel") or "").strip()
+    if not channel:
+        job_row = conn.execute(
+            """
+            SELECT result_json FROM generation_jobs
+            WHERE source_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (str(candidate.get("source_id") or ""),),
+        ).fetchone()
+        if job_row:
+            job_result = _loads(job_row["result_json"])
+            meta = job_result.get("source_metadata") if isinstance(job_result.get("source_metadata"), dict) else {}
+            channel = str(meta.get("channel") or "").strip()
+    resolved = format_source_attribution(channel)
+    if resolved:
+        return resolved
+    return ""
 
 
 def _source_url_for_candidate(conn, candidate: dict[str, Any], render_metadata: dict[str, Any]) -> str:
@@ -150,22 +189,82 @@ def _coerce_genres(value: Any) -> list[str]:
     return []
 
 
-def _hyperframes_settings(render_metadata: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+def _optional_job_override(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    return text if text else None
+
+
+def _hyperframes_settings(
+    render_metadata: dict[str, Any],
+    candidate: dict[str, Any],
+    *,
+    hyperframes_template: str | None = None,
+    brand_system_template_id: str | None = None,
+) -> dict[str, Any]:
     curation = candidate.get("curation_metadata") if isinstance(candidate.get("curation_metadata"), dict) else {}
     genres = _coerce_genres(render_metadata.get("genres") or curation.get("genres") or candidate.get("genres"))
+    hf_override = _optional_job_override(hyperframes_template)
+    brand_override = _optional_job_override(brand_system_template_id)
+    metadata_hf = str(render_metadata.get("hyperframesTemplate") or "auto")
+    metadata_brand = str(render_metadata.get("brandSystemTemplateId") or "")
+    if hf_override and not hf_override.startswith("brand:"):
+        resolved_hf = hf_override
+        resolved_brand = brand_override if brand_override else ""
+    elif brand_override and brand_override.startswith("brand:"):
+        resolved_hf = brand_override
+        resolved_brand = brand_override
+    elif hf_override and hf_override.startswith("brand:"):
+        resolved_hf = hf_override
+        resolved_brand = brand_override or hf_override
+    else:
+        resolved_hf = hf_override or metadata_hf
+        resolved_brand = brand_override if brand_override is not None else metadata_brand
+        if resolved_brand.startswith("brand:") and not hf_override:
+            resolved_hf = resolved_brand
     return {
-        "hyperframes_template": str(render_metadata.get("hyperframesTemplate") or "auto"),
+        "hyperframes_template": resolved_hf,
         "hyperframes_format": str(render_metadata.get("hyperframesFormat") or "auto"),
-        "brand_system_template_id": str(render_metadata.get("brandSystemTemplateId") or ""),
+        "brand_system_template_id": resolved_brand,
         "genres": genres,
     }
+
+
+def _has_look_override(
+    style_path: str | None,
+    hyperframes_template: str | None,
+    brand_system_template_id: str | None,
+) -> bool:
+    if style_path and not is_template_only_style(style_path):
+        return True
+    if _optional_job_override(brand_system_template_id):
+        return True
+    hf = _optional_job_override(hyperframes_template)
+    return bool(hf and hf != "auto")
 
 
 def _resolve_rerender_style(
     style_path: str | None,
     render_metadata: dict[str, Any],
     hf_settings: dict[str, Any],
+    *,
+    look_override: bool = False,
 ) -> dict[str, Any]:
+    if look_override:
+        effective_path = style_path if style_path and not is_template_only_style(style_path) else "auto"
+        brand_id = str(hf_settings.get("brand_system_template_id") or "")
+        if is_template_only_style(effective_path) and brand_id.startswith("brand:"):
+            from .hyperframes_templates import _saved_brand_template_by_id
+
+            saved = _saved_brand_template_by_id(brand_id)
+            if saved and saved.get("brand_template_path"):
+                effective_path = str(saved["brand_template_path"])
+        return load_style_for_render(
+            effective_path,
+            hyperframes_template=hf_settings["hyperframes_template"],
+            hyperframes_format=hf_settings["hyperframes_format"],
+            genres=hf_settings["genres"],
+        )
+
     saved_style = render_metadata.get("style")
     if isinstance(saved_style, dict) and saved_style:
         return saved_style
@@ -257,6 +356,8 @@ def rerender_candidate(
     renderer: str = "hyperframes",
     quality: str = "production",
     style_path: str | None = None,
+    hyperframes_template: str | None = None,
+    brand_system_template_id: str | None = None,
     db_path: str | Path = DEFAULT_DB,
     on_progress: Callable[[int, str], None] | None = None,
     force_source_refresh: bool = False,
@@ -288,8 +389,14 @@ def rerender_candidate(
 
     report(27, "Auto-trimming silence on source clip")
     source_clip = apply_silence_trim_for_render(source_clip, candidate)
-    hf_settings = _hyperframes_settings(render_metadata, candidate)
-    style = _resolve_rerender_style(style_path, render_metadata, hf_settings)
+    hf_settings = _hyperframes_settings(
+        render_metadata,
+        candidate,
+        hyperframes_template=hyperframes_template,
+        brand_system_template_id=brand_system_template_id,
+    )
+    look_override = _has_look_override(style_path, hyperframes_template, brand_system_template_id)
+    style = _resolve_rerender_style(style_path, render_metadata, hf_settings, look_override=look_override)
 
     report(29, "Preparing caption timeline")
     if _prepare_timed_captions_for_render(
@@ -302,7 +409,7 @@ def rerender_candidate(
     ):
         report(31, "Regenerated captions from source audio")
 
-    source_attribution = str(render_metadata.get("sourceAttribution") or "Source: Channel clip")
+    source_attribution = _resolve_source_attribution_for_rerender(conn, candidate, profile, render_metadata)
     resolved_renderer = "hyperframes" if quality == "production" and renderer == "ffmpeg" else renderer
     report(34, "Preparing render contract")
     if resolved_renderer == "hyperframes":
@@ -418,6 +525,8 @@ def _run_rerender_job(
     renderer: str,
     quality: str,
     style_path: str | None,
+    hyperframes_template: str | None,
+    brand_system_template_id: str | None,
     db_path: str | Path,
     force_source_refresh: bool = False,
     regenerate_captions: bool = False,
@@ -434,6 +543,8 @@ def _run_rerender_job(
             renderer=renderer,
             quality=quality,
             style_path=style_path,
+            hyperframes_template=hyperframes_template,
+            brand_system_template_id=brand_system_template_id,
             db_path=db_path,
             on_progress=report,
             force_source_refresh=force_source_refresh,
@@ -522,6 +633,8 @@ def create_rerender_job(
     renderer: str = "hyperframes",
     quality: str = "production",
     style_path: str | None = None,
+    hyperframes_template: str | None = None,
+    brand_system_template_id: str | None = None,
     force_source_refresh: bool = False,
     regenerate_captions: bool = False,
     start: bool = True,
@@ -547,18 +660,39 @@ def create_rerender_job(
     conn.execute(
         """
         INSERT INTO rerender_jobs
-          (id, candidate_id, renderer, quality, style_path, force_source_refresh, regenerate_captions,
-           status, progress, message, result_json, error)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', 0, 'Queued', '{}', '')
+          (id, candidate_id, renderer, quality, style_path, hyperframes_template, brand_system_template_id,
+           force_source_refresh, regenerate_captions, status, progress, message, result_json, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, 'Queued', '{}', '')
         """,
-        (job_id, candidate_id, renderer, quality, style_path or "", int(force_source_refresh), int(regenerate_captions)),
+        (
+            job_id,
+            candidate_id,
+            renderer,
+            quality,
+            style_path or "",
+            hyperframes_template or "",
+            brand_system_template_id or "",
+            int(force_source_refresh),
+            int(regenerate_captions),
+        ),
     )
     conn.commit()
     conn.close()
     if start:
         thread = threading.Thread(
             target=_run_rerender_job,
-            args=(job_id, candidate_id, renderer, quality, style_path, db_path, force_source_refresh, regenerate_captions),
+            args=(
+                job_id,
+                candidate_id,
+                renderer,
+                quality,
+                style_path,
+                hyperframes_template,
+                brand_system_template_id,
+                db_path,
+                force_source_refresh,
+                regenerate_captions,
+            ),
             daemon=True,
         )
         thread.start()

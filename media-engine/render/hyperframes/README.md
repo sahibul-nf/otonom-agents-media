@@ -18,6 +18,27 @@ npm run inspect
 npm run render -- --output output.mp4
 ```
 
+## Vendored OSS catalog
+
+Official HyperFrames blocks and components are installed under `compositions/` (see `oss-manifest.json`). Refresh or extend the pack:
+
+```bash
+npx hyperframes add yt-lower-third tiktok-follow grain-overlay caption-editorial-emphasis
+```
+
+After adding items, update `oss-manifest.json` and run `python3 -m unittest tests.test_hyperframes_oss`.
+
+## Agent skills
+
+Install official HyperFrames skills so agents follow composition and catalog rules:
+
+```bash
+npx skills add heygen-com/hyperframes
+npx hyperframes skills check
+```
+
+See `docs/hyperframes-skills.md`.
+
 ## Production gate
 
 - Set `HYPERFRAMES_ENABLED=true`.

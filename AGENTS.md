@@ -81,6 +81,7 @@ Triggers: user confirms *works* / *ok* / *sudah work* for **#N**.
 
 ## Related
 
+- `docs/hyperframes-skills.md` — install official HyperFrames agent skills (`npx skills add heygen-com/hyperframes`)
 - `.cursor/rules/platform-north-star.mdc` — product goals (OpusClip replacement, multi-format dashboard, HeyGen as engine not rebuild) + TechTalk **edutainment** / Tech & Finance positioning (high intent ≠ Top-100 volume)
 - `docs/github-workflow.md` — board & daily flow
 - `docs/agent-platforms.md` — per-platform official setup

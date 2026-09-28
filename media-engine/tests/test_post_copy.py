@@ -83,7 +83,38 @@ class PostCopyTests(unittest.TestCase):
         self.assertTrue(str(metadata.get("post_caption_override") or "").strip())
         self.assertIn(metadata.get("post_caption_source"), {"heuristic_local", "llm_deepseek", "llm_openai"})
 
-    def test_distinguishable_captions_for_same_title(self):
+    def test_generate_post_caption_omits_placeholder_source_line(self):
+        candidate = {
+            "profile_id": "nourbit",
+            "source_id": "nourbit_UDDCIRq8eU8",
+            "title_hook": "Angkat Hijab Lahir Dan Batin",
+            "hook_subtitle": "Doa agar penghalang kepada Allah diangkat.",
+            "transcript_span": "Ya Allah angkatkanlah hijab zahir dan hijab batin.",
+            "source": {"channel": "Ribath Nouraniyyah Hasyimiyyah"},
+        }
+        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}, clear=True), patch(
+            "media_engine.post_copy.call_llm_json",
+        ) as call:
+            call.return_value = {"post_caption": "Doa tentang hijab.\n\nSource: Channel clip\n\n#Nourbit"}
+            result = generate_post_caption(candidate, preferred_provider="deepseek")
+            payload = call.call_args[0][2]
+        self.assertNotIn("Channel clip", result["post_caption"])
+        self.assertIn("Ribath Nouraniyyah", payload)
+        self.assertNotIn("Channel clip", payload)
+
+    def test_local_caption_uses_channel_not_placeholder(self):
+        candidate = {
+            "profile_id": "nourbit",
+            "title_hook": "Judul",
+            "hook_subtitle": "Sub",
+            "transcript_span": "Teks transcript cukup panjang untuk excerpt caption.",
+            "source": {"channel": "Ribath Nouraniyyah Hasyimiyyah"},
+        }
+        with patch.dict("os.environ", {}, clear=True):
+            enrich_post_copy_for_candidate(candidate, profile_id="nourbit", source=candidate["source"])
+        caption = candidate["curation_metadata"]["post_caption_override"]
+        self.assertNotIn("Channel clip", caption)
+        self.assertIn("Ribath Nouraniyyah", caption)
         first = {
             "profile_id": "nourbit",
             "title_hook": "Syukur Hakiki Itu Apa?",

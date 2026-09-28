@@ -5,6 +5,7 @@ import {useRouter} from "next/navigation";
 import {AlertTriangle, ArrowLeft, Loader2} from "lucide-react";
 import {useCallback, useEffect, useMemo, useState} from "react";
 import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
+import {ReviewMasonry} from "@/components/review/ReviewMasonry";
 import {ReviewQueueCard} from "@/components/review/ReviewQueueCard";
 import {apiGet, apiPost, canBatchRerenderClip, canQuickApproveClip, filterPlatformsForClip, isClipRerendering, type BatchApproveResult, type BatchRerenderResult, type ClipCandidate, type DeleteCandidatesResult, type ScheduledPost} from "@/lib/media-api";
 import {groupFromClips, reviewEditorHref, reviewStatusTone} from "@/lib/review-groups";
@@ -467,10 +468,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
         <p className="mb-5 text-center text-sm text-zinc-500">
           {selectionMode ? "Tap clips to select, then approve, re-render, delete, or open Edit when done." : "Review each candidate, then approve quickly or open Edit for captions and finishing."}
         </p>
-        <div
-          className="mx-auto grid w-fit max-w-full gap-4 sm:gap-5"
-          style={{gridTemplateColumns: `repeat(${columnCount}, minmax(0, 22rem))`}}
-        >
+        <ReviewMasonry columnCount={columnCount} variant="fixed">
           {group.clips.map((clip) => (
             <ReviewQueueCard
               key={clip.id}
@@ -493,7 +491,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
               onToggleSelect={() => selection.toggle(clip.id)}
             />
           ))}
-        </div>
+        </ReviewMasonry>
       </section>
     </main>
   );

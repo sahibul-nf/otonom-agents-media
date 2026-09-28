@@ -87,6 +87,26 @@ export type ClipCandidate = {
     manual_edit?: boolean;
     edited_caption_count?: number;
     edited_captions?: CaptionSegment[];
+    caption_source?: string;
+    detected_language?: string;
+    speech_language?: string;
+    ai_polish?: boolean;
+    llm?: {
+      llm_reconstructed?: boolean;
+      llm_error?: boolean;
+      llm_skipped?: boolean;
+      llm_rejected_ungrounded?: boolean;
+      llm_output_preview?: string;
+    };
+    ai_polish_pipeline?: {llm?: Record<string, unknown>};
+    youtube?: {used?: boolean; youtube_replaced?: number; youtube_skipped?: number};
+  };
+  asr_metadata?: {
+    engine?: string;
+    model?: string;
+    language?: string;
+    detected_language?: string;
+    caption_pipeline?: {llm?: Record<string, unknown>};
   };
   captions?: CaptionSegment[];
   render_metadata?: {
@@ -106,6 +126,7 @@ export type ClipCandidate = {
   cost?: {
     estimated_total?: number;
     llm_provider?: string;
+    llm_cost?: number;
     renderer?: string;
     caption_source?: string;
   };
@@ -157,6 +178,13 @@ export type EditorRender = {
   error?: string;
 };
 
+export type EditorLook = {
+  hyperframes_template: string;
+  brand_system_template_id: string;
+  brand_template_path: string;
+  label: string;
+};
+
 export type EditorContext = {
   candidate_id: string;
   capability: EditorCapability;
@@ -164,6 +192,7 @@ export type EditorContext = {
   can_trim: boolean;
   can_rerender: boolean;
   render?: EditorRender;
+  look?: EditorLook;
   plan?: ExplainerScenePlan;
   job?: EditorJob;
 };
@@ -268,8 +297,11 @@ export type StyleProfile = {
     starter_template?: string;
     caption_style?: string;
     intro_layout?: string;
+    intro_block?: string;
     cta_overlay?: string;
     texture_effect?: string;
+    texture_effects?: string[];
+    extra_blocks?: string[];
     transition_family?: string;
     motion_intensity?: string;
   };
@@ -280,7 +312,70 @@ export type BrandTemplate = {
   label: string;
   path: string;
   has_brand_system?: string;
+  brand_system_template_id?: string;
 };
+
+/** Saved brand kits for UI — canonical list from `brand-templates`, enriched from hyperframes when available. */
+export function savedBrandKitsForUi(
+  hyperframes: HyperframesTemplate[],
+  brandLibrary: BrandTemplate[],
+): HyperframesTemplate[] {
+  const byId = new Map(hyperframes.filter((item) => item.source === "brand_system").map((item) => [item.id, item]));
+  const kits: HyperframesTemplate[] = [];
+  for (const brand of brandLibrary) {
+    if (brand.has_brand_system !== "1") continue;
+    const id = (brand.brand_system_template_id || "").trim();
+    if (!id) continue;
+    const existing = byId.get(id);
+    if (existing) {
+      kits.push(existing);
+      continue;
+    }
+    kits.push({
+      id,
+      label: brand.label,
+      category: "Brand",
+      best_for: "Saved brand system template for reusable HyperFrames production.",
+      effects: [],
+      caption_style: "Brand captions",
+      default_genres: [],
+      status: "ready",
+      tone: "Brand",
+      source: "brand_system",
+      formats: ["short_9_16", "long_16_9"],
+      brand_template_path: brand.path,
+    });
+  }
+  return kits;
+}
+
+/** Fill gaps when the media engine has not been restarted after brand saves. */
+export function mergeBrandTemplatesIntoHyperframes(
+  templates: HyperframesTemplate[],
+  brands: BrandTemplate[],
+): HyperframesTemplate[] {
+  const byId = new Map(templates.map((item) => [item.id, item]));
+  for (const brand of brands) {
+    if (brand.has_brand_system !== "1") continue;
+    const id = (brand.brand_system_template_id || "").trim();
+    if (!id || byId.has(id)) continue;
+    byId.set(id, {
+      id,
+      label: brand.label,
+      category: "Brand",
+      best_for: "Saved brand system template for reusable HyperFrames production.",
+      effects: [],
+      caption_style: "Brand captions",
+      default_genres: [],
+      status: "ready",
+      tone: "Brand",
+      source: "brand_system",
+      formats: ["short_9_16", "long_16_9"],
+      brand_template_path: brand.path,
+    });
+  }
+  return [...byId.values()];
+}
 
 export type ShellComponents = {
   hook: boolean;
@@ -354,14 +449,21 @@ export type HyperframesCatalogItem = {
   label: string;
   kind: "example" | "block" | "component" | string;
   category: string;
+  oss_section?: string;
   status: "production-ready" | "beta" | "experimental" | string;
   best_for: string;
+  lifecycle?: string;
+  slot?: string;
+  installed?: boolean;
 };
 
 export type HyperframesCatalog = {
   version: string;
   items: HyperframesCatalogItem[];
+  installed_items?: string[];
   groups: Record<string, HyperframesCatalogItem[]>;
+  oss_groups?: Record<string, HyperframesCatalogItem[]>;
+  oss_sections?: string[];
   status_policy: Record<string, string>;
 };
 
@@ -589,6 +691,17 @@ async function readJsonResponse(response: Response) {
   }
 }
 
+export async function fetchHyperframesTemplatesWithBrands(): Promise<{
+  templates: HyperframesTemplate[];
+  brandLibrary: BrandTemplate[];
+}> {
+  const [templates, brands] = await Promise.all([
+    apiGet<HyperframesTemplate[]>("hyperframes-templates"),
+    apiGet<BrandTemplate[]>("brand-templates"),
+  ]);
+  return {templates: mergeBrandTemplatesIntoHyperframes(templates, brands), brandLibrary: brands};
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(apiPath(path), {cache: "no-store"});
   const json = await readJsonResponse(response);
@@ -652,6 +765,10 @@ export function hyperframesTemplateStockUrl(
   if (!template.id) return null;
   const safeId = encodeURIComponent(template.id.replace(":", "__"));
   return apiPath(`hyperframes-template-stock?template=${safeId}&format=${encodeURIComponent(hyperframesFormat)}`);
+}
+
+export function brandAssetUrl(assetPath: string): string {
+  return apiPath(`brand-asset?path=${encodeURIComponent(assetPath)}`);
 }
 
 export async function requestBrandStudioPreviewRender(payload: {

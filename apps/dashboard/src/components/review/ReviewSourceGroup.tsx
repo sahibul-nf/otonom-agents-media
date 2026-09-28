@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {ArrowUpRight, Layers} from "lucide-react";
+import {ArrowUpRight, Layers3} from "lucide-react";
 import {ReviewQueueCard} from "@/components/review/ReviewQueueCard";
 import {formatReviewActivityAt, reviewBatchHref, type ReviewClipGroup} from "@/lib/review-groups";
 
@@ -79,8 +79,9 @@ export function ReviewSourceGroup({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={group.thumbnailUrl} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="grid h-full w-full place-items-center text-zinc-600">
-            <Layers className="h-8 w-8" />
+          <div className="grid h-full w-full place-items-center gap-2 bg-gradient-to-b from-white/[0.04] to-black/40 px-4 text-center">
+            <Layers3 className="h-9 w-9 text-zinc-600" aria-hidden />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600">No preview</span>
           </div>
         )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />

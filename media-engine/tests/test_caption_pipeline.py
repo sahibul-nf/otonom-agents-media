@@ -11,7 +11,9 @@ from media_engine.caption_pipeline import (
     compute_caption_sync_score,
     polish_candidate_captions,
     polish_uncertain_words,
+    reconstruct_llm_context,
     reconstruct_timed_captions_llm,
+    reconstructed_text_is_grounded,
 )
 from media_engine.youtube_pipeline import TranscriptEntry
 
@@ -202,6 +204,41 @@ class CaptionPipelineTests(unittest.TestCase):
         self.assertEqual(next_words[0]["text"], "Mentadbir")
         self.assertEqual(next_words[-1]["text"], "cinta.")
         self.assertEqual(next_words[0]["startMs"], 0)
+
+    def test_reconstruct_llm_context_omits_domain_vocabulary_dump(self):
+        context = reconstruct_llm_context(
+            {
+                "title_hook": "Saat Allah Menahan",
+                "transcript_span": "Baik. Ee saudara-saudariku yang Allah. Semua orang interaksinya",
+                "profile_id": "nourbit",
+            }
+        )
+        self.assertIn("Saat Allah Menahan", context)
+        self.assertNotIn("Rasulullah", context)
+        self.assertNotIn("dzikir", context)
+
+    def test_reconstructed_text_rejects_glossary_injections(self):
+        raw = "Baik Ee saudara-saudariku yang Allah"
+        injected = "Baik. Saudara-saudari, Rasulullah, yang bukan Allah."
+        self.assertFalse(reconstructed_text_is_grounded(raw, injected))
+        self.assertTrue(reconstructed_text_is_grounded(raw, "Baik. Saudara-saudariku yang Allah."))
+
+    def test_reconstruct_timed_captions_llm_keeps_asr_when_ungrounded(self):
+        words = [
+            {"text": "Baik", "startMs": 0, "endMs": 200},
+            {"text": "saudara-saudariku", "startMs": 200, "endMs": 600},
+            {"text": "yang", "startMs": 600, "endMs": 700},
+            {"text": "Allah", "startMs": 700, "endMs": 900},
+        ]
+        with patch(
+            "media_engine.caption_pipeline.call_llm_json",
+            return_value={"text": "Baik. Saudara-saudari, Rasulullah, yang bukan Allah."},
+        ):
+            next_words, meta = reconstruct_timed_captions_llm(words, "deepseek", profile_id="nourbit")
+
+        self.assertFalse(meta["llm_reconstructed"])
+        self.assertTrue(meta.get("llm_rejected_ungrounded"))
+        self.assertEqual([word["text"] for word in next_words], ["Baik", "saudara-saudariku", "yang", "Allah"])
 
     def test_polish_candidate_captions_updates_caption_corrections(self):
         candidate = {

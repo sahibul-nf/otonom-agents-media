@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .db import ARTIFACTS_DIR, ROOT
+from .hyperframes_oss import build_oss_host_bundle, copy_oss_files_to_project, resolve_oss_selections
 from .hyperframes_recipes import LayoutContext, get_recipe
 from .hyperframes_templates import TEMPLATE_VERSION, dimensions_for_format, resolve_hyperframes_template
 from .styles import apply_readable_template_only_caption
@@ -216,7 +217,12 @@ def _shell_css(
       height: 100%;
       max-width: none;
       pointer-events: none;
-      z-index: 2;
+      z-index: 4;
+    }}
+    #grain-overlay,
+    #hf-vignette,
+    #vignette {{
+      z-index: 4 !important;
     }}
     .template-layer {{
       box-sizing: border-box;
@@ -239,6 +245,7 @@ def _shell_css(
       left: 0;
       right: 0;
       bottom: {176 if is_landscape else 365}px;
+      z-index: 220;
       display: flex;
       justify-content: center;
       padding: 0 62px;
@@ -301,50 +308,71 @@ def _shell_css(
       font-weight: 900;
       box-shadow: 0 16px 44px rgba(0,0,0,0.38);
     }}
-    .brand-grain {{
-      opacity: 0.22; mix-blend-mode: overlay;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
-      background-size: 180px 180px;
-    }}
-    .brand-vignette {{
-      background: radial-gradient(ellipse 70% 65% at 50% 45%, transparent 42%, rgba(0,0,0,.55) 100%);
-    }}
-    .brand-shimmer {{
-      overflow: hidden;
-    }}
-    .brand-shimmer::before {{
-      content: "";
-      position: absolute; inset: -20% -40%;
-      background: linear-gradient(105deg, transparent 30%, {accent}44 48%, transparent 66%);
-      transform: translateX(-30%) skewX(-12deg);
-      animation: brand-shimmer-sweep 2.8s ease-in-out infinite;
-    }}
-    @keyframes brand-shimmer-sweep {{
-      0% {{ transform: translateX(-40%) skewX(-12deg); }}
-      100% {{ transform: translateX(80%) skewX(-12deg); }}
-    }}
-    .brand-social-pill {{
-      position: absolute;
-      left: 50%;
-      bottom: {300 if is_landscape else 520}px;
-      transform: translateX(-50%);
-      display: inline-flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 18px;
+    .oss-caption-pill-karaoke .caption-text span {{
+      padding: 4px 10px;
       border-radius: 999px;
-      background: rgba(0,0,0,.55);
-      border: 1px solid rgba(255,255,255,.16);
-      color: #fff;
-      font-size: 22px;
-      font-weight: 800;
-      z-index: 4;
-    }}
-    .brand-social-pill span {{
-      display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px;
-      background: var(--template-accent); color: #041018; font-size: 14px;
     }}
     """
+
+
+def _overlay_exit_seconds(duration_ms: int, captions: list[dict[str, Any]]) -> float:
+    total_s = duration_ms / 1000
+    if captions:
+        first_end_s = int(captions[0].get("endMs") or duration_ms) / 1000
+    else:
+        first_end_s = total_s * 0.5
+    overlay_exit_s = min(max(1.8, total_s * 0.42), first_end_s * 0.55 + 0.6)
+    return min(overlay_exit_s, max(1.5, total_s - 0.35))
+
+
+def _overlay_lifecycle_js(
+    duration_ms: int,
+    captions: list[dict[str, Any]],
+    overlay_exit_s: float | None = None,
+) -> str:
+    if overlay_exit_s is None:
+        overlay_exit_s = _overlay_exit_seconds(duration_ms, captions)
+    return f"""
+    const overlayExitS = {overlay_exit_s:.3f};
+    const overlayLayers = Array.from(document.querySelectorAll(".template-layer"));
+    if (overlayLayers.length) {{
+      tl.from(overlayLayers, {{
+        y: 26,
+        opacity: 0,
+        scale: 0.94,
+        duration: 0.42,
+        ease: "power3.out",
+        stagger: 0.07,
+        transformOrigin: "50% 50%",
+      }}, 0.12);
+      overlayLayers.forEach((el, index) => {{
+        const ambientStart = 0.58 + index * 0.04;
+        const halfCycle = 2.1 + index * 0.08;
+        const cycleDuration = halfCycle * 2;
+        const ambientWindow = Math.max(0, overlayExitS - ambientStart - 0.05);
+        const repeat = Math.max(0, Math.floor(ambientWindow / cycleDuration) - 1);
+        const tilt = el.classList.contains("sticky-note") ? -3 : el.classList.contains("pink-callout") ? 2 : 0;
+        if (repeat > 0) {{
+          tl.to(el, {{
+            y: -5,
+            rotation: tilt,
+            duration: halfCycle,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat,
+          }}, ambientStart);
+        }}
+      }});
+      tl.to(overlayLayers, {{
+        y: -18,
+        opacity: 0,
+        scale: 0.96,
+        duration: 0.32,
+        ease: "power2.in",
+        stagger: 0.04,
+      }}, overlayExitS);
+    }}
+"""
 
 
 _TEMPLATE_LAYOUT_FIT_JS = """
@@ -446,47 +474,29 @@ def _css_background(value: Any, fallback: str = "rgba(4, 7, 8, 0.72)") -> str:
     return fallback
 
 
-def _brand_system_layers(style: dict[str, Any]) -> str:
-    brand_system = style.get("brand_system") if isinstance(style.get("brand_system"), dict) else {}
-    if not brand_system:
-        return ""
-    texture = str(brand_system.get("texture_effect") or "none").lower()
-    cta = str(brand_system.get("cta_overlay") or "none").lower()
-    layers: list[str] = []
-    if texture not in {"", "none"}:
-        if "grain" in texture:
-            layers.append('<div class="brand-texture-layer brand-grain" aria-hidden="true"></div>')
-        if "vignette" in texture:
-            layers.append('<div class="brand-texture-layer brand-vignette" aria-hidden="true"></div>')
-        if "shimmer" in texture:
-            layers.append('<div class="brand-texture-layer brand-shimmer" aria-hidden="true"></div>')
-    if cta and cta != "none":
-        label = "Follow"
-        mark = "●"
-        if "yt" in cta or "youtube" in cta:
-            label, mark = "Subscribe", "▶"
-        elif "instagram" in cta or cta.endswith("ig"):
-            label, mark = "Follow", "◎"
-        elif "tiktok" in cta:
-            label, mark = "Follow", "♪"
-        elif "x-" in cta or "twitter" in cta:
-            label, mark = "Post", "𝕏"
-        layers.append(
-            f'<div class="template-layer brand-social-pill" aria-hidden="true"><span>{html.escape(mark)}</span>{html.escape(label)}</div>'
-        )
-    return "\n    ".join(layers)
-
-
 def _render_shell(contract: dict[str, Any], recipe, template: dict[str, Any], layout: LayoutContext, duration_s: str) -> str:
     return recipe.render_shell_html(contract, template, layout, duration_s, _seconds, _attr)
 
 
-def _render_captions(contract: dict[str, Any], recipe, layout: LayoutContext) -> str:
+def _render_captions(
+    contract: dict[str, Any],
+    recipe,
+    layout: LayoutContext,
+    caption_class: str = "",
+) -> str:
     captions = contract.get("captions") or []
-    return "\n".join(
+    nodes = [
         recipe.render_caption_html(caption, index, layout, _seconds, _attr)
         for index, caption in enumerate(captions)
-    )
+    ]
+    if caption_class and "shimmer-sweep" in caption_class:
+        return "\n".join(node.replace('class="caption-card"', 'class="caption-card shimmer-sweep-target"') for node in nodes)
+    if caption_class and "pill-karaoke" in caption_class:
+        return "\n".join(
+            node.replace('class="caption-text"', 'class="caption-text shimmer-sweep-target"')
+            for node in nodes
+        )
+    return "\n".join(nodes)
 
 
 def _render_template_overlay(recipe, contract: dict[str, Any], template: dict[str, Any], layout: LayoutContext) -> str:
@@ -537,7 +547,32 @@ def build_hyperframes_index_html(
     stroke_width = float(caption_style.get("stroke_width") or 0)
     recipe = get_recipe(str(template.get("recipe_module") or template["id"]))
     shell_components = recipe.resolved_shell_components(contract)
-    contract = {**contract, "shellComponents": shell_components}
+    brand_system = style.get("brand_system") if isinstance(style.get("brand_system"), dict) else {}
+    oss_selections = resolve_oss_selections(
+        brand_system,
+        duration_ms=duration_ms,
+        host_width=width,
+        host_height=height,
+    )
+    placement_timeline = oss_selections.get("timeline")
+    has_oss_cta = any(
+        block.block_id == str(brand_system.get("cta_overlay") or "")
+        for block in oss_selections.get("blocks", [])
+    )
+    if has_oss_cta:
+        shell_components = {**shell_components, "cta": False}
+    oss_bundle = build_oss_host_bundle(
+        oss_selections,
+        contract,
+        text_color=text_color,
+        highlight_color=highlight_color,
+    )
+    contract = {
+        **contract,
+        "shellComponents": shell_components,
+        "ossBlocksUsed": list(oss_bundle.block_ids),
+        "ossComponentsUsed": list(oss_bundle.component_ids),
+    }
     layout = LayoutContext(
         width=width,
         height=height,
@@ -548,15 +583,28 @@ def build_hyperframes_index_html(
         accent=accent,
         secondary_accent=secondary_accent,
     )
-    caption_nodes = _render_captions(contract, recipe, layout)
-    template_overlay = _render_template_overlay(recipe, contract, template, layout)
-    brand_layers = _brand_system_layers(style)
+    caption_nodes = _render_captions(contract, recipe, layout, oss_bundle.caption_class)
+    show_recipe_overlay = True
+    overlay_exit_override: float | None = None
+    cta_start_s = max(0.0, (duration_ms / 1000) - 6.5)
+    if placement_timeline is not None:
+        show_recipe_overlay = bool(getattr(placement_timeline, "show_recipe_overlay", True))
+        overlay_exit_override = float(getattr(placement_timeline, "overlay_exit_s", 0.0) or 0.0)
+        if getattr(placement_timeline, "cta_block_id", ""):
+            cta_start_s = float(getattr(placement_timeline, "cta_start_s", cta_start_s))
+    template_overlay = (
+        _render_template_overlay(recipe, contract, template, layout) if show_recipe_overlay else ""
+    )
     shell_body = _render_shell(contract, recipe, template, layout, duration_s)
     recipe_css = recipe.css_block(layout)
     shell_recipe_css = recipe.shell_css(layout)
-    cta_start_ms = max(0, duration_ms - 6500)
-    hook_exit_s = max(0.2, min(4.5, (duration_ms / 1000) - 0.5))
-    cta_start_s = max(0, (duration_ms / 1000) - 6.5)
+    cta_start_ms = max(0, int(cta_start_s * 1000))
+    hook_exit_s = overlay_exit_override if overlay_exit_override else max(0.2, min(4.5, (duration_ms / 1000) - 0.5))
+    overlay_lifecycle_js = _overlay_lifecycle_js(
+        duration_ms,
+        contract.get("captions") or [],
+        overlay_exit_s=overlay_exit_override if show_recipe_overlay and overlay_exit_override else None,
+    )
     motion_extra = recipe.motion_block(contract, layout, hook_exit_s, cta_start_s)
     cta_html = (
         recipe.render_cta_html(contract, cta_start_ms, duration_ms, _seconds, _attr)
@@ -576,6 +624,12 @@ def build_hyperframes_index_html(
         else ""
     )
     root_class = f"{_attr(template['overlay_class'])} {_attr(recipe.overlay_class())}"
+    if oss_bundle.caption_class:
+        root_class = f"{root_class} {_attr(oss_bundle.caption_class)}"
+    caption_word_motion = oss_bundle.caption_timeline_js or f"""
+      tl.to(wordEl, {{ color: "{highlight_color}", scale: 1.08, y: -2, duration: 0.06, ease: "power1.out" }}, wordStart);
+      tl.to(wordEl, {{ color: "{text_color}", scale: 1, y: 0, duration: 0.06, ease: "power1.in" }}, Math.max(wordStart + 0.08, wordEnd));
+"""
     contract_json = json.dumps(contract, ensure_ascii=False).replace("</", "<\\/")
     return f"""<!doctype html>
 <html lang="en">
@@ -587,15 +641,18 @@ def build_hyperframes_index_html(
 {_shell_css(width, height, is_landscape, text_color, accent, secondary_accent, caption_font_size, recipe.video_filter(), font_family, caption_background, stroke_width)}
 {shell_recipe_css}
 {recipe_css}
+{oss_bundle.effect_css}
+{oss_bundle.caption_css}
   </style>
 </head>
 <body>
   <div id="root" class="{root_class}" data-composition-id="premium-hyperframes" data-start="0" data-duration="{duration_s}" data-width="{width}" data-height="{height}">
 {shell_body}
     {template_overlay}
-    {brand_layers}
+    {oss_bundle.effect_html}
     {caption_nodes}
     {cta_html}
+{oss_bundle.block_html}
   </div>
   <script id="render-contract" type="application/json">{contract_json}</script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
@@ -605,8 +662,8 @@ def build_hyperframes_index_html(
     const tl = gsap.timeline({{ paused: true }});
     const totalSeconds = contract.durationMs / 1000;
     tl.from("#source-video", {{ scale: 1.03, duration: totalSeconds, ease: "none" }}, 0);
-    tl.from(".template-layer", {{ y: 18, opacity: 0, duration: 0.45, ease: "power2.out", stagger: 0.08 }}, 0.18);
-{hook_motion}    for (let i = 0; i < contract.captions.length; i += 1) {{
+{oss_bundle.effect_js}
+{overlay_lifecycle_js}{hook_motion}{oss_bundle.effect_timeline_js}    for (let i = 0; i < contract.captions.length; i += 1) {{
       const caption = contract.captions[i];
       const start = caption.startMs / 1000;
       const end = caption.endMs / 1000;
@@ -617,8 +674,8 @@ def build_hyperframes_index_html(
         const word = words[j];
         const wordStart = Math.max(start, (word.startMs || caption.startMs) / 1000);
         const wordEnd = Math.min(end, (word.endMs || caption.endMs) / 1000);
-        tl.to(`#cap-${{i}}-word-${{j}}`, {{ color: "{highlight_color}", scale: 1.08, y: -2, duration: 0.06, ease: "power1.out" }}, wordStart);
-        tl.to(`#cap-${{i}}-word-${{j}}`, {{ color: "{text_color}", scale: 1, y: 0, duration: 0.06, ease: "power1.in" }}, Math.max(wordStart + 0.08, wordEnd));
+        const wordEl = `#cap-${{i}}-word-${{j}}`;
+{caption_word_motion}
       }}
     }}
 {cta_motion}    {motion_extra}
@@ -642,8 +699,19 @@ def prepare_hyperframes_project(
     media_dir = project_dir / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_video_path, media_dir / "source.mp4")
+    html = build_hyperframes_index_html(contract, hyperframes_template, hyperframes_format, genres)
     index_path = project_dir / "index.html"
-    index_path.write_text(build_hyperframes_index_html(contract, hyperframes_template, hyperframes_format, genres), encoding="utf-8")
+    index_path.write_text(html, encoding="utf-8")
+    style = contract.get("style") if isinstance(contract.get("style"), dict) else {}
+    brand_system = style.get("brand_system") if isinstance(style.get("brand_system"), dict) else {}
+    width, height, _ = dimensions_for_format(hyperframes_format or contract.get("hyperframesFormat") or "auto")
+    selections = resolve_oss_selections(
+        brand_system,
+        duration_ms=int(contract.get("durationMs") or 0),
+        host_width=width,
+        host_height=height,
+    )
+    copy_oss_files_to_project(project_dir, selections, contract)
     return index_path
 
 

@@ -2,6 +2,7 @@
 
 import {X} from "lucide-react";
 import {type ReactNode, useEffect, useId, useRef} from "react";
+import {createPortal} from "react-dom";
 
 const focusableSelector = [
   "a[href]",
@@ -91,6 +92,7 @@ export function FocusModal({
   }, [open]);
 
   if (!open) return null;
+  if (typeof document === "undefined") return null;
 
   const widthClass =
     width === "max"
@@ -99,7 +101,7 @@ export function FocusModal({
         ? "sm:max-w-[min(1120px,calc(100vw-48px))]"
         : "sm:max-w-[min(860px,calc(100vw-48px))]";
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[80]">
       <button
         type="button"
@@ -134,7 +136,8 @@ export function FocusModal({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">{children}</div>
         {footer ? <footer className="shrink-0 border-t border-white/[0.08] bg-canvas-deep/70 px-5 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-xl">{footer}</footer> : null}
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

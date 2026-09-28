@@ -181,6 +181,56 @@ HOOK_START_WORDS = {
     "takut",
 }
 
+BLESSING_LITANY_TOKENS = {
+    "berkahi",
+    "keluarga",
+    "pasangan",
+    "keturunan",
+}
+
+ASR_NOISE_TOKENS = {
+    "hadratu",
+    "qutblah",
+    "quthblah",
+    "qutb",
+    "warfal",
+    "hujub",
+    "azzahir",
+    "allahumma",
+    "rabbana",
+    "ighfirna",
+    "samadaniyatik",
+}
+
+LITURGICAL_TOKENS = {
+    "allahumma",
+    "rabbana",
+    "warfal",
+    "hujub",
+    "hijab",
+    "azzahir",
+    "batin",
+    "annuriyah",
+    "azzulmaniyah",
+    "subhanahu",
+    "wa",
+    "taala",
+    "salli",
+    "salam",
+    "rahman",
+    "rahim",
+}
+
+TOKEN_ALIASES = {
+    "hujub": "hijab",
+    "hijab": "hijab",
+    "azzahir": "zahir",
+    "zahir": "zahir",
+    "batin": "batin",
+    "kenal": "kenal",
+    "dunia": "dunia",
+}
+
 
 def extract_video_id(url: str) -> str:
     if "youtu.be/" in url:
@@ -359,6 +409,47 @@ def _content_words(span: str) -> list[str]:
     return [word for word in _span_words(span) if word not in TITLE_STOPWORDS and len(word) > 2]
 
 
+def _normalize_match_token(word: str) -> str:
+    token = word.lower().strip("'")
+    return TOKEN_ALIASES.get(token, token)
+
+
+def _is_blessing_litany(clause: str) -> bool:
+    words = set(_span_words(clause))
+    family = {"keluarga", "pasangan", "keturunan"}
+    if "berkahi" in words and words & family:
+        return True
+    return len(words & family) >= 2
+
+
+def _is_noisy_asr_text(text: str) -> bool:
+    words = set(_span_words(text))
+    return bool(words & ASR_NOISE_TOKENS)
+
+
+def _is_repeated_allah_title(text: str) -> bool:
+    return _span_words(text).count("allah") >= 3
+
+
+def _is_liturgical_clause(clause: str) -> bool:
+    words = _span_words(clause)
+    if not words:
+        return True
+    if _is_blessing_litany(clause) or _is_noisy_asr_text(clause):
+        return True
+    hits = sum(
+        1
+        for word in words
+        if word in LITURGICAL_TOKENS or (word.startswith("al") and len(word) > 4 and word != "allah")
+    )
+    if hits >= 2 and hits >= max(2, len(words) // 3):
+        return True
+    lowered = clause.lower()
+    if lowered.startswith(("ya allah", "allahumma", "rabbana", "warfal", "hujub")):
+        return True
+    return False
+
+
 def _title_case_words(words: list[str]) -> str:
     title_words = [SPECIAL_TITLE_WORDS.get(word, word.capitalize()) for word in words]
     return " ".join(title_words)
@@ -389,36 +480,68 @@ def _title_from_words(words: list[str], min_words: int, max_words: int) -> str:
     return _title_case_words(phrase[:max_words])
 
 
+def _title_window_score(window: list[str], *, question: bool = False, offset: int = 0, total: int = 0) -> int:
+    if not window:
+        return -10_000
+    if _is_blessing_litany(" ".join(window)) or _is_repeated_allah_title(" ".join(window)):
+        return -10_000
+    score = len(set(window))
+    if window[0] in HOOK_START_WORDS and window[0] != "allah":
+        score += 8
+    unique_keywords = {word for word in window if word in KEYWORDS}
+    score += len(unique_keywords) * 4
+    score += sum(4 for word in ("kenal", "berjumpa", "rasulullah") if word in window)
+    score -= sum(1 for word in window if word in LITURGICAL_TOKENS) * 4
+    score -= window.count("allah") * 2 if window.count("allah") > 1 else 0
+    score -= sum(1 for word in window if word in BLESSING_LITANY_TOKENS) * 6
+    if question:
+        score += 6
+    if total >= 16:
+        score += min(offset // 4, 4)
+    return score
+
+
 def _best_title_phrase(span: str, min_words: int = 4, max_words: int = 8) -> str:
     clauses = _split_clauses(span)
     if not clauses:
         return "Inti Nasihat Singkat"
 
-    for clause in clauses:
-        if "?" in clause:
-            words = _content_words(clause.replace("?", ""))
-            title = _title_from_words(words, min_words, max_words)
-            if title:
-                return f"{title}?"
+    usable = [clause for clause in clauses if not _is_liturgical_clause(clause)] or clauses
 
-    for clause in clauses:
-        words = _content_words(clause)
-        if words and words[0] in HOOK_START_WORDS and len(words) >= min_words:
-            return _title_from_words(words, min_words, max_words)
+    question_best = ""
+    question_score = -10_000
+    for clause in usable:
+        if "?" not in clause:
+            continue
+        words = _content_words(clause.replace("?", ""))
+        title = _title_from_words(words, min_words, max_words)
+        if not title:
+            continue
+        score = _title_window_score(words[:max_words], question=True)
+        if score > question_score:
+            question_score = score
+            question_best = title if title.endswith("?") else f"{title}?"
+    if question_best:
+        return question_best
 
-    for clause in clauses:
-        words = _content_words(clause)
-        if len(words) >= min_words:
-            return _title_from_words(words, min_words, max_words)
-
-    words = _content_words(span)
+    words = _content_words(" ".join(usable))
     if not words:
         return "Inti Nasihat Singkat"
     deduped: list[str] = []
     for word in words:
         if not deduped or deduped[-1] != word:
             deduped.append(word)
-    return _title_from_words(deduped, min_words, max_words)
+    best_window = deduped[:max_words]
+    best_score = -10_000
+    for index in range(len(deduped)):
+        window = deduped[index : index + max_words]
+        if len(window) < min_words:
+            break
+        score = _title_window_score(window, offset=index, total=len(deduped))
+        if score > best_score:
+            best_score = score
+            best_window = window
+    return _title_from_words(best_window, min_words, max_words)
 
 
 def _trim_hook_words(text: str, max_words: int = 18) -> str:
@@ -432,39 +555,60 @@ def title_for_span(span: str) -> str:
     return _best_title_phrase(span)
 
 
+def _finish_subtitle(text: str) -> str:
+    subtitle = _trim_hook_words(text.strip())
+    if not subtitle:
+        return ""
+    if not subtitle.endswith((".", "!", "?", "…")):
+        subtitle += "."
+    return subtitle[0].upper() + subtitle[1:]
+
+
 def hook_subtitle_for_span(span: str, title: str) -> str:
     clauses = _split_clauses(span)
-    if len(clauses) >= 2:
-        subtitle = _trim_hook_words(clauses[1])
-        if subtitle and not subtitle.endswith((".", "!", "?", "…")):
-            subtitle += "."
-        return subtitle[0].upper() + subtitle[1:] if subtitle else subtitle
+    usable = [clause for clause in clauses if not _is_liturgical_clause(clause)]
+    source_clauses = usable or clauses
+    title_l = title.strip().lower().rstrip("?")
 
-    words = _content_words(span)
+    ranked = sorted(
+        source_clauses,
+        key=lambda clause: (
+            0 if title_l and title_l in clause.lower() else 1,
+            len(_content_words(clause)),
+        ),
+        reverse=True,
+    )
+    for clause in ranked:
+        if title_l and title_l in clause.lower() and len(source_clauses) > 1:
+            continue
+        if _is_blessing_litany(clause) or _is_noisy_asr_text(clause) or _is_repeated_allah_title(clause):
+            continue
+        if len(_content_words(clause)) < 4:
+            continue
+        finished = _finish_subtitle(clause)
+        if finished:
+            return finished
+
+    words = _content_words(" ".join(usable) if usable else span)
     title_words = _content_words(title.replace("?", ""))
     tail = words[len(title_words) : len(title_words) + 18]
     if len(tail) >= 5:
-        subtitle = _trim_hook_words(" ".join(tail))
-        if subtitle and not subtitle.endswith((".", "!", "?", "…")):
-            subtitle += "."
-        return subtitle[0].upper() + subtitle[1:] if subtitle else subtitle
+        return _finish_subtitle(" ".join(tail))
 
     if _best_title_phrase(span, min_words=3, max_words=5).lower() == "inti nasihat singkat":
         return "Ringkasan singkat dari isi clip ini. Perlu refresh metadata agar lebih spesifik."
     fallback = _trim_hook_words(" ".join(words[:12]))
-    if fallback and not fallback.endswith((".", "!", "?", "…")):
-        fallback += "."
-    return fallback[0].upper() + fallback[1:] if fallback else fallback
+    return _finish_subtitle(fallback)
 
 
 def _title_is_relevant(title: str, span: str) -> bool:
     normalized_title = title.strip().lower()
     if not normalized_title:
         return False
-    title_words = [word for word in _span_words(title) if word not in TITLE_STOPWORDS and len(word) > 2]
+    title_words = [_normalize_match_token(word) for word in _span_words(title) if word not in TITLE_STOPWORDS and len(word) > 2]
     if not title_words:
         return False
-    span_word_set = set(_span_words(span))
+    span_word_set = {_normalize_match_token(word) for word in _span_words(span)}
     overlap = sum(1 for word in title_words if word in span_word_set)
     if normalized_title in STATIC_FALLBACK_TITLES and overlap < 2:
         return False
@@ -477,10 +621,10 @@ def _subtitle_is_relevant(subtitle: str, span: str) -> bool:
         return False
     if normalized_subtitle.startswith("ringkasan isi clip:"):
         return False
-    subtitle_words = [word for word in _span_words(subtitle) if word not in TITLE_STOPWORDS and len(word) > 3]
+    subtitle_words = [_normalize_match_token(word) for word in _span_words(subtitle) if word not in TITLE_STOPWORDS and len(word) > 3]
     if not subtitle_words:
         return False
-    span_word_set = set(_span_words(span))
+    span_word_set = {_normalize_match_token(word) for word in _span_words(span)}
     return any(word in span_word_set for word in subtitle_words)
 
 

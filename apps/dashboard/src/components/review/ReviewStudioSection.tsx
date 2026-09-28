@@ -2,6 +2,7 @@
 
 import {AlertTriangle, ArrowDownUp} from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
+import {ReviewMasonry} from "@/components/review/ReviewMasonry";
 import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewSourceGroup} from "@/components/review/ReviewSourceGroup";
 import type {ClipCandidate} from "@/lib/media-api";
@@ -73,7 +74,7 @@ export function ReviewStudioSection({
     () => sortReviewGroups(groupReviewClips(clips, {flatten: flattenGroups}), sortOrder),
     [clips, flattenGroups, sortOrder],
   );
-  const batchCount = groups.filter((group) => group.showHeader).length;
+  const batchCount = useMemo(() => groups.filter((group) => group.showHeader).length, [groups]);
   const selectableIds = useMemo(
     () => groups.filter((group) => !group.showHeader).flatMap((group) => group.clips.map((clip) => clip.id)),
     [groups],
@@ -156,7 +157,7 @@ export function ReviewStudioSection({
         />
       ) : null}
       {clips.length ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <ReviewMasonry>
           {groups.map((group) => (
             <ReviewSourceGroup
               key={group.key}
@@ -176,7 +177,7 @@ export function ReviewStudioSection({
               onToggleSelect={selection.toggle}
             />
           ))}
-        </div>
+        </ReviewMasonry>
       ) : (
         <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center text-sm text-zinc-500">
       <div>

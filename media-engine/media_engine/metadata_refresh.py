@@ -14,7 +14,15 @@ from .post_copy import enrich_candidates_post_copy
 from .llm import LLMError, call_llm_json
 from .overlay_copy import overlay_slots_for_candidate
 from .scoring import score_candidate_text
-from .youtube_pipeline import _subtitle_is_relevant, _title_is_relevant, hook_subtitle_for_span, title_for_span
+from .youtube_pipeline import (
+    STATIC_FALLBACK_SUBTITLES,
+    STATIC_FALLBACK_TITLES,
+    _is_blessing_litany,
+    _is_noisy_asr_text,
+    _is_repeated_allah_title,
+    hook_subtitle_for_span,
+    title_for_span,
+)
 
 
 @dataclass(frozen=True)
@@ -58,14 +66,38 @@ def _resolve_workspace_context(
 
 
 def available_metadata_provider(preferred: str = "") -> str:
-    candidates = [preferred, "deepseek", "openai"]
+    candidates = [preferred, "deepseek", "openai", "groq"]
     for provider in candidates:
         provider = (provider or "").strip().lower()
         if provider == "deepseek" and os.environ.get("DEEPSEEK_API_KEY"):
             return provider
         if provider == "openai" and os.environ.get("OPENAI_API_KEY"):
             return provider
+        if provider == "groq" and os.environ.get("GROQ_API_KEY"):
+            return provider
     return "none"
+
+
+def _llm_copy_is_usable(title: str, subtitle: str) -> bool:
+    normalized_title = title.strip().lower()
+    normalized_subtitle = subtitle.strip().lower()
+    if not normalized_title or not normalized_subtitle:
+        return False
+    if normalized_title in STATIC_FALLBACK_TITLES:
+        return False
+    if normalized_subtitle in STATIC_FALLBACK_SUBTITLES or normalized_subtitle.startswith("ringkasan isi clip:"):
+        return False
+    title_words = title.split()
+    subtitle_words = subtitle.split()
+    if not (3 <= len(title_words) <= 14 and len(subtitle_words) >= 4):
+        return False
+    if _is_repeated_allah_title(title) or _is_blessing_litany(title):
+        return False
+    if _is_noisy_asr_text(title) or _is_noisy_asr_text(subtitle):
+        return False
+    if _is_blessing_litany(subtitle):
+        return False
+    return True
 
 
 def metadata_editor_system_prompt(
@@ -123,10 +155,13 @@ def _llm_metadata(
         {
             "task": "Create a precise Indonesian hook title and warm subtitle for this short clip.",
             "rules": [
-                "title_hook: 4-8 words, no generic fallback title, match the actual transcript.",
-                "hook_subtitle: max 18 words, warm and specific.",
+                "Summarize the whole clip meaning, not the first clause or opening dua.",
+                "Ignore liturgical openings, family-blessing litanies (berkahi keluarga/pasangan/keturunan), and noisy ASR fragments.",
+                "Do not repeat Allah three times or copy a list of who to bless.",
+                "title_hook: 4-8 Indonesian words stating the teaching (e.g. knowing Allah in this world), paraphrase allowed.",
+                "hook_subtitle: max 18 words, warm and specific to the same teaching.",
                 "viral_reason: one short sentence explaining why this clip works.",
-                "Do not invent claims not present in transcript.",
+                "Do not invent claims that contradict the transcript.",
             ],
             "current": {"title_hook": current_title, "hook_subtitle": current_subtitle},
             "transcript_span": span[:2600],
@@ -147,9 +182,10 @@ def _llm_metadata(
     title = str(result.get("title_hook") or "").strip()
     subtitle = str(result.get("hook_subtitle") or "").strip()
     reason = str(result.get("viral_reason") or "").strip()
-    if not _title_is_relevant(title, span) or not _subtitle_is_relevant(subtitle, span):
+    if not _llm_copy_is_usable(title, subtitle):
         return None
-    if reason and not _subtitle_is_relevant(reason, span):
+    reason_l = reason.strip().lower()
+    if not reason or reason_l in STATIC_FALLBACK_SUBTITLES or reason_l.startswith("ringkasan isi clip:"):
         reason = subtitle
     return {
         "title_hook": title,
@@ -314,7 +350,10 @@ def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> 
     if mode == "smart":
         provider = available_metadata_provider(preferred_provider)
         if provider == "none":
-            raise ValueError("metadata refresh failed: no LLM provider key available (set OPENAI_API_KEY or DEEPSEEK_API_KEY)")
+            raise ValueError(
+                "metadata refresh failed: no LLM provider key available "
+                "(set OPENAI_API_KEY, DEEPSEEK_API_KEY, or GROQ_API_KEY)"
+            )
         llm_result = _llm_metadata(
             span,
             candidate.get("title_hook", ""),
@@ -322,9 +361,7 @@ def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> 
             provider,
             workspace,
         )
-        if not llm_result:
-            raise ValueError("metadata refresh failed: LLM output is invalid or not relevant to transcript")
-        metadata = llm_result
+        metadata = llm_result or _local_metadata(span)
     else:
         metadata = _local_metadata(span)
 
@@ -381,6 +418,107 @@ def refresh_candidate_metadata(conn, candidate_id: str, mode: str = "smart") -> 
         "title_hook": metadata["title_hook"],
         "hook_subtitle": metadata["hook_subtitle"],
         "viral_reason": metadata["viral_reason"],
+        "score": score,
+        "curation_metadata": curation,
+        "overlay_slots": fresh_overlay,
+    }
+
+
+MAX_HOOK_TITLE_CHARS = 160
+MAX_HOOK_SUBTITLE_CHARS = 500
+
+
+def save_candidate_hook_metadata(
+    conn,
+    candidate_id: str,
+    title_hook: str,
+    hook_subtitle: str,
+    *,
+    viral_reason: str = "",
+) -> dict[str, Any]:
+    title = " ".join(str(title_hook or "").split())
+    subtitle = " ".join(str(hook_subtitle or "").split())
+    reason = " ".join(str(viral_reason or "").split()) or subtitle
+    if not title:
+        raise ValueError("title_hook is required")
+    if len(title) > MAX_HOOK_TITLE_CHARS:
+        raise ValueError(f"title_hook must be at most {MAX_HOOK_TITLE_CHARS} characters")
+    if len(subtitle) > MAX_HOOK_SUBTITLE_CHARS:
+        raise ValueError(f"hook_subtitle must be at most {MAX_HOOK_SUBTITLE_CHARS} characters")
+
+    row = conn.execute("SELECT * FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
+    if not row:
+        raise ValueError("candidate not found")
+    if str(row["status"] or "") == "published":
+        raise ValueError("published clip metadata is locked")
+
+    candidate = dict(row)
+    span = str(candidate.get("transcript_span") or "").strip()
+    workspace = _resolve_workspace_context(candidate)
+    profile = conn.execute(
+        "SELECT niche, name FROM media_profiles WHERE id = ?",
+        (workspace.workspace_id,),
+    ).fetchone()
+    if profile:
+        workspace = WorkspaceContext(
+            workspace_id=workspace.workspace_id,
+            niche=str(profile["niche"] or ""),
+            name=str(profile["name"] or ""),
+        )
+
+    curation = _loads(candidate.get("curation_metadata_json"))
+    duration_ms = int(candidate["end_ms"]) - int(candidate["start_ms"])
+    existing_score = _loads(candidate.get("score_json"))
+    score = {
+        **existing_score,
+        **score_candidate_text(
+            span,
+            title,
+            duration_ms,
+            rights_risk=True,
+            boundary_confidence=int(curation.get("boundary_confidence") or 75),
+            opening_strength=int(curation.get("opening_strength") or 70),
+            workspace_id=workspace.workspace_id,
+            niche=workspace.niche,
+        ),
+    }
+    edited_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    scratch = {
+        "title_hook": title,
+        "hook_subtitle": subtitle,
+        "curation_metadata": curation,
+    }
+    fresh_overlay = overlay_slots_for_candidate(scratch)
+    curation = {
+        **curation,
+        "title_source": "manual_edit",
+        "subtitle_source": "manual_edit",
+        "reason_source": "manual_edit",
+        "metadata_edited_at": edited_at,
+        "overlay_slots": fresh_overlay,
+    }
+    conn.execute(
+        """
+        UPDATE clip_candidates
+        SET title_hook = ?, hook_subtitle = ?, viral_reason = ?,
+            score_json = ?, curation_metadata_json = ?
+        WHERE id = ?
+        """,
+        (
+            title,
+            subtitle,
+            reason,
+            json.dumps(score, ensure_ascii=False),
+            json.dumps(curation, ensure_ascii=False),
+            candidate_id,
+        ),
+    )
+    conn.commit()
+    return {
+        "candidate_id": candidate_id,
+        "title_hook": title,
+        "hook_subtitle": subtitle,
+        "viral_reason": reason,
         "score": score,
         "curation_metadata": curation,
         "overlay_slots": fresh_overlay,

@@ -1,5 +1,10 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+from media_engine import hyperframes_templates as hf_templates_module
 from media_engine.hyperframes_templates import (
     DEFAULT_TEMPLATE_ID,
     dimensions_for_format,
@@ -280,10 +285,41 @@ class HyperframesTemplateTests(unittest.TestCase):
 
         html = build_hyperframes_index_html(contract, hyperframes_template="byline_trust_quote")
 
+        self.assertIn("z-index: 220", html)
+        self.assertIn("#grain-overlay", html)
+
         self.assertIn('id="hook"', html)
         self.assertIn("Override Hook", html)
         self.assertIn('id="cta"', html)
         self.assertIn('<div class="brand-row"><span class="source">', html)
+
+    def test_list_includes_saved_brand_system_profiles(self):
+        templates = list_hyperframes_templates()
+        brand_ids = {item["id"] for item in templates if item.get("source") == "brand_system"}
+        self.assertIn("brand:custom_spiritual_reflective_brand_template", brand_ids)
+
+    def test_brand_auto_resolves_starter_even_when_hidden_from_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            custom = profiles / "custom_nourbit_brand.json"
+            custom.write_text(
+                json.dumps(
+                    {
+                        "id": "custom_nourbit_brand",
+                        "label": "Nourbit Brand",
+                        "brand_system": {"starter_template": "energy_warm_question", "cta_overlay": "tiktok-follow"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(hf_templates_module, "ROOT", root):
+                brand_id = "brand:custom_nourbit_brand"
+                self.assertEqual(normalize_hyperframes_template(brand_id), brand_id)
+                resolved = resolve_hyperframes_template(brand_id)
+                self.assertEqual(resolved["recipe_module"], "energy_warm_question")
+                self.assertEqual(resolved["starter_template"], "energy_warm_question")
 
 
 if __name__ == "__main__":

@@ -18,8 +18,9 @@ from .db import DEFAULT_DB, ROOT, connect, ensure_media_profile, ensure_source_m
 from .duration_presets import resolve_duration_strategy
 from .genres import normalize_genres
 from .hyperframes_renderer import check_hyperframes_runtime, summarize_hyperframes_inspect_failure
-from .hyperframes_templates import normalize_hyperframes_template
+from .hyperframes_templates import list_saved_brand_system_templates, normalize_hyperframes_template
 from .styles import is_template_only_style, normalize_brand_template_ref
+from .post_copy import format_source_attribution
 from .shell_components import normalize_shell_components
 
 
@@ -166,36 +167,42 @@ def _preferred_python_for_command() -> str:
 
 
 def list_brand_templates() -> list[dict[str, str]]:
-    profiles = ROOT / "profiles"
-    templates = []
-    for path in sorted(profiles.glob("*.json")):
-        if "nourbit" in path.name.lower():
+    """Saved brand kits + platform default — same custom_*.json set as hyperframes brand_system templates."""
+    templates: list[dict[str, str]] = []
+    for item in list_saved_brand_system_templates():
+        path = str(item.get("brand_template_path") or "").strip()
+        if not path:
             continue
-        # Brand library: default baseline + saved custom brand systems only.
-        if path.name != "default_workspace_style.json" and not path.name.startswith("custom_"):
-            continue
-        label = path.stem.replace("_", " ").replace("-", " ").title()
-        has_brand_system = False
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            label = str(payload.get("label") or label)
-            has_brand_system = isinstance(payload.get("brand_system"), dict) and bool(payload.get("brand_system"))
-        except (OSError, json.JSONDecodeError):
-            payload = {}
-        if path.name.startswith("custom_") and not has_brand_system:
-            continue
-        if path.name == "default_workspace_style.json":
-            label = "Platform default"
         templates.append(
             {
-                "id": str(path.relative_to(ROOT)),
-                "label": label,
-                "path": str(path.relative_to(ROOT)),
-                "has_brand_system": "1" if has_brand_system else "0",
+                "id": path,
+                "label": str(item.get("label") or path),
+                "path": path,
+                "has_brand_system": "1",
+                "brand_system_template_id": str(item.get("id") or ""),
             }
         )
-    if not templates:
-        templates.append({"id": "profiles/default_workspace_style.json", "label": "Platform default", "path": "profiles/default_workspace_style.json", "has_brand_system": "0"})
+    default_path = ROOT / "profiles" / "default_workspace_style.json"
+    if default_path.exists():
+        templates.append(
+            {
+                "id": "profiles/default_workspace_style.json",
+                "label": "Platform default",
+                "path": "profiles/default_workspace_style.json",
+                "has_brand_system": "0",
+                "brand_system_template_id": "",
+            }
+        )
+    elif not templates:
+        templates.append(
+            {
+                "id": "profiles/default_workspace_style.json",
+                "label": "Platform default",
+                "path": "profiles/default_workspace_style.json",
+                "has_brand_system": "0",
+                "brand_system_template_id": "",
+            }
+        )
     return templates
 
 
@@ -244,6 +251,24 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     brand_system_template_id = str(payload.get("brand_system_template_id") or "").strip()
     hyperframes_template = normalize_hyperframes_template(payload.get("hyperframes_template"))
 
+    if not is_template_only_style(brand_template):
+        template_path = (ROOT / brand_template).resolve()
+        if ROOT.resolve() not in template_path.parents or not template_path.exists():
+            raise ValueError("brand_template not found")
+        if hyperframes_template == "auto":
+            try:
+                brand_payload = json.loads(template_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                brand_payload = {}
+            brand_system = (
+                brand_payload.get("brand_system") if isinstance(brand_payload.get("brand_system"), dict) else {}
+            )
+            if brand_system:
+                template_id = str(brand_payload.get("id") or template_path.stem)
+                brand_public_id = f"brand:{template_id}"
+                brand_system_template_id = brand_public_id
+                hyperframes_template = brand_public_id
+
     # Closed loop: brand:* selection carries its style file + starter recipe.
     if brand_system_template_id.startswith("brand:") or hyperframes_template.startswith("brand:"):
         brand_id = brand_system_template_id if brand_system_template_id.startswith("brand:") else hyperframes_template
@@ -260,10 +285,6 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
             ):
                 brand_template = style_path
 
-    if not is_template_only_style(brand_template):
-        template_path = (ROOT / brand_template).resolve()
-        if ROOT.resolve() not in template_path.parents or not template_path.exists():
-            raise ValueError("brand_template not found")
     min_seconds, max_seconds, preset_id = _duration_seconds(payload)
     profile_id = str(payload.get("profile_id") or "workspace").strip()
     genres = normalize_genres(
@@ -285,6 +306,7 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     canonical_url = str(source_metadata.get("canonical_url") or source_metadata.get("source_url") or "").strip()
     if canonical_url:
         source_url = canonical_url
+    source_attribution = format_source_attribution(str(source_metadata.get("channel") or "").strip())
     return {
         "profile_id": profile_id,
         "source_id": source_id,
@@ -318,6 +340,7 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "env_file": str(payload.get("env_file") or "../.env.local").strip(),
         "niche": str(payload.get("niche") or "").strip(),
         "workspace_name": str(payload.get("workspace_name") or "").strip(),
+        "source_attribution": source_attribution,
         "shell_components": (
             {}
             if is_template_only_style(brand_template)
@@ -379,6 +402,8 @@ def build_generation_command(config: dict[str, Any], validate_runtime: bool = Fa
         config.get("workspace_name") or "",
         "--env-file",
         config["env_file"],
+        "--source-attribution",
+        str(config.get("source_attribution") or ""),
     ]
     if config.get("shell_components"):
         command.extend(

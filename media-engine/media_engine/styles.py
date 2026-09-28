@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from copy import deepcopy
@@ -60,6 +61,16 @@ def normalize_brand_template_ref(value: Any) -> str:
     if is_template_only_style(text):
         return TEMPLATE_ONLY_STYLE_TOKEN
     return text
+
+
+def resolve_brand_asset_path(asset_path: str | Path) -> Path:
+    rel = str(asset_path or "").strip().replace("\\", "/")
+    if not rel.startswith("profiles/assets/"):
+        raise ValueError("brand asset path must be under profiles/assets/")
+    path = (ROOT / rel).resolve()
+    if ROOT.resolve() not in path.parents or not path.is_file():
+        raise ValueError("brand asset not found")
+    return path
 
 
 def resolve_style_path(style_path: str | Path | None = None) -> Path:
@@ -171,6 +182,42 @@ def _profiles_relative(path: Path) -> str:
     return str(path.resolve().relative_to(ROOT.resolve()))
 
 
+def _write_image_data_url(data_url: str, dest: Path) -> None:
+    match = re.match(r"data:image/(?:png|jpe?g|webp);base64,(.+)", str(data_url or "").strip(), re.IGNORECASE)
+    if not match:
+        raise ValueError("social avatar must be a base64 image data URL")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(base64.b64decode(match.group(1)))
+
+
+def persist_brand_social_assets(style: dict[str, Any], template_id: str) -> dict[str, Any]:
+    """Persist optional social CTA assets from transient preview fields into the profile JSON."""
+    merged = deepcopy(style)
+    brand = merged.get("brand")
+    if not isinstance(brand, dict):
+        return merged
+    brand = dict(brand)
+    data_url = str(brand.pop("social_avatar_data_url", "") or "").strip()
+    if data_url.startswith("data:image/"):
+        assets_dir = PROFILES_DIR / "assets" / template_id
+        dest = assets_dir / "social-avatar.jpg"
+        _write_image_data_url(data_url, dest)
+        brand["social_avatar_asset"] = _profiles_relative(dest)
+    elif "social_avatar_asset" in brand and not str(brand.get("social_avatar_asset") or "").strip():
+        brand.pop("social_avatar_asset", None)
+        legacy = PROFILES_DIR / "assets" / template_id / "social-avatar.jpg"
+        if legacy.exists():
+            legacy.unlink()
+    for key in ("social_handle", "social_follower_count"):
+        value = str(brand.get(key) or "").strip()
+        if value:
+            brand[key] = value
+        else:
+            brand.pop(key, None)
+    merged["brand"] = brand
+    return merged
+
+
 def _resolve_save_path(label: str, target_path: str | Path | None = None) -> tuple[Path, str]:
     """Return (absolute path, template id) for a brand style write."""
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
@@ -192,9 +239,10 @@ def save_style_template(
     target_path: str | Path | None = None,
 ) -> dict[str, str]:
     clean_label = str(label or "").strip() or "Custom Brand Template"
-    payload = deep_merge(load_style(base_style_path), style)
-    payload["label"] = clean_label
     path, template_id = _resolve_save_path(clean_label, target_path)
+    merge_path = target_path or base_style_path
+    payload = deep_merge(load_style(merge_path), persist_brand_social_assets(style, template_id))
+    payload["label"] = clean_label
     payload["id"] = template_id
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     relative = _profiles_relative(path)

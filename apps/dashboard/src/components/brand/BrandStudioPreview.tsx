@@ -12,6 +12,11 @@ export type PreviewBackground = "dark" | "light" | "vignette";
 export type PreviewStageView = "live" | "baked";
 
 const CAPTION_LINE_WORDS = 5;
+const BRAND_STUDIO_PREVIEW_SECONDS = 8;
+const CTA_HOLD_MIN_S = 1.6;
+const CTA_HOLD_MAX_S = 2.2;
+const LIVE_INTRO_OVERLAY_MAX_S = 1.5;
+const OVERLAY_CTA_GAP_S = 0.25;
 
 export const SAMPLE_PHRASE_PRESETS = [
   {id: "devotional", label: "Bahasa", text: "Ketenangan hati hadir saat bersyukur."},
@@ -36,10 +41,10 @@ export type BrandStudioLook = {
 export type BrandStudioEffects = {
   starterId: string;
   captionStyle: string;
-  textureEffect: string;
+  textureEffects?: string[];
   ctaOverlay: string;
   introLayout: string;
-  transitionFamily: string;
+  extraBlocks?: string[];
 };
 
 type BrandStudioPreviewProps = {
@@ -86,6 +91,7 @@ export function BrandStudioPreview({
   const [phrasePreset, setPhrasePreset] = useState<string>("devotional");
   const [customPhrase, setCustomPhrase] = useState("");
   const [stageView, setStageView] = useState<PreviewStageView>("live");
+  const [phaseTime, setPhaseTime] = useState(0);
   const stockVideoRef = useRef<HTMLVideoElement | null>(null);
   const bakedVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -122,9 +128,22 @@ export function BrandStudioPreview({
     aspectRatio === "16:9" ? 28 : 22,
   );
   const captionStyle = effects?.captionStyle || "caption-editorial-emphasis";
-  const textureEffect = effects?.textureEffect || "none";
+  const textureEffects = effects?.textureEffects?.length ? effects.textureEffects : [];
   const ctaOverlay = effects?.ctaOverlay || "none";
-  const showOutroCallout = Boolean(ctaOverlay && ctaOverlay !== "none");
+  const introLayout = effects?.introLayout || "template-hook";
+  const placement = useMemo(
+    () => placementBeats(BRAND_STUDIO_PREVIEW_SECONDS, introLayout, ctaOverlay),
+    [introLayout, ctaOverlay],
+  );
+  const showIntroOverlay = liveMode && placement.showRecipeOverlay && phaseTime < placement.overlayExit;
+  const showIntroBlock = liveMode && placement.showIntroBlock && phaseTime < placement.introBlockEnd;
+  const captionStart = placement.showIntroBlock
+    ? placement.introBlockEnd
+    : placement.showRecipeOverlay
+      ? placement.overlayExit
+      : 0;
+  const showLiveCaption = liveMode && phaseTime >= captionStart && phaseTime < placement.ctaStart;
+  const showOutroCallout = liveMode && Boolean(ctaOverlay && ctaOverlay !== "none") && phaseTime >= placement.ctaStart;
   const position = look.position || "bottom";
   const chrome = captionChrome(captionStyle, look);
 
@@ -158,6 +177,26 @@ export function BrandStudioPreview({
     }
   }, [playing, showActiveVideo, activeVideoUrl, activeVideoRef]);
 
+  useEffect(() => {
+    const video = stockVideoRef.current;
+    if (!liveMode || !video || !stockUrl) return;
+    const onTimeUpdate = () => {
+      setPhaseTime(video.currentTime % BRAND_STUDIO_PREVIEW_SECONDS);
+    };
+    video.addEventListener("timeupdate", onTimeUpdate);
+    return () => video.removeEventListener("timeupdate", onTimeUpdate);
+  }, [liveMode, stockUrl]);
+
+  useEffect(() => {
+    if (!liveMode || !playing || stockUrl) return;
+    const started = performance.now();
+    const id = window.setInterval(() => {
+      const elapsed = (performance.now() - started) / 1000;
+      setPhaseTime(elapsed % BRAND_STUDIO_PREVIEW_SECONDS);
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [liveMode, playing, stockUrl]);
+
   const frameStyle: CSSProperties = aspectRatio === "16:9"
     ? {aspectRatio: "16 / 9", width: "min(62rem, 100%, calc(78dvh * 16 / 9))"}
     : {aspectRatio: "9 / 16", width: "min(27rem, 100%, calc(80dvh * 9 / 16))"};
@@ -171,6 +210,7 @@ export function BrandStudioPreview({
 
   function replayPreview() {
     setActiveWord(0);
+    setPhaseTime(0);
     const video = activeVideoRef.current;
     if (video && showActiveVideo) {
       video.currentTime = 0;
@@ -185,17 +225,17 @@ export function BrandStudioPreview({
         <div className={`flex w-full ${stageToolbarWidth} items-center justify-between gap-2 px-1`}>
           <div className="flex flex-wrap items-center gap-1">
             <ToolbarToggle
-              label="Preview"
+              label="Live (approx.)"
               active={stageView === "live"}
               onClick={() => setStageView("live")}
-              title="Your brand on sample footage. Updates as you edit."
+              title="Approximate intro, caption, and subscribe timing on sample footage. Updates as you edit."
             />
             {bakedPreviewUrl ? (
               <ToolbarToggle
-                label="Rendered"
+                label="Rendered (exact)"
                 active={stageView === "baked"}
                 onClick={() => setStageView("baked")}
-                title="A short rendered preview of this look."
+                title="Exact HyperFrames render with real intro/outro beats."
               />
             ) : null}
           </div>
@@ -214,7 +254,7 @@ export function BrandStudioPreview({
               >
                 {bakeBusy ? "Rendering…" : "Render preview"}
               </button>
-              <StageTooltip text="Creates a short video with your colors, captions, and outro. Takes a few seconds. Edit anything and it goes back to live preview." />
+              <StageTooltip text="Renders an 8s clip with exact intro/outro timing. Takes a few seconds. Edit anything and it goes back to live preview." />
             </span>
           ) : (
             <span className="w-px shrink-0" aria-hidden />
@@ -250,7 +290,7 @@ export function BrandStudioPreview({
           />
         ) : null}
 
-        {liveMode ? <TextureLayer effect={textureEffect} /> : null}
+        {liveMode ? textureEffects.map((effect) => <TextureLayer key={effect} effect={effect} />) : null}
 
         {safeZones ? <SafeZoneOverlay aspectRatio={aspectRatio} /> : null}
 
@@ -261,20 +301,38 @@ export function BrandStudioPreview({
                 {look.watermarkText}
               </div>
             ) : null}
-            <div className={`absolute inset-x-0 z-10 flex flex-col items-center px-5 ${captionPositionClass(position)}`}>
-              <CaptionPlate
-                chrome={chrome}
-                look={look}
-                captionPx={captionPx}
-                captionStyle={captionStyle}
-                words={lineWords}
-                activeWord={Math.max(0, activeWord - lineStart)}
-                highlightIndex={Math.max(-1, highlightIndex - lineStart)}
-              />
-            </div>
+            {showIntroOverlay ? (
+              <div className="absolute inset-x-0 top-[20%] z-20 flex justify-center px-6">
+                <p
+                  className="max-w-[88%] text-center text-lg font-semibold leading-snug tracking-tight text-white/95 drop-shadow-[0_2px_12px_rgba(0,0,0,.55)]"
+                  style={{fontFamily: look.fontFamily}}
+                >
+                  {sampleText}
+                </p>
+              </div>
+            ) : null}
+            {showIntroBlock ? (
+              <div className="absolute inset-x-0 bottom-[14%] z-20 flex flex-col items-center px-5">
+                <p className="mb-1.5 text-[8px] font-semibold uppercase tracking-widest text-zinc-500/90">Intro card</p>
+                <OutroCalloutCard overlay="yt-lower-third" accent={look.highlightColor} />
+              </div>
+            ) : null}
+            {showLiveCaption ? (
+              <div className={`absolute inset-x-0 z-30 flex flex-col items-center px-5 ${captionPositionClass(position)}`}>
+                <CaptionPlate
+                  chrome={chrome}
+                  look={look}
+                  captionPx={captionPx}
+                  captionStyle={captionStyle}
+                  words={lineWords}
+                  activeWord={Math.max(0, activeWord - lineStart)}
+                  highlightIndex={Math.max(-1, highlightIndex - lineStart)}
+                />
+              </div>
+            ) : null}
             {showOutroCallout ? (
               <div className="absolute inset-x-0 bottom-[14%] z-20 flex flex-col items-center px-5">
-                <p className="mb-1.5 text-[8px] font-semibold uppercase tracking-widest text-zinc-500/90">Subscribe prompt</p>
+                <p className="mb-1.5 text-[8px] font-semibold uppercase tracking-widest text-zinc-500/90">Subscribe prompt (approx.)</p>
                 <OutroCalloutCard overlay={ctaOverlay} accent={look.highlightColor} />
               </div>
             ) : null}
@@ -346,8 +404,8 @@ export function BrandStudioPreview({
       <p className={`max-w-md text-center text-xs font-medium leading-relaxed tracking-wide text-zinc-500 ${stageToolbarWidth}`}>
         {aspectRatio}
         {recipeTemplate ? ` · ${recipeTemplate.label}` : ""}
-        {liveMode ? " · Updates as you edit" : ""}
-        {bakedMode ? " · Rendered preview" : ""}
+        {liveMode ? " · Live timing is approximate" : ""}
+        {bakedMode ? " · Rendered preview (exact)" : ""}
         {bakeBusy ? " · Rendering preview…" : ""}
       </p>
     </div>
@@ -663,6 +721,53 @@ function TextureLayer({effect}: {effect: string}) {
       ) : null}
     </>
   );
+}
+
+function normalizeIntroLayout(value: string): string {
+  const layout = value.trim().toLowerCase();
+  if (!layout || layout === "none") return "none";
+  if (layout === "lower-third-hook") return "lower-third-hook";
+  if (
+    layout === "template-hook"
+    || layout === "editorial-hook"
+    || layout === "headline-slam"
+    || layout === "data-callout"
+  ) {
+    return "template-hook";
+  }
+  return "template-hook";
+}
+
+type PlacementBeats = {
+  ctaStart: number;
+  overlayExit: number;
+  introBlockEnd: number;
+  showRecipeOverlay: boolean;
+  showIntroBlock: boolean;
+};
+
+function placementBeats(totalS: number, introLayout: string, ctaOverlay: string): PlacementBeats {
+  const intro = normalizeIntroLayout(introLayout);
+  const ctaId = ctaOverlay && ctaOverlay !== "none" ? ctaOverlay : "";
+  const ratioHold = totalS * (totalS <= 10 ? 0.35 : 0.22);
+  const ctaHold = ctaId ? Math.min(CTA_HOLD_MAX_S, Math.max(CTA_HOLD_MIN_S, ratioHold)) : 0;
+  const ctaStart = ctaId ? totalS - ctaHold : totalS;
+  const showIntroBlock = intro === "lower-third-hook";
+  const showRecipeOverlay = intro === "template-hook";
+  let overlayExit = 0;
+  if (showRecipeOverlay) {
+    const introCap = Math.min(LIVE_INTRO_OVERLAY_MAX_S, totalS * 0.35);
+    overlayExit = ctaId
+      ? Math.min(introCap, ctaStart - OVERLAY_CTA_GAP_S)
+      : introCap;
+    overlayExit = Math.max(0.9, Math.min(overlayExit, totalS - 0.35));
+  }
+  let introBlockEnd = 0;
+  if (showIntroBlock) {
+    const maxIntro = ctaId ? ctaStart - OVERLAY_CTA_GAP_S : Math.min(CTA_HOLD_MAX_S, totalS * 0.4);
+    introBlockEnd = Math.min(CTA_HOLD_MAX_S, Math.max(CTA_HOLD_MIN_S, maxIntro));
+  }
+  return {ctaStart, overlayExit, introBlockEnd, showRecipeOverlay, showIntroBlock};
 }
 
 function OutroCalloutCard({overlay, accent}: {overlay: string; accent: string}) {

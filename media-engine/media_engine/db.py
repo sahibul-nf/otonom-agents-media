@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS rerender_jobs (
   renderer TEXT NOT NULL,
   quality TEXT NOT NULL,
   style_path TEXT NOT NULL DEFAULT '',
+  hyperframes_template TEXT NOT NULL DEFAULT '',
+  brand_system_template_id TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL,
   progress INTEGER NOT NULL DEFAULT 0,
   message TEXT NOT NULL DEFAULT '',
@@ -260,6 +262,8 @@ SCHEMA_UPGRADES = {
     },
     "rerender_jobs": {
         "style_path": "TEXT NOT NULL DEFAULT ''",
+        "hyperframes_template": "TEXT NOT NULL DEFAULT ''",
+        "brand_system_template_id": "TEXT NOT NULL DEFAULT ''",
         "force_source_refresh": "INTEGER NOT NULL DEFAULT 0",
         "regenerate_captions": "INTEGER NOT NULL DEFAULT 0",
         "status": "TEXT NOT NULL DEFAULT 'queued'",

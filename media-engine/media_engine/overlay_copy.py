@@ -67,6 +67,43 @@ def _is_forbidden(text: str) -> bool:
     return text.lower().strip(" .!?'\"") in FORBIDDEN_OVERLAY_COPY
 
 
+BRAND_STUDIO_CATEGORY_KICKERS = {
+    "Spiritual": "Reflection",
+    "Promo": "Takeaway",
+    "Official": "Story",
+    "News": "Brief",
+    "Data": "Insight",
+    "Podcast": "Moment",
+}
+
+
+def brand_studio_overlay_slots(sample_phrase: str, template_category: str = "Official") -> dict[str, str]:
+    """Short hook slots for Brand Studio — never mirror the full caption line."""
+    text = " ".join(str(sample_phrase or "").split())
+    words = text.split()
+    category_kicker = BRAND_STUDIO_CATEGORY_KICKERS.get(template_category, "Takeaway")
+    if not words:
+        return {
+            "kicker": category_kicker,
+            "headline": category_kicker,
+            "stamp": category_kicker.upper(),
+        }
+    short_hook = " ".join(words[:3])
+    snippet = words[:4]
+    mid = max(1, len(snippet) // 2)
+    line_a = " ".join(snippet[:mid])
+    line_b = " ".join(snippet[mid:]) if len(snippet) > mid else ""
+    slots = {
+        "kicker": clip_overlay_text(category_kicker, OVERLAY_LIMITS["kicker"]),
+        "headline": clip_overlay_text(short_hook, OVERLAY_LIMITS["headline"]),
+        "subhead": "",
+        "stamp": clip_overlay_text(category_kicker.upper(), OVERLAY_LIMITS["stamp"]),
+        "line_a": clip_overlay_text(line_a, OVERLAY_LIMITS["line_a"]),
+        "line_b": clip_overlay_text(line_b, OVERLAY_LIMITS["line_b"]),
+    }
+    return {key: value for key, value in slots.items() if value and not _is_forbidden(value)}
+
+
 def heuristic_overlay_slots(title_hook: str, hook_subtitle: str = "") -> dict[str, str]:
     hook = " ".join(str(title_hook or "").split())
     sub = " ".join(str(hook_subtitle or "").split())

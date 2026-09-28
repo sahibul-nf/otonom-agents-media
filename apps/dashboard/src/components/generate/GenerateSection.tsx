@@ -1,9 +1,8 @@
 "use client";
 
-import {ArrowRight, BadgeCheck, CheckCircle2, ChevronDown, Copy, Loader2, Sparkles, Youtube} from "lucide-react";
+import {ArrowRight, BadgeCheck, ChevronDown, Copy, Loader2, Sparkles, Youtube} from "lucide-react";
 import {useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction} from "react";
-import {FocusModal} from "@/components/FocusModal";
-import {TemplatePreview} from "@/components/templates/TemplatePreview";
+import {HyperframesTemplatePickerModal} from "@/components/templates/HyperframesTemplatePickerModal";
 import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
 import {apiGet, templateSupportsFormat, type ShellComponents, DEFAULT_SHELL_COMPONENTS, isTemplateOnlyBrand, TEMPLATE_ONLY_BRAND, type SourceResolveResult} from "@/lib/media-api";
 import {
@@ -21,24 +20,6 @@ const GENRE_AUTO = "auto";
 
 function genresIsAuto(genres: string[]) {
   return genres.includes(GENRE_AUTO);
-}
-
-function friendlyTemplateStatus(status?: string) {
-  switch (status) {
-    case "ready":
-    case "production-ready":
-      return "Ready";
-    case "draft":
-      return "Draft";
-    case "experimental":
-    case "beta":
-      return "Beta";
-    case "unavailable":
-    case "error":
-      return "Unavailable";
-    default:
-      return status ? "Available" : "Ready";
-  }
 }
 
 type GenerateConfigLike = {
@@ -330,6 +311,19 @@ export function GenerateSection<T extends GenerateConfigLike>({
     ...savedBrandStyles,
   ];
   const templateShellDefaults = shellComponentsFromTemplate(selectedTemplate);
+  const activeSavedBrand = !templateOnlyBrand
+    ? savedBrandStyles.find((item) => item.path === config.brandTemplate)
+    : undefined;
+  const activeBrandHyperframes = hyperframesTemplates.find(
+    (item) => item.source === "brand_system" && item.brand_template_path === config.brandTemplate,
+  );
+  const activeBrandStarterLabel = activeBrandHyperframes?.starter_template
+    ? hyperframesTemplates.find((item) => item.id === activeBrandHyperframes.starter_template)?.label
+      || activeBrandHyperframes.starter_template
+    : "";
+  const brandHasOssCta = Boolean(
+    activeBrandHyperframes?.blocks_used?.some((block) => block && block !== "none"),
+  );
   const latestProgress = Math.max(0, Math.min(100, latest?.progress || 0));
   const genresAuto = genresIsAuto(config.genres);
   const manualGenreCount = genreOptions.filter((genre) => config.genres.includes(genre.id)).length;
@@ -538,7 +532,11 @@ export function GenerateSection<T extends GenerateConfigLike>({
                   {selectedTemplate.source === "brand_system" ? " · includes saved caption style" : " · set caption style in Advanced if needed"}
                 </p>
               ) : config.hyperframesTemplate === "auto" ? (
-                <p className="mt-2 text-xs text-zinc-500">Auto picks a recipe from your content angles and workspace niche.</p>
+                <p className="mt-2 text-xs text-zinc-500">
+                  {activeBrandHyperframes && activeBrandStarterLabel
+                    ? `Auto uses the ${activeBrandStarterLabel} preset from ${activeSavedBrand?.label || "your saved brand"} (set in Brand Builder).`
+                    : "Auto picks a recipe from your content angles and workspace niche."}
+                </p>
               ) : null}
             </div>
 
@@ -729,7 +727,18 @@ export function GenerateSection<T extends GenerateConfigLike>({
                         <button
                           key={template.id}
                           type="button"
-                          onClick={() => update({brandTemplate: template.path})}
+                          onClick={() => {
+                            const isDefault = template.path === TEMPLATE_ONLY_BRAND;
+                            const brandId = isDefault ? "" : (template.brand_system_template_id || "");
+                            update({
+                              brandTemplate: template.path,
+                              brandSystemTemplateId: brandId,
+                              hyperframesTemplate:
+                                isDefault || config.hyperframesTemplate !== "auto"
+                                  ? config.hyperframesTemplate
+                                  : brandId || config.hyperframesTemplate,
+                            });
+                          }}
                           className={`flex flex-col rounded-2xl border p-3 text-left transition ${
                             active
                               ? "border-cyan/[0.50] bg-cyan/[0.05] text-white"
@@ -793,6 +802,11 @@ export function GenerateSection<T extends GenerateConfigLike>({
                   <>
                     <p className="mb-3 text-xs leading-5 text-zinc-500">
                       Hook and CTA are optional shell nodes. Most templates keep the hook inside the recipe overlay instead.
+                      {brandHasOssCta ? (
+                        <span className="mt-1 block text-zinc-600">
+                          Subscribe/follow widgets come from your saved brand — the shell CTA toggle may have no effect when a brand CTA block is active.
+                        </span>
+                      ) : null}
                     </p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <ShellComponentToggle
@@ -809,7 +823,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
                       />
                       <ShellComponentToggle
                         label="Source"
-                        detail="Attribution line under the watermark"
+                        detail="YouTube channel line, e.g. Source: Ribath …"
                         enabled={config.shellComponents.source}
                         onChange={(source) => update({shellComponents: {...config.shellComponents, source}})}
                       />
@@ -879,63 +893,30 @@ export function GenerateSection<T extends GenerateConfigLike>({
 
       {!latest ? renderEmptyState("Ready when you are", "Paste a YouTube link above to create your first clip batch.") : null}
 
-      <FocusModal open={templatePickerOpen} title="Choose video template" subtitle="Pick a visual style before generating clips." width="wide" onClose={() => setTemplatePickerOpen(false)}>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {templatesForFormat.map((template) => {
-            const active = config.hyperframesTemplate === template.id;
-            return (
-              <div
-                key={template.id}
-                className={`template-card min-w-0 rounded-[20px] border text-left transition sm:p-3 ${active ? "border-cyan/[0.45] bg-teal/[0.12] shadow-glow" : "border-white/[0.08] bg-canvas-deep hover:border-cyan/[0.22] hover:bg-teal/[0.05]"} p-2.5`}
-              >
-                <TemplatePreview
-                  template={template}
-                  compact
-                  gridCard
-                  hideFooterLabel
-                  frame={config.hyperframesFormat === "long_16_9" ? "long" : "short"}
-                  hoverToPlay
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    update({
-                      renderer: "hyperframes",
-                      hyperframesTemplate: template.id,
-                      brandSystemTemplateId: template.source === "brand_system" ? template.id : "",
-                      brandTemplate:
-                        template.source === "brand_system" && template.brand_template_path
-                          ? template.brand_template_path
-                          : templateOnlyBrand
-                            ? TEMPLATE_ONLY_BRAND
-                            : config.brandTemplate,
-                      shellComponents: shellComponentsFromTemplate(template),
-                    });
-                    setTemplatePickerOpen(false);
-                  }}
-                  className="mt-2 block w-full text-left"
-                  aria-pressed={active}
-                  aria-label={`Use ${template.label}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-cyan">{template.category}</p>
-                        <span className="rounded-full border border-white/[0.10] bg-black/30 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
-                          {friendlyTemplateStatus(template.status)}
-                        </span>
-                      </div>
-                      <h4 className="mt-1 truncate text-lg font-semibold text-white">{template.label}</h4>
-                    </div>
-                    {active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-cyan" /> : null}
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-400">{template.best_for}</p>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </FocusModal>
+      <HyperframesTemplatePickerModal
+        open={templatePickerOpen}
+        title="Choose video template"
+        subtitle="Pick a visual style before generating clips."
+        templates={templatesForFormat}
+        selectedId={config.hyperframesTemplate}
+        frame={config.hyperframesFormat === "long_16_9" ? "long" : "short"}
+        onClose={() => setTemplatePickerOpen(false)}
+        onSelect={(template) => {
+          update({
+            renderer: "hyperframes",
+            hyperframesTemplate: template.id,
+            brandSystemTemplateId: template.source === "brand_system" ? template.id : "",
+            brandTemplate:
+              template.source === "brand_system" && template.brand_template_path
+                ? template.brand_template_path
+                : templateOnlyBrand
+                  ? TEMPLATE_ONLY_BRAND
+                  : config.brandTemplate,
+            shellComponents: shellComponentsFromTemplate(template),
+          });
+          setTemplatePickerOpen(false);
+        }}
+      />
     </section>
   );
 }

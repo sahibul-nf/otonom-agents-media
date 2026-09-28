@@ -3,15 +3,17 @@
 import Link from "next/link";
 import {useRouter} from "next/navigation";
 import {ArrowLeft, ChevronDown, HelpCircle, Loader2} from "lucide-react";
-import {useEffect, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {BrandStudioPreview, SAMPLE_PHRASE_PRESETS} from "@/components/brand/BrandStudioPreview";
 import type {RecipePreviewFormat} from "@/components/brand/useRecipePreviewVideo";
 import {
   apiGet,
   apiPost,
+  brandAssetUrl,
   requestBrandStudioPreviewRender,
   type BrandTemplate,
   type HyperframesCatalog,
+  type HyperframesCatalogItem,
   type HyperframesTemplate,
   type StyleProfile,
 } from "@/lib/media-api";
@@ -36,7 +38,7 @@ export const brandPresets = [
   {id: "eva_cyber", category: "High-Energy", label: "Eva Neon Cyber", note: "Neon overlays, glowing captions, and futuristic accents.", starterTemplate: "eva_neon_cyber", fontFamily: "Poppins", fontSize: 54, highlightColor: "#ff2a85", backgroundColor: "#030305", strokeWidth: 8, captionStyle: "caption-neon-glow", introLayout: "headline-slam", ctaOverlay: "instagram-follow", textureEffect: "vignette", transitionFamily: "whip-pan", motionIntensity: "energetic"},
   {id: "volt_kinetic", category: "High-Energy", label: "Volt Lime Kinetic", note: "Bold bounce, electric lime highlights, and title drops.", starterTemplate: "volt_lime_kinetic", fontFamily: "Montserrat", fontSize: 58, highlightColor: "#a7f36b", backgroundColor: "#040507", strokeWidth: 10, captionStyle: "caption-kinetic-slam", introLayout: "headline-slam", ctaOverlay: "tiktok-follow", textureEffect: "none", transitionFamily: "zoom", motionIntensity: "energetic"},
   {id: "ember_sunset", category: "Devotional", label: "Ember Sunset", note: "Sunset gradient text with soft warm ambient glows.", starterTemplate: "ember_sunset_gradient", fontFamily: "Sora", fontSize: 52, highlightColor: "#ff5e36", backgroundColor: "#120a06", strokeWidth: 6, captionStyle: "caption-gradient-fill", introLayout: "editorial-hook", ctaOverlay: "yt-lower-third", textureEffect: "vignette", transitionFamily: "dissolve", motionIntensity: "calm"},
-  {id: "align_minimal", category: "Minimal", label: "Align Minimal Box", note: "Monochrome active-word boxes and clean snap reveals.", starterTemplate: "align_minimal_box", fontFamily: "Inter", fontSize: 48, highlightColor: "#f8fafc", backgroundColor: "#09090b", strokeWidth: 4, captionStyle: "caption-clip-wipe", introLayout: "lower-third-hook", ctaOverlay: "x-post", textureEffect: "vignette", transitionFamily: "dissolve", motionIntensity: "balanced"},
+  {id: "align_minimal", category: "Minimal", label: "Align Minimal Box", note: "Monochrome active-word boxes and clean snap reveals.", starterTemplate: "align_minimal_box", fontFamily: "Inter", fontSize: 48, highlightColor: "#f8fafc", backgroundColor: "#09090b", strokeWidth: 4, captionStyle: "caption-clip-wipe", introLayout: "lower-third-hook", ctaOverlay: "tiktok-follow", textureEffect: "vignette", transitionFamily: "dissolve", motionIntensity: "balanced"},
 ] as const;
 
 type CaptionPosition = "bottom" | "center" | "top";
@@ -49,14 +51,18 @@ type EditorState = {
   backgroundColor: string;
   strokeWidth: number;
   watermarkText: string;
+  socialHandle: string;
+  socialFollowerCount: string;
+  socialAvatarAsset: string;
+  socialAvatarDataUrl: string;
   position: CaptionPosition;
   uppercase: boolean;
   starterTemplate: string;
   captionStyle: string;
   introLayout: string;
   ctaOverlay: string;
-  textureEffect: string;
-  transitionFamily: string;
+  textureEffects: string[];
+  extraBlocks: string[];
   motionIntensity: string;
 };
 
@@ -76,31 +82,29 @@ type WorkspaceProps = {
 const fontOptions = ["Sora", "Inter", "Montserrat", "Poppins", "Roboto", "Arial", "system-ui"] as const;
 type DockTab = "presets" | "identity" | "captions" | "finishing";
 
-const TEXTURE_OPTIONS = [
-  {value: "none", label: "None"},
-  {value: "vignette", label: "Vignette"},
-  {value: "grain-overlay", label: "Film grain"},
-] as const;
-
-const SOCIAL_OPTIONS = [
-  {value: "none", label: "None"},
-  {value: "yt-lower-third", label: "YouTube Subscribe"},
-  {value: "instagram-follow", label: "Instagram Follow"},
-  {value: "tiktok-follow", label: "TikTok Follow"},
-  {value: "x-post", label: "X Follow"},
-] as const;
-
-function normalizeTextureEffect(value: unknown): string {
-  const id = String(value || "none").trim().toLowerCase();
-  if (id === "shimmer-sweep" || id === "shimmer") return "none";
-  if (id === "vignette" || id === "grain-overlay" || id === "none") return id;
-  return "none";
+function normalizeTextureEffects(value: unknown, legacy: unknown): string[] {
+  const installed = new Set(["grain-overlay", "vignette", "shimmer-sweep"]);
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter((item) => installed.has(item));
+  }
+  const legacyId = String(legacy || "none").trim().toLowerCase();
+  if (legacyId === "none" || !legacyId) return [];
+  if (legacyId === "shimmer" || legacyId === "shimmer-sweep") return ["shimmer-sweep"];
+  if (installed.has(legacyId)) return [legacyId];
+  return [];
 }
+
+function normalizeExtraBlocks(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item).trim()).filter(Boolean).slice(0, 3);
+}
+
+const CTA_BLOCK_IDS = new Set(["yt-lower-third", "instagram-follow", "tiktok-follow"]);
 
 function normalizeCtaOverlay(value: unknown): string {
   const id = String(value || "none").trim();
-  if (!id || id === "none") return "none";
-  return SOCIAL_OPTIONS.some((option) => option.value === id) ? id : "none";
+  if (!id || id === "none" || id === "x-post") return "none";
+  return CTA_BLOCK_IDS.has(id) ? id : "none";
 }
 
 function hexFromColor(value: unknown, fallback: string) {
@@ -109,6 +113,21 @@ function hexFromColor(value: unknown, fallback: string) {
   if (/^#[0-9a-f]{3}$/i.test(text)) return `#${text.slice(1).split("").map((character) => `${character}${character}`).join("")}`.toLowerCase();
   const rgba = text.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
   return rgba ? `#${rgba.slice(1, 4).map((part) => Number(part).toString(16).padStart(2, "0")).join("")}`.toLowerCase() : fallback;
+}
+
+function normalizeIntroLayout(value: string): string {
+  const layout = value.trim().toLowerCase();
+  if (!layout || layout === "none") return "none";
+  if (layout === "lower-third-hook") return "lower-third-hook";
+  if (
+    layout === "template-hook"
+    || layout === "editorial-hook"
+    || layout === "headline-slam"
+    || layout === "data-callout"
+  ) {
+    return "template-hook";
+  }
+  return "template-hook";
 }
 
 function editorFromStyle(source: StyleProfile | null, starterTemplate = "spiritual_reflective"): EditorState {
@@ -123,15 +142,19 @@ function editorFromStyle(source: StyleProfile | null, starterTemplate = "spiritu
     highlightColor: hexFromColor(caption.highlight_word_color, "#00ff36"),
     backgroundColor: hexFromColor(caption.background_color, "#000000"),
     strokeWidth: Number(caption.stroke_width || 10),
-    watermarkText: watermark && !/nourbit|nouraniyyah/i.test(watermark) ? watermark : "Brand Clips",
+    watermarkText: watermark || "Brand Clips",
+    socialHandle: String(brand.social_handle || ""),
+    socialFollowerCount: String(brand.social_follower_count || ""),
+    socialAvatarAsset: String(brand.social_avatar_asset || ""),
+    socialAvatarDataUrl: "",
     position: caption.position === "top" || caption.position === "center" ? caption.position : "bottom",
     uppercase: Boolean(caption.uppercase),
     starterTemplate: String(brandSystem.starter_template || starterTemplate || "spiritual_reflective"),
     captionStyle: String(brandSystem.caption_style || "caption-editorial-emphasis"),
-    introLayout: String(brandSystem.intro_layout || "editorial-hook"),
+    introLayout: normalizeIntroLayout(String(brandSystem.intro_layout || "template-hook")),
     ctaOverlay: normalizeCtaOverlay(brandSystem.cta_overlay || "none"),
-    textureEffect: normalizeTextureEffect(brandSystem.texture_effect || "none"),
-    transitionFamily: String(brandSystem.transition_family || "dissolve"),
+    textureEffects: normalizeTextureEffects(brandSystem.texture_effects, brandSystem.texture_effect),
+    extraBlocks: normalizeExtraBlocks(brandSystem.extra_blocks),
     motionIntensity: String(brandSystem.motion_intensity || "balanced"),
   };
 }
@@ -148,10 +171,10 @@ function applyPresetToEditor(editor: EditorState, presetId?: string) {
     backgroundColor: preset.backgroundColor,
     strokeWidth: preset.strokeWidth,
     captionStyle: preset.captionStyle,
-    introLayout: preset.introLayout,
+    introLayout: normalizeIntroLayout(preset.introLayout),
     ctaOverlay: preset.ctaOverlay,
-    textureEffect: preset.textureEffect,
-    transitionFamily: preset.transitionFamily,
+    textureEffects: normalizeTextureEffects(null, preset.textureEffect),
+    extraBlocks: [],
     motionIntensity: preset.motionIntensity,
   };
 }
@@ -160,14 +183,46 @@ function snapshot(label: string, selectedTemplate: string, editor: EditorState) 
   return JSON.stringify({label, selectedTemplate, editor});
 }
 
-function catalogOptions(catalog: HyperframesCatalog | null, category: string, fallback: string[]) {
-  const items = (catalog?.items || []).filter((item) => item.category === category && item.status !== "experimental");
+function catalogOptions(
+  catalog: HyperframesCatalog | null,
+  filter: (item: HyperframesCatalogItem) => boolean,
+  fallback: {value: string; label: string}[],
+) {
+  const items = (catalog?.items || []).filter((item) => item.status !== "experimental" && filter(item));
   return items.length
     ? items.map((item) => ({
         value: item.id,
         label: item.status === "production-ready" || item.status === "beta" ? item.label : `${item.label} (${item.status})`,
       }))
-    : fallback.map((value) => ({value, label: value}));
+    : fallback;
+}
+
+function brandPayload(editor: EditorState): Record<string, string> {
+  const brand: Record<string, string> = {watermark_text: editor.watermarkText};
+  const handle = editor.socialHandle.trim();
+  const followerCount = editor.socialFollowerCount.trim();
+  if (handle) brand.social_handle = handle;
+  if (followerCount) brand.social_follower_count = followerCount;
+  if (editor.socialAvatarDataUrl) {
+    brand.social_avatar_data_url = editor.socialAvatarDataUrl;
+  } else if (editor.socialAvatarAsset) {
+    brand.social_avatar_asset = editor.socialAvatarAsset;
+  }
+  return brand;
+}
+
+function brandSystemPayload(editor: EditorState) {
+  const primaryTexture = editor.textureEffects[0] || "none";
+  return {
+    starter_template: editor.starterTemplate,
+    caption_style: editor.captionStyle,
+    intro_layout: editor.introLayout,
+    cta_overlay: editor.ctaOverlay,
+    texture_effect: primaryTexture,
+    texture_effects: editor.textureEffects,
+    extra_blocks: editor.extraBlocks,
+    motion_intensity: editor.motionIntensity,
+  };
 }
 
 export function BrandBuilderWorkspace({
@@ -214,20 +269,47 @@ export function BrandBuilderWorkspace({
   const starterTemplates = hyperframesTemplates.length
     ? hyperframesTemplates
     : ([{id: "spiritual_reflective", label: "Spiritual Reflective", best_for: "Reflective clips"}] as HyperframesTemplate[]);
-  const captionOptions = catalogOptions(hyperframesCatalog, "Captions", ["caption-editorial-emphasis", "caption-pill-karaoke", "caption-highlight"]);
-  const textureOptions = [...TEXTURE_OPTIONS];
-  const socialOptions = [...SOCIAL_OPTIONS];
-  const transitionOptions = [
-    {value: "dissolve", label: "Dissolve"},
-    {value: "push", label: "Push"},
-    {value: "zoom", label: "Zoom"},
-    {value: "whip-pan", label: "Whip Pan"},
+  const captionOptions = catalogOptions(
+    hyperframesCatalog,
+    (item) => item.slot === "caption" || item.category === "Captions",
+    [
+      {value: "caption-editorial-emphasis", label: "Editorial Emphasis"},
+      {value: "caption-pill-karaoke", label: "Pill Karaoke"},
+      {value: "caption-highlight", label: "Highlight"},
+    ],
+  );
+  const textureOptions = catalogOptions(
+    hyperframesCatalog,
+    (item) => item.slot === "texture" || item.category === "Effects",
+    [
+      {value: "grain-overlay", label: "Film grain"},
+      {value: "vignette", label: "Vignette"},
+      {value: "shimmer-sweep", label: "Shimmer sweep"},
+    ],
+  );
+  const socialOptions = [
+    {value: "none", label: "None"},
+    ...catalogOptions(
+      hyperframesCatalog,
+      (item) =>
+        item.id !== "x-post"
+        && (item.slot === "cta_overlay" || (item.kind === "block" && item.category === "Social Overlays")),
+      [
+        {value: "yt-lower-third", label: "YouTube Subscribe"},
+        {value: "instagram-follow", label: "Instagram Follow"},
+        {value: "tiktok-follow", label: "TikTok Follow"},
+      ],
+    ),
   ];
+  const extraBlockOptions = catalogOptions(
+    hyperframesCatalog,
+    (item) => item.kind === "block" && item.slot !== "cta_overlay",
+    [],
+  );
   const introOptions = [
-    {value: "editorial-hook", label: "Editorial hook"},
-    {value: "lower-third-hook", label: "Lower-third hook"},
-    {value: "data-callout", label: "Data callout"},
-    {value: "headline-slam", label: "Headline slam"},
+    {value: "none", label: "None"},
+    {value: "template-hook", label: "Template hook"},
+    {value: "lower-third-hook", label: "YouTube lower-third (open)"},
   ];
   const baselineOptions = [
     {id: defaultTemplate, label: "Platform default", path: defaultTemplate},
@@ -238,6 +320,11 @@ export function BrandBuilderWorkspace({
   const currentSnapshot = snapshot(label, selectedTemplate, editor);
   const dirty = currentSnapshot !== cleanSnapshot;
   const selectedStarter = hyperframesTemplates.find((template) => template.id === editor.starterTemplate) || starterTemplates.find((template) => template.id === editor.starterTemplate);
+  const socialAvatarPreview = useMemo(() => {
+    if (editor.socialAvatarDataUrl) return editor.socialAvatarDataUrl;
+    if (editor.socialAvatarAsset) return brandAssetUrl(editor.socialAvatarAsset);
+    return "";
+  }, [editor.socialAvatarAsset, editor.socialAvatarDataUrl]);
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -274,17 +361,9 @@ export function BrandBuilderWorkspace({
             position: editor.position,
             uppercase: editor.uppercase,
           },
-          brand: {watermark_text: editor.watermarkText},
+          brand: brandPayload(editor),
         },
-        brand_system: {
-          starter_template: editor.starterTemplate,
-          caption_style: editor.captionStyle,
-          intro_layout: editor.introLayout,
-          cta_overlay: editor.ctaOverlay,
-          texture_effect: editor.textureEffect,
-          transition_family: editor.transitionFamily,
-          motion_intensity: editor.motionIntensity,
-        },
+        brand_system: brandSystemPayload(editor),
       });
       if (result.preview_url) {
         setBakedPreviewUrl(result.preview_url);
@@ -386,17 +465,9 @@ export function BrandBuilderWorkspace({
             position: editor.position,
             uppercase: editor.uppercase,
           },
-          brand: {watermark_text: editor.watermarkText},
+          brand: brandPayload(editor),
         },
-        brand_system: {
-          starter_template: editor.starterTemplate,
-          caption_style: editor.captionStyle,
-          intro_layout: editor.introLayout,
-          cta_overlay: editor.ctaOverlay,
-          texture_effect: editor.textureEffect,
-          transition_family: editor.transitionFamily,
-          motion_intensity: editor.motionIntensity,
-        },
+        brand_system: brandSystemPayload(editor),
         base_template: selectedTemplate,
         path: targetPath || undefined,
       });
@@ -405,9 +476,29 @@ export function BrandBuilderWorkspace({
       setLabel(nextLabel);
       setEditingPath(nextPath);
       setSavedHandoff({path: nextPath, brandId});
-      setCleanSnapshot(snapshot(nextLabel, selectedTemplate, editor));
+      const templateStem = nextPath.split("/").pop()?.replace(/\.json$/i, "") || "";
+      const nextEditor =
+        editor.socialAvatarDataUrl && templateStem
+          ? {
+              ...editor,
+              socialAvatarDataUrl: "",
+              socialAvatarAsset: `profiles/assets/${templateStem}/social-avatar.jpg`,
+            }
+          : editor;
+      if (nextEditor !== editor) setEditor(nextEditor);
+      setCleanSnapshot(snapshot(nextLabel, selectedTemplate, nextEditor));
       setSaveState(asCopy ? "Saved as copy" : "Saved");
       await onTemplateSaved();
+      if (!asCopy && nextPath) {
+        try {
+          const reloaded = await apiGet<StyleProfile>(`style?path=${encodeURIComponent(nextPath)}`);
+          const syncedEditor = editorFromStyle(reloaded, nextEditor.starterTemplate);
+          setEditor(syncedEditor);
+          setCleanSnapshot(snapshot(nextLabel, selectedTemplate, syncedEditor));
+        } catch {
+          // keep local editor if reload fails
+        }
+      }
     } catch (error) {
       setSaveState(error instanceof Error ? error.message : "Save failed");
     } finally {
@@ -556,6 +647,9 @@ export function BrandBuilderWorkspace({
                     options={starterSelectOptions}
                     onChange={(starterTemplate) => updateEditor({starterTemplate})}
                   />
+                  <p className="text-[11px] leading-5 text-zinc-600">
+                    Default visual recipe when this brand is selected on Create with Visual set to Auto.
+                  </p>
                   {selectedStarter ? <StarterRecipeReference template={selectedStarter} /> : null}
                   <div className="border-t border-white/[0.06] pt-4">
                     <button
@@ -668,6 +762,74 @@ export function BrandBuilderWorkspace({
                       className="h-10 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-cyan/35"
                     />
                   </div>
+                  <div>
+                    <SectionLabel
+                      label="Social CTA"
+                      tooltip="Profile shown on TikTok, Instagram, and YouTube subscribe widgets (Finishing → Subscribe)."
+                    />
+                    <p className="mb-3 text-xs leading-relaxed text-zinc-500">
+                      Display name uses Watermark above. Handle, logo, and follower count are optional.
+                    </p>
+                    <label className="mb-3 block">
+                      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-400">Username</span>
+                      <input
+                        value={editor.socialHandle}
+                        onChange={(event) => updateEditor({socialHandle: event.target.value})}
+                        placeholder="@yourbrand"
+                        className="h-10 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-cyan/35"
+                      />
+                    </label>
+                    <label className="mb-3 block">
+                      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                        Follower count <span className="font-normal normal-case text-zinc-600">(optional)</span>
+                      </span>
+                      <input
+                        value={editor.socialFollowerCount}
+                        onChange={(event) => updateEditor({socialFollowerCount: event.target.value})}
+                        placeholder="12.4K followers"
+                        className="h-10 w-full rounded-xl border border-white/[0.08] bg-black/20 px-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-cyan/35"
+                      />
+                    </label>
+                    <div>
+                      <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                        Profile logo <span className="font-normal normal-case text-zinc-600">(optional)</span>
+                      </span>
+                      {socialAvatarPreview ? (
+                        <div className="mb-2 flex items-center gap-3">
+                          <img
+                            src={socialAvatarPreview}
+                            alt="Social profile logo preview"
+                            className="h-12 w-12 rounded-full border border-white/10 object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateEditor({socialAvatarDataUrl: "", socialAvatarAsset: ""})}
+                            className="text-xs text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
+                          >
+                            Remove logo
+                          </button>
+                        </div>
+                      ) : null}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            updateEditor({
+                              socialAvatarDataUrl: String(reader.result || ""),
+                              socialAvatarAsset: "",
+                            });
+                          };
+                          reader.readAsDataURL(file);
+                          event.target.value = "";
+                        }}
+                        className="block w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-medium file:text-zinc-200"
+                      />
+                    </div>
+                  </div>
                 </div>
               ) : null}
 
@@ -761,7 +923,7 @@ export function BrandBuilderWorkspace({
               {dockTab === "finishing" ? (
                 <div className="space-y-3">
                   <p className="text-xs leading-relaxed text-zinc-400">
-                    Texture and subscribe prompts show in preview. Transitions and intros appear in the rendered clip.
+                    Intro plays in the first ~2s; Subscribe plays in the last ~2s. Live preview timing is approximate — use Rendered for exact beats.
                   </p>
                   <InspectorSelect
                     label="Subscribe"
@@ -770,30 +932,81 @@ export function BrandBuilderWorkspace({
                     options={socialOptions}
                     onChange={(ctaOverlay) => updateEditor({ctaOverlay})}
                   />
-                  <InspectorSelect
-                    label="Texture"
-                    tooltip="Optional grade on the footage. Vignette darkens the edges; grain adds a film look."
-                    value={editor.textureEffect}
-                    options={textureOptions}
-                    onChange={(textureEffect) => updateEditor({textureEffect})}
-                  />
+                  {editor.ctaOverlay !== "none" ? (
+                    <button
+                      type="button"
+                      onClick={() => setDockTab("identity")}
+                      className="text-left text-[11px] font-medium text-cyan/90 underline-offset-2 hover:text-cyan hover:underline"
+                    >
+                      Customize handle, logo, and follower count in Identity → Social CTA
+                    </button>
+                  ) : null}
+                  <div>
+                    <SectionLabel
+                      label="Texture effects"
+                      tooltip="Official HyperFrames OSS effect components layered on the footage."
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {textureOptions.map((option) => {
+                        const active = editor.textureEffects.includes(option.value);
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              const next = active
+                                ? editor.textureEffects.filter((id) => id !== option.value)
+                                : [...editor.textureEffects, option.value];
+                              updateEditor({textureEffects: next});
+                            }}
+                            className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+                              active ? "border-cyan/40 bg-cyan/[0.12] text-cyan" : "border-white/[0.08] text-zinc-500 hover:text-zinc-300"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <LiveOverlayHint label="Texture" />
                   <InspectorSelect
-                    label="Transition"
-                    tooltip="How scenes connect in the published clip. Not shown in the live preview."
-                    value={editor.transitionFamily}
-                    options={transitionOptions}
-                    onChange={(transitionFamily) => updateEditor({transitionFamily})}
-                  />
-                  <RenderTimeHint label="Transition" />
-                  <InspectorSelect
                     label="Intro"
-                    tooltip="Opening treatment on the published clip — lower-third, headline, and similar."
+                    tooltip="Template hook uses the recipe headline overlay. YouTube lower-third opens with the official subscribe card."
                     value={editor.introLayout}
                     options={introOptions}
                     onChange={(introLayout) => updateEditor({introLayout})}
                   />
                   <RenderTimeHint label="Intro hook" />
+                  {extraBlockOptions.length ? (
+                    <div>
+                      <SectionLabel label="Extra overlays" tooltip="Add up to 3 extra OSS blocks (social proof, charts, etc.)." />
+                      <div className="flex flex-wrap gap-2">
+                        {extraBlockOptions.map((option) => {
+                          const active = editor.extraBlocks.includes(option.value);
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                const next = active
+                                  ? editor.extraBlocks.filter((id) => id !== option.value)
+                                  : editor.extraBlocks.length < 3
+                                    ? [...editor.extraBlocks, option.value]
+                                    : editor.extraBlocks;
+                                updateEditor({extraBlocks: next});
+                              }}
+                              className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
+                                active ? "border-cyan/40 bg-cyan/[0.12] text-cyan" : "border-white/[0.08] text-zinc-500 hover:text-zinc-300"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -823,10 +1036,10 @@ export function BrandBuilderWorkspace({
               effects={{
                 starterId: editor.starterTemplate,
                 captionStyle: editor.captionStyle,
-                textureEffect: editor.textureEffect,
+                textureEffects: editor.textureEffects,
                 ctaOverlay: editor.ctaOverlay,
                 introLayout: editor.introLayout,
-                transitionFamily: editor.transitionFamily,
+                extraBlocks: editor.extraBlocks,
               }}
             />
           </div>
@@ -877,8 +1090,12 @@ export function BrandBuilderPage({
 
   async function loadData() {
     try {
+      const initialStylePath =
+        baseTemplate && baseTemplate !== DEFAULT_TEMPLATE ? baseTemplate : undefined;
       const [style, templates, hyperframesTemplates, hyperframesCatalog] = await Promise.all([
-        apiGet<StyleProfile>("style"),
+        initialStylePath
+          ? apiGet<StyleProfile>(`style?path=${encodeURIComponent(initialStylePath)}`)
+          : apiGet<StyleProfile>("style"),
         apiGet<BrandTemplate[]>("brand-templates"),
         apiGet<HyperframesTemplate[]>("hyperframes-templates"),
         apiGet<HyperframesCatalog>("hyperframes-catalog"),

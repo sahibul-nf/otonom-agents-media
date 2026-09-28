@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from .db import ARTIFACTS_DIR
+from .hyperframes_oss import copy_oss_files_to_project, resolve_oss_selections
 from .hyperframes_renderer import build_hyperframes_index_html, check_hyperframes_runtime, render_hyperframes_project, require_hyperframes_runtime
-from .overlay_copy import heuristic_overlay_slots
+from .overlay_copy import brand_studio_overlay_slots, heuristic_overlay_slots
 from .hyperframes_templates import (
     PREVIEW_SECONDS,
     dimensions_for_format,
@@ -26,8 +27,8 @@ from .hyperframes_templates import (
 PREVIEW_ROOT = ARTIFACTS_DIR / "hyperframes_template_previews"
 BRAND_STUDIO_PREVIEW_ROOT = ARTIFACTS_DIR / "hyperframes_brand_studio_previews"
 PREVIEW_CONTRACT_VERSION = 3
-BRAND_STUDIO_PREVIEW_CONTRACT_VERSION = 2
-BRAND_STUDIO_PREVIEW_SECONDS = 5
+BRAND_STUDIO_PREVIEW_CONTRACT_VERSION = 14
+BRAND_STUDIO_PREVIEW_SECONDS = 8
 # Gallery previews show recipe overlay + captions only — no shared shell hook/brand/CTA chrome.
 PREVIEW_SHELL_COMPONENTS = {"hook": False, "watermark": False, "source": False, "cta": False}
 
@@ -443,12 +444,12 @@ def _captions_from_phrase(sample_phrase: str, duration_ms: int) -> tuple[list[di
 
 
 def _brand_studio_shell_components(brand_system: dict[str, Any]) -> dict[str, bool]:
-    cta_overlay = str(brand_system.get("cta_overlay") or "").strip().lower()
     return {
         "hook": False,
         "watermark": True,
         "source": False,
-        "cta": bool(cta_overlay and cta_overlay != "none"),
+        # Outro CTA is rendered via brand-social-pill only (no duplicate shell bar).
+        "cta": False,
     }
 
 
@@ -501,7 +502,7 @@ def _brand_studio_preview_contract(
         "endTimecode": f"00:00:0{BRAND_STUDIO_PREVIEW_SECONDS}",
         "titleHook": hook_line,
         "subtitle": subtitle_line,
-        "overlay": heuristic_overlay_slots(hook_line, subtitle_line),
+        "overlay": brand_studio_overlay_slots(sample_phrase, str(template.get("category") or "Official")),
         "captionText": sample_phrase.strip() or hook_line,
         "captions": captions,
         "captionEvents": [],
@@ -523,6 +524,28 @@ def _brand_studio_preview_contract(
         "componentsUsed": template.get("components_used", []),
         "blocksUsed": template.get("blocks_used", []),
     }
+
+
+def _write_brand_studio_project(
+    project_dir: Path,
+    contract: dict[str, Any],
+    starter_template: str,
+    resolved_format: str,
+) -> None:
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "index.html").write_text(
+        build_hyperframes_index_html(contract, starter_template, resolved_format, genres=[]),
+        encoding="utf-8",
+    )
+    style = contract.get("style") if isinstance(contract.get("style"), dict) else {}
+    brand_system = style.get("brand_system") if isinstance(style.get("brand_system"), dict) else {}
+    selections = resolve_oss_selections(
+        brand_system,
+        duration_ms=int(contract.get("durationMs") or 0),
+        host_width=int(contract.get("width") or 1080),
+        host_height=int(contract.get("height") or 1920),
+    )
+    copy_oss_files_to_project(project_dir, selections, contract)
 
 
 def ensure_brand_studio_preview(
@@ -563,10 +586,7 @@ def ensure_brand_studio_preview(
         style,
         brand_system,
     )
-    (project_dir / "index.html").write_text(
-        build_hyperframes_index_html(contract, starter_template, resolved_format, genres=[]),
-        encoding="utf-8",
-    )
+    _write_brand_studio_project(project_dir, contract, starter_template, resolved_format)
     checks = render_hyperframes_project(project_dir, output, quality="draft")
     (output.parent / "preview-metadata.json").write_text(
         json.dumps(

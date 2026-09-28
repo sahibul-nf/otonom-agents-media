@@ -123,6 +123,74 @@ class GenerationJobTests(unittest.TestCase):
 
         self.assertEqual(payload["hyperframes_template"], "auto")
 
+    def test_normalize_generation_payload_sets_source_attribution_from_channel(self):
+        payload = normalize_generation_payload(
+            {
+                "source_url": "https://youtube.com/watch?v=test",
+                "source_metadata": {"channel": "Ribath Nouraniyyah"},
+            }
+        )
+        self.assertEqual(payload["source_attribution"], "Source: Ribath Nouraniyyah")
+
+    def test_normalize_generation_payload_auto_brand_maps_to_brand_system_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            custom = profiles / "custom_demo_brand.json"
+            custom.write_text(
+                '{"id":"custom_demo_brand","label":"Demo","brand_system":{"starter_template":"spiritual_reflective","cta_overlay":"tiktok-follow"}}',
+                encoding="utf-8",
+            )
+            with patch.object(generation_jobs_module, "ROOT", root), patch(
+                "media_engine.hyperframes_templates._saved_brand_template_by_id",
+                return_value={
+                    "id": "brand:custom_demo_brand",
+                    "brand_template_path": "profiles/custom_demo_brand.json",
+                    "starter_template": "spiritual_reflective",
+                },
+            ):
+                payload = generation_jobs_module.normalize_generation_payload(
+                    {
+                        "source_url": "https://youtube.com/watch?v=test",
+                        "brand_template": "profiles/custom_demo_brand.json",
+                        "hyperframes_template": "auto",
+                    }
+                )
+            self.assertEqual(payload["brand_system_template_id"], "brand:custom_demo_brand")
+            self.assertEqual(payload["hyperframes_template"], "brand:custom_demo_brand")
+
+    def test_normalize_generation_payload_keeps_explicit_visual_template_with_brand(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            custom = profiles / "custom_demo_brand.json"
+            custom.write_text(
+                '{"id":"custom_demo_brand","brand_system":{"starter_template":"spiritual_reflective"}}',
+                encoding="utf-8",
+            )
+            with patch.object(generation_jobs_module, "ROOT", root):
+                payload = generation_jobs_module.normalize_generation_payload(
+                    {
+                        "source_url": "https://youtube.com/watch?v=test",
+                        "brand_template": "profiles/custom_demo_brand.json",
+                        "hyperframes_template": "spiritual_reflective",
+                    }
+                )
+            self.assertEqual(payload["hyperframes_template"], "spiritual_reflective")
+
+    def test_build_generation_command_passes_source_attribution(self):
+        payload = normalize_generation_payload(
+            {
+                "source_url": "https://youtube.com/watch?v=test",
+                "source_metadata": {"channel": "TechTalk Intel"},
+            }
+        )
+        command = build_generation_command(payload)
+        index = command.index("--source-attribution")
+        self.assertEqual(command[index + 1], "Source: TechTalk Intel")
+
     def test_build_generation_command_uses_premium_batch(self):
         payload = normalize_generation_payload({"source_url": "https://youtube.com/watch?v=test", "count": 2})
         command = build_generation_command(payload)
@@ -177,7 +245,13 @@ class GenerationJobTests(unittest.TestCase):
     def test_brand_templates_include_default_workspace_style(self):
         templates = list_brand_templates()
         self.assertTrue(any(item["path"] == "profiles/default_workspace_style.json" for item in templates))
-        self.assertFalse(any("nourbit" in item["path"].lower() for item in templates))
+
+    def test_brand_templates_lists_same_saved_kits_as_hyperframes(self):
+        from media_engine.hyperframes_templates import list_saved_brand_system_templates
+
+        brand_paths = {item["path"] for item in list_brand_templates() if item.get("has_brand_system") == "1"}
+        hyper_paths = {item["brand_template_path"] for item in list_saved_brand_system_templates()}
+        self.assertEqual(brand_paths, hyper_paths)
 
     @patch("media_engine.generation_jobs.build_generation_command", return_value=["python3", "-c", "print('{}')"])
     def test_create_generation_job_seeds_workspace_profile_and_source(self, _mock_command):

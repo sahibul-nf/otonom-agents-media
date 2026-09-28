@@ -6,9 +6,11 @@ from unittest.mock import patch
 
 from media_engine.db import connect, initialize
 from media_engine.rerender import (
+    _has_look_override,
     _hydrate_timed_captions,
     _hyperframes_settings,
     _prepare_timed_captions_for_render,
+    _resolve_rerender_style,
     attach_active_rerender_jobs,
     create_batch_rerender_jobs,
     rerender_candidate,
@@ -34,6 +36,89 @@ class RerenderCaptionTests(unittest.TestCase):
 
         self.assertTrue(_hydrate_timed_captions(candidate, render_metadata))
         self.assertEqual(candidate["timed_captions"][0]["text"], "rendered")
+
+    def test_has_look_override_detects_brand_template(self):
+        self.assertFalse(_has_look_override("auto", None, None))
+        self.assertTrue(_has_look_override(None, "brand:custom_demo", "brand:custom_demo"))
+        self.assertTrue(_has_look_override("profiles/custom_acme.json", None, None))
+
+    def test_has_look_override_detects_builtin_recipe(self):
+        self.assertTrue(_has_look_override("auto", "energy_warm_question", None))
+        self.assertFalse(_has_look_override("auto", "auto", None))
+
+    def test_hyperframes_settings_clears_brand_on_recipe_override(self):
+        settings = _hyperframes_settings(
+            {
+                "hyperframesTemplate": "spiritual_reflective",
+                "hyperframesFormat": "short_9_16",
+                "brandSystemTemplateId": "brand:custom_demo",
+            },
+            {},
+            hyperframes_template="energy_warm_question",
+            brand_system_template_id="",
+        )
+        self.assertEqual(settings["hyperframes_template"], "energy_warm_question")
+        self.assertEqual(settings["brand_system_template_id"], "")
+
+    def test_resolve_rerender_style_uses_recipe_override(self):
+        embedded = {"template_only": True, "caption": {"preset": "karaoke"}, "brand": {"watermark_text": "Old"}}
+        render_metadata = {"style": embedded, "hyperframesTemplate": "spiritual_reflective"}
+        hf_settings = _hyperframes_settings(
+            render_metadata,
+            {},
+            hyperframes_template="energy_warm_question",
+            brand_system_template_id="",
+        )
+        with patch("media_engine.rerender.load_style_for_render") as load_style:
+            load_style.return_value = {"from_recipe": True}
+            resolved = _resolve_rerender_style("auto", render_metadata, hf_settings, look_override=True)
+        load_style.assert_called_once()
+        self.assertEqual(load_style.call_args.kwargs["hyperframes_template"], "energy_warm_question")
+        self.assertEqual(resolved, {"from_recipe": True})
+
+    def test_resolve_rerender_style_prefers_embedded_style_without_override(self):
+        embedded = {"template_only": True, "caption": {"preset": "karaoke"}, "brand": {"watermark_text": "Old"}}
+        render_metadata = {"style": embedded, "hyperframesTemplate": "spiritual_reflective"}
+        hf_settings = _hyperframes_settings(render_metadata, {})
+        resolved = _resolve_rerender_style("auto", render_metadata, hf_settings, look_override=False)
+        self.assertEqual(resolved, embedded)
+
+    def test_resolve_rerender_style_uses_brand_path_when_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profiles = Path(tmpdir) / "profiles"
+            profiles.mkdir(parents=True)
+            custom_path = profiles / "custom_review_look.json"
+            custom_path.write_text(
+                json.dumps(
+                    {
+                        "id": "custom_review_look",
+                        "label": "Review Look",
+                        "brand_system": {"starter_template": "spiritual_reflective", "cta_overlay": "tiktok-follow"},
+                        "brand": {"watermark_text": "Review Watermark"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            embedded = {"template_only": True, "brand": {"watermark_text": "Old"}}
+            render_metadata = {
+                "style": embedded,
+                "hyperframesTemplate": "spiritual_reflective",
+                "hyperframesFormat": "short_9_16",
+            }
+            hf_settings = {
+                "hyperframes_template": "brand:custom_review_look",
+                "hyperframes_format": "short_9_16",
+                "brand_system_template_id": "brand:custom_review_look",
+                "genres": [],
+            }
+            with patch("media_engine.db.ROOT", Path(tmpdir)), patch("media_engine.styles.ROOT", Path(tmpdir)):
+                resolved = _resolve_rerender_style(
+                    str(custom_path.relative_to(Path(tmpdir))),
+                    render_metadata,
+                    hf_settings,
+                    look_override=True,
+                )
+            self.assertEqual(resolved.get("brand", {}).get("watermark_text"), "Review Watermark")
 
     def test_hyperframes_settings_reads_saved_template(self):
         settings = _hyperframes_settings(

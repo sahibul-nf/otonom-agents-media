@@ -136,7 +136,7 @@ class HyperframesPreviewTests(unittest.TestCase):
             brand_system,
         )
 
-        self.assertEqual(contract["durationMs"], 5000)
+        self.assertEqual(contract["durationMs"], 8000)
         self.assertTrue(contract["shellComponents"]["watermark"])
         self.assertEqual(contract["watermarkText"], "TechTalk")
         self.assertEqual(contract["style"]["caption"]["text_color"], "#abcdef")
@@ -176,8 +176,8 @@ class HyperframesPreviewTests(unittest.TestCase):
         )
         html = build_hyperframes_index_html(contract, "story_handwritten", "short_9_16")
 
-        self.assertIn('class="brand-texture-layer brand-vignette"', html)
-        self.assertNotIn('class="template-layer brand-vignette"', html)
+        self.assertIn('id="hf-vignette"', html)
+        self.assertNotIn('class="brand-texture-layer brand-vignette"', html)
 
     def test_brand_texture_none_skips_overlay_layers(self):
         contract = hyperframes_previews._brand_studio_preview_contract(
@@ -191,9 +191,63 @@ class HyperframesPreviewTests(unittest.TestCase):
         )
         html = build_hyperframes_index_html(contract, "story_handwritten", "short_9_16")
 
-        self.assertNotIn('class="brand-texture-layer brand-vignette"', html)
-        self.assertNotIn('class="brand-texture-layer brand-grain"', html)
-        self.assertNotIn('class="brand-texture-layer brand-shimmer"', html)
+        self.assertNotIn('id="hf-vignette"', html)
+        self.assertNotIn('id="grain-overlay"', html)
+
+    def test_brand_studio_html_has_overlay_lifecycle_and_single_cta(self):
+        contract = hyperframes_previews._brand_studio_preview_contract(
+            "spiritual_reflective",
+            "short_9_16",
+            1080,
+            1920,
+            "Ketenangan hati hadir saat bersyukur.",
+            {"caption": {"font_family": "Lora"}, "brand": {"watermark_text": "Nourbit"}},
+            {"texture_effect": "none", "cta_overlay": "yt-lower-third"},
+        )
+        html = build_hyperframes_index_html(contract, "spiritual_reflective", "short_9_16")
+
+        self.assertIn("overlayLayers", html)
+        self.assertIn('data-composition-src="compositions/yt-lower-third.html"', html)
+        self.assertNotIn("brand-social-pill", html)
+        self.assertNotIn("repeat: -1", html)
+        self.assertNotIn('id="cta"', html)
+        self.assertNotIn("Ketenangan hati hadir saat bersyukur.", html.split("caption-text")[0])
+
+    def test_brand_studio_project_copies_oss_composition_files(self):
+        contract = hyperframes_previews._brand_studio_preview_contract(
+            "story_handwritten",
+            "short_9_16",
+            1080,
+            1920,
+            "Ketenangan hati hadir saat bersyukur.",
+            {"caption": {"font_family": "Caveat"}, "brand": {"watermark_text": "Brand Clips"}},
+            {"cta_overlay": "tiktok-follow", "texture_effects": ["vignette"]},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "project"
+            hyperframes_previews._write_brand_studio_project(
+                project_dir,
+                contract,
+                "story_handwritten",
+                "short_9_16",
+            )
+            self.assertTrue((project_dir / "compositions" / "tiktok-follow.html").exists())
+            self.assertTrue((project_dir / "compositions" / "components" / "vignette.html").exists())
+            self.assertTrue((project_dir / "assets" / "avatar.jpg").exists())
+
+    def test_brand_studio_overlay_slots_differ_from_caption(self):
+        contract = hyperframes_previews._brand_studio_preview_contract(
+            "story_handwritten",
+            "short_9_16",
+            1080,
+            1920,
+            "Ketenangan hati hadir saat bersyukur.",
+            {"caption": {"font_family": "Caveat"}, "brand": {}},
+            {"texture_effect": "none", "cta_overlay": "none"},
+        )
+        overlay_headline = contract["overlay"]["headline"]
+        caption_text = contract["captions"][0]["text"]
+        self.assertNotEqual(overlay_headline, caption_text)
 
 
 if __name__ == "__main__":

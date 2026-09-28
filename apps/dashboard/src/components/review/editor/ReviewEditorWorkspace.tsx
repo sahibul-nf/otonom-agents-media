@@ -166,7 +166,7 @@ export function ReviewEditorWorkspace(props: ReviewEditorWorkspaceProps) {
               />
             </div>
 
-            <div className="relative z-10 shrink-0 bg-gradient-to-l from-canvas-deep/40 via-transparent to-transparent lg:pl-1">
+            <div className="relative z-10 flex min-h-0 max-h-full shrink-0 self-stretch bg-gradient-to-l from-canvas-deep/40 via-transparent to-transparent lg:pl-1">
               <SceneInspector
                 clip={props.clip}
                 context={props.context}
@@ -175,17 +175,24 @@ export function ReviewEditorWorkspace(props: ReviewEditorWorkspaceProps) {
                 activeTab={props.activeInspectorTab}
                 panelOpen={props.inspectorPanelOpen}
                 postCopyDraft={props.postCopyDraft}
+                metadataTitleDraft={props.metadataTitleDraft}
+                metadataSubtitleDraft={props.metadataSubtitleDraft}
                 templates={props.templates}
+                brandLibrary={props.brandLibrary}
                 actionStates={props.actionStates}
                 onTabChange={props.onInspectorTabChange}
                 onPanelOpenChange={props.onInspectorPanelOpenChange}
                 onPlanChange={props.onPlanChange}
                 onPostCopyChange={props.onPostCopyChange}
+                onMetadataTitleChange={props.onMetadataTitleChange}
+                onMetadataSubtitleChange={props.onMetadataSubtitleChange}
                 onGeneratePostCopy={props.onGeneratePostCopy}
                 onRefreshMetadata={props.onRefreshMetadata}
                 onSaveBoundary={props.onSaveBoundary}
                 onRerenderShort={props.onRerenderShort}
                 onBatchRemovePauses={props.onBatchRemovePauses}
+                pendingLook={props.pendingLook}
+                onPendingLookChange={props.onPendingLookChange}
               />
             </div>
           </div>

@@ -26,6 +26,7 @@ from .publishers import create_dry_run_attempt
 from .publishers import build_payload
 from .render_quality import build_render_quality_report
 from .metadata_refresh import enrich_candidates_metadata
+from .post_copy import is_placeholder_source_attribution
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .rerender import rerender_from_args
 from .schedule_publisher import process_due_publishes
@@ -264,6 +265,13 @@ def update_candidate_metadata(conn, candidate: dict[str, Any]) -> None:
     conn.commit()
 
 
+def resolve_cli_source_attribution(args: argparse.Namespace) -> str:
+    text = str(getattr(args, "source_attribution", "") or "").strip()
+    if text and not is_placeholder_source_attribution(text):
+        return text
+    return ""
+
+
 def load_profile_and_source(conn, profile_id: str, source_id: str, source_url: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
     initialize(conn)
     try:
@@ -322,7 +330,7 @@ def cmd_premium_test(args: argparse.Namespace) -> None:
     source_clip = apply_silence_trim_for_render(source_clip, candidate)
     bar.step(f"preparing captions with {args.caption_source}")
     prepare_production_captions(candidate, source_clip, args, style, profile=profile)
-    attribution = args.source_attribution or "Source: Channel clip"
+    attribution = resolve_cli_source_attribution(args)
     renderer, renderer_note = resolve_renderer(args.renderer, args.quality)
     if renderer_note:
         bar.step(renderer_note)
@@ -637,7 +645,7 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         profile=profile,
         source=_source,
     )
-    attribution = args.source_attribution or "Source: Channel clip"
+    attribution = resolve_cli_source_attribution(args)
     renders: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
     for index, candidate in enumerate(candidates, start=1):

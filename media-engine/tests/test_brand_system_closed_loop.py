@@ -137,6 +137,40 @@ class BrandSystemClosedLoopTests(unittest.TestCase):
             self.assertIn("Poppins", html)
             self.assertIn("Top WM", html)
 
+    def test_update_merge_uses_existing_template_when_target_path_set(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            default_style = {
+                "id": "default_workspace_style",
+                "caption": {"font_family": "Sora"},
+                "brand": {"watermark_text": "Brand Clips"},
+                "ai": {"remove_pauses": True},
+            }
+            (profiles / "default_workspace_style.json").write_text(json.dumps(default_style), encoding="utf-8")
+            with patch("media_engine.styles.ROOT", root), patch("media_engine.styles.PROFILES_DIR", profiles), patch(
+                "media_engine.styles.DEFAULT_STYLE_PATH", profiles / "default_workspace_style.json"
+            ):
+                saved = save_brand_system_template(
+                    "Nourbit Brand",
+                    {"caption": {"font_family": "Sora"}, "brand": {"watermark_text": "Nourbit Clips"}},
+                    {"starter_template": "story_handwritten", "cta_overlay": "instagram-follow"},
+                    base_style_path="profiles/default_workspace_style.json",
+                )
+                second = save_brand_system_template(
+                    "Nourbit Brand",
+                    {"caption": {"font_size": 52}, "brand": {"watermark_text": "Nourbit Intel"}},
+                    {"starter_template": "story_handwritten", "cta_overlay": "tiktok-follow"},
+                    base_style_path="profiles/default_workspace_style.json",
+                    target_path=saved["path"],
+                )
+            loaded = json.loads((root / second["path"]).read_text(encoding="utf-8"))
+            self.assertEqual(loaded["brand"]["watermark_text"], "Nourbit Intel")
+            self.assertEqual(loaded["brand_system"]["cta_overlay"], "tiktok-follow")
+            self.assertEqual(loaded["caption"]["font_size"], 52)
+            self.assertTrue(loaded["ai"]["remove_pauses"])
+
     def test_save_overwrite_keeps_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -237,8 +271,9 @@ class BrandSystemClosedLoopTests(unittest.TestCase):
         self.assertEqual(contract["watermarkText"], "Style WM")
         html = build_hyperframes_index_html(contract, "spiritual_reflective", "short_9_16")
         self.assertIn("Poppins", html)
-        self.assertIn("brand-grain", html)
-        self.assertIn("brand-social-pill", html)
+        self.assertIn("grain-overlay", html)
+        self.assertIn('data-composition-src="compositions/instagram-follow.html"', html)
+        self.assertNotIn("brand-social-pill", html)
         self.assertIn("Style WM", html)
 
     def test_delete_brand_template_removes_custom_file_and_catalog_entry(self):
