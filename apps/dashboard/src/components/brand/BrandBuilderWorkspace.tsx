@@ -262,7 +262,7 @@ export function BrandBuilderWorkspace({
       : undefined,
   );
   const [savedHandoff, setSavedHandoff] = useState<{path: string; brandId: string} | null>(null);
-  const [samplePhrase, setSamplePhrase] = useState(SAMPLE_PHRASE_PRESETS[0].text);
+  const [samplePhrase, setSamplePhrase] = useState<string>(SAMPLE_PHRASE_PRESETS[0].text);
   const [bakedPreviewUrl, setBakedPreviewUrl] = useState<string | null>(null);
   const [bakeBusy, setBakeBusy] = useState(false);
   const [bakeError, setBakeError] = useState<string | null>(null);

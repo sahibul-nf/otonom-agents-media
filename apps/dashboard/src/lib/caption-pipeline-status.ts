@@ -104,7 +104,7 @@ export function qaCaptionPipelineLines(clip: ClipCandidate): QaPipelineLine[] {
   });
 
   const yt = record(corrections.youtube) || record(asrPipeline.youtube);
-  if (yt?.used === true || Number(yt?.youtube_replaced) > 0) {
+  if (yt && (yt.used === true || Number(yt.youtube_replaced) > 0)) {
     const replaced = Number(yt.youtube_replaced || 0);
     lines.push({
       label: "YouTube transcript",

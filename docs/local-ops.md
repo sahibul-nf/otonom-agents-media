@@ -39,7 +39,7 @@ TikTok posts as `SELF_ONLY` until you change `settings_for_platform` — first s
 
 ## Develop without stopping ops
 
-Do **not** run `npm run dev` in the ops checkout. It frees ports 8765/3100.
+Do **not** run `npm run dev` in the ops checkout. `scripts/dev.sh` refuses to bind `:8765` / `:3100` when those ports are already listening (PM2 or a leftover process). Override only on purpose: `ALLOW_STEAL_OPS_PORTS=1 npm run dev`.
 
 ```bash
 git worktree add ../otonom-agents-media-dev

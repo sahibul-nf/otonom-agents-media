@@ -11,6 +11,7 @@ import {
   type ClipCandidate,
   type CredentialStatus,
   type PublishTarget,
+  type ScheduledPost,
 } from "@/lib/media-api";
 
 function calendarHealth(credentials: CredentialStatus | null): string {

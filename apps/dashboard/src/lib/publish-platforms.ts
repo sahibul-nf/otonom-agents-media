@@ -5,25 +5,30 @@ export const disabledPublishPlatforms: Record<string, string> = {
     "TikTok rejected personal/internal developer apps for production posting. Use the TikTok app manually until a vendor-approved API channel is available.",
 };
 
-export const publishDestinationPlatforms = [
+export type PublishDestinationPlatform =
+  | "telegram_channel"
+  | "youtube_shorts"
+  | "youtube_video"
+  | "facebook_reels"
+  | "tiktok";
+
+export const publishDestinationPlatforms: string[] = [
   "telegram_channel",
   "youtube_shorts",
   "youtube_video",
   "facebook_reels",
   "tiktok",
-] as const;
-
-export type PublishDestinationPlatform = (typeof publishDestinationPlatforms)[number];
+];
 
 /** Platforms that can be scheduled or published from Otonom. */
-export const publishPlatforms = [
+export type PublishPlatform = "telegram_channel" | "youtube_shorts" | "youtube_video" | "facebook_reels";
+
+export const publishPlatforms: string[] = [
   "telegram_channel",
   "youtube_shorts",
   "youtube_video",
   "facebook_reels",
-] as const;
-
-export type PublishPlatform = (typeof publishPlatforms)[number];
+];
 
 export function isPublishPlatformDisabled(platform: string): boolean {
   return platform in disabledPublishPlatforms;

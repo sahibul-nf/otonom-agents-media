@@ -12,7 +12,7 @@ module.exports = {
       exec_mode: "fork",
       env: {
         TZ: "Asia/Jakarta",
-        NODE_ENV: "development",
+        NODE_ENV: "production",
         MEDIA_ENGINE_PORT: "8765",
       },
       error_file: "./logs/otonom-media-api-error.log",

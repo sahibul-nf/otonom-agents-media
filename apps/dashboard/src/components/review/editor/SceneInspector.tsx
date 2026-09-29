@@ -504,8 +504,8 @@ function PostFields(props: Props) {
 
 function QaFields({clip, context}: {clip: ClipCandidate; context: EditorContext}) {
   const checks = clip.quality_gate?.checks || {};
-  const scores = clip.quality_gate?.scores || {};
-  const thresholds = clip.quality_gate?.thresholds || clip.quality_gate?.settings || {};
+  const scores = (clip.quality_gate?.scores || {}) as Record<string, number | undefined>;
+  const thresholds = (clip.quality_gate?.thresholds || clip.quality_gate?.settings || {}) as Record<string, number | undefined>;
   const overall = clipOverallScore(clip);
   const autoQualified = clipMeetsAutonomyThreshold(clip);
   const overallThreshold = clipAutonomyThreshold(clip);

@@ -527,7 +527,7 @@ export function MediaStudioApp() {
   const [actionStates, setActionStates] = useState<Record<string, ActionUiState>>({});
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
-  const [publishSelection, setPublishSelection] = useState<string[]>(publishPlatforms);
+  const [publishSelection, setPublishSelection] = useState<string[]>([...publishPlatforms]);
   const [generateConfig, setGenerateConfig] = useState<GenerateConfig>({
     sourceUrl: defaultSourceUrl,
     count: 5,
@@ -574,7 +574,7 @@ export function MediaStudioApp() {
     () =>
       targets.filter(
         (target) =>
-          publishDestinationPlatforms.includes(target.platform as (typeof publishDestinationPlatforms)[number]) &&
+          publishDestinationPlatforms.includes(target.platform) &&
           (!target.profile_id || target.profile_id === profileId),
       ),
     [targets, profileId],

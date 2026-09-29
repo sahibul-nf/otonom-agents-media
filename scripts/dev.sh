@@ -178,6 +178,21 @@ start_frontend() {
 
 PYTHON_BIN="$(pick_python)"
 
+# Production PM2 owns these ports on the ops checkout. Isolated dev uses 8766/3101.
+if [[ "${ALLOW_STEAL_OPS_PORTS:-0}" != "1" ]]; then
+  ops_backend="${OTONOM_OPS_ENGINE_PORT:-8765}"
+  ops_frontend="${OTONOM_OPS_DASHBOARD_PORT:-3100}"
+  if [[ "${BACKEND_PORT}" == "${ops_backend}" || "${FRONTEND_PORT}" == "${ops_frontend}" ]]; then
+    if is_port_open "${ops_backend}" || is_port_open "${ops_frontend}"; then
+      echo "[otonom-media] refusing to take ops ports :${ops_backend}/:${ops_frontend} while something is already listening." >&2
+      echo "[otonom-media] production PM2 uses this checkout and these ports. Use a worktree:" >&2
+      echo "  git worktree add ../otonom-agents-media-dev && cd ../otonom-agents-media-dev && npm run dev:isolated" >&2
+      echo "[otonom-media] override only if you intend to replace ops: ALLOW_STEAL_OPS_PORTS=1 npm run dev" >&2
+      exit 1
+    fi
+  fi
+fi
+
 cleanup() {
   local exit_code=$?
   if [[ -n "${BACKEND_PID:-}" ]]; then
