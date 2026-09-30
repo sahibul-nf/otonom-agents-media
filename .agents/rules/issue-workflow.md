@@ -9,6 +9,8 @@ Follow **`AGENTS.md`** for the full workflow (intent router, triage, implement, 
 
 Project **Status** authorizes orchestrators (**Ready for AI** only) — not labels. `/triage` never sets Ready for AI.
 
+PRs target **`dev`** (`CONTRIBUTING.md`). Never merge or push **`main`** / restart PM2 on the ops clone.
+
 Do not duplicate rules here. Classify intent first; triage by default for real work without `#N`.
 
-Repo: `sahibul-nf/otonom-agents-media` · Board: (set after ./scripts/gh-setup-project.sh)
+Repo: `sahibul-nf/otonom-agents-media` · Board: https://github.com/users/sahibul-nf/projects/7

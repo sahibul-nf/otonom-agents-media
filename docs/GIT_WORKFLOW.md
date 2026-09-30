@@ -4,9 +4,10 @@ Canonical delivery flow: **`AGENTS.md`**, **`docs/github-workflow.md`**.
 
 ## Branching
 
-- **`main`**: single integration + production branch (`SINGLE_BRANCH=true` in `.workflow-kit.env`).
-- Optional short-lived branches: `feat/<short-name>`, `fix/<short-name>` — merge to **`main`**, then `git push origin main`.
-- Do **not** use a separate `dev` branch unless it exists in `git branch -a`.
+- **`dev`**: integration. Agent PRs target this branch.
+- **`main`**: production. PM2 checkout (`otonom-agents-media-ops`). Human merges `main` ← `dev` after review.
+- Short-lived: `feat/#N-slug`, `fix/#N-slug` from **`dev`**.
+- Contract: `CONTRIBUTING.md`. `SINGLE_BRANCH=false` in `.workflow-kit.env`.
 
 ## Commits
 

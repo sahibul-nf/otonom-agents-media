@@ -17,7 +17,9 @@ Dev (optional git worktree)
 
 ## First-time ops
 
-From the **stable checkout** you want PM2 to run (`main`, do not use this folder for daily coding):
+From the **ops checkout** on **`main`** (`otonom-agents-media-ops`). Do not run PM2 from the Cursor **`dev`** folder.
+
+Agent PRs land on **`dev`** first (`CONTRIBUTING.md`). Pull `main` on this clone only after you merge `main` ← `dev`.
 
 ```bash
 cd apps/dashboard && npm install && npm run build

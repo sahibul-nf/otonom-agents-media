@@ -7,9 +7,9 @@ Dev board for **sahibul-nf/otonom-agents-media** (solo dev + AI workflow).
 
 1. **Triage** → issue on board (**Backlog** / **Todo**).
 2. Human moves to **Ready for AI** when autonomous work is authorized (or implement via chat).
-3. Agent implements → **AI Working** → self-verify → **AI Review** → PR.
-4. Human reviews PR → **Human Review** / **QA**.
-5. Merge → confirm *works* → close issue → **Done**.
+3. Agent implements → **AI Working** → self-verify → **AI Review** → PR **into `dev`** (see `CONTRIBUTING.md`).
+4. Human reviews PR → **Human Review**.
+5. Merge to **`dev`** → later ship **`main`** on ops → confirm *works* → **Done**.
 
 ## Status columns
 
@@ -18,8 +18,8 @@ Dev board for **sahibul-nf/otonom-agents-media** (solo dev + AI workflow).
 | **Backlog** / **Todo** | Triaged, not started |
 | **Ready for AI** | Human authorized orchestrator/agent pickup |
 | **AI Working** / **In Progress** | Active implementation |
-| **AI Review** / **QA** | Automated verify done — PR ready |
-| **Human Review** / **QA** | Human reviews diff |
+| **AI Review** | Automated verify done — PR ready |
+| **Human Review** | Human reviews diff |
 | **Done** | Shipped |
 
 ```bash

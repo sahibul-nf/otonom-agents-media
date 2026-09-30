@@ -2,7 +2,7 @@
 
 Shell helpers for GitHub Issues + Project board. All scripts load `.workflow-kit.env` from the repo root.
 
-**Full workflow:** `AGENTS.md` · **Daily flow:** `docs/github-workflow.md` · **Orchestrators:** `docs/orchestrator-integration.md` · **Problems:** `docs/troubleshooting.md`
+**Full workflow:** `AGENTS.md` · **PRs / unattended AI:** `CONTRIBUTING.md` · **Daily flow:** `docs/github-workflow.md` · **Orchestrators:** `docs/orchestrator-integration.md` · **Problems:** `docs/troubleshooting.md`
 
 ## Quick reference
 
@@ -23,6 +23,8 @@ Shell helpers for GitHub Issues + Project board. All scripts load `.workflow-kit
 | `gh-configure-project.sh` | Board title, Priority/Focus fields, sync from labels |
 | `gh-create-labels.sh` | Standard labels (`bug`, `enhancement`, `priority:*`, `complexity:*`, `ai-blocked`) |
 | `gh-ensure-project-status-qa.sh` | Legacy wrapper → `gh-ensure-project-status.sh` |
+| `gh-remove-qa-status.sh` | Move QA cards → **Human Review**, remove **QA** Status option (Otonom) |
+| `gh-sync-project-status.sh` | Closed issues → **Done**; board summary (Otonom) |
 
 ## Examples
 
@@ -70,8 +72,8 @@ Shell helpers for GitHub Issues + Project board. All scripts load `.workflow-kit
 | `backlog` | Backlog | Todo |
 | `ready-for-ai` | Ready for AI | *(none — run ensure script)* |
 | `progress`, `ai-working` | AI Working | In Progress |
-| `ai-review` | AI Review | QA |
-| `qa`, `human-review` | Human Review | QA |
+| `ai-review` | AI Review | — |
+| `qa`, `human-review` | Human Review | — |
 | `done` | Done | Done |
 
 **Project Status authorizes orchestrators — not labels.** An `ai-ready` label does not trigger execution.

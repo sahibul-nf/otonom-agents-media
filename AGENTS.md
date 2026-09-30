@@ -18,18 +18,20 @@ See `docs/agent-platforms.md` for official doc links.
 
 ## Git & deploy
 
-- **Branch model:** single — **`main`** only (no separate integration branch in this repo)
-- **CI / deploy:** follow `.github/workflows/` if present; otherwise push **`main`** when ready
-- **Commits:** Only when the user explicitly asks
+- **Branch model:** **`dev`** = integration (PRs land here). **`main`** = production / PM2 ops clone.
+- **CI / deploy:** PM2 runs from a **`main`** checkout (`otonom-agents-media-ops`). Agents never push or merge to **`main`**.
+- **Commits:** Only when the user explicitly asks (orchestrator PR runs may push the feature branch).
+- **Full contract:** `CONTRIBUTING.md`
 
 ### Merge & push (AI)
 
 ```text
-1. merge feat/* → main
-2. git push origin main
+1. branch from origin/dev → feat/#N-slug or fix/#N-slug
+2. open PR into dev (Fixes #N)
+3. do NOT merge; do NOT git push origin main
 ```
 
-**Do not** tell the user to push a `dev` or integration branch unless `git branch -a` shows it exists. If they later add **`main`**, re-run bootstrap or update `.workflow-kit.env`.
+Human merges `dev` after **Human Review**, then later `main` ← `dev` on the ops machine.
 
 ## Changelog (`CHANGELOG.md`)
 
@@ -250,9 +252,11 @@ One round = implement/patch → verify → pass or fail.
 
 ## Merge & push (when user asks)
 
-Merge to **`main`** → **`git push origin main`**. No separate integration branch in this repo.
+Default: **do not merge.** Open/update PR into **`dev`** only.
 
-Before merge/push: run `git branch -a`. Use `.workflow-kit.env` (`SINGLE_BRANCH`, `INTEGRATION_BRANCH`, `PRODUCTION_BRANCH`). Never invent branches.
+If the user explicitly asks to merge: merge the feature branch into **`dev`**, then `git push origin dev`. **Never** merge or push **`main`** unless the user names `main` and the ops deploy in the same message.
+
+Before merge/push: run `git branch -a`. Use `.workflow-kit.env` (`SINGLE_BRANCH=false`, `INTEGRATION_BRANCH=dev`, `PRODUCTION_BRANCH=main`).
 
 ## Orchestrator integration (optional)
 
@@ -261,8 +265,8 @@ Platform-agnostic pattern for external runtimes (e.g. Paperclip, custom workers)
 1. Monitor GitHub Project **Status**.
 2. Select issues in **Ready for AI** only — ignore Backlog/Todo, In Progress, labels, and `ai-ready` labels.
 3. Assign one issue to a coding agent; agent reads `AGENTS.md` and repository instructions.
-4. Agent sets **AI Working** → implements → self-verifies → **AI Review** → opens/updates PR.
-5. Human reviews PR (**Human Review** / **QA**) → merges → *sudah work* → **Done** via Phase 3.
+4. Agent sets **AI Working** → implements on a branch from **`dev`** → self-verifies → **AI Review** → opens PR **into `dev`** (never `main`).
+5. Human reviews PR (**Human Review**) → merges to **`dev`** → later ships **`main`** on ops → *sudah work* → **Done** via Phase 3.
 
 This workflow works **without** any orchestrator (interactive Cursor/Codex/Claude/Gemini sessions).
 
@@ -283,6 +287,7 @@ If the user has not given a task, briefly list open issues with **Focus = This w
 
 ## Related
 
+- `CONTRIBUTING.md` — PR base `dev`, never `main` / ops / PM2
 - `docs/github-workflow.md` — cheatsheet, board Status, daily flow
 - `docs/orchestrator-integration.md` — optional Paperclip-style board polling
 - `docs/agent-platforms.md` — per-platform official setup
@@ -319,8 +324,8 @@ End with: *"Review the issue; tell me which # to implement first."*
 
 Triggers: *Implement #N*, *kerjakan #N*, *LGTM #N*.
 
-- Follow acceptance criteria; merge to **`main`** with `Fixes #N`; commit only when asked.
-- Board: `./scripts/gh-set-issue-status.sh N ai-working` when starting; after push/verify → `ai-review` (maps to **QA** on this board).
+- Follow acceptance criteria; open PR **into `dev`** with `Fixes #N`; commit only when asked (or when opening the PR). **Do not merge. Do not target `main`.**
+- Board: `./scripts/gh-set-issue-status.sh N ai-working` when starting; after verify → `ai-review`.
 
 ### Phase 3 — Close-out
 
@@ -336,7 +341,9 @@ Triggers: user confirms *works* / *ok* / *sudah work* for **#N**.
 |-----|--------|
 | Board | https://github.com/users/sahibul-nf/projects/7 (`GH_PROJECT_NUM=7`) |
 | North star | `.cursor/rules/platform-north-star.mdc` |
+| PRs / unattended AI | `CONTRIBUTING.md` — PRs target **`dev`** only; never **`main`** or PM2 ops |
 | Extra script | `scripts/gh-sync-project-status.sh` (bulk board sync; not in solo-dev-ai-kit) |
+| Board hygiene | `scripts/gh-remove-qa-status.sh` — drop redundant **QA** column (use **Human Review** only) |
 
 ### Skip triage
 

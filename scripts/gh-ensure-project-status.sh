@@ -4,9 +4,10 @@
 #
 # Adds (never renames) orchestrator-safe options:
 #   Ready for AI, AI Working, AI Review, Human Review
-# Preserves existing options (Todo, In Progress, QA, Backlog, etc.) and card positions.
+# Preserves existing options (Todo, In Progress, Backlog, etc.) and card positions.
 #
-# Also ensures QA exists (renames Testing → QA if needed) for legacy boards.
+# Legacy: renames Testing → Human Review when Human Review is not already present.
+# To drop redundant QA column: ./scripts/gh-remove-qa-status.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,13 +28,15 @@ fi
 
 FIELD_ID="$(echo "$STATUS_JSON" | jq -r '.id')"
 
-# Rename Testing → QA when present (legacy); do not rename In Progress or Todo.
-if echo "$STATUS_JSON" | jq -e '.options[] | select(.name=="Testing")' >/dev/null 2>&1; then
+# Rename Testing → Human Review when present (legacy); skip if Human Review already exists.
+if echo "$STATUS_JSON" | jq -e '.options[] | select(.name=="Testing")' >/dev/null 2>&1 \
+  && ! echo "$STATUS_JSON" | jq -e '.options[] | select(.name=="Human Review")' >/dev/null 2>&1; then
   STATUS_JSON="$(echo "$STATUS_JSON" | jq '
     .options = [.options[] |
-      if .name == "Testing" then . + {name: "QA", description: "Manual check before Done", color: "YELLOW"}
+      if .name == "Testing" then . + {name: "Human Review", description: "Human reviews PR before merge", color: "PURPLE"}
       else . end]')"
-  echo "Renamed Status option: Testing → QA."
+  echo "Renamed Status option: Testing → Human Review."
+  ADDED=1
 fi
 
 ensure_option() {
@@ -52,28 +55,7 @@ ensure_option() {
   ADDED=1
 }
 
-ADDED=0
-
-# QA column (human review fallback) — insert before Done if missing
-if ! echo "$STATUS_JSON" | jq -e '.options[] | select(.name=="QA")' >/dev/null 2>&1; then
-  if echo "$STATUS_JSON" | jq -e '.options[] | select(.name=="Done")' >/dev/null 2>&1; then
-    STATUS_JSON="$(echo "$STATUS_JSON" | jq '
-      .options as $opts
-      | ($opts | map(.name) | index("Done")) as $done_idx
-      | if $done_idx == null then .
-        else .options = (
-          [ $opts[0:$done_idx][] ]
-          + [{name: "QA", color: "YELLOW", description: "Manual check before Done"}]
-          + [ $opts[$done_idx:][] ]
-        ) end
-    ')"
-  else
-    STATUS_JSON="$(echo "$STATUS_JSON" | jq \
-      '.options += [{name: "QA", color: "YELLOW", description: "Manual check before Done"}]')"
-  fi
-  echo "Will add Status option: QA (before Done)"
-  ADDED=1
-fi
+ADDED="${ADDED:-0}"
 
 ensure_option "Ready for AI" "BLUE" "Human authorized — orchestrator may pick up"
 ensure_option "AI Working" "ORANGE" "Agent implementing"
@@ -87,8 +69,11 @@ fi
 
 OPTIONS_JSON="$(echo "$STATUS_JSON" | jq -c '
   [.options[] |
-    if has("id") then {id, name, color, description: (.description // " ")}
-    else {name, color, description: (.description // " ")} end]
+    if has("id") then
+      {id, name, color: (.color // "GRAY"), description: (.description // " ")}
+    else
+      {name, color: (.color // "GRAY"), description: (.description // " ")}
+    end]
 ')"
 
 TMP="$(mktemp)"

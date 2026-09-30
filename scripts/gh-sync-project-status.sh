@@ -5,7 +5,7 @@
 # Usage:
 #   ./scripts/gh-sync-project-status.sh              # closed issues on board → done
 #   ./scripts/gh-sync-project-status.sh --summary
-#   ./scripts/gh-sync-project-status.sh --qa 102     # → ai-review (maps to QA column)
+#   ./scripts/gh-sync-project-status.sh --qa 102     # → ai-review (AI Review column)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -9,7 +9,7 @@ Follow `AGENTS.md` Phase 2:
 4. Implement focused diff.
 5. `./scripts/gh-set-issue-status.sh N ai-working` (legacy: **In Progress**)
 6. **Self-verify** per `AGENTS.md` — AC scope only; max rounds from `VERIFY_MAX_ROUNDS` or user override.
-7. `./scripts/gh-set-issue-status.sh N ai-review` when ready (legacy: **QA**)
-8. PR `Fixes #N`. Commit only when user asks. **Do not merge.**
+7. `./scripts/gh-set-issue-status.sh N ai-review` when ready
+8. PR **into `dev`** with `Fixes #N`. Never target `main`. Commit only when user asks (or when opening the PR). **Do not merge.**
 
 Do not close the issue — wait for human *sudah work*.

@@ -20,10 +20,8 @@ if [[ ! -f "$README_FILE" ]]; then
   README_FILE="$ROOT/scripts/project-readme.md"
 fi
 
-gh project edit "$PROJECT_NUM" --owner "$OWNER" \
-  --title "$PROJECT_TITLE" \
-  --description "Dev board for $REPO — solo dev + AI workflow." \
-  --readme "$(cat "$README_FILE")"
+# Skip `gh project edit` — some gh versions fail GraphQL on project update; title is already set.
+echo "Project $PROJECT_NUM ($PROJECT_TITLE) — syncing fields only."
 
 ensure_field() {
   local name="$1"
@@ -80,7 +78,7 @@ label_priority() {
 }
 
 echo "Syncing project items from open issues …"
-gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json --limit 100 \
+gh project item-list "$PROJECT_NUM" --owner "$OWNER" --format json --limit 500 \
   | jq -c '.items[]' | while read -r row; do
   item_id="$(echo "$row" | jq -r '.id')"
   number="$(echo "$row" | jq -r '.content.number // empty')"

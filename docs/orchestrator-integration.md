@@ -24,16 +24,16 @@ Optional guide for external AI execution systems (Paperclip, custom workers, CI 
 ./scripts/gh-ensure-project-status.sh
 ```
 
-Adds **Ready for AI**, **AI Working**, **AI Review**, **Human Review** without moving existing cards (Todo / In Progress / QA / Done stay put).
+Adds **Ready for AI**, **AI Working**, **AI Review**, **Human Review** without moving existing cards (Todo / In Progress / Done stay put). Remove legacy **QA** with `./scripts/gh-remove-qa-status.sh`.
 
 ## Orchestrator loop
 
 1. Poll GitHub Project for items with Status = **Ready for AI**.
 2. Pick **one** issue (respect cost principles — no backlog drain).
-3. Spawn coding agent with: issue URL, repo clone, `AGENTS.md`.
-4. Agent moves issue → **AI Working**, implements on branch/worktree, runs tests, self-verifies.
-5. Agent opens/updates PR, moves → **AI Review**, posts summary + test results + limitations.
-6. Human reviews PR (**Human Review** / **QA**), merges when satisfied.
+3. Spawn coding agent with: issue URL, clone on **`dev`**, `AGENTS.md` + `CONTRIBUTING.md`.
+4. Agent moves issue → **AI Working**, implements on `feat/#N-slug` from **`dev`**, runs tests, self-verifies.
+5. Agent opens PR **into `dev`** (never `main`), moves → **AI Review**, posts summary + test results. **Does not merge.**
+6. Human reviews PR (**Human Review**), merges to **`dev`**, later ships **`main`** on ops.
 7. Human confirms *sudah work* → agent or human runs `gh-close-verified-issue.sh` → **Done**.
 
 ## Status script keys
@@ -46,7 +46,7 @@ Adds **Ready for AI**, **AI Working**, **AI Review**, **Human Review** without m
 ./scripts/gh-set-issue-status.sh <N> done
 ```
 
-Legacy boards: `ai-working` → **In Progress**, `ai-review` / `human-review` → **QA** when new columns are missing.
+Legacy boards: `ai-working` → **In Progress** when **AI Working** is missing.
 
 ## Interactive Cursor (no orchestrator)
 
