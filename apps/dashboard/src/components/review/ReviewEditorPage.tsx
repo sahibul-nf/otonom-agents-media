@@ -451,7 +451,7 @@ export function ReviewEditorPage({
   const editorLink = (id: string) => (fromBatch && batchSourceId ? reviewEditorHref(id, batchSourceId) : `/review/${encodeURIComponent(id)}`);
 
   return (
-    <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-canvas text-zinc-100">
+    <main className="app-shell flex h-dvh min-h-0 flex-col overflow-hidden bg-canvas text-text-primary">
       <header className="z-40 shrink-0 bg-gradient-to-b from-canvas-deep/80 via-canvas/40 to-transparent px-3 py-2.5 sm:px-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">

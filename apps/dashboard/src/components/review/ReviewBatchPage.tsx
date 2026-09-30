@@ -317,7 +317,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
 
   if (clips === null) {
     return (
-      <main className="grid min-h-screen place-items-center bg-canvas-deep text-zinc-100">
+      <main className="app-shell grid min-h-screen place-items-center bg-canvas-deep text-text-primary">
         <Loader2 className="h-6 w-6 animate-spin text-cyan" />
       </main>
     );
@@ -325,7 +325,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
 
   if (error) {
     return (
-      <main className="grid min-h-screen place-items-center bg-canvas-deep px-5 text-center text-zinc-100">
+      <main className="app-shell grid min-h-screen place-items-center bg-canvas-deep px-5 text-center text-text-primary">
         <div>
           <p className="text-sm text-danger">{error}</p>
           <Link href="/?section=review" className="mt-6 inline-flex rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-ink">
@@ -338,10 +338,10 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
 
   if (!group || group.clips.length === 0) {
     return (
-      <main className="grid min-h-screen place-items-center bg-canvas-deep px-5 text-center text-zinc-100">
+      <main className="app-shell grid min-h-screen place-items-center bg-canvas-deep px-5 text-center text-text-primary">
         <div>
           <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-zinc-600" />
-          <h1 className="text-xl font-semibold text-white">This batch is empty</h1>
+          <h1 className="text-xl font-semibold text-text-primary">This batch is empty</h1>
           <p className="mt-2 text-sm text-zinc-500">Clips may have been deleted or moved out of Review.</p>
           <Link href="/?section=review" className="mt-6 inline-flex rounded-full bg-cyan px-5 py-2.5 text-sm font-semibold text-ink">
             Back to Review
@@ -355,7 +355,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   if (group.clips.length === 1) {
     const only = group.clips[0];
     return (
-      <main className="min-h-screen bg-canvas-deep px-4 py-6 text-zinc-100 sm:px-6 lg:px-8">
+      <main className="app-shell min-h-screen bg-canvas-deep px-4 py-6 text-text-primary sm:px-6 lg:px-8">
         <button
           type="button"
           onClick={() => router.push("/?section=review")}
@@ -390,7 +390,7 @@ export function ReviewBatchPage({sourceId}: {sourceId: string}) {
   const approvableCount = group.clips.filter((clip) => canQuickApproveClip(clip)).length;
 
   return (
-    <main className="min-h-screen bg-canvas-deep text-zinc-100">
+    <main className="app-shell min-h-screen bg-canvas-deep text-text-primary">
       <header className="sticky top-0 z-20 border-b border-white/[0.06] bg-canvas-deep/90 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8">
         <div className="flex w-full items-center gap-3">
           <button

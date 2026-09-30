@@ -2,8 +2,7 @@
 
 ## [Unreleased]
 
-### Fixed
-- Schedule/Postiz: YouTube 401 / invalid Google token no longer shows **Shorts LIVE** when the upload API URL or authError is present; chip shows **error** with reconnect-in-Postiz copy (Facebook reel `releaseURL` + ERROR still counts as live).
+- Dashboard **light theme**: OS light mode no longer leaves near-white `zinc` text on pale canvas. Shell uses semantic tokens; video preview overlays stay light-on-dark.
 
 ### Changed
 - Upgraded **solo-dev-ai-kit** to **kit_version=12** (bootstrap merge; `GH_PROJECT_NUM=7` preserved). New kit: `gh-set-issue-status.sh`, `/update` + `/verify` Cursor commands, orchestrator Status columns (`gh-ensure-project-status.sh`). Otonom-only: `gh-sync-project-status.sh` (thin wrapper).

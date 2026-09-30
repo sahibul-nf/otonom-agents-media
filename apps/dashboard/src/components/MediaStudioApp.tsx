@@ -1669,8 +1669,8 @@ export function MediaStudioApp() {
   const focusedWorkflow = section !== "dashboard";
 
   return (
-    <div className="min-h-screen overflow-x-hidden text-zinc-100">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col border-r border-white/[0.07] bg-[#0c0d10]/[0.92] px-4 py-5 backdrop-blur-xl lg:flex">
+    <div className="app-shell min-h-screen overflow-x-hidden text-text-primary">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col border-r border-border bg-canvas-deep/95 px-4 py-5 backdrop-blur-xl lg:flex">
         <div className="flex shrink-0 items-center gap-3 px-1">
           <div className="grid h-11 w-11 place-items-center rounded-2xl border border-cyan/[0.55] bg-cyan/[0.04] text-lg font-semibold text-white shadow-[0_0_24px_rgba(102,232,249,0.12)]">N</div>
           <div>
@@ -1777,7 +1777,7 @@ export function MediaStudioApp() {
                   onManage={() => setWorkspaceModalOpen(true)}
                 />
               </div>
-              <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-white md:text-3xl">
+              <h2 className="max-w-full text-balance break-words text-2xl font-semibold tracking-[-0.03em] text-text-primary md:text-3xl">
                 {renderEditorialTitle(sectionCopy[section].title)}
               </h2>
               <p className="mt-1 max-w-[calc(100vw-40px)] break-words text-sm text-zinc-400 md:max-w-2xl">{sectionCopy[section].subtitle}</p>

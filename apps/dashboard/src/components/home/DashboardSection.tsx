@@ -22,7 +22,7 @@ function WorkflowRail({steps, onSection}: {steps: WorkflowStep[]; onSection: (se
     <div className="rounded-[32px] border border-white/[0.08] bg-surface/40 p-6 backdrop-blur-md">
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h3 className="text-lg font-semibold tracking-[-0.02em] text-white">
+          <h3 className="text-lg font-semibold tracking-[-0.02em] text-text-primary">
             This week&apos;s <span className="font-editorial italic font-normal text-cyan">loop</span>
           </h3>
           <p className="mt-0.5 text-xs text-zinc-500">Create → Review → Schedule → Publish</p>
@@ -46,7 +46,7 @@ function WorkflowRail({steps, onSection}: {steps: WorkflowStep[]; onSection: (se
                     ? "border-cyan/[0.30] bg-cyan/[0.04] shadow-[0_4px_16px_rgba(102,232,249,0.04)] hover:border-cyan/[0.45] hover:bg-cyan/[0.08]"
                     : isBlocked
                       ? "border-danger/[0.20] bg-danger/[0.04] hover:border-danger/[0.30] hover:bg-danger/[0.08]"
-                      : "border-white/[0.05] bg-black/15 hover:border-white/[0.12] hover:bg-black/24"
+                      : "border-border bg-surface-panel hover:border-border-strong hover:bg-surface-strong"
               }`}
             >
               <div className="mb-5 flex items-center justify-between">
@@ -63,7 +63,7 @@ function WorkflowRail({steps, onSection}: {steps: WorkflowStep[]; onSection: (se
                   }`}
                 />
               </div>
-              <p className="truncate text-sm font-semibold text-white transition-colors group-hover:text-cyan">{step.label}</p>
+              <p className="truncate text-sm font-semibold text-text-primary transition-colors group-hover:text-cyan">{step.label}</p>
               <p className="mt-1 truncate text-[11px] text-zinc-500 transition-colors group-hover:text-zinc-400">{step.detail}</p>
             </button>
           );
@@ -93,9 +93,9 @@ function MetricFrame({
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-500">{title}</p>
-          <p className="mt-3.5 text-3xl font-semibold tabular-nums tracking-[-0.03em] text-white">{value}</p>
+          <p className="mt-3.5 text-3xl font-semibold tabular-nums tracking-[-0.03em] text-text-primary">{value}</p>
         </div>
-        <span className="grid h-10 w-10 place-items-center rounded-2xl border border-white/[0.06] bg-black/20 text-zinc-400">
+        <span className="grid h-10 w-10 place-items-center rounded-2xl border border-border bg-surface-panel text-text-secondary">
           <Icon className="h-5 w-5" />
         </span>
       </div>
@@ -103,7 +103,7 @@ function MetricFrame({
       <button
         type="button"
         onClick={onAction}
-        className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-full border border-white/[0.10] bg-black/24 px-4 text-xs font-semibold text-zinc-200 transition-all hover:bg-white/[0.06] hover:text-white"
+        className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-full border border-border bg-surface-raised px-4 text-xs font-semibold text-text-primary transition-all hover:bg-surface-strong"
       >
         <span>{action}</span>
         <ArrowUpRight className="h-3 w-3 text-zinc-500" />
@@ -155,7 +155,7 @@ export function DashboardSection({
               <p className="text-[10px] font-bold uppercase tracking-widest text-cyan">Next step</p>
             </div>
 
-            <h3 className="mt-4 text-3xl font-semibold leading-tight tracking-[-0.04em] text-white md:text-4xl">
+            <h3 className="mt-4 text-3xl font-semibold leading-tight tracking-[-0.04em] text-text-primary md:text-4xl">
               {nextAction.label.startsWith("Review") ? (
                 <>
                   <span className="font-editorial italic font-normal text-cyan">Review</span> {nextAction.label.replace("Review", "").trim()}
@@ -201,13 +201,13 @@ export function DashboardSection({
             </div>
           </div>
 
-          <div className="grid min-w-full grid-cols-2 gap-2 rounded-[28px] border border-white/[0.06] bg-black/25 p-3 sm:min-w-0 xl:w-[460px]">
+          <div className="grid min-w-full grid-cols-2 gap-2 rounded-[28px] border border-border bg-surface-panel p-3 sm:min-w-0 xl:w-[460px]">
             {statusSummary.map((item) => (
               <button
                 key={item.label}
                 type="button"
                 onClick={() => onSection(item.section)}
-                className="group rounded-2xl border border-white/[0.05] bg-canvas-deep/50 px-4 py-3.5 text-left transition-all hover:border-cyan/[0.22] hover:bg-black/10"
+                className="group rounded-2xl border border-border bg-surface px-4 py-3.5 text-left transition-all hover:border-cyan/[0.22] hover:bg-surface-raised"
               >
                 <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 transition-colors group-hover:text-cyan">{item.label}</p>
                 <p className="mt-1.5 truncate text-base font-semibold tracking-tight text-zinc-100 group-hover:text-white">{item.value}</p>

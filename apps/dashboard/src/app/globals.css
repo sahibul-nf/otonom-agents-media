@@ -28,45 +28,45 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --canvas: #FFFFFF;
-    --canvas-deep: #F7F7F7;
+    --canvas: #F3F4F6;
+    --canvas-deep: #E8EAEE;
     --surface: #FFFFFF;
-    --surface-raised: #EEEEEE;
-    --surface-panel: #DEDEDE;
-    --surface-strong: #C7C7C7;
-    --cyan: #009ED6;
-    --teal: #008A5A;
-    --danger: #FF494E;
-    --warning: #FFA13E;
-    --ink: #141414;
-    --border: rgba(0, 0, 0, 0.08);
-    --border-strong: rgba(0, 0, 0, 0.14);
-    --text-primary: #202020;
-    --text-secondary: #585858;
-    --text-tertiary: #797979;
-    --cyan-glow: rgba(0, 158, 214, 0.04);
+    --surface-raised: #F7F8FA;
+    --surface-panel: #EEF0F3;
+    --surface-strong: #E1E4EA;
+    --cyan: #0B8FBF;
+    --teal: #0B7A52;
+    --danger: #D92D20;
+    --warning: #B54708;
+    --ink: #101114;
+    --border: rgba(16, 17, 20, 0.10);
+    --border-strong: rgba(16, 17, 20, 0.16);
+    --text-primary: #16181D;
+    --text-secondary: #4B5160;
+    --text-tertiary: #6B7280;
+    --cyan-glow: rgba(0, 119, 168, 0.08);
   }
 }
 
 .light-theme {
   color-scheme: light;
-  --canvas: #FFFFFF;
-  --canvas-deep: #F7F7F7;
+  --canvas: #F3F4F6;
+  --canvas-deep: #E8EAEE;
   --surface: #FFFFFF;
-  --surface-raised: #EEEEEE;
-  --surface-panel: #DEDEDE;
-  --surface-strong: #C7C7C7;
-  --cyan: #009ED6;
-  --teal: #008A5A;
-  --danger: #FF494E;
-  --warning: #FFA13E;
-  --ink: #141414;
-  --border: rgba(0, 0, 0, 0.08);
-  --border-strong: rgba(0, 0, 0, 0.14);
-  --text-primary: #202020;
-  --text-secondary: #585858;
-  --text-tertiary: #797979;
-  --cyan-glow: rgba(0, 158, 214, 0.04);
+  --surface-raised: #F7F8FA;
+  --surface-panel: #EEF0F3;
+  --surface-strong: #E1E4EA;
+  --cyan: #0B8FBF;
+  --teal: #0B7A52;
+  --danger: #D92D20;
+  --warning: #B54708;
+  --ink: #101114;
+  --border: rgba(16, 17, 20, 0.10);
+  --border-strong: rgba(16, 17, 20, 0.16);
+  --text-primary: #16181D;
+  --text-secondary: #4B5160;
+  --text-tertiary: #6B7280;
+  --cyan-glow: rgba(0, 119, 168, 0.08);
 }
 
 * {
@@ -106,6 +106,132 @@ video {
 
 ::selection {
   background: rgba(98, 238, 248, 0.3);
+}
+
+@media (prefers-color-scheme: light) {
+  ::selection {
+    background: rgba(0, 119, 168, 0.22);
+  }
+
+  /* Chrome uses hardcoded zinc/white; tokens alone left pale text on pale canvas. */
+  .app-shell .text-zinc-50,
+  .app-shell .text-zinc-100,
+  .app-shell .text-zinc-200 {
+    color: var(--text-primary);
+  }
+
+  .app-shell .text-zinc-300,
+  .app-shell .text-zinc-400 {
+    color: var(--text-secondary);
+  }
+
+  .app-shell .text-zinc-500,
+  .app-shell .text-zinc-600 {
+    color: var(--text-tertiary);
+  }
+
+  .app-shell input::placeholder,
+  .app-shell textarea::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .app-shell option {
+    background-color: var(--surface);
+    color: var(--text-primary);
+  }
+
+  .app-shell .text-white {
+    color: var(--text-primary);
+  }
+
+  .app-shell .bg-cyan.text-white,
+  .app-shell .bg-cyan .text-white {
+    color: var(--ink);
+  }
+
+  .app-shell .text-red-100 {
+    color: var(--danger);
+  }
+
+  /* Keep captions/controls readable on video stages */
+  .app-shell .media-preview-frame .text-zinc-50,
+  .app-shell .media-preview-frame .text-zinc-100,
+  .app-shell .media-preview-frame .text-zinc-200,
+  .app-shell .media-preview-frame .text-zinc-300,
+  .app-shell .media-preview-frame .text-white,
+  .app-shell .template-preview-hover .text-zinc-50,
+  .app-shell .template-preview-hover .text-zinc-100,
+  .app-shell .template-preview-hover .text-zinc-200,
+  .app-shell .template-preview-hover .text-white,
+  .app-shell .brand-preview-phone .text-zinc-50,
+  .app-shell .brand-preview-phone .text-zinc-100,
+  .app-shell .brand-preview-phone .text-white {
+    color: #e5e5e5;
+  }
+
+  .app-shell .media-preview-frame .text-zinc-400,
+  .app-shell .media-preview-frame .text-zinc-500,
+  .app-shell .template-preview-hover .text-zinc-400,
+  .app-shell .template-preview-hover .text-zinc-500 {
+    color: #a1a1aa;
+  }
+}
+
+.light-theme .app-shell .text-zinc-50,
+.light-theme .app-shell .text-zinc-100,
+.light-theme .app-shell .text-zinc-200 {
+  color: var(--text-primary);
+}
+
+.light-theme .app-shell .text-zinc-300,
+.light-theme .app-shell .text-zinc-400 {
+  color: var(--text-secondary);
+}
+
+.light-theme .app-shell .text-zinc-500,
+.light-theme .app-shell .text-zinc-600 {
+  color: var(--text-tertiary);
+}
+
+.light-theme .app-shell input::placeholder,
+.light-theme .app-shell textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.light-theme .app-shell option {
+  background-color: var(--surface);
+  color: var(--text-primary);
+}
+
+.light-theme .app-shell .text-white {
+  color: var(--text-primary);
+}
+
+.light-theme .app-shell .bg-cyan.text-white,
+.light-theme .app-shell .bg-cyan .text-white {
+  color: var(--ink);
+}
+
+.light-theme .app-shell .media-preview-frame .text-zinc-50,
+.light-theme .app-shell .media-preview-frame .text-zinc-100,
+.light-theme .app-shell .media-preview-frame .text-zinc-200,
+.light-theme .app-shell .media-preview-frame .text-zinc-300,
+.light-theme .app-shell .media-preview-frame .text-white,
+.light-theme .app-shell .template-preview-hover .text-zinc-50,
+.light-theme .app-shell .template-preview-hover .text-zinc-100,
+.light-theme .app-shell .template-preview-hover .text-zinc-200,
+.light-theme .app-shell .template-preview-hover .text-white,
+.light-theme .app-shell .brand-preview-phone .text-zinc-50,
+.light-theme .app-shell .brand-preview-phone .text-zinc-100,
+.light-theme .app-shell .brand-preview-phone .text-white {
+  color: #e5e5e5;
+}
+
+.light-theme .app-shell .media-preview-frame .text-zinc-400,
+.light-theme .app-shell .media-preview-frame .text-zinc-500,
+.light-theme .app-shell .template-preview-hover .text-zinc-400,
+.light-theme .app-shell .template-preview-hover .text-zinc-500 {
+  color: #a1a1aa;
 }
 
 @keyframes template-preview-camera {

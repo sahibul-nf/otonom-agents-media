@@ -9,7 +9,14 @@ export const metadata: Metadata = {
 export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(()=>{try{if(window.matchMedia("(prefers-color-scheme: light)").matches)document.documentElement.classList.add("light-theme")}catch(e){}})()`,
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }
