@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- `docs/saas-readiness.md` — local-first → multi-user checklist (DB, auth seam, credentials, artifacts, workers); no cloud implementation.
+
 - Dashboard **light theme**: OS light mode no longer leaves near-white `zinc` text on pale canvas. Shell uses semantic tokens; video preview overlays stay light-on-dark.
 
 ### Changed
