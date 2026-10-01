@@ -312,6 +312,69 @@ export function TemplateRecipeOverlay({templateId, theme, compact}: RecipeOverla
           <CaptionMock theme={theme} compact={compact} variant="mono" />
         </>
       );
+    case "swiss_grid_explainer":
+      return (
+        <>
+          <div className="absolute inset-6 z-[3] bg-[linear-gradient(rgba(0,0,0,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,.08)_1px,transparent_1px)] bg-[size:24px_24px] opacity-40" />
+          <div className="absolute left-4 top-16 z-[4] flex h-10 w-10 items-center justify-center rounded-full bg-black text-xs font-black text-white">01</div>
+          <CaptionMock theme={theme} compact={compact} variant="mono" />
+        </>
+      );
+    case "vignelli_portrait_headline":
+      return (
+        <>
+          <div className="absolute inset-x-6 top-[30%] z-[4] text-center text-lg font-black uppercase tracking-tight text-white" style={{fontFamily: theme.fontFamily}}>
+            {theme.caption}
+          </div>
+          <CaptionMock theme={theme} compact={compact} variant="banner" />
+        </>
+      );
+    case "decision_tree_tutorial":
+      return (
+        <>
+          <div className="absolute left-4 top-20 z-[4] rounded-lg border border-sky-400/40 bg-slate-950/80 px-3 py-2 text-[10px] font-mono text-sky-200">A</div>
+          <div className="absolute right-4 top-28 z-[4] rounded-lg border border-sky-400/40 bg-slate-950/80 px-3 py-2 text-[10px] font-mono text-sky-200">B</div>
+          <CaptionMock theme={theme} compact={compact} variant="mono" />
+        </>
+      );
+    case "kinetic_type_promo":
+      return (
+        <>
+          <div className="absolute inset-8 z-[3] rounded-lg border border-fuchsia-400/30" />
+          <CaptionMock theme={theme} compact={compact} variant="glitch" />
+        </>
+      );
+    case "nyt_graph_data_story":
+      return (
+        <>
+          <div className="absolute right-4 top-20 z-[4] h-24 w-28 border-l border-white/30">
+            <div className="absolute bottom-4 left-0 right-0 h-0.5 bg-gradient-to-r from-yellow-300 to-red-500" />
+          </div>
+          <CaptionMock theme={theme} compact={compact} variant="quote" />
+        </>
+      );
+    case "eva_neon_cyber":
+      return (
+        <>
+          <div className="absolute inset-0 z-[3] bg-[repeating-linear-gradient(0deg,rgba(0,0,0,.12)_0_2px,transparent_2px_4px)] opacity-30" />
+          <div className="absolute inset-8 z-[3] rounded border border-cyan-400/40" />
+          <CaptionMock theme={theme} compact={compact} variant="neon" />
+        </>
+      );
+    case "volt_lime_kinetic":
+      return (
+        <>
+          <div className="absolute inset-x-0 top-[36%] z-[4] h-1 bg-lime-400 shadow-[0_0_16px_rgba(163,230,53,.5)]" />
+          <CaptionMock theme={theme} compact={compact} variant="stamp" />
+        </>
+      );
+    case "ember_sunset_gradient":
+      return (
+        <>
+          <div className="pointer-events-none absolute inset-0 z-[3] bg-[radial-gradient(circle_at_70%_20%,rgba(255,94,54,.25),transparent_55%)]" />
+          <CaptionMock theme={theme} compact={compact} variant="serif" />
+        </>
+      );
     default:
       return (
         <>
