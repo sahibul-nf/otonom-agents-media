@@ -9,7 +9,7 @@ AI agents read this file before UI verification. **Replace every `TBD` with real
 
 | Item | Value |
 |------|--------|
-| **Test command** | `cd media-engine && python3 -m unittest discover -s tests -p 'test_*.py'` |
+| **Test command** | `pip install -r media-engine/requirements-dev.txt` then `cd media-engine && PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'` |
 | **Focused test example** | `TBD — e.g. npm test -- src/auth.test.ts OR flutter test test/widgets/header_test.dart` |
 
 ## Web app (delete this section if not a web app)

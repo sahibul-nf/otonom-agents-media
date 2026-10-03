@@ -14,7 +14,7 @@ Optional guide for external AI execution systems (Paperclip, custom workers, CI 
 | Labels | Metadata only (`complexity:*`, `ai-blocked`) — **not** execution triggers |
 | Coding agent | Cursor, Codex, Claude, Gemini, OpenCode, etc. — reads `AGENTS.md` |
 | Orchestrator | Polls board, assigns one issue per run |
-| Pull Request | Reviewable output — human merges |
+| Pull Request | Reviewable output — agent may merge to **`dev`** after green full suite; human merges **`main`** |
 
 **Never** use an `ai-ready` **label** as the primary trigger. Only **Ready for AI** on the Project board authorizes orchestrator pickup.
 
@@ -31,9 +31,9 @@ Adds **Ready for AI**, **AI Working**, **AI Review**, **Human Review** without m
 1. Poll GitHub Project for items with Status = **Ready for AI**.
 2. Pick **one** issue (respect cost principles — no backlog drain).
 3. Spawn coding agent with: issue URL, clone on **`dev`**, `AGENTS.md` + `CONTRIBUTING.md`.
-4. Agent moves issue → **AI Working**, implements on `feat/#N-slug` from **`dev`**, runs tests, self-verifies.
-5. Agent opens PR **into `dev`** (never `main`), moves → **AI Review**, posts summary + test results. **Does not merge.**
-6. Human reviews PR (**Human Review**), merges to **`dev`**, later ships **`main`** on ops.
+4. Agent moves issue → **AI Working**, implements on `feat/#N-slug` from **`dev`**, adds tests for the AC if missing, runs the **full** unittest suite.
+5. Agent opens PR **into `dev`** (never `main`) with How to test (UI). **Green suite → merge to `dev`**, board **Human Review**. **Red suite → do not merge**, board **AI Review**.
+6. Human UI-checks, later ships **`main`** on ops.
 7. Human confirms *sudah work* → agent or human runs `gh-close-verified-issue.sh` → **Done**.
 
 ## Status script keys
@@ -41,8 +41,8 @@ Adds **Ready for AI**, **AI Working**, **AI Review**, **Human Review** without m
 ```bash
 ./scripts/gh-set-issue-status.sh <N> ready-for-ai   # human only
 ./scripts/gh-set-issue-status.sh <N> ai-working     # agent start
-./scripts/gh-set-issue-status.sh <N> ai-review      # after verify
-./scripts/gh-set-issue-status.sh <N> human-review   # human PR review
+./scripts/gh-set-issue-status.sh <N> ai-review      # suite red / blocked
+./scripts/gh-set-issue-status.sh <N> human-review   # after merge to dev (UI check)
 ./scripts/gh-set-issue-status.sh <N> done
 ```
 

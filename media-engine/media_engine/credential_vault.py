@@ -248,7 +248,7 @@ def credential_status_for_profile(profile_id: str) -> dict[str, Any]:
             found = False
             for key in group:
                 if key in ACCOUNT_ENV_KEYS:
-                    if vault.get(key, "").strip():
+                    if vault.get(key, "").strip() or os.environ.get(key, "").strip():
                         found = True
                         break
                 elif os.environ.get(key, "").strip():

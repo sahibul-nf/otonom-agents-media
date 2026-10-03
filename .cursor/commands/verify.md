@@ -8,6 +8,6 @@ Follow `AGENTS.md` self-verify section:
 3. Classify UI / non-UI / mixed; use web browser or MobAI per `docs/how-to-run.md` and `APP_STACK`.
 4. Report pass/fail per AC with evidence.
 5. If gaps remain and under loop gate (max rounds from `AGENTS.md` / user override), fix and re-verify.
-6. If passed → `./scripts/gh-set-issue-status.sh N ai-review`
+6. If passed → `./scripts/gh-set-issue-status.sh N ai-review` (chat). Orchestrator merge to **`dev`** is only after the **full** suite exits 0 (`CONTRIBUTING.md`).
 
-Do not merge PR. Do not close the issue unless user confirms *sudah work*.
+Chat: do not merge unless asked. Never merge **`main`**. Do not close the issue unless user confirms *sudah work*.

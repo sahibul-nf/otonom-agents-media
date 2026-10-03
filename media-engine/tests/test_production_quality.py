@@ -2,6 +2,7 @@ import unittest
 
 from media_engine.asr import words_from_faster_whisper_segments
 from media_engine.caption_composer import compose_caption_groups
+from media_engine.transcript_quality import resolve_glossary
 from media_engine.costs import estimate_clip_cost
 from media_engine.render_quality import build_render_quality_report
 
@@ -37,6 +38,7 @@ class ProductionQualityTests(unittest.TestCase):
                 {"text": "qolbu", "startMs": 1600, "endMs": 1900, "confidence": 0.7},
             ],
             max_words_per_caption=2,
+            glossary=resolve_glossary("nourbit"),
         )
 
         self.assertEqual(captions[0]["text"], "Allah dekat")

@@ -9,7 +9,7 @@ Follow **`AGENTS.md`** for the full workflow (intent router, triage, implement, 
 
 Project **Status** authorizes orchestrators (**Ready for AI** only) — not labels. `/triage` never sets Ready for AI.
 
-PRs target **`dev`** (`CONTRIBUTING.md`). Never merge or push **`main`** / restart PM2 on the ops clone.
+PRs target **`dev`**. Orchestrators may merge **`dev`** after a green full test suite. Never merge or push **`main`** / restart PM2.
 
 Do not duplicate rules here. Classify intent first; triage by default for real work without `#N`.
 

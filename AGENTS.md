@@ -19,7 +19,7 @@ See `docs/agent-platforms.md` for official doc links.
 ## Git & deploy
 
 - **Branch model:** **`dev`** = integration (PRs land here). **`main`** = production / PM2 ops clone.
-- **CI / deploy:** PM2 runs from a **`main`** checkout (`otonom-agents-media-ops`). Agents never push or merge to **`main`**.
+- **CI / deploy:** PM2 runs from a **`main`** checkout (`otonom-agents-media-ops`). Agents never push or merge to **`main`**. After a green full test suite, orchestrators **may merge PRs into `dev`**.
 - **Commits:** Only when the user explicitly asks (orchestrator PR runs may push the feature branch).
 - **Full contract:** `CONTRIBUTING.md`
 
@@ -27,11 +27,13 @@ See `docs/agent-platforms.md` for official doc links.
 
 ```text
 1. branch from origin/dev → feat/#N-slug or fix/#N-slug
-2. open PR into dev (Fixes #N)
-3. do NOT merge; do NOT git push origin main
+2. write/extend tests for the AC if missing; run full media-engine unittest suite
+3. open PR into dev (Fixes #N) + How to test (UI)
+4. if suite exit 0: merge PR into origin/dev; do NOT git push origin main
+5. if suite red: do not merge
 ```
 
-Human merges `dev` after **Human Review**, then later `main` ← `dev` on the ops machine.
+Human UI-checks `dev`, then later `main` ← `dev` on the ops machine.
 
 ## Changelog (`CHANGELOG.md`)
 
@@ -119,7 +121,7 @@ Triggers: *Implement #N*, *kerjakan #N*, *LGTM #N* (chat authorization). Orchest
 5. `./scripts/gh-set-issue-status.sh N ai-working` (falls back to **In Progress** on legacy boards)
 6. **Self-verify** (required before claiming done) — see below.
 7. `./scripts/gh-set-issue-status.sh N ai-review` when self-verify passes or stops at gate (falls back to **QA**)
-8. PR: `Fixes #N`. Commits only when user asks (or user says *commit* / *PR*). **Do not merge** unless explicit future policy says otherwise.
+8. PR: `Fixes #N`. Commits only when user asks (or user says *commit* / *PR*). Orchestrators: merge into **`dev` only** when the full unittest suite exits 0 (`CONTRIBUTING.md`). Never merge **`main`**.
 
 Do **not** close the issue after self-verify. Human moves to **Human Review** / reviews PR; *sudah work* closes it.
 
@@ -149,7 +151,7 @@ When blocked, state: (1) what is ambiguous/risky, (2) decision required, (3) opt
 - **Smallest capable model**; escalate only when stuck
 - **Retry cap** — `VERIFY_MAX_ROUNDS` (override per task in chat only)
 - **Stop when unclear** — move to Human Review or comment; do not speculate on high-risk decisions
-- **Human review before merge** — PR is for review, not auto-merge
+- **Human UI after `dev` merge** — suite green → agent may merge **`dev`**; **`main`/ops** stay human
 - **Minimal context** — AC scope lock; avoid full-app exploration unless asked
 
 ## Phase 3 — Close-out (human QA)
@@ -230,9 +232,12 @@ Do **not** use Playwright or Cursor browser for native mobile apps.
 
 ### Non-UI evidence
 
-- Run relevant tests (`cd media-engine && python3 -m unittest discover -s tests -p 'test_*.py'` or focused subset tied to changed files).
+- If the AC has no unittest lock, **add tests first** (or in the same PR) covering that contract. Maximize coverage of the **changed module**, not a new E2E framework unless the issue asks for it.
+- Always run the **full** suite before claiming done / merging to `dev`:
+  `cd media-engine && PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'`
 - Typecheck/lint when contracts change.
 - API: real requests (curl/script) including error paths in AC.
+- The suite is the regression oracle for other media-engine flows. Dashboard UI still needs the PR **How to test (UI)** (no dashboard E2E yet).
 
 ### Loop gate (max 3 rounds)
 
@@ -250,11 +255,13 @@ One round = implement/patch → verify → pass or fail.
 - Each round needs a new hypothesis, not random tweaks.
 - After stop: report what was proven per AC, gaps vs AC, last evidence, what you need from the user.
 
-## Merge & push (when user asks)
+## Merge & push
 
-Default: **do not merge.** Open/update PR into **`dev`** only.
+**Chat sessions:** do not merge unless the user asks. Open/update PR into **`dev`**.
 
-If the user explicitly asks to merge: merge the feature branch into **`dev`**, then `git push origin dev`. **Never** merge or push **`main`** unless the user names `main` and the ops deploy in the same message.
+**Orchestrators (FORGE):** after the full unittest suite **exits 0**, merge the PR into **`dev`** and push `origin/dev`. **Never** merge or push **`main`** unless the user names `main` and the ops deploy in the same message.
+
+If the user explicitly asks to merge in chat: merge the feature branch into **`dev`**, then `git push origin dev`.
 
 Before merge/push: run `git branch -a`. Use `.workflow-kit.env` (`SINGLE_BRANCH=false`, `INTEGRATION_BRANCH=dev`, `PRODUCTION_BRANCH=main`).
 
@@ -265,8 +272,9 @@ Platform-agnostic pattern for external runtimes (e.g. Paperclip, custom workers)
 1. Monitor GitHub Project **Status**.
 2. Select issues in **Ready for AI** only — ignore Backlog/Todo, In Progress, labels, and `ai-ready` labels.
 3. Assign one issue to a coding agent; agent reads `AGENTS.md` and repository instructions.
-4. Agent sets **AI Working** → implements on a branch from **`dev`** → self-verifies → **AI Review** → opens PR **into `dev`** (never `main`).
-5. Human reviews PR (**Human Review**) → merges to **`dev`** → later ships **`main`** on ops → *sudah work* → **Done** via Phase 3.
+4. Agent sets **AI Working** → implements on a branch from **`dev`** → writes/extends tests → full unittest suite → PR **into `dev`** (never `main`).
+5. If suite green: agent merges **into `dev`**, board **Human Review**. If red: **AI Review**, no merge.
+6. Human UI-checks using the PR how-to-test → later ships **`main`** on ops → *sudah work* → **Done** via Phase 3.
 
 This workflow works **without** any orchestrator (interactive Cursor/Codex/Claude/Gemini sessions).
 
@@ -324,8 +332,8 @@ End with: *"Review the issue; tell me which # to implement first."*
 
 Triggers: *Implement #N*, *kerjakan #N*, *LGTM #N*.
 
-- Follow acceptance criteria; open PR **into `dev`** with `Fixes #N`; commit only when asked (or when opening the PR). **Do not merge. Do not target `main`.**
-- Board: `./scripts/gh-set-issue-status.sh N ai-working` when starting; after verify → `ai-review`.
+- Follow acceptance criteria; open PR **into `dev`** with `Fixes #N`; commit only when asked (or when opening the PR). Orchestrators merge to **`dev`** only if the full suite is green. **Never target `main`.**
+- Board: `./scripts/gh-set-issue-status.sh N ai-working` when starting; after green merge → `human-review`; if tests fail → `ai-review`.
 
 ### Phase 3 — Close-out
 
@@ -341,7 +349,7 @@ Triggers: user confirms *works* / *ok* / *sudah work* for **#N**.
 |-----|--------|
 | Board | https://github.com/users/sahibul-nf/projects/7 (`GH_PROJECT_NUM=7`) |
 | North star | `.cursor/rules/platform-north-star.mdc` |
-| PRs / unattended AI | `CONTRIBUTING.md` — PRs target **`dev`** only; never **`main`** or PM2 ops |
+| PRs / unattended AI | `CONTRIBUTING.md` — PRs target **`dev`**; merge to `dev` after green full suite; never **`main`** or PM2 ops |
 | Extra script | `scripts/gh-sync-project-status.sh` (bulk board sync; not in solo-dev-ai-kit) |
 | Board hygiene | `scripts/gh-remove-qa-status.sh` — drop redundant **QA** column (use **Human Review** only) |
 

@@ -8,8 +8,8 @@ Follow `AGENTS.md` Phase 2:
 3. Branch or worktree `feat/#N-slug` or `fix/#N-slug` — smallest correct change.
 4. Implement focused diff.
 5. `./scripts/gh-set-issue-status.sh N ai-working` (legacy: **In Progress**)
-6. **Self-verify** per `AGENTS.md` — AC scope only; max rounds from `VERIFY_MAX_ROUNDS` or user override.
-7. `./scripts/gh-set-issue-status.sh N ai-review` when ready
-8. PR **into `dev`** with `Fixes #N`. Never target `main`. Commit only when user asks (or when opening the PR). **Do not merge.**
+6. **Self-verify** per `AGENTS.md`: tests for the AC if missing; **full** media-engine unittest suite; max rounds from `VERIFY_MAX_ROUNDS` or user override.
+7. PR **into `dev`** with `Fixes #N` + How to test (UI). Never target `main`.
+8. Chat: do not merge unless asked. Orchestrator: merge into **`dev`** only if the full suite exits 0, then board **Human Review**; if red, board **AI Review** and do not merge.
 
 Do not close the issue — wait for human *sudah work*.
