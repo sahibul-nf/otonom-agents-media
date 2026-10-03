@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- `docs/saas-readiness.md` — local-first → multi-user checklist (DB, auth seam, credentials, artifacts, workers); no cloud implementation.
 - HyperFrames: **8** new built-in caption recipes (`swiss_grid_explainer`, `vignelli_portrait_headline`, `decision_tree_tutorial`, `kinetic_type_promo`, `nyt_graph_data_story`, `eva_neon_cyber`, `volt_lime_kinetic`, `ember_sunset_gradient`) with catalog metadata, dashboard preview overlays, and stock preview mapping.
 
 - Dashboard **light theme**: OS light mode no longer leaves near-white `zinc` text on pale canvas. Shell uses semantic tokens; video preview overlays stay light-on-dark.
