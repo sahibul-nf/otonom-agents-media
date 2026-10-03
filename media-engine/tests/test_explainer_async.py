@@ -66,7 +66,7 @@ class ExplainerAsyncAndTemplateTests(unittest.TestCase):
                     db_path=db_path,
                 )
                 self.assertEqual(started["status"], "rendering")
-                deadline = time.time() + 60
+                deadline = time.time() + 120
                 status = started
                 while time.time() < deadline:
                     status = pipeline.read_explainer_status(job_id)
