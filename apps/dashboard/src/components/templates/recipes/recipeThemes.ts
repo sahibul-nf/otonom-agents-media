@@ -32,6 +32,14 @@ export const recipeThemes: Record<string, RecipeTheme> = {
   prism_pro_pricing: base({accent: "#a7f36b", secondary: "#67e8f9", caption: "Pro $29", caption2: "highlighted plan", fontFamily: "Outfit, sans-serif", captionStyle: "Price label", motionPreset: "price-pop", colorGrade: "prism clean"}),
   chalk_word_emphasis: base({accent: "#e2e8f0", secondary: "#94a3b8", caption: "emphasis", caption2: "chalk on dark", fontFamily: "Permanent Marker, cursive", captionStyle: "Chalk handwriting", motionPreset: "chalk-scribble", colorGrade: "chalk dark board"}),
   techtalk_intel_brief: base({accent: "#2dd4bf", secondary: "#e2e8f0", caption: "Key takeaway", caption2: "edu-finance brief", fontFamily: "IBM Plex Sans, sans-serif", captionStyle: "Weighted edu-finance captions", motionPreset: "intel-lower-third", colorGrade: "clean teal grade"}),
+  swiss_grid_explainer: base({accent: "#111111", secondary: "#facc15", caption: "Step one", caption2: "Swiss grid flow", fontFamily: "Inter, sans-serif", captionStyle: "Swiss grid steps", motionPreset: "grid-reveal", colorGrade: "neutral swiss"}),
+  vignelli_portrait_headline: base({accent: "#f8fafc", secondary: "#111111", caption: "BIG HEADLINE", caption2: "portrait stack", fontFamily: "Oswald, sans-serif", captionStyle: "Portrait headline", motionPreset: "headline-rise", colorGrade: "bold portrait"}),
+  decision_tree_tutorial: base({accent: "#38bdf8", secondary: "#bae6fd", caption: "If this", caption2: "then that", fontFamily: "IBM Plex Mono, monospace", captionStyle: "Decision tree", motionPreset: "node-pop", colorGrade: "tutorial cool"}),
+  kinetic_type_promo: base({accent: "#f472b6", secondary: "#22d3ee", caption: "GO", caption2: "FASTER", fontFamily: "Bebas Neue, sans-serif", captionStyle: "Kinetic swap", motionPreset: "word-swap", colorGrade: "kinetic punch"}),
+  nyt_graph_data_story: base({accent: "#ef4444", secondary: "#facc15", caption: "+12%", caption2: "chart story", fontFamily: "Libre Baskerville, serif", captionStyle: "Chart annotation", motionPreset: "chart-draw", colorGrade: "editorial data"}),
+  eva_neon_cyber: base({accent: "#ff2a85", secondary: "#00f3ff", caption: "CYBER", caption2: "scanline neon", fontFamily: "Syne, sans-serif", captionStyle: "Cyber neon", motionPreset: "cyber-glitch", colorGrade: "cyber neon"}),
+  volt_lime_kinetic: base({accent: "#a3e635", secondary: "#22c55e", caption: "VOLT", caption2: "lime impact", fontFamily: "Archivo Black, sans-serif", captionStyle: "Lime impact", motionPreset: "volt-slam", colorGrade: "volt lime"}),
+  ember_sunset_gradient: base({accent: "#ff5e36", secondary: "#facc15", caption: "warm glow", caption2: "sunset script", fontFamily: "Fraunces, serif", captionStyle: "Sunset script", motionPreset: "ember-glow", colorGrade: "sunset warm"}),
 };
 
 export function getRecipeTheme(templateId: string): RecipeTheme {

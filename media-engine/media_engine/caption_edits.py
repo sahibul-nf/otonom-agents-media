@@ -44,10 +44,14 @@ def normalize_edited_captions(captions: list[dict[str, Any]]) -> list[dict[str, 
                     w_end = w_start + 40
                 words_out.append({**word, "text": word_text[:80], "startMs": w_start, "endMs": w_end})
             if words_out:
-                entry["words"] = words_out
-                entry["startMs"] = words_out[0]["startMs"]
-                entry["endMs"] = max(words_out[-1]["endMs"], entry["startMs"] + 40)
-                entry["timestampMs"] = entry["startMs"]
+                word_span_end = max(words_out[-1]["endMs"], entry["startMs"] + 40)
+                caption_span = end_ms - start_ms
+                # Drop orphan word timings that do not cover the edited caption span.
+                if word_span_end >= end_ms - 80 or caption_span < 500:
+                    entry["words"] = words_out
+                    entry["startMs"] = words_out[0]["startMs"]
+                    entry["endMs"] = word_span_end
+                    entry["timestampMs"] = entry["startMs"]
         normalized.append(entry)
         previous_end = int(entry["endMs"])
     if not normalized:

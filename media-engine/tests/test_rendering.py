@@ -8,7 +8,7 @@ from media_engine.rendering import (
     validate_premium_duration,
 )
 from media_engine.hyperframes_renderer import build_hyperframes_index_html
-from media_engine.hyperframes_templates import list_hyperframes_templates
+from media_engine.hyperframes_templates import TEMPLATE_VERSION, list_hyperframes_templates
 from media_engine.captions import group_word_captions, normalize_word_timeline
 from media_engine.youtube_pipeline import TranscriptEntry, choose_nourbit_premium_candidate
 
@@ -126,7 +126,7 @@ class PremiumRenderingTests(unittest.TestCase):
             with self.subTest(template=template["id"]):
                 html = build_hyperframes_index_html(contract, hyperframes_template=template["id"])
                 self.assertIn(f'"hyperframesTemplate": "{template["id"]}"', html)
-                self.assertIn('"templateVersion": "1.1.0"', html)
+                self.assertIn(f'"templateVersion": "{TEMPLATE_VERSION}"', html)
                 self.assertIn("<video", html)
                 self.assertIn("muted playsinline", html)
                 self.assertIn("<audio", html)

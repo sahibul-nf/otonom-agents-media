@@ -19,49 +19,52 @@ Agents **must clone or work in a `dev` checkout**. Never write, commit, or resta
 feat/#N-slug  or  fix/#N-slug
         │
         ▼  pull request (required)
-       dev     ← integration (human review here)
+       dev     ← integration (agent may merge after green full test suite)
         │
-        ▼  human merge only, after Human Review
+        ▼  human only
        main    ← production / PM2
 ```
 
-- **`dev`** — integration branch. All agent PRs target **`dev`**.
-- **`main`** — production. PM2 deploys from this clone. **Agents never merge to `main`.**
-- Feature branches: `feat/#N-slug` / `fix/#N-slug` from **current `dev`**, not from `main`.
+- **`dev`** — integration. All agent PRs target **`dev`**. After tests pass, the agent **may merge** the PR into `dev`.
+- **`main`** — production. **Agents never merge or push `main`.**
+- Feature branches: `feat/#N-slug` / `fix/#N-slug` from **current `dev`**.
 
 `.workflow-kit.env`: `INTEGRATION_BRANCH=dev`, `PRODUCTION_BRANCH=main`, `SINGLE_BRANCH=false`.
 
 ## Ready for AI (unattended)
 
-Human moves an issue to board Status **Ready for AI**. An orchestrator (or later session) may then:
+Human moves an issue to board Status **Ready for AI**. An orchestrator (e.g. FORGE) may then:
 
 1. Pick **one** issue (do not drain the column).
 2. Set Status **AI Working**.
-3. Branch from `origin/dev`, implement, self-verify (`AGENTS.md`).
-4. Open a PR **into `dev`** with `Fixes #N`.
-5. Set Status **AI Review**. **Stop.** Do not merge.
+3. Branch from `origin/dev`, implement.
+4. **Tests first for new contracts:** if the change has no lock (no unittest covering the AC), add tests before finishing. Cover the changed module as far as the suite can (unit/API), not a new E2E stack unless the issue asks for it.
+5. Run the **full** media-engine suite:
+   `cd media-engine && PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'`
+6. Open a PR **into `dev`** with `Fixes #N` and a **How to test (UI)** section for Sahibul.
+7. **If the full suite exits 0:** merge the PR into **`dev`**, `git push origin dev`, set board **Human Review**. Do **not** push `main`.
+8. **If the suite is red:** do **not** merge. Fix failures caused by this change. Pre-existing failures: fix them if cheap and in-scope; otherwise stop, comment the command output, label `ai-needs-human`, leave the PR open on **AI Review**.
 
 Labels (`ai-ready`, etc.) are metadata only — they do **not** authorize pickup.
 
 ## Hard rules for agents
 
 1. **PR base = `dev`.** Never open a PR against `main`. Never `git push origin main`.
-2. **Do not merge** any PR (including into `dev`) unless the human later says to merge.
+2. **Merge to `dev` only** after the **full** unittest suite exits 0. Never merge to `main`.
 3. **Do not touch production:** no `pm2 restart`, no edits under the ops clone, no writing live `data/` or `artifacts/` used by PM2.
 4. **Do not steal ops ports** (`8765` / `3100`). Isolated dev: `npm run dev:isolated` → `:8766` / `:3101`.
-5. **Do not close issues.** Human says *sudah work* → Phase 3 (`gh-close-verified-issue.sh`).
-6. **One issue per run.** If blocked, comment + `ai-needs-human` / `ai-blocked`; leave Status at **Human Review** or **Todo**.
+5. **Do not close issues.** Human says *sudah work* after a quick UI check → Phase 3 (`gh-close-verified-issue.sh`).
+6. **One issue per run.** If blocked, comment + `ai-needs-human` / `ai-blocked`.
 
-## After human review
+## After merge to `dev` (human)
 
-1. Human reviews the PR (**Human Review**).
-2. Human merges **`dev` ← feature branch**.
-3. When ready to ship, human merges **`main` ← `dev`** and pulls on the **ops** clone (`git pull` on `main`), then rebuilds/restarts PM2 there.
-4. Human confirms *sudah work #N* → **Done**.
+1. Follow the PR **How to test (UI)** on the dashboard (ops `:3100` only after you ship `main`; otherwise isolated `:3101` or local `dev`).
+2. If it works: *sudah work #N* → **Done**.
+3. To ship production: merge **`main` ← `dev`**, `git pull` on the ops clone, rebuild dashboard if needed, restart PM2.
 
 ## Commits
 
-Commit only when the human asks (or when an orchestrator run must push a PR). Never commit `.env`, credentials, SQLite, or generated media.
+Commit when opening/updating the PR (orchestrator) or when the human asks. Never commit `.env`, credentials, SQLite, or generated media.
 
 ## Related
 

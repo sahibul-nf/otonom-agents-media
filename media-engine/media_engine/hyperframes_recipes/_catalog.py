@@ -57,6 +57,14 @@ _RECIPE_CATEGORY: dict[str, str] = {
     "prism_pro_pricing": "Promo",
     "chalk_word_emphasis": "News",
     "techtalk_intel_brief": "Data",
+    "swiss_grid_explainer": "Official",
+    "vignelli_portrait_headline": "Promo",
+    "decision_tree_tutorial": "Official",
+    "kinetic_type_promo": "Promo",
+    "nyt_graph_data_story": "Data",
+    "eva_neon_cyber": "Promo",
+    "volt_lime_kinetic": "Promo",
+    "ember_sunset_gradient": "Spiritual",
 }
 
 
@@ -449,6 +457,164 @@ _RECIPE_SPECS: list[dict[str, Any]] = [
     _spec("prism_pro_pricing", font="outfit", font_family='"Outfit", sans-serif', caption_style="Highlighted price label", motion="price-pop", grade="prism clean", video_filter="contrast(1.1) saturate(1.08) brightness(.94)", overlay_fn=_prism_overlay, shell_css=_shell(f"{_recipe_root('prism_pro_pricing')} .cta{{border:2px solid var(--template-accent);background:rgba(0,0,0,.78);color:var(--template-accent);font-family:Outfit,sans-serif}}"), css=".price-tag{right:48px;top:160px;padding:16px 20px;border-radius:16px;background:rgba(0,0,0,.72);border:2px solid var(--template-accent);font-family:Outfit,sans-serif}.price-tag span{display:block;font-size:14px;color:rgba(255,255,255,.7)}.price-tag strong{font-size:40px;color:var(--template-accent)}"),
 
     _spec("chalk_word_emphasis", font="permanent", font_family='"Permanent Marker", cursive', caption_style="Chalk handwriting dark", motion="chalk-scribble", grade="chalk dark board", video_filter="contrast(1.12) saturate(.65) brightness(.78)", overlay_fn=_chalk_overlay, shell_css=_shell(f"{_recipe_root('chalk_word_emphasis')} .cta{{border:2px dashed rgba(248,250,252,.4);background:rgba(15,23,42,.88);color:#e2e8f0;font-family:'Permanent Marker',cursive}}"), css="#root.recipe-chalk-word-emphasis .caption-text{font-family:'Permanent Marker',cursive;color:#f8fafc}#root.recipe-chalk-word-emphasis .caption-card{background:rgba(15,23,42,.85);border:2px dashed rgba(248,250,252,.35)}.chalk-board{left:48px;right:48px;bottom:240px;padding:20px;border-radius:8px;background:rgba(2,6,23,.75);font-family:'Permanent Marker',cursive;font-size:36px;color:#e2e8f0}"),
+
+    _spec(
+        "swiss_grid_explainer",
+        font="inter",
+        font_family='"Inter", system-ui, sans-serif',
+        caption_style="Swiss grid steps",
+        motion="grid-reveal",
+        grade="neutral swiss",
+        video_filter="contrast(1.05) saturate(.9) brightness(.94)",
+        overlay_fn=_swiss_overlay,
+        shell_css=_shell(
+            f"{_recipe_root('swiss_grid_explainer')} .cta{{border:2px solid #111;background:#fff;color:#111;font-family:Inter,sans-serif;font-weight:800}}",
+            f"{_recipe_root('swiss_grid_explainer')} .hook h1{{font-family:Inter,sans-serif;font-weight:900;letter-spacing:-.02em}}",
+        ),
+        css=(
+            "#root.recipe-swiss-grid-explainer .caption-text{font-family:Inter,sans-serif;font-weight:700}"
+            ".grid-lines{inset:48px;background:linear-gradient(rgba(0,0,0,.08) 1px,transparent 1px),"
+            "linear-gradient(90deg,rgba(0,0,0,.08) 1px,transparent 1px);background-size:32px 32px;opacity:.35}"
+            ".step-badge{left:56px;top:120px;width:56px;height:56px;border-radius:50%;background:#111;color:#fff;"
+            "display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;font-weight:900;font-size:22px}"
+            ".step-badge.secondary{left:56px;top:200px;background:#facc15;color:#111}"
+        ),
+    ),
+    _spec(
+        "vignelli_portrait_headline",
+        font="oswald",
+        font_family='"Oswald", sans-serif',
+        caption_style="Portrait headline stack",
+        motion="headline-rise",
+        grade="bold portrait",
+        video_filter="contrast(1.12) saturate(1.05) brightness(.9)",
+        overlay_fn=_vignelli_overlay,
+        shell_css=_shell(
+            f"{_recipe_root('vignelli_portrait_headline')} .cta{{border:none;background:#111;color:#fff;font-family:Oswald,sans-serif;text-transform:uppercase;letter-spacing:.12em}}",
+        ),
+        css=(
+            "#root.recipe-vignelli-portrait-headline .caption-text{font-family:Oswald,sans-serif;text-transform:uppercase;font-weight:700}"
+            ".portrait-headline{left:48px;right:48px;top:28%;font-family:Oswald,sans-serif;font-size:clamp(42px,6vw,72px);"
+            "font-weight:700;line-height:.95;text-transform:uppercase;color:#fff;text-shadow:0 8px 32px rgba(0,0,0,.55)}"
+        ),
+    ),
+    _spec(
+        "decision_tree_tutorial",
+        font="ibm_plex",
+        font_family='"IBM Plex Mono", monospace',
+        caption_style="Decision tree nodes",
+        motion="node-pop",
+        grade="tutorial cool",
+        video_filter="contrast(1.06) saturate(.88) brightness(.92)",
+        overlay_fn=_tree_overlay,
+        shell_css=_shell(
+            f"{_recipe_root('decision_tree_tutorial')} .cta{{border:1px solid #38bdf8;background:rgba(8,15,28,.85);color:#bae6fd;font-family:'IBM Plex Mono',monospace}}",
+        ),
+        css=(
+            "#root.recipe-decision-tree-tutorial .caption-text{font-family:'IBM Plex Mono',monospace}"
+            ".flow-node{padding:12px 16px;border-radius:12px;background:rgba(8,15,28,.82);border:1px solid rgba(56,189,248,.45);"
+            "font-family:'IBM Plex Mono',monospace;font-size:18px;color:#e0f2fe;max-width:240px}"
+            ".flow-node.a{left:48px;top:140px}.flow-node.b{right:48px;top:220px}.flow-node.c{left:50%;bottom:300px;transform:translateX(-50%)}"
+            ".flow-arrow{left:50%;top:200px;width:2px;height:120px;background:linear-gradient(#38bdf8,transparent);transform:translateX(-50%)}"
+        ),
+    ),
+    _spec(
+        "kinetic_type_promo",
+        font="bebas",
+        font_family='"Bebas Neue", sans-serif',
+        caption_style="Kinetic word swap",
+        motion="word-swap",
+        grade="kinetic punch",
+        video_filter="contrast(1.18) saturate(1.2) brightness(.88)",
+        overlay_fn=_kinetic_overlay,
+        shell_css=_shell(
+            f"{_recipe_root('kinetic_type_promo')} .cta{{border:2px solid #f472b6;color:#fff;background:rgba(0,0,0,.8);font-family:'Bebas Neue',sans-serif}}",
+        ),
+        css=(
+            "#root.recipe-kinetic-type-promo .caption-text{font-family:'Bebas Neue',sans-serif;text-transform:uppercase}"
+            ".word-swap{left:48px;right:48px;top:38%;text-align:center;font-family:'Bebas Neue',sans-serif;font-size:48px;color:#fff}"
+            ".word-swap .w1{color:#f472b6}.word-swap .w2{color:#22d3ee}.word-swap .w3{color:#facc15}"
+            ".neon-outline{inset:32px;border:2px solid rgba(244,114,182,.35);border-radius:8px;box-shadow:0 0 24px rgba(34,211,238,.15)}"
+        ),
+        motion_extra=".word-swap span{animation:kineticWord .6s ease-out both}.word-swap .w2{animation-delay:.1s}.word-swap .w3{animation-delay:.2s}@keyframes kineticWord{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}",
+    ),
+    _spec(
+        "nyt_graph_data_story",
+        font="libre",
+        font_family='"Libre Baskerville", serif',
+        caption_style="Chart annotation data",
+        motion="chart-draw",
+        grade="editorial data",
+        video_filter="contrast(1.04) saturate(.85) brightness(.9)",
+        overlay_fn=_nyt_overlay,
+        shell_css=_shell(
+            f"{_recipe_root('nyt_graph_data_story')} .cta{{border-top:2px solid #111;border-bottom:2px solid #111;background:#fff;color:#111;font-family:'Libre Baskerville',serif}}",
+        ),
+        css=(
+            "#root.recipe-nyt-graph-data-story .caption-text{font-family:'Libre Baskerville',serif}"
+            ".chart-annotation{right:48px;top:160px;width:200px;height:140px;border-left:2px solid rgba(255,255,255,.35)}"
+            ".chart-line{position:absolute;left:0;bottom:24px;width:100%;height:2px;background:linear-gradient(90deg,#facc15,#ef4444)}"
+            ".chart-dot{position:absolute;right:12px;bottom:20px;width:12px;height:12px;border-radius:50%;background:#ef4444;box-shadow:0 0 12px rgba(239,68,68,.6)}"
+            ".chart-label{position:absolute;right:0;top:0;font-size:14px;color:#f8fafc;font-family:'Libre Baskerville',serif}"
+        ),
+    ),
+    _spec(
+        "eva_neon_cyber",
+        font="syne",
+        font_family='"Syne", sans-serif',
+        caption_style="Cyber scanline neon",
+        motion="cyber-glitch",
+        grade="cyber neon",
+        video_filter="contrast(1.2) saturate(1.35) brightness(.84) hue-rotate(-8deg)",
+        overlay_fn=_neon_overlay,
+        shell_css=_shell(
+            f"{_recipe_root('eva_neon_cyber')} .cta{{border:1px solid #00f3ff;color:#00f3ff;background:rgba(3,3,8,.9);text-shadow:0 0 12px #ff2a85;font-family:Syne,sans-serif}}",
+        ),
+        css=(
+            "#root.recipe-eva-neon-cyber .caption-text{font-family:Syne,sans-serif;font-weight:800;text-shadow:0 0 16px rgba(0,243,255,.35)}"
+            ".scanlines{inset:0;background:repeating-linear-gradient(0deg,rgba(0,0,0,.15) 0 2px,transparent 2px 4px);opacity:.25}"
+            ".neon-frame{inset:40px;border:1px solid rgba(0,243,255,.45);box-shadow:0 0 28px rgba(255,42,133,.25)}"
+            ".glitch-tag{left:48px;top:120px;padding:10px 16px;background:rgba(0,0,0,.75);border:1px solid #ff2a85;color:#00f3ff;font-family:Syne,sans-serif;font-weight:800;letter-spacing:.08em}"
+        ),
+    ),
+    _spec(
+        "volt_lime_kinetic",
+        font="archivo",
+        font_family='"Archivo Black", sans-serif',
+        caption_style="Lime impact bar",
+        motion="volt-slam",
+        grade="volt lime",
+        video_filter="contrast(1.16) saturate(1.1) brightness(.86)",
+        overlay_fn=_volt_overlay,
+        shell_css=_shell(
+            f"{_recipe_root('volt_lime_kinetic')} .cta{{border:none;background:#a3e635;color:#111;font-family:'Archivo Black',sans-serif}}",
+        ),
+        css=(
+            "#root.recipe-volt-lime-kinetic .caption-text{font-family:'Archivo Black',sans-serif;text-transform:uppercase}"
+            ".lime-bar{left:0;right:0;top:36%;height:6px;background:linear-gradient(90deg,#a3e635,#22c55e);box-shadow:0 0 24px rgba(163,230,53,.45)}"
+            ".impact-type{left:48px;right:48px;top:40%;text-align:center;font-family:'Archivo Black',sans-serif;font-size:44px;color:#fff;text-transform:uppercase}"
+        ),
+    ),
+    _spec(
+        "ember_sunset_gradient",
+        font="fraunces",
+        font_family='"Fraunces", serif',
+        caption_style="Sunset script gradient",
+        motion="ember-glow",
+        grade="sunset warm",
+        video_filter="contrast(1.08) saturate(1.15) brightness(.9) sepia(.12)",
+        overlay_fn=_ember_overlay,
+        shell_css=_shell(
+            f"{_recipe_root('ember_sunset_gradient')} .cta{{border:none;background:linear-gradient(135deg,#ff5e36,#facc15);color:#120a06;font-family:Fraunces,serif}}",
+        ),
+        css=(
+            "#root.recipe-ember-sunset-gradient .caption-text{font-family:Fraunces,serif;font-weight:600}"
+            ".sunset-bloom{inset:0;background:radial-gradient(circle at 70% 20%,rgba(255,94,54,.35),transparent 55%),"
+            "radial-gradient(circle at 20% 80%,rgba(250,204,21,.2),transparent 50%);mix-blend-mode:screen}"
+            ".script-accent{left:48px;right:48px;bottom:280px;text-align:center;font-family:Fraunces,serif;font-size:40px;font-style:italic;"
+            "color:#ff9f68;text-shadow:0 4px 24px rgba(255,94,54,.45)}"
+        ),
+    ),
 
     _spec(
         "techtalk_intel_brief",

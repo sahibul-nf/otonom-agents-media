@@ -54,7 +54,16 @@ class RerenderJobTests(unittest.TestCase):
                 return {"candidate_id": "clip_1", "status": "rendered", "output_path": "/tmp/out.mp4"}
 
             with patch("media_engine.rerender.rerender_candidate", side_effect=fake_rerender_candidate):
-                _run_rerender_job("rerender_test", "clip_1", "remotion", "production", "profiles/nourbit_opus_style.json", db_path)
+                _run_rerender_job(
+                    "rerender_test",
+                    "clip_1",
+                    "remotion",
+                    "production",
+                    "profiles/nourbit_opus_style.json",
+                    None,
+                    None,
+                    db_path,
+                )
 
             job = get_rerender_job("rerender_test", db_path)
 
