@@ -167,9 +167,12 @@ def resolve_render_duration_ms(
     timed = candidate.get("timed_captions")
     if isinstance(timed, list) and timed:
         caption_ms = captions_duration_ms(timed)
-    media_candidates = [ms for ms in (probed, caption_ms) if ms > 400]
-    if media_candidates:
-        media_ms = min(media_candidates)
+    # Only shorten the window when we probed real media (e.g. silence-trimmed source).
+    # Caption-only timing must not shrink a valid YouTube window when the file is missing.
+    if probed > 400:
+        media_ms = probed
+        if caption_ms > 400:
+            media_ms = min(probed, caption_ms)
         if window_ms <= 0 or media_ms < window_ms - 80:
             return media_ms
     return window_ms

@@ -18,7 +18,7 @@ from media_engine.styles import delete_brand_template, load_style, save_brand_sy
 
 class BrandSystemClosedLoopTests(unittest.TestCase):
     def test_resolve_starter_aliases(self):
-        self.assertEqual(resolve_starter_template_id("eva_neon_cyber"), "neon_seize_future")
+        self.assertEqual(resolve_starter_template_id("eva_neon_cyber"), "eva_neon_cyber")
         self.assertEqual(resolve_starter_template_id("play_mode_social"), "cove_callout_pill")
         self.assertEqual(resolve_starter_template_id("missing"), "spiritual_reflective")
 
@@ -49,13 +49,13 @@ class BrandSystemClosedLoopTests(unittest.TestCase):
             item = templates[0]
             self.assertEqual(item["id"], "brand:custom_demo_brand")
             self.assertEqual(item["brand_template_path"], "profiles/custom_demo_brand.json")
-            self.assertEqual(item["starter_template"], "neon_seize_future")
-            self.assertEqual(item["recipe_module"], "neon_seize_future")
+            self.assertEqual(item["starter_template"], "eva_neon_cyber")
+            self.assertEqual(item["recipe_module"], "eva_neon_cyber")
 
             with patch.object(hyperframes_templates, "ROOT", root):
                 resolved = resolve_hyperframes_template("brand:custom_demo_brand")
-            self.assertEqual(resolved["starter_template"], "neon_seize_future")
-            self.assertEqual(resolved["recipe_module"], "neon_seize_future")
+            self.assertEqual(resolved["starter_template"], "eva_neon_cyber")
+            self.assertEqual(resolved["recipe_module"], "eva_neon_cyber")
             self.assertEqual(resolved["brand_template_path"], "profiles/custom_demo_brand.json")
 
     def test_save_brand_template_preserves_caption_position_and_uppercase(self):

@@ -68,15 +68,15 @@ Filter **Focus = This week** for your sprint.
 ```
 
 1. Triage → **Backlog**. Human moves to **Ready for AI** when requirements are clear (or say *Implement #N* in chat).
-2. Branch `feat/#N-slug` from **`dev`** → implement → self-verify → **AI Review** on board.
-3. PR **into `dev`** (`Fixes #N`) → human reviews (**Human Review**) → merge to **`dev`**. Human later ships **`main`** on the ops clone.
+2. Branch `feat/#N-slug` from **`dev`** → implement → tests for AC → full unittest suite.
+3. PR **into `dev`** (`Fixes #N`). If suite green, agent merges to **`dev`** → board **Human Review** (UI how-to-test). Human later ships **`main`** on the ops clone.
 4. You confirm *works* → AI runs `gh-close-verified-issue.sh` → issue closed + **Done**.
 
 ## CI & deploy
 
 | Step | Branch | Action |
 |------|--------|--------|
-| Integration | `dev` | Agent PRs land here; human reviews before merge |
+| Integration | `dev` | Agent PRs land here; agent merges after green full test suite |
 | Production | `main` | PM2 ops clone (`otonom-agents-media-ops`). Human merges `main` ← `dev` after review |
 
 See `CONTRIBUTING.md`. Agents never push `main` or restart PM2.

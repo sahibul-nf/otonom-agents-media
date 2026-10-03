@@ -1,0 +1,2 @@
+# Dev / CI: full unittest suite (explainer title cards need Pillow).
+-r requirements-explainer.txt

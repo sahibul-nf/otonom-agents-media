@@ -19,6 +19,9 @@ Local-first V1 for autonomous short-form media production. This first slice focu
 ## Commands
 
 ```bash
+pip install -r requirements-dev.txt   # Pillow for full unittest suite (explainer title cards)
+PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'
+
 python3 -m media_engine.cli init
 python3 -m media_engine.cli ingest --profile nourbit
 python3 -m media_engine.cli curate --profile nourbit --source-id nourbit_nouraniyyahofficial
