@@ -2,8 +2,9 @@
 
 import {Facebook, HelpCircle, Instagram, Linkedin, Loader2, MoreHorizontal, Send, Wifi, Youtube} from "lucide-react";
 import {type FormEvent, type ReactNode, useState} from "react";
-import {EmptyState} from "@/components/shared/StudioPrimitives";
+import {EmptyState, RecoveryAction} from "@/components/shared/StudioPrimitives";
 import {disabledPublishPlatformReason, isPublishPlatformDisabled} from "@/lib/publish-platforms";
+import {classifyPublishError} from "@/lib/publish-recovery";
 import {platformLabel, type CredentialStatus, type PostizIntegration, type PublishAttempt, type PublishTarget} from "@/lib/media-api";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
@@ -567,6 +568,7 @@ export function PublishSection({
             const selectedForPublish = selectedPlatforms.includes(target.platform);
             const latest = latestByPlatform.get(target.platform);
             const recovery = publishActionHint(latest?.error);
+            const latestRecovery = classifyPublishError(latest?.error);
             const supportsOauth = oauthPlatforms.has(target.platform);
             const isTelegram = target.platform === "telegram_channel";
             const postizMapped = Boolean(credentials?.platforms[target.platform]?.postiz_integration_id);
@@ -679,6 +681,19 @@ export function PublishSection({
                       </p>
                     )}
                   </details>
+                ) : null}
+
+                {!unavailable && latestRecovery ? (
+                  <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-danger/[0.20] bg-danger/[0.05] p-3">
+                    <p className="min-w-0 flex-1 text-[11px] leading-relaxed text-danger/90">{recovery}</p>
+                    {latestRecovery.kind === "reconnect" && supportsOauth ? (
+                      <RecoveryAction label={latestRecovery.label} disabled={isBusy} onClick={() => onStartOauth(target.platform)} />
+                    ) : latestRecovery.kind === "rerender" ? (
+                      <RecoveryAction label="Open Review" href="/?section=review" />
+                    ) : latestRecovery.kind === "retry" && ready ? (
+                      <RecoveryAction label="Test connection" disabled={isBusy} onClick={() => onTestConnection(target.platform)} />
+                    ) : null}
+                  </div>
                 ) : null}
 
                 <div className="mt-4 flex items-center gap-2">

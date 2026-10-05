@@ -4,6 +4,7 @@ import {Loader2, XCircle, Zap} from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
 import {ScheduleWhenFields} from "@/components/calendar/ScheduleWhenFields";
 import {toJakartaDatetimeLocal} from "@/components/calendar/schedule-when";
+import {RecoveryAction} from "@/components/shared/StudioPrimitives";
 import {
   humanizePublishError,
   platformLabel,
@@ -12,6 +13,7 @@ import {
   type PublishTarget,
   type ScheduledPost,
 } from "@/lib/media-api";
+import {classifyPublishError} from "@/lib/publish-recovery";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 
@@ -76,6 +78,7 @@ export function ScheduleQueueCard({
     [item.platforms, item.platform_results],
   );
   const errorSummary = humanizePublishError(item.last_error);
+  const recovery = errorSummary ? classifyPublishError(item.last_error) : null;
 
   useEffect(() => {
     setWhen(toJakartaDatetimeLocal(item.scheduled_at));
@@ -254,6 +257,18 @@ export function ScheduleQueueCard({
               <p className="mt-1 break-all text-[10px] leading-relaxed text-zinc-500">{item.last_error}</p>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {recovery ? (
+        <div className="mt-2">
+          {recovery.kind === "retry" ? (
+            <RecoveryAction label={publishBusy ? "Sending…" : recovery.label} disabled={publishBusy || !canEdit} onClick={() => onPublishNow(item.id)} />
+          ) : recovery.kind === "rerender" ? (
+            <RecoveryAction label={recovery.label} href={`/review/${encodeURIComponent(item.candidate_id)}`} />
+          ) : (
+            <RecoveryAction label={recovery.label} href="/?section=publish" />
+          )}
         </div>
       ) : null}
     </article>

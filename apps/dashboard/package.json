@@ -7,7 +7,8 @@
     "dev:next": "next dev --hostname 127.0.0.1 --port 3100",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 3100",
-    "lint": "eslint . --max-warnings=0"
+    "lint": "eslint . --max-warnings=0",
+    "test": "node --test src/lib/studio-flow.test.ts src/lib/publish-recovery.test.ts"
   },
   "dependencies": {
     "@next/eslint-plugin-next": "^16.0.7",

@@ -32,7 +32,7 @@ import {ExplainerSection} from "@/components/explainer/ExplainerSection";
 import {TemplatesSection} from "@/components/templates/TemplatesSection";
 import {CalendarSection} from "@/components/calendar/CalendarSection";
 import {PublishSection} from "@/components/channels/PublishSection";
-import {EmptyState, InlineActionStatus, SettingTile} from "@/components/shared/StudioPrimitives";
+import {EmptyState, InlineActionStatus, LoadingState, SettingTile} from "@/components/shared/StudioPrimitives";
 import {
   apiGet,
   apiPost,
@@ -78,20 +78,24 @@ import {
 } from "@/lib/media-api";
 import {isPublishPlatformDisabled, oauthPlatforms, publishDestinationPlatforms, publishPlatforms} from "@/lib/publish-platforms";
 
-type Section = "dashboard" | "generate" | "explainer" | "templates" | "review" | "calendar" | "publish" | "brand";
-type NextAction = {
-  label: string;
-  detail: string;
-  section: Section;
-  tone: "primary" | "warning" | "ready";
-};
-type WorkflowStep = {
-  id: string;
-  label: string;
-  status: "ready" | "active" | "blocked" | "idle";
-  detail: string;
-  section: Section;
-};
+import {
+  buildSetupDetails,
+  buildWorkflowSteps,
+  getNextAction,
+  searchForSection,
+  sectionFromSearch,
+  type FlowInput,
+  type NextAction,
+  type Section,
+  type WorkflowStep,
+} from "@/lib/studio-flow";
+
+function stepDotClass(status: WorkflowStep["status"]) {
+  if (status === "ready") return "bg-teal";
+  if (status === "active") return "bg-cyan";
+  if (status === "blocked") return "bg-warning";
+  return "bg-white/[0.16]";
+}
 
 const defaultSourceUrl = "";
 const defaultTemplate = "profiles/default_workspace_style.json";
@@ -378,81 +382,6 @@ function matchesReviewFilter(clip: ClipCandidate, filter: string) {
   return (group.statuses as readonly string[]).includes(clip.status);
 }
 
-function getNextAction({
-  clips,
-  approvedCount,
-  scheduledCount,
-  readyPlatforms,
-  targetCount,
-  engineReady,
-  hasTemplate,
-}: {
-  clips: ClipCandidate[];
-  approvedCount: number;
-  scheduledCount: number;
-  readyPlatforms: number;
-  targetCount: number;
-  engineReady: boolean;
-  hasTemplate: boolean;
-}): NextAction {
-  const reviewCount = clips.filter((clip) => ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status)).length;
-  if (!engineReady) {
-    return {label: "Check Create readiness", detail: "Make sure the media engine is running before you create clips.", section: "generate", tone: "warning"};
-  }
-  if (!hasTemplate) {
-    return {label: "Choose a visual style", detail: "Pick a template so new clips match your brand look.", section: "templates", tone: "primary"};
-  }
-  if (!clips.length) {
-    return {label: "Generate first clips", detail: "Paste a long YouTube video and land candidates in Review.", section: "generate", tone: "primary"};
-  }
-  if (reviewCount > 0) {
-    const heldCount = clips.filter((clip) => clip.status === "held").length;
-    return {
-      label: `Review ${reviewCount} clips`,
-      detail: heldCount
-        ? `Approve or skip the clips. ${heldCount} have unusable captions.`
-        : "Approve or skip the strongest candidates.",
-      section: "review",
-      tone: "primary",
-    };
-  }
-  if (approvedCount > 0 && scheduledCount === 0) {
-    return {label: `Schedule ${approvedCount} approved clips`, detail: "Place approved clips into the next publishing slots.", section: "calendar", tone: "ready"};
-  }
-  if (targetCount > 0 && readyPlatforms < targetCount) {
-    return {label: `Connect ${targetCount - readyPlatforms} publish accounts`, detail: "Connect the remaining accounts so scheduled clips can go live.", section: "publish", tone: "warning"};
-  }
-  return {label: "Generate next batch", detail: "Queue is clear — create the next set of clips when you’re ready.", section: "generate", tone: "primary"};
-}
-
-function buildWorkflowSteps({
-  clips,
-  approvedCount,
-  scheduledCount,
-  readyPlatforms,
-  targetCount,
-  engineReady,
-  hasTemplate,
-}: {
-  clips: ClipCandidate[];
-  approvedCount: number;
-  scheduledCount: number;
-  readyPlatforms: number;
-  targetCount: number;
-  engineReady: boolean;
-  hasTemplate: boolean;
-}): WorkflowStep[] {
-  const reviewCount = clips.filter((clip) => ["draft", "rendered", "held", "pending_auto_schedule"].includes(clip.status)).length;
-  return [
-    {id: "generate", label: "Create", status: clips.length ? "ready" : engineReady && hasTemplate ? "active" : "blocked", detail: clips.length ? `${clips.length} clips` : "No batch yet", section: "generate"},
-    {id: "review", label: "Review", status: reviewCount ? "active" : approvedCount || scheduledCount ? "ready" : "idle", detail: reviewCount ? `${reviewCount} need action` : approvedCount ? `${approvedCount} approved` : "Waiting", section: "review"},
-    {id: "schedule", label: "Schedule", status: scheduledCount ? "ready" : approvedCount ? "active" : "idle", detail: scheduledCount ? `${scheduledCount} queued` : approvedCount ? "Ready to slot" : "Waiting", section: "calendar"},
-    {id: "publish", label: "Publish", status: readyPlatforms ? "ready" : targetCount ? "active" : "idle", detail: targetCount ? `${readyPlatforms}/${targetCount} channels` : "No targets", section: "publish"},
-    {id: "brand", label: "Brand", status: hasTemplate ? "ready" : "active", detail: hasTemplate ? "Style ready" : "Pick a preset", section: "brand"},
-    {id: "template", label: "Templates", status: hasTemplate ? "ready" : "blocked", detail: hasTemplate ? "Available" : "Choose first", section: "templates"},
-  ];
-}
-
 function shellComponentsForTemplate(templates: HyperframesTemplate[], templateId: string): ShellComponents {
   const template = templates.find((item) => item.id === templateId);
   return template?.shell_components ? {...DEFAULT_SHELL_COMPONENTS, ...template.shell_components} : {...DEFAULT_SHELL_COMPONENTS};
@@ -491,7 +420,17 @@ ${shellLine}  --llm-provider ${config.llmProvider} \\
 }
 
 export function MediaStudioApp() {
-  const [section, setSection] = useState<Section>("dashboard");
+  const [section, setSectionState] = useState<Section>("dashboard");
+  const [initialLoaded, setInitialLoaded] = useState(false);
+  function renderEmpty(title: string, text: string) {
+    return initialLoaded ? <EmptyState title={title} text={text} /> : <LoadingState text="Syncing your workspace…" />;
+  }
+  function setSection(next: Section) {
+    setSectionState(next);
+    const search = searchForSection(window.location.search, next);
+    if (search === window.location.search) return;
+    window.history.pushState(null, "", `${window.location.pathname}${search}${window.location.hash}`);
+  }
   const [profileId, setProfileId] = useState("nourbit");
   const [profileReady, setProfileReady] = useState(false);
   const profileIdRef = useRef(profileId);
@@ -579,6 +518,10 @@ export function MediaStudioApp() {
       ),
     [targets, profileId],
   );
+  const profileJobs = useMemo(
+    () => jobs.filter((job) => !job.profile_id || job.profile_id === profileId),
+    [jobs, profileId],
+  );
   const approved = profileClips.filter((clip) => clip.status === "approved").length;
   const scheduledCount = profileClips.filter((clip) => clip.status === "scheduled" || clip.status === "ready_to_publish").length;
   const readyPlatforms = credentials
@@ -586,28 +529,23 @@ export function MediaStudioApp() {
     : 0;
   const hasTemplate = hyperframesTemplates.length > 0 || generateConfig.hyperframesTemplate !== "auto";
   const engineReady = Boolean(engineHealth?.hyperframes.ready);
-  const nextAction = getNextAction({
+  const flowInput: FlowInput = {
     clips: profileClips,
+    jobs: profileJobs,
     approvedCount: approved,
     scheduledCount,
     readyPlatforms,
     targetCount: activeTargets.length,
     engineReady,
     hasTemplate,
-  });
+  };
+  const nextAction = getNextAction(flowInput);
   const isErrorStatus = /failed|error|invalid|offline|unauthorized|blocked/i.test(status);
   const headerStatus = !busy && !isErrorStatus && !engineReady
     ? engineHealth?.hyperframes.reason || "Video engine check required"
     : status;
-  const workflowSteps = buildWorkflowSteps({
-    clips: profileClips,
-    approvedCount: approved,
-    scheduledCount,
-    readyPlatforms,
-    targetCount: activeTargets.length,
-    engineReady,
-    hasTemplate,
-  });
+  const workflowSteps = buildWorkflowSteps(flowInput);
+  const setupDetails = buildSetupDetails(hasTemplate);
   const command = productionCommand(
     generateConfig,
     profileId,
@@ -734,6 +672,7 @@ export function MediaStudioApp() {
       setStatus(error instanceof Error ? error.message : "Unable to sync");
     } finally {
       setBusy(false);
+      setInitialLoaded(true);
     }
   }
 
@@ -1618,10 +1557,13 @@ export function MediaStudioApp() {
   }, []);
 
   useEffect(() => {
-    const requestedSection = new URLSearchParams(window.location.search).get("section");
-    if (!requestedSection || !nav.some((item) => item.id === requestedSection)) return;
-    const frame = window.requestAnimationFrame(() => setSection(requestedSection as Section));
-    return () => window.cancelAnimationFrame(frame);
+    const syncFromUrl = () => setSectionState(sectionFromSearch(window.location.search));
+    const frame = window.requestAnimationFrame(syncFromUrl);
+    window.addEventListener("popstate", syncFromUrl);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("popstate", syncFromUrl);
+    };
   }, []);
 
   useEffect(() => {
@@ -1717,15 +1659,15 @@ export function MediaStudioApp() {
               </button>
             );
           })}
-          <p className="mt-3 px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">More</p>
+          <p className="mt-3 px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">Setup &amp; tools</p>
           {secondaryNav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
-            const step = workflowSteps.find((workflowStep) => workflowStep.section === item.id);
             return (
               <button
                 key={item.id}
                 onClick={() => setSection(item.id)}
+                aria-current={active ? "page" : undefined}
                 className={`group relative flex min-h-[48px] items-center gap-3 overflow-hidden rounded-[18px] border px-3.5 py-2 text-left text-sm font-medium transition ${
                   active
                     ? "border-cyan/[0.30] bg-cyan/[0.09] text-cyan shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
@@ -1737,8 +1679,9 @@ export function MediaStudioApp() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-semibold">{item.label}</span>
-                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{step?.detail || "—"}</span>
+                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{setupDetails[item.id] || "—"}</span>
                 </span>
+
               </button>
             );
           })}
@@ -1833,7 +1776,7 @@ export function MediaStudioApp() {
               onCopy={() => copyText(command, "Production command copied")}
               renderReadinessLine={(props) => <ReadinessLine {...props} />}
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
-              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
+              renderEmptyState={renderEmpty}
             />
             <details className="rounded-[28px] border border-white/[0.08] bg-surface/30 p-5">
               <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-300">
@@ -1880,7 +1823,7 @@ export function MediaStudioApp() {
               ingesting={actionStates["ingest:longform"]?.status === "running"}
               pathAGenerating={actionStates["path-a:generate"]?.status === "running"}
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
-              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
+              renderEmptyState={renderEmpty}
             />
           )}
 
@@ -1926,7 +1869,7 @@ export function MediaStudioApp() {
               onDelete={deleteSavedBrandStyle}
               renderStatusPill={(busy, status) => <StatusPill busy={busy} status={status} />}
               renderSettingTile={(label, value) => <SettingTile label={label} value={value} />}
-              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
+              renderEmptyState={renderEmpty}
             />
           )}
 
@@ -1984,7 +1927,7 @@ export function MediaStudioApp() {
               statusTone={statusTone}
               renderScoreBubble={(value) => <ScoreBubble value={value} />}
               renderInlineActionStatus={(state) => <InlineActionStatus state={state} />}
-              renderEmptyState={(title, text) => <EmptyState title={title} text={text} />}
+              renderEmptyState={renderEmpty}
             />
           )}
 
@@ -2032,30 +1975,34 @@ export function MediaStudioApp() {
           )}
         </div>
 
-        <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-white/[0.08] bg-surface/[0.95] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
+        <nav aria-label="Primary" className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-6 border-t border-white/[0.08] bg-surface/[0.95] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden">
           {mobilePrimaryNav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
+            const step = workflowSteps.find((workflowStep) => workflowStep.section === item.id);
             return (
               <button
                 key={item.id}
                 type="button"
+                aria-current={active ? "page" : undefined}
                 onClick={() => {
                   setMobileMoreOpen(false);
                   setSection(item.id);
                 }}
-                className={`grid h-14 min-w-0 place-items-center content-center gap-1 px-1 text-[9px] ${active ? "text-cyan" : "text-zinc-500"}`}
+                className={`relative grid h-14 min-h-[44px] min-w-0 place-items-center content-center gap-1 px-1 text-[10px] font-medium ${active ? "text-cyan" : "text-zinc-500"}`}
               >
                 <Icon className="h-4 w-4" />
                 <span className="max-w-full truncate">{item.label}</span>
+                {step ? <span aria-hidden className={`absolute right-[28%] top-2 h-1.5 w-1.5 rounded-full ${stepDotClass(step.status)}`} /> : null}
               </button>
             );
           })}
           <button
             type="button"
+            aria-expanded={mobileMoreOpen}
             onClick={() => setMobileMoreOpen((open) => !open)}
-            className={`grid h-14 min-w-0 place-items-center content-center gap-1 px-1 text-[9px] ${
-              mobileMoreOpen || secondaryNav.some((item) => item.id === section) || section === "dashboard" ? "text-cyan" : "text-zinc-500"
+            className={`grid h-14 min-h-[44px] min-w-0 place-items-center content-center gap-1 px-1 text-[10px] font-medium ${
+              mobileMoreOpen || secondaryNav.some((item) => item.id === section) ? "text-cyan" : "text-zinc-500"
             }`}
           >
             <MoreHorizontal className="h-4 w-4" />
@@ -2064,19 +2011,8 @@ export function MediaStudioApp() {
         </nav>
         {mobileMoreOpen ? (
           <div className="fixed inset-x-0 bottom-14 z-40 border-t border-white/[0.08] bg-surface/[0.98] p-3 backdrop-blur-xl lg:hidden">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setSection("dashboard");
-                  setMobileMoreOpen(false);
-                }}
-                className={`rounded-2xl border px-3 py-3 text-left text-sm font-semibold ${
-                  section === "dashboard" ? "border-cyan/30 bg-cyan/10 text-cyan" : "border-white/[0.08] text-zinc-300"
-                }`}
-              >
-                Home
-              </button>
+            <p className="px-1 pb-2 text-[10px] font-bold uppercase tracking-wider text-zinc-600">Setup &amp; tools</p>
+            <div className="grid grid-cols-3 gap-2">
               {secondaryNav.map((item) => {
                 const Icon = item.icon;
                 const active = section === item.id;

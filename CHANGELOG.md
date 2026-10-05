@@ -9,6 +9,13 @@
 - Dashboard **light theme**: OS light mode no longer leaves near-white `zinc` text on pale canvas. Shell uses semantic tokens; video preview overlays stay light-on-dark.
 
 ### Changed
+- Dashboard **Main Flow UX (#105)**:
+  - Synchronized active section state with URL (`?section=`), supporting browser back/forward and deep linking while preserving extra query params.
+  - Main loop stepper in sidebar and home rail streamlined to **Create → Review → Schedule → Publish**, relocating Brand, Templates, and Long video into the dedicated **Setup & tools** section.
+  - `getNextAction` upgraded to handle in-flight generation jobs, failed generation jobs, failed clip renders, and partially published clips, with account connection prompts prioritized before scheduling.
+  - Mobile bottom navigation updated with direct Home access and visual status dot indicators matching touch target requirements.
+  - Unified `LoadingState` and `RecoveryAction` components across Dashboard sections; failed publish items now surface immediate recovery actions (Reconnect account, Re-render in Review, Retry now).
+  - Added unit test suites for `studio-flow` and `publish-recovery` (24 passing unit tests).
 - Upgraded **solo-dev-ai-kit** to **kit_version=12** (bootstrap merge; `GH_PROJECT_NUM=7` preserved). New kit: `gh-set-issue-status.sh`, `/update` + `/verify` Cursor commands, orchestrator Status columns (`gh-ensure-project-status.sh`). Otonom-only: `gh-sync-project-status.sh` (thin wrapper).
 - TikTok on **Publish** stays visible but **Unavailable** (no OAuth, schedule, or Postiz map) while TikTok rejects personal/internal developer apps for production API access.
 - Heuristic and LLM metadata skip family-blessing litanies and ASR junk (`hadratu qutblah`); titles should state the teaching, not “Berkahi keluarga…”.
