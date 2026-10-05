@@ -572,9 +572,33 @@ export type GenerationJob = {
   updated_at: string;
   result?: {
     count?: number;
+    considered?: number;
+    passed?: number;
+    floor?: number;
+    stage?: string;
+    candidates?: ShortlistCandidate[];
     renders?: unknown[];
     source_metadata?: SourceResolveResult;
   };
+};
+
+export type ShortlistCandidate = {
+  id: string;
+  title_hook?: string;
+  hook_subtitle?: string;
+  viral_reason?: string;
+  transcript_excerpt?: string;
+  start_ms?: number;
+  end_ms?: number;
+  content_angle?: string;
+  editorial_score?: number;
+  editorial_source?: string;
+};
+
+export type AngleRecommendation = {
+  id: string;
+  label: string;
+  reason: string;
 };
 
 export type RerenderJob = {

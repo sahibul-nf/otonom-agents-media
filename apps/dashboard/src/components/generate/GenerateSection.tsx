@@ -4,13 +4,15 @@ import {ArrowRight, BadgeCheck, ChevronDown, Copy, Loader2, Sparkles, Youtube} f
 import {useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction} from "react";
 import {HyperframesTemplatePickerModal} from "@/components/templates/HyperframesTemplatePickerModal";
 import {SlideToConfirm} from "@/components/shared/SlideToConfirm";
-import {apiGet, templateSupportsFormat, type ShellComponents, DEFAULT_SHELL_COMPONENTS, isTemplateOnlyBrand, TEMPLATE_ONLY_BRAND, type SourceResolveResult} from "@/lib/media-api";
+import {apiGet, apiPost, templateSupportsFormat, type ShellComponents, DEFAULT_SHELL_COMPONENTS, isTemplateOnlyBrand, TEMPLATE_ONLY_BRAND, type SourceResolveResult} from "@/lib/media-api";
 import {
   type ActionUiState,
   type BrandTemplate,
   type DurationPreset,
   type EngineHealth,
+  type AngleRecommendation,
   type GenerationJob,
+  type ShortlistCandidate,
   type GenreOption,
   type HyperframesCatalog,
   type HyperframesTemplate,
@@ -40,6 +42,7 @@ type GenerateConfigLike = {
   transcriptLanguages: string;
   llmProvider: string;
   quality: string;
+  minEditorialScore?: number;
   shellComponents: ShellComponents;
 };
 
@@ -149,9 +152,11 @@ function runStatusLabel(status: string) {
   switch (status) {
     case "completed":
       return "Ready for review";
+    case "shortlist":
+      return "Ideas ready";
     case "running":
     case "queued":
-      return "Creating clips";
+      return "Finding clips";
     case "failed":
       return "Failed";
     default:
@@ -192,6 +197,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   defaultTemplatePath,
   statusTone,
   onGenerate,
+  onRenderSelected,
   onOpenReview,
   onOpenBrand,
   onCopy,
@@ -214,6 +220,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   defaultTemplatePath: string;
   statusTone: (status: string) => string;
   onGenerate: (source?: SourceResolveResult | null) => void;
+  onRenderSelected?: (source: SourceResolveResult | null, candidateIds: string[]) => void;
   onOpenReview: () => void;
   onOpenBrand?: () => void;
   onCopy: () => void;
@@ -229,7 +236,12 @@ export function GenerateSection<T extends GenerateConfigLike>({
   const [resolveState, setResolveState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [resolvedSource, setResolvedSource] = useState<SourceResolveResult | null>(null);
   const [resolveError, setResolveError] = useState("");
+  const [angleRecs, setAngleRecs] = useState<AngleRecommendation[]>([]);
+  const [angleSource, setAngleSource] = useState("");
+  const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const resolveRequestId = useRef(0);
+  const floor = config.minEditorialScore ?? 80;
+  const shortlist = latest?.status === "shortlist" ? latest.result?.candidates || [] : [];
   const update = (patch: Partial<GenerateConfigLike>) => setConfig((current) => ({...current, ...patch}));
 
   useEffect(() => {
@@ -275,6 +287,48 @@ export function GenerateSection<T extends GenerateConfigLike>({
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-resolve when the pasted URL changes
   }, [config.sourceUrl]);
+
+  useEffect(() => {
+    if (!resolvedSource?.ok || !resolvedSource.video_id) {
+      setAngleRecs([]);
+      setAngleSource("");
+      return;
+    }
+    const videoId = resolvedSource.video_id;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await apiPost<{angles: AngleRecommendation[]; source: string}>("recommend-angles", {
+          title: resolvedSource.title || "",
+          video_id: videoId,
+          llm_provider: config.llmProvider,
+        });
+        if (cancelled) return;
+        const angles = result.angles || [];
+        setAngleRecs(angles);
+        setAngleSource(result.source || "");
+        if (angles.length && genresIsAuto(config.genres)) {
+          update({genres: angles.map((angle) => angle.id)});
+        }
+      } catch {
+        if (!cancelled) {
+          setAngleRecs([]);
+          setAngleSource("");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Recommend once per resolved video. Manual chip edits should not refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedSource?.video_id, resolvedSource?.ok]);
+
+  useEffect(() => {
+    if (latest?.status !== "shortlist") return;
+    const clips = latest.result?.candidates || [];
+    setSelectedClipIds(clips.filter((clip) => (clip.editorial_score ?? 0) >= floor).map((clip) => clip.id));
+  }, [latest?.id, latest?.status, floor]);
 
   const canGenerate = Boolean(config.sourceUrl.trim()) && resolveState === "ready" && Boolean(resolvedSource?.ok)
     && !(resolvedSource?.transcript?.status && resolvedSource.transcript.status !== "available" && config.curationSource === "youtube");
@@ -338,98 +392,95 @@ export function GenerateSection<T extends GenerateConfigLike>({
   };
 
   return (
-    <section className="grid w-full min-w-0 gap-5">
-      <div className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-4 shadow-[0_0_0_1px_rgba(102,232,249,0.04)] sm:rounded-[32px] sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan">New clip batch</p>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Paste a YouTube link. Results wait in Review before publishing.</p>
+    <section className="grid w-full min-w-0 gap-6">
+      <div className="grid w-full min-w-0 gap-6 xl:grid-cols-[896px_minmax(0,1fr)] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-start">
+        {/* Left Column: Configuration & Controls */}
+        <div className="min-w-0 rounded-[28px] border border-white/[0.08] bg-surface p-5 sm:p-6 shadow-[0_0_0_1px_rgba(102,232,249,0.04)] space-y-6 divide-y divide-white/[0.06]">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan">New clip batch</p>
+              <p className="mt-1 text-xs text-zinc-400">Set source, angles, and template.</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-canvas-deep px-2.5 py-1 text-xs">
+              <span className="font-semibold text-white">{clipCountLabel(config.count)}</span>
+              <span className="text-zinc-600">·</span>
+              <span className="text-zinc-400">{config.clipMinSeconds}–{config.clipMaxSeconds}s</span>
+            </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2 rounded-full border border-white/[0.08] bg-canvas-deep px-3 py-2 text-xs">
-            <span className="font-semibold text-white">{clipCountLabel(config.count)}</span>
-            <span className="text-zinc-600">·</span>
-            <span className="text-zinc-400">{config.clipMinSeconds}–{config.clipMaxSeconds}s</span>
-          </div>
-        </div>
 
-        <div className="mt-6 grid gap-5">
-          <div className="rounded-[24px] border border-cyan/[0.18] bg-teal/[0.07] p-4">
+          {/* 1. Source Video Input */}
+          <div className="pt-6 space-y-4">
             <label className="grid min-w-0 gap-2 text-sm font-medium text-zinc-300">
-              <span>YouTube link</span>
+              <span className="flex items-center justify-between">
+                <span>YouTube link</span>
+                <span className="text-[11px] font-normal text-zinc-500">Public or unlisted</span>
+              </span>
               <div className="relative flex items-center">
                 <input
                   value={config.sourceUrl}
                   onChange={(event) => update({sourceUrl: event.target.value})}
-                  className="h-12 w-full rounded-full border border-white/[0.08] bg-black/24 pl-11 pr-4 text-sm text-zinc-200 outline-none transition focus:border-cyan/[0.30] focus:ring-1 focus:ring-cyan/[0.30]"
+                  className="h-11 w-full rounded-2xl border border-white/[0.08] bg-black/30 pl-10 pr-4 text-sm text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-cyan/[0.40] focus:ring-1 focus:ring-cyan/[0.40]"
                   placeholder="https://youtube.com/watch?v=…"
                 />
-                <span className="absolute left-4 text-zinc-500">
+                <span className="absolute left-3.5 text-zinc-500">
                   <Youtube className="h-4 w-4" />
                 </span>
               </div>
             </label>
 
             {resolveState === "loading" ? (
-              <div className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-zinc-400">
+              <div className="inline-flex items-center gap-2 text-xs font-medium text-zinc-400">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan" />
-                Checking video…
+                Checking video details &amp; captions…
               </div>
             ) : null}
 
             {resolveState === "error" && resolveError ? (
-              <p className="mt-3 text-sm leading-6 text-danger">{resolveError}</p>
+              <p className="text-xs leading-5 text-danger">{resolveError}</p>
             ) : null}
 
             {resolveState === "ready" && resolvedSource ? (
-              <div className="mt-3 flex gap-3 rounded-[18px] border border-white/[0.08] bg-black/25 p-3">
+              <div className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-black/20 p-3">
                 {resolvedSource.thumbnail_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={resolvedSource.thumbnail_url}
                     alt=""
-                    className="h-16 w-28 shrink-0 rounded-xl object-cover bg-black/40"
+                    className="h-14 w-24 shrink-0 rounded-lg object-cover bg-black/40"
                   />
                 ) : (
-                  <div className="grid h-16 w-28 shrink-0 place-items-center rounded-xl bg-black/40 text-zinc-600">
-                    <Youtube className="h-5 w-5" />
+                  <div className="grid h-14 w-24 shrink-0 place-items-center rounded-lg bg-black/40 text-zinc-600">
+                    <Youtube className="h-4 w-4" />
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-white">{resolvedSource.title || "YouTube video"}</p>
+                  <p className="truncate text-xs font-semibold text-white">{resolvedSource.title || "YouTube video"}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-zinc-400">
+                    {[resolvedSource.channel, formatSourceDuration(resolvedSource.duration_seconds)].filter(Boolean).join(" · ")}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
                     {resolvedSource.transcript?.status ? (
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${transcriptStatusTone(resolvedSource.transcript.status)}`}>
+                      <span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${transcriptStatusTone(resolvedSource.transcript.status)}`}>
                         {transcriptStatusLabel(resolvedSource.transcript.status)}
                       </span>
                     ) : null}
+                    {resolvedSource.transcript?.status === "available" ? (
+                      <span className="text-[10px] text-teal">Ready</span>
+                    ) : null}
                   </div>
-                  <p className="mt-1 truncate text-xs text-zinc-400">
-                    {[resolvedSource.channel, formatSourceDuration(resolvedSource.duration_seconds)].filter(Boolean).join(" · ")}
-                  </p>
-                  {resolvedSource.transcript?.status && resolvedSource.transcript.status !== "available" ? (
-                    <p className="mt-2 text-xs leading-5 text-warning">
-                      {resolvedSource.transcript.message || "No YouTube subtitles yet. Use Transcribe from audio below."}
-                    </p>
-                  ) : resolvedSource.warnings?.length ? (
-                    <p className="mt-2 text-xs leading-5 text-warning">{resolvedSource.warnings[0]}</p>
-                  ) : (
-                    <p className="mt-2 text-xs text-teal">Ready to generate</p>
-                  )}
                 </div>
               </div>
             ) : null}
 
             {resolveState === "ready" && resolvedSource?.transcript?.status && resolvedSource.transcript.status !== "available" ? (
-              <div className="mt-3 rounded-[18px] border border-warning/20 bg-warning/[0.05] p-3">
-                <p className="text-sm font-semibold text-white">Clip selection source</p>
-                <p className="mt-1 text-xs leading-5 text-zinc-400">
-                  YouTube captions are not ready. Choose how the app should find clip moments before rendering.
-                </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="space-y-2 rounded-xl border border-warning/20 bg-warning/[0.04] p-3 text-xs">
+                <p className="font-semibold text-white">Clip discovery source</p>
+                <div className="grid gap-1.5">
                   {[
-                    {value: "auto", label: "Auto (recommended)", detail: "Try YouTube captions, then transcribe audio if missing."},
-                    {value: "audio", label: "Transcribe from audio", detail: "Slower, but works without YouTube CC."},
-                    {value: "youtube", label: "YouTube captions only", detail: "Fast, but requires subtitles on YouTube."},
+                    {value: "auto", label: "Auto", detail: "YouTube CC → Whisper fallback"},
+                    {value: "audio", label: "Audio (Whisper)", detail: "Full Whisper ASR from track"},
+                    {value: "youtube", label: "YouTube CC only", detail: "Fast, requires CC"},
                   ].map((option) => {
                     const active = config.curationSource === option.value;
                     return (
@@ -437,128 +488,424 @@ export function GenerateSection<T extends GenerateConfigLike>({
                         key={option.value}
                         type="button"
                         onClick={() => update({curationSource: option.value})}
-                        className={`rounded-2xl border p-3 text-left transition ${active ? "border-cyan/[0.40] bg-cyan/[0.06]" : "border-white/[0.08] bg-black/20 hover:border-white/[0.14]"}`}
+                        className={`flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-left transition ${
+                          active ? "border-cyan/[0.50] bg-cyan/[0.08] text-white" : "border-white/[0.06] bg-black/20 text-zinc-400 hover:border-white/[0.12]"
+                        }`}
                       >
-                        <span className="text-xs font-semibold text-white">{option.label}</span>
-                        <span className="mt-1 block text-[11px] leading-4 text-zinc-500">{option.detail}</span>
+                        <span className="text-xs font-medium">{option.label}</span>
+                        <span className="text-[10px] text-zinc-500">{option.detail}</span>
                       </button>
                     );
                   })}
                 </div>
-                {config.curationSource === "youtube" ? (
-                  <p className="mt-2 text-xs leading-5 text-danger">YouTube captions only is blocked until subtitles appear on this video.</p>
-                ) : needsAudioCuration ? (
-                  <p className="mt-2 text-xs leading-5 text-zinc-400">Audio transcription can take several minutes for long videos.</p>
-                ) : null}
               </div>
             ) : null}
+          </div>
 
-            <div className="mt-4">
-              <span className="text-sm font-medium text-zinc-300">How many clips?</span>
-              <p className="mt-1 text-xs text-zinc-500">Maximum for this batch. Fewer clips still succeed.</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {[1, 2, 3, 5, 8, 10].map((val) => {
-                  const active = config.count === val;
+          {/* 2. Suggested Content Angles */}
+          {resolveState === "ready" && angleRecs.length ? (
+            <div className="pt-6 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-cyan">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-300">Content angles</span>
+                </div>
+                <span className="text-[10px] text-zinc-500">{angleSource || "AI suggested"}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {angleRecs.map((angle) => {
+                  const active = config.genres.includes(angle.id);
                   return (
                     <button
-                      key={val}
+                      key={angle.id}
                       type="button"
-                      onClick={() => update({count: val})}
-                      className={`h-9 rounded-full px-3.5 text-xs font-semibold transition ${
+                      onClick={() => {
+                        const next = active
+                          ? config.genres.filter((id) => id !== angle.id && id !== GENRE_AUTO)
+                          : [...config.genres.filter((id) => id !== GENRE_AUTO), angle.id];
+                        update({genres: next.length ? next : [GENRE_AUTO]});
+                      }}
+                      className={`group inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ${
                         active
-                          ? "bg-cyan text-ink shadow-[0_4px_12px_rgba(102,232,249,0.2)]"
-                          : "border border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
+                          ? "border-cyan bg-cyan/[0.12] text-white shadow-[0_0_10px_rgba(98,238,248,0.12)]"
+                          : "border-white/[0.08] bg-black/20 text-zinc-400 hover:border-white/[0.16] hover:text-zinc-200"
                       }`}
+                      title={angle.reason}
                     >
-                      {val}
+                      <span className={`h-1.5 w-1.5 rounded-full ${active ? "bg-cyan" : "bg-zinc-600"}`} />
+                      <span>{angle.label}</span>
+                      {active ? <span className="text-cyan text-[10px] font-bold">✓</span> : null}
                     </button>
                   );
                 })}
               </div>
             </div>
-            <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <h4 className="font-semibold text-white">Visual template</h4>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    Layout, overlays, and motion. Caption font, watermark, and CTA overlays come from a saved brand style in Advanced.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setTemplatePickerOpen(true)}
-                  className="inline-flex h-9 items-center gap-2 rounded-full border border-cyan/[0.24] bg-black/20 px-3 text-xs font-semibold text-cyan"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Browse
-                </button>
-              </div>
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px]">
-                <SelectTile
-                  label="Template"
-                  value={config.hyperframesTemplate}
-                  options={hyperframesTemplateOptions}
-                  onChange={(value) => {
-                    const picked = templatesForFormat.find((template) => template.id === value)
-                      ?? hyperframesTemplates.find((template) => template.id === value);
-                    update({
-                      renderer: "hyperframes",
-                      hyperframesTemplate: value,
-                      brandSystemTemplateId: picked?.source === "brand_system" ? value : "",
-                      brandTemplate:
-                        picked?.source === "brand_system" && picked?.brand_template_path
-                          ? picked.brand_template_path
-                          : templateOnlyBrand
-                            ? TEMPLATE_ONLY_BRAND
-                            : config.brandTemplate,
-                      shellComponents: shellComponentsFromTemplate(picked),
-                    });
-                  }}
-                />
-                <SelectTile
-                  label="Format"
-                  value={config.hyperframesFormat}
-                  options={[
-                    {value: "short_9_16", label: "Short 9:16"},
-                    {value: "long_16_9", label: "Long 16:9"},
-                    {value: "auto", label: "Auto"},
-                  ]}
-                  onChange={(value) => update({hyperframesFormat: value})}
-                />
-              </div>
-              {selectedTemplate ? (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Using <span className="text-zinc-300">{selectedTemplate.label}</span>
-                  {selectedTemplate.source === "brand_system" ? " · includes saved caption style" : " · set caption style in Advanced if needed"}
-                </p>
-              ) : config.hyperframesTemplate === "auto" ? (
-                <p className="mt-2 text-xs text-zinc-500">
-                  {activeBrandHyperframes && activeBrandStarterLabel
-                    ? `Auto uses the ${activeBrandStarterLabel} preset from ${activeSavedBrand?.label || "your saved brand"} (set in Brand Builder).`
-                    : "Auto picks a recipe from your content angles and workspace niche."}
-                </p>
-              ) : null}
-            </div>
+          ) : null}
 
-            <div className="mt-5 grid gap-3">
-              <SlideToConfirm
-                label={hasActiveJob ? "Generating…" : "Slide to generate"}
-                activeLabel="Starting…"
-                onConfirm={() => onGenerate(resolvedSource)}
-                isLoading={isStarting}
-                disabled={!canGenerate || isStarting}
-              />
-              {hasActiveJob ? (
-                <p className="text-xs text-zinc-500">Wait for the current batch to finish before starting another.</p>
-              ) : resolveState === "loading" ? (
-                <p className="text-xs text-zinc-500">Validate the link before generating.</p>
-              ) : null}
-              {renderActionStatus(actionState)}
+          {/* 3. Batch Size & Score Floor */}
+          <div className="pt-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-white">How many clips?</span>
+              <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                <span>Floor:</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={floor}
+                  onChange={(event) => update({minEditorialScore: Number(event.target.value) || 0})}
+                  className="h-7 w-14 rounded-lg border border-white/[0.08] bg-black/30 px-1.5 text-right text-xs font-semibold text-white outline-none focus:border-cyan/[0.40]"
+                />
+                <span className="text-zinc-500">pts</span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[1, 2, 3, 5, 8, 10].map((val) => {
+                const active = config.count === val;
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => update({count: val})}
+                    className={`h-8 min-w-[36px] rounded-full px-3 text-xs font-semibold transition ${
+                      active
+                        ? "bg-cyan text-ink shadow-[0_2px_8px_rgba(102,232,249,0.22)]"
+                        : "border border-white/[0.08] bg-black/20 text-zinc-400 hover:border-white/[0.16] hover:text-white"
+                    }`}
+                  >
+                    {val}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          {/* 4. Visual Template */}
+          <div className="pt-6 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-xs font-semibold text-white">Visual template</h4>
+              <button
+                type="button"
+                onClick={() => setTemplatePickerOpen(true)}
+                className="inline-flex h-7 items-center gap-1 rounded-full border border-cyan/[0.24] bg-cyan/[0.06] px-2.5 text-[11px] font-semibold text-cyan hover:bg-cyan/[0.12] transition"
+              >
+                <Sparkles className="h-3 w-3" />
+                Browse
+              </button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px]">
+              <SelectTile
+                label="Template"
+                value={config.hyperframesTemplate}
+                options={hyperframesTemplateOptions}
+                onChange={(value) => {
+                  const picked = templatesForFormat.find((template) => template.id === value)
+                    ?? hyperframesTemplates.find((template) => template.id === value);
+                  update({
+                    renderer: "hyperframes",
+                    hyperframesTemplate: value,
+                    brandSystemTemplateId: picked?.source === "brand_system" ? value : "",
+                    brandTemplate:
+                      picked?.source === "brand_system" && picked?.brand_template_path
+                        ? picked.brand_template_path
+                        : templateOnlyBrand
+                          ? TEMPLATE_ONLY_BRAND
+                          : config.brandTemplate,
+                    shellComponents: shellComponentsFromTemplate(picked),
+                  });
+                }}
+              />
+              <SelectTile
+                label="Format"
+                value={config.hyperframesFormat}
+                options={[
+                  {value: "short_9_16", label: "Short 9:16"},
+                  {value: "long_16_9", label: "Long 16:9"},
+                  {value: "auto", label: "Auto"},
+                ]}
+                onChange={(value) => update({hyperframesFormat: value})}
+              />
+            </div>
+          </div>
+
+          {/* 5. SlideToConfirm Action */}
+          <div className="pt-6 space-y-3">
+            <SlideToConfirm
+              label={hasActiveJob ? "Finding clips…" : "Slide to find clips"}
+              activeLabel="Starting…"
+              onConfirm={() => onGenerate(resolvedSource)}
+              isLoading={isStarting}
+              disabled={!canGenerate || isStarting}
+            />
+            {hasActiveJob ? (
+              <p className="text-center text-[11px] text-zinc-500">Batch running in right panel…</p>
+            ) : resolveState === "loading" ? (
+              <p className="text-center text-[11px] text-zinc-500">Checking link…</p>
+            ) : null}
+            {renderActionStatus(actionState)}
+          </div>
+
+          {/* Advanced Collapse */}
+          <div className="pt-6">
+            <details
+              className="rounded-2xl border border-white/[0.06] bg-black/20 p-3.5"
+              open={advancedOpen}
+              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-300">
+                Advanced settings
+                <span className="ml-1.5 text-[10px] text-zinc-500">duration · angles · brand &amp; dev</span>
+              </summary>
+              <div className="mt-4 space-y-5 border-t border-white/[0.06] pt-4 text-xs">
+                {/* 1. Clip length */}
+                <div>
+                  <h4 className="mb-2 font-semibold text-white">Clip length</h4>
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {presetOptions.map((preset) => {
+                      const active = config.clipLength === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            update({
+                              clipLength: preset.id,
+                              clipMinSeconds: Math.round(preset.min_ms / 1000),
+                              clipMaxSeconds: Math.round(preset.max_ms / 1000),
+                            });
+                          }}
+                          className={`rounded-xl border p-2 text-left transition ${
+                            active ? "border-cyan/[0.50] bg-cyan/[0.08] text-white" : "border-white/[0.06] bg-black/20 text-zinc-400 hover:border-white/[0.12]"
+                          }`}
+                        >
+                          <span className={`block font-semibold ${active ? "text-cyan" : "text-white"}`}>{preset.label}</span>
+                          <span className="text-[10px] text-zinc-500">{preset.detail}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-zinc-500">
+                    Using <span className="text-zinc-300">{selectedPreset?.label}</span> ({config.clipMinSeconds}–{config.clipMaxSeconds}s).
+                  </p>
+                </div>
+
+                {/* 2. Full Content Angles Catalog */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h4 className="font-semibold text-white">All content angles</h4>
+                    <span className="text-[11px] text-zinc-500">
+                      {genresAuto ? "Auto" : `${manualGenreCount} selected`}
+                      {genrePackLabel ? ` · ${genrePackLabel} pack` : ""}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => update({genres: [GENRE_AUTO]})}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${genresAuto ? "border-cyan bg-teal/[0.16] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
+                      aria-pressed={genresAuto}
+                    >
+                      {genresAuto ? <BadgeCheck className="h-3.5 w-3.5 text-cyan" /> : null}
+                      Auto
+                    </button>
+                    {genreOptions.map((genre) => {
+                      const active = !genresAuto && config.genres.includes(genre.id);
+                      return (
+                        <button
+                          key={genre.id}
+                          type="button"
+                          onClick={() => toggleGenre(genre.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${active ? "border-cyan bg-teal/[0.16] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
+                          aria-pressed={active}
+                          title={genre.description}
+                        >
+                          {active ? <BadgeCheck className="h-3.5 w-3.5 text-cyan" /> : null}
+                          {genre.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. Captions & Saved Brand Style */}
+                <div>
+                  <div className="mb-2">
+                    <h4 className="font-semibold text-white">Captions &amp; brand style</h4>
+                    <p className="mt-0.5 text-[11px] text-zinc-500">
+                      Optional — applies saved brand font/watermark overlay from Brand Builder.
+                    </p>
+                  </div>
+                  {savedBrandStyles.length === 0 ? (
+                    <div className="rounded-xl border border-white/[0.06] bg-black/20 p-3">
+                      <p className="text-xs text-zinc-300">
+                        Using <span className="font-semibold text-white">template defaults</span>
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-zinc-500">
+                        Caption font and watermark come from the selected visual template.
+                      </p>
+                      {onOpenBrand ? (
+                        <button
+                          type="button"
+                          onClick={onOpenBrand}
+                          className="mt-2 text-xs font-semibold text-cyan transition hover:text-cyan/80"
+                        >
+                          Save a custom style in Brand →
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="grid gap-1.5 sm:grid-cols-2">
+                      {brandStyleOptions.map((template) => {
+                        const active = templateOnlyBrand
+                          ? template.path === TEMPLATE_ONLY_BRAND
+                          : config.brandTemplate === template.path;
+                        const isTemplateDefault = template.path === TEMPLATE_ONLY_BRAND;
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            onClick={() => {
+                              const isDefault = template.path === TEMPLATE_ONLY_BRAND;
+                              const brandId = isDefault ? "" : (template.brand_system_template_id || "");
+                              update({
+                                brandTemplate: template.path,
+                                brandSystemTemplateId: brandId,
+                                hyperframesTemplate:
+                                  isDefault || config.hyperframesTemplate !== "auto"
+                                    ? config.hyperframesTemplate
+                                    : brandId || config.hyperframesTemplate,
+                              });
+                            }}
+                            className={`flex flex-col rounded-xl border p-2 text-left transition ${
+                              active
+                                ? "border-cyan/[0.50] bg-cyan/[0.08] text-white"
+                                : "border-white/[0.06] bg-black/20 text-zinc-400 hover:border-white/[0.12] hover:text-white"
+                            }`}
+                          >
+                            <span className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-semibold truncate">{template.label}</span>
+                              <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${active ? "bg-cyan text-ink" : "bg-white/[0.06] text-zinc-500"}`}>
+                                {active ? "Active" : "Use"}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 text-[10px] text-zinc-500 truncate">
+                              {isTemplateDefault ? "Recipe defaults" : "Saved brand"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Shell Layers */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="font-semibold text-white">Shell layers</h4>
+                    <span className="text-[10px] text-zinc-500">{templateOnlyBrand ? "From template" : "Custom override"}</span>
+                  </div>
+                  {templateOnlyBrand ? (
+                    <div className="rounded-xl border border-white/[0.06] bg-black/20 p-3">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(["hook", "watermark", "source", "cta"] as const).map((key) => (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-black/30 px-2.5 py-1.5 text-[11px]"
+                          >
+                            <span className="font-medium capitalize text-zinc-400">{key}</span>
+                            <span className={templateShellDefaults[key] ? "text-cyan font-bold" : "text-zinc-600"}>
+                              {templateShellDefaults[key] ? "On" : "Off"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-1.5 sm:grid-cols-2">
+                      <ShellComponentToggle
+                        label="Hook"
+                        detail="Title card in shell"
+                        enabled={config.shellComponents.hook}
+                        onChange={(hook) => update({shellComponents: {...config.shellComponents, hook}})}
+                      />
+                      <ShellComponentToggle
+                        label="Watermark"
+                        detail="Corner brand label"
+                        enabled={config.shellComponents.watermark}
+                        onChange={(watermark) => update({shellComponents: {...config.shellComponents, watermark}})}
+                      />
+                      <ShellComponentToggle
+                        label="Source"
+                        detail="YouTube channel credit"
+                        enabled={config.shellComponents.source}
+                        onChange={(source) => update({shellComponents: {...config.shellComponents, source}})}
+                      />
+                      <ShellComponentToggle
+                        label="CTA"
+                        detail="End-card prompt"
+                        enabled={config.shellComponents.cta}
+                        onChange={(cta) => update({shellComponents: {...config.shellComponents, cta}})}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. Developer options & CLI */}
+                <details className="rounded-xl border border-white/[0.06] bg-black/20 p-3">
+                  <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-400">
+                    Developer options &amp; CLI
+                    <span className="ml-1.5 text-[10px] text-zinc-600">captions · model · command</span>
+                  </summary>
+                  <div className="mt-3 space-y-3 border-t border-white/[0.06] pt-3">
+                    <div className="grid gap-2 text-[11px] sm:grid-cols-2">
+                      {renderReadinessLine({
+                        ready: Boolean(engineHealth?.hyperframes.ready),
+                        label: "Visual engine",
+                        detail: engineHealth?.hyperframes.ready ? "Ready" : "Check required",
+                      })}
+                      {renderReadinessLine({
+                        ready: Boolean(selectedTemplate || config.hyperframesTemplate === "auto"),
+                        label: "Template",
+                        detail: selectedTemplate?.label || "Auto",
+                      })}
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <SelectTile
+                        label="Captions"
+                        value={config.captionSource}
+                        options={[
+                          {value: "hybrid", label: "YouTube + Whisper"},
+                          {value: "whisper", label: "Whisper only"},
+                          {value: "youtube", label: "YouTube only"},
+                        ]}
+                        onChange={(value) => update({captionSource: value})}
+                      />
+                      <SelectTile label="Speech language" value={config.speechLanguage} options={["auto", "id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
+                      <SelectTile label="Transcripts" value={config.transcriptLanguages} options={["auto", "id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
+                      <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
+                      <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
+                    </div>
+                    <div className="rounded-xl border border-white/[0.06] bg-canvas-deep/60 p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-white">CLI Command</span>
+                        <button type="button" onClick={onCopy} className="inline-flex rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-zinc-200 hover:border-cyan/30 hover:text-cyan">
+                          <Copy className="mr-1.5 h-3 w-3" /> Copy
+                        </button>
+                      </div>
+                      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/[0.06] bg-black/40 p-2 text-[10px] leading-4 text-zinc-500">{command}</pre>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        {/* Right Column: Dynamic Stage (Shortlist / Active Run / Studio Guidance) */}
+        <div className="min-w-0 space-y-6">
+          {/* Active Job Progress */}
           {latest ? (
-            <div className="grid gap-4 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4" aria-live="polite">
+            <div className="rounded-[28px] border border-white/[0.08] bg-surface p-5 sm:p-6 shadow-[0_0_0_1px_rgba(102,232,249,0.04)] space-y-4" aria-live="polite">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Current run</p>
@@ -589,305 +936,150 @@ export function GenerateSection<T extends GenerateConfigLike>({
                   <div className="h-full rounded-full bg-cyan transition-[width] duration-500 motion-reduce:transition-none" style={{width: `${Math.max(4, latestProgress)}%`}} />
                 </div>
               </div>
-              {latest.error ? <p className="text-sm leading-6 text-danger">{humanizeGenerationError(latest.error)}</p> : null}
+              {latest.error ? <p className="text-xs leading-5 text-danger">{humanizeGenerationError(latest.error)}</p> : null}
               {latest.status === "completed" ? (
-                <button type="button" onClick={onOpenReview} className="inline-flex w-fit items-center gap-2 rounded-full bg-cyan px-4 py-2 text-sm font-semibold text-ink transition hover:bg-cyan/90">
-                  Review clips <ArrowRight className="h-4 w-4" />
+                <button type="button" onClick={onOpenReview} className="inline-flex w-fit items-center gap-2 rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-ink transition hover:bg-cyan/90">
+                  Review clips <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               ) : null}
               {(latest.error || latest.log_text) && (
                 <details>
                   <summary className="cursor-pointer list-none text-xs font-semibold text-zinc-500 hover:text-zinc-300">Technical details</summary>
-                  <pre className="mt-3 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-black/40 p-3 text-[11px] leading-5 text-zinc-400">{latest.error || latest.log_text || "Waiting…"}</pre>
+                  <pre className="mt-2.5 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/40 p-3 text-[10px] leading-4 text-zinc-400">{latest.error || latest.log_text || "Waiting…"}</pre>
                 </details>
               )}
             </div>
           ) : null}
 
-          <details
-            className="rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4"
-            open={advancedOpen}
-            onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-          >
-            <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-200">
-              Advanced
-              <span className="ml-2 text-xs font-medium text-zinc-500">
-                duration · angles · captions
-              </span>
-            </summary>
-
-            <div className="mt-4 grid gap-5 border-t border-white/[0.06] pt-4">
-              <div>
-                <h4 className="mb-3 font-semibold text-white">Clip length</h4>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {presetOptions.map((preset) => {
-                    const active = config.clipLength === preset.id;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => {
-                          update({
-                            clipLength: preset.id,
-                            clipMinSeconds: Math.round(preset.min_ms / 1000),
-                            clipMaxSeconds: Math.round(preset.max_ms / 1000),
-                          });
-                        }}
-                        className={`flex flex-col rounded-2xl border p-3 text-left transition ${
-                          active
-                            ? "border-cyan/[0.50] bg-cyan/[0.05]"
-                            : "border-white/[0.08] bg-black/24 hover:border-white/[0.16]"
-                        }`}
-                      >
-                        <span className={`text-xs font-semibold ${active ? "text-cyan" : "text-white"}`}>{preset.label}</span>
-                        <span className="mt-1 text-[11px] leading-4 text-zinc-500">{preset.detail}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="mt-2 text-xs text-zinc-500">
-                  Using <span className="text-zinc-300">{selectedPreset?.label}</span> ({config.clipMinSeconds}–{config.clipMaxSeconds}s).
-                </p>
-              </div>
-
-              <div>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h4 className="font-semibold text-white">Content angles</h4>
-                  <span className="text-xs text-zinc-500">
-                    {genresAuto ? "Auto" : `${manualGenreCount} selected`}
-                    {genrePackLabel ? ` · ${genrePackLabel} pack` : ""}
-                  </span>
-                </div>
-                <p className="mb-3 text-xs leading-5 text-zinc-500">
-                  How to cut this batch. Auto lets the model pick the best angle per clip; manual chips steer the whole batch.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => update({genres: [GENRE_AUTO]})}
-                    className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition ${genresAuto ? "border-cyan bg-teal/[0.16] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
-                    aria-pressed={genresAuto}
-                    title="Let the model pick the best content angle for each clip."
-                  >
-                    {genresAuto ? <BadgeCheck className="h-4 w-4 text-cyan" /> : null}
-                    Auto
-                  </button>
-                  {genreOptions.map((genre) => {
-                    const active = !genresAuto && config.genres.includes(genre.id);
-                    return (
-                      <button
-                        key={genre.id}
-                        type="button"
-                        onClick={() => toggleGenre(genre.id)}
-                        className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition ${active ? "border-cyan bg-teal/[0.16] text-white" : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"}`}
-                        aria-pressed={active}
-                        title={genre.description}
-                      >
-                        {active ? <BadgeCheck className="h-4 w-4 text-cyan" /> : null}
-                        {genre.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-3">
-                  <h4 className="font-semibold text-white">Captions & watermark</h4>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    Optional — only applies when you pick a saved brand style below. Otherwise the visual template drives the look.
+          {/* Curated Clip Shortlist */}
+          {shortlist.length ? (
+            <div className="rounded-[28px] border border-cyan/[0.22] bg-surface p-5 sm:p-6 shadow-[0_0_0_1px_rgba(102,232,249,0.06)] space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-white/[0.06] pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-2 w-2 rounded-full bg-cyan shadow-[0_0_8px_rgba(98,238,248,0.8)]" />
+                    <h4 className="text-sm font-bold uppercase tracking-wider text-white">Curated Clip Shortlist</h4>
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-400">
+                    <span className="font-semibold text-cyan">{latest?.result?.passed ?? shortlist.length}</span> of {latest?.result?.considered ?? shortlist.length} candidates cleared the floor ({latest?.result?.floor ?? floor}+).
                   </p>
                 </div>
-                {savedBrandStyles.length === 0 ? (
-                  <div className="rounded-2xl border border-white/[0.08] bg-black/24 p-4">
-                    <p className="text-sm text-zinc-300">
-                      Using <span className="font-semibold text-white">template defaults</span>
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-zinc-500">
-                      Caption font, colors, watermark, and shell layers come from the selected visual template — no platform brand overlay.
-                    </p>
-                    {onOpenBrand ? (
-                      <button
-                        type="button"
-                        onClick={onOpenBrand}
-                        className="mt-3 text-xs font-semibold text-cyan transition hover:text-cyan/80"
-                      >
-                        Save a custom style in Brand →
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {brandStyleOptions.map((template) => {
-                      const active = templateOnlyBrand
-                        ? template.path === TEMPLATE_ONLY_BRAND
-                        : config.brandTemplate === template.path;
-                      const isTemplateDefault = template.path === TEMPLATE_ONLY_BRAND;
-                      return (
-                        <button
-                          key={template.id}
-                          type="button"
-                          onClick={() => {
-                            const isDefault = template.path === TEMPLATE_ONLY_BRAND;
-                            const brandId = isDefault ? "" : (template.brand_system_template_id || "");
-                            update({
-                              brandTemplate: template.path,
-                              brandSystemTemplateId: brandId,
-                              hyperframesTemplate:
-                                isDefault || config.hyperframesTemplate !== "auto"
-                                  ? config.hyperframesTemplate
-                                  : brandId || config.hyperframesTemplate,
-                            });
-                          }}
-                          className={`flex flex-col rounded-2xl border p-3 text-left transition ${
-                            active
-                              ? "border-cyan/[0.50] bg-cyan/[0.05] text-white"
-                              : "border-white/[0.08] bg-black/24 text-zinc-400 hover:border-white/[0.16] hover:text-white"
-                          }`}
-                        >
-                          <span className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-semibold">{template.label}</span>
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${active ? "bg-cyan text-ink" : "bg-white/[0.08] text-zinc-500"}`}>
-                              {active ? "Active" : "Use"}
-                            </span>
-                          </span>
-                          {isTemplateDefault ? (
-                            <span className="mt-1 text-[11px] leading-4 text-zinc-500">Recipe captions and shell only — no saved brand overlay</span>
-                          ) : (
-                            <span className="mt-1 text-[11px] leading-4 text-zinc-500">Saved in Brand Builder</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedClipIds.length === shortlist.length) {
+                        setSelectedClipIds([]);
+                      } else {
+                        setSelectedClipIds(shortlist.map((c) => c.id));
+                      }
+                    }}
+                    className="rounded-full border border-white/[0.10] bg-white/[0.04] px-3 py-1 text-xs font-medium text-zinc-300 hover:border-white/[0.20] hover:text-white transition"
+                  >
+                    {selectedClipIds.length === shortlist.length ? "Deselect all" : "Select all"}
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <div className="mb-3 flex items-center justify-between">
-                  <h4 className="font-semibold text-white">Shell layers</h4>
-                  <span className="text-xs text-zinc-500">
-                    {templateOnlyBrand ? "From template" : "Override for this batch"}
-                  </span>
-                </div>
-                {templateOnlyBrand ? (
-                  <div className="rounded-2xl border border-white/[0.08] bg-black/24 p-4">
-                    <p className="text-sm text-zinc-300">
-                      {selectedTemplate ? (
-                        <>
-                          Defaults for <span className="font-semibold text-white">{selectedTemplate.label}</span>
-                        </>
-                      ) : (
-                        "Template shell defaults"
-                      )}
-                    </p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {(["hook", "watermark", "source", "cta"] as const).map((key) => (
-                        <div
-                          key={key}
-                          className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2 text-xs"
-                        >
-                          <span className="font-semibold capitalize text-zinc-400">{key}</span>
-                          <span className={templateShellDefaults[key] ? "text-cyan" : "text-zinc-600"}>
-                            {templateShellDefaults[key] ? "On" : "Off"}
+              {/* Flat list rows with subtle divider */}
+              <div className="divide-y divide-white/[0.06] rounded-2xl border border-white/[0.08] bg-black/20 overflow-hidden">
+                {shortlist.map((clip: ShortlistCandidate) => {
+                  const checked = selectedClipIds.includes(clip.id);
+                  const score = clip.editorial_score ?? 0;
+                  return (
+                    <div
+                      key={clip.id}
+                      onClick={() => {
+                        setSelectedClipIds((current) =>
+                          current.includes(clip.id) ? current.filter((id) => id !== clip.id) : [...current, clip.id],
+                        );
+                      }}
+                      className={`group flex cursor-pointer items-start gap-3.5 p-4 transition-colors ${
+                        checked ? "bg-cyan/[0.04]" : "hover:bg-white/[0.02]"
+                      }`}
+                    >
+                      <div className="pt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedClipIds((current) =>
+                              current.includes(clip.id) ? current.filter((id) => id !== clip.id) : [...current, clip.id],
+                            );
+                          }}
+                          className="h-4 w-4 rounded border-white/20 bg-black/40 text-cyan focus:ring-cyan"
+                        />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <h5 className={`text-sm font-semibold transition ${checked ? "text-cyan" : "text-white group-hover:text-cyan"}`}>
+                            {clip.title_hook}
+                          </h5>
+                          <span
+                            className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-bold tabular-nums ${
+                              score >= 80
+                                ? "border-teal/[0.35] bg-teal/[0.10] text-teal"
+                                : "border-warning/[0.35] bg-warning/[0.10] text-warning"
+                            }`}
+                          >
+                            {score} pts
                           </span>
                         </div>
-                      ))}
+
+                        {clip.hook_subtitle ? (
+                          <p className="mt-1 text-xs text-zinc-300 leading-relaxed font-medium">
+                            {clip.hook_subtitle}
+                          </p>
+                        ) : null}
+
+                        {clip.viral_reason ? (
+                          <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+                            💡 <span className="text-zinc-400">{clip.viral_reason}</span>
+                          </p>
+                        ) : null}
+
+                        {clip.transcript_excerpt ? (
+                          <blockquote className="mt-2 rounded-lg bg-black/30 px-2.5 py-1.5 text-[11px] italic text-zinc-400 border-l-2 border-white/10">
+                            &ldquo;{clip.transcript_excerpt}&rdquo;
+                          </blockquote>
+                        ) : null}
+                      </div>
                     </div>
-                    <p className="mt-3 text-xs leading-5 text-zinc-500">
-                      Pick a saved brand style above to override caption, watermark, and shell layers for this batch.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <p className="mb-3 text-xs leading-5 text-zinc-500">
-                      Hook and CTA are optional shell nodes. Most templates keep the hook inside the recipe overlay instead.
-                      {brandHasOssCta ? (
-                        <span className="mt-1 block text-zinc-600">
-                          Subscribe/follow widgets come from your saved brand — the shell CTA toggle may have no effect when a brand CTA block is active.
-                        </span>
-                      ) : null}
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <ShellComponentToggle
-                        label="Hook"
-                        detail="Title + subtitle card in the shell"
-                        enabled={config.shellComponents.hook}
-                        onChange={(hook) => update({shellComponents: {...config.shellComponents, hook}})}
-                      />
-                      <ShellComponentToggle
-                        label="Watermark"
-                        detail="Brand name in the corner"
-                        enabled={config.shellComponents.watermark}
-                        onChange={(watermark) => update({shellComponents: {...config.shellComponents, watermark}})}
-                      />
-                      <ShellComponentToggle
-                        label="Source"
-                        detail="YouTube channel line, e.g. Source: Ribath …"
-                        enabled={config.shellComponents.source}
-                        onChange={(source) => update({shellComponents: {...config.shellComponents, source}})}
-                      />
-                      <ShellComponentToggle
-                        label="CTA"
-                        detail="End-card follow / subscribe prompt"
-                        enabled={config.shellComponents.cta}
-                        onChange={(cta) => update({shellComponents: {...config.shellComponents, cta}})}
-                      />
-                    </div>
-                  </>
-                )}
+                  );
+                })}
               </div>
 
-              <details className="rounded-[20px] border border-white/[0.06] bg-black/20 p-4">
-                <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-400">
-                  Developer options
-                  <span className="ml-2 text-xs font-medium text-zinc-600">captions · model · CLI</span>
-                </summary>
-                <div className="mt-4 grid gap-4 border-t border-white/[0.06] pt-4">
-                  <div className="grid gap-2 text-xs sm:grid-cols-2">
-                    {renderReadinessLine({
-                      ready: Boolean(engineHealth?.hyperframes.ready),
-                      label: "Visual engine",
-                      detail: engineHealth?.hyperframes.ready ? "Ready" : "Check required",
-                    })}
-                    {renderReadinessLine({
-                      ready: Boolean(selectedTemplate || config.hyperframesTemplate === "auto"),
-                      label: "Template",
-                      detail: selectedTemplate?.label || "Auto",
-                    })}
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <SelectTile
-                      label="Captions"
-                      value={config.captionSource}
-                      options={[
-                        {value: "hybrid", label: "YouTube + Whisper"},
-                        {value: "whisper", label: "Whisper only"},
-                        {value: "youtube", label: "YouTube only"},
-                      ]}
-                      onChange={(value) => update({captionSource: value})}
-                    />
-                    <SelectTile label="Speech language" value={config.speechLanguage} options={["auto", "id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
-                    <SelectTile label="Transcripts" value={config.transcriptLanguages} options={["auto", "id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
-                    <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
-                    <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
-                  </div>
-                  <div className="rounded-[16px] border border-white/[0.06] bg-canvas-deep/60 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h4 className="text-sm font-semibold text-white">Run outside the app</h4>
-                        <p className="mt-1 text-xs text-zinc-500">Copy the CLI command only if you need it.</p>
-                      </div>
-                      <button type="button" onClick={onCopy} className="inline-flex w-fit rounded-full border border-white/[0.10] bg-white/[0.04] px-4 py-2 text-sm font-semibold text-zinc-200 hover:border-cyan/30 hover:text-cyan">
-                        <Copy className="mr-2 h-4 w-4" /> Copy
-                      </button>
-                    </div>
-                    <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-2xl border border-white/[0.06] bg-black/40 p-3 text-[11px] leading-5 text-zinc-500">{command}</pre>
-                  </div>
-                </div>
-              </details>
+              <div className="flex items-center justify-between gap-4 pt-1">
+                <span className="text-xs text-zinc-400">
+                  <span className="font-semibold text-white">{selectedClipIds.length}</span> of {shortlist.length} selected for rendering
+                </span>
+                <button
+                  type="button"
+                  disabled={!selectedClipIds.length || isStarting || !onRenderSelected}
+                  onClick={() => onRenderSelected?.(resolvedSource, selectedClipIds)}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-cyan px-5 text-xs font-bold uppercase tracking-wider text-ink shadow-[0_4px_16px_rgba(102,232,249,0.20)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Render selected ({selectedClipIds.length})
+                </button>
+              </div>
             </div>
-          </details>
+          ) : null}
+
+          {/* Empty / Idle State Placeholder in Right Column when no job / shortlist yet */}
+          {!latest && !shortlist.length ? (
+            <div className="rounded-[28px] border border-white/[0.08] bg-surface/40 p-8 sm:p-12 text-center">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl border border-white/[0.08] bg-canvas-deep text-zinc-500 mb-4">
+                <Youtube className="h-6 w-6 text-cyan/70" />
+              </div>
+              <h4 className="text-base font-semibold text-white">Ready for your source video</h4>
+              <p className="mt-1.5 max-w-sm mx-auto text-xs text-zinc-400 leading-relaxed">
+                Paste a YouTube URL on the left. The studio will check subtitles, suggest angles, and discover clip candidates for you to curate before rendering.
+              </p>
+            </div>
+          ) : null}
         </div>
       </div>
 

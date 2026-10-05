@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- Create finds a **text shortlist** before rendering. Slide to find clips, set a minimum editorial score (default 80), then render only the ideas you keep. Suggested content angles appear after a YouTube link resolves.
+- Optional **Jev** decisions (`TYPESAFE_API_KEY` or `JEV_API_KEY`) can score keep/drop and pick a content angle. Copy is still written by the existing LLM.
 - `docs/saas-readiness.md` — local-first → multi-user checklist (DB, auth seam, credentials, artifacts, workers); no cloud implementation.
 - HyperFrames: **8** new built-in caption recipes (`swiss_grid_explainer`, `vignelli_portrait_headline`, `decision_tree_tutorial`, `kinetic_type_promo`, `nyt_graph_data_story`, `eva_neon_cyber`, `volt_lime_kinetic`, `ember_sunset_gradient`) with catalog metadata, dashboard preview overlays, and stock preview mapping.
 
@@ -16,6 +18,8 @@
   - Mobile bottom navigation updated with direct Home access and visual status dot indicators matching touch target requirements.
   - Unified `LoadingState` and `RecoveryAction` components across Dashboard sections; failed publish items now surface immediate recovery actions (Reconnect account, Re-render in Review, Retry now).
   - Added unit test suites for `studio-flow` and `publish-recovery` (24 passing unit tests).
+- Post captions drop generic `Sumber:` / `Source:` lines that are not the real channel, and no longer end a short caption with `...`.
+- Hook prompts reject transcript slices. `viral_reason` stays a reason to post, not a copy of the subtitle.
 - Upgraded **solo-dev-ai-kit** to **kit_version=12** (bootstrap merge; `GH_PROJECT_NUM=7` preserved). New kit: `gh-set-issue-status.sh`, `/update` + `/verify` Cursor commands, orchestrator Status columns (`gh-ensure-project-status.sh`). Otonom-only: `gh-sync-project-status.sh` (thin wrapper).
 - TikTok on **Publish** stays visible but **Unavailable** (no OAuth, schedule, or Postiz map) while TikTok rejects personal/internal developer apps for production API access.
 - Heuristic and LLM metadata skip family-blessing litanies and ASR junk (`hadratu qutblah`); titles should state the teaching, not “Berkahi keluarga…”.

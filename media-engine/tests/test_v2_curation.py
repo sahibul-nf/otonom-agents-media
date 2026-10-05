@@ -362,7 +362,7 @@ class V2CurationTests(unittest.TestCase):
         self.assertNotEqual(candidate["title_hook"], "Allah Tidak Pernah Jauh")
         self.assertNotEqual(candidate["viral_reason"], "Potongan singkat untuk menenangkan hati dan meluruskan arah.")
         self.assertEqual(candidate["curation_metadata"]["title_source"], "heuristic_span")
-        self.assertEqual(candidate["curation_metadata"]["reason_source"], "heuristic_span")
+        self.assertEqual(candidate["curation_metadata"]["reason_source"], "heuristic_reason")
 
     def test_cli_parser_supports_v2_commands(self):
         args = build_parser().parse_args(

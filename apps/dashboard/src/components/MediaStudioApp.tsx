@@ -366,6 +366,7 @@ type GenerateConfig = {
   speechLanguage: string;
   transcriptLanguages: string;
   llmProvider: string;
+  minEditorialScore: number;
   shellComponents: ShellComponents;
 };
 
@@ -486,6 +487,7 @@ export function MediaStudioApp() {
     speechLanguage: "auto",
     transcriptLanguages: "auto",
     llmProvider: "deepseek",
+    minEditorialScore: 80,
     shellComponents: {...DEFAULT_SHELL_COMPONENTS},
   });
 
@@ -774,18 +776,66 @@ export function MediaStudioApp() {
           speech_language: generateConfig.speechLanguage,
           transcript_languages: generateConfig.transcriptLanguages,
           llm_provider: generateConfig.llmProvider,
+          stage: "shortlist",
+          min_editorial_score: generateConfig.minEditorialScore,
           ...(isTemplateOnlyBrand(generateConfig.brandTemplate, defaultTemplate)
             ? {}
             : {shell_components: generateConfig.shellComponents}),
           env_file: "../.env.local",
         }), "Generation batch started");
       setJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
-      setStatus("Generation running in background");
+      setStatus("Looking for clip ideas");
       window.setTimeout(() => void refreshAll(), 1600);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Generation failed");
     } finally {
       generateInFlightRef.current = false;
+    }
+  }
+
+  async function renderSelectedClips(source: SourceResolveResult | null, candidateIds: string[]) {
+    if (!source?.ok || !candidateIds.length) return;
+    const key = "generate:render";
+    try {
+      const job = await runAction(key, "Rendering selected clips...", () => apiPost<GenerationJob>("generation-jobs/render", {
+        source_url: source.canonical_url || source.source_url || generateConfig.sourceUrl,
+        profile_id: profileId,
+        source_id: `${profileId}_${source.video_id}`,
+        source_metadata: {
+          provider: source.provider || "youtube",
+          video_id: source.video_id,
+          title: source.title || "",
+          channel: source.channel || "",
+          duration_seconds: source.duration_seconds ?? null,
+          thumbnail_url: source.thumbnail_url || "",
+          canonical_url: source.canonical_url || source.source_url || generateConfig.sourceUrl,
+        },
+        candidate_ids: candidateIds,
+        count: candidateIds.length,
+        clip_length_preset: generateConfig.clipLength,
+        clip_min_seconds: generateConfig.clipMinSeconds,
+        clip_max_seconds: generateConfig.clipMaxSeconds,
+        genres: generateConfig.genres,
+        niche: profiles.find((profile) => profile.id === profileId)?.niche || "",
+        workspace_name: profiles.find((profile) => profile.id === profileId)?.name || "",
+        brand_template: generateConfig.brandTemplate,
+        hyperframes_template: generateConfig.hyperframesTemplate,
+        brand_system_template_id: generateConfig.brandSystemTemplateId,
+        hyperframes_format: generateConfig.hyperframesFormat,
+        renderer: generateConfig.renderer,
+        quality: generateConfig.quality,
+        caption_source: generateConfig.captionSource,
+        curation_source: generateConfig.curationSource,
+        asr_model: generateConfig.asrModel,
+        speech_language: generateConfig.speechLanguage,
+        transcript_languages: generateConfig.transcriptLanguages,
+        llm_provider: generateConfig.llmProvider,
+        stage: "render",
+        env_file: "../.env.local",
+      }), "Render started");
+      setJobs((items) => [job, ...items.filter((item) => item.id !== job.id)]);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Render failed");
     }
   }
 
@@ -1707,7 +1757,7 @@ export function MediaStudioApp() {
         <header className="sticky top-0 z-20 overflow-hidden border-b border-white/[0.06] bg-canvas-deep/[0.82] px-5 py-4 backdrop-blur-xl lg:px-8">
           <div
             className={`flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between ${
-              section === "review" ? "mx-auto w-full max-w-[1180px]" : section === "generate" ? "mx-auto w-full max-w-4xl" : ""
+              section === "review" ? "mx-auto w-full max-w-[1180px]" : section === "generate" ? "mx-auto w-full max-w-[1600px]" : ""
             }`}
           >
             <div className="min-w-0">
@@ -1754,7 +1804,7 @@ export function MediaStudioApp() {
           )}
 
           {section === "generate" && (
-            <div className="mx-auto grid w-full max-w-4xl gap-6">
+            <div className="mx-auto grid w-full max-w-[1600px] gap-6">
             <GenerateSection
               config={generateConfig}
               templates={templates}
@@ -1771,6 +1821,7 @@ export function MediaStudioApp() {
               defaultTemplatePath={defaultTemplate}
               statusTone={statusTone}
               onGenerate={startGeneration}
+              onRenderSelected={(source, ids) => void renderSelectedClips(source, ids)}
               onOpenReview={() => setSection("review")}
               onOpenBrand={() => setSection("brand")}
               onCopy={() => copyText(command, "Production command copied")}

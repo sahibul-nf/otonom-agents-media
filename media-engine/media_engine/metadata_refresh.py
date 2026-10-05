@@ -128,13 +128,21 @@ def metadata_editor_system_prompt(
     return base
 
 
+def distinct_viral_reason(title: str, subtitle: str = "") -> str:
+    """One sentence on why the clip is worth posting. Never a copy of the subtitle."""
+    hook = " ".join(str(title or "").split())
+    if hook and hook.casefold() != " ".join(str(subtitle or "").split()).casefold():
+        return f"Layak diposting karena hook “{hook}” menyatakan poinnya, bukan potongan transkrip."
+    return "Layak diposting karena momen ini punya opini yang bisa berdiri sendiri di feed."
+
+
 def _local_metadata(span: str) -> dict[str, str]:
     title = title_for_span(span)
     subtitle = hook_subtitle_for_span(span, title)
     return {
         "title_hook": title,
         "hook_subtitle": subtitle,
-        "viral_reason": subtitle,
+        "viral_reason": distinct_viral_reason(title, subtitle),
         "source": "heuristic_span",
     }
 
@@ -158,9 +166,9 @@ def _llm_metadata(
                 "Summarize the whole clip meaning, not the first clause or opening dua.",
                 "Ignore liturgical openings, family-blessing litanies (berkahi keluarga/pasangan/keturunan), and noisy ASR fragments.",
                 "Do not repeat Allah three times or copy a list of who to bless.",
-                "title_hook: 4-8 Indonesian words stating the teaching (e.g. knowing Allah in this world), paraphrase allowed.",
-                "hook_subtitle: max 18 words, warm and specific to the same teaching.",
-                "viral_reason: one short sentence explaining why this clip works.",
+                "title_hook: 4-8 Indonesian words with a clear opinion or tension. Do not copy the first transcript sentence.",
+                "hook_subtitle: max 18 words, warm and specific to the same teaching. Do not repeat the title.",
+                "viral_reason: one sentence on why this is worth posting. It must not copy the title or subtitle.",
                 "Do not invent claims that contradict the transcript.",
             ],
             "current": {"title_hook": current_title, "hook_subtitle": current_subtitle},
@@ -185,12 +193,20 @@ def _llm_metadata(
     if not _llm_copy_is_usable(title, subtitle):
         return None
     reason_l = reason.strip().lower()
-    if not reason or reason_l in STATIC_FALLBACK_SUBTITLES or reason_l.startswith("ringkasan isi clip:"):
-        reason = subtitle
+    subtitle_l = subtitle.strip().lower()
+    title_l = title.strip().lower()
+    if (
+        not reason
+        or reason_l in STATIC_FALLBACK_SUBTITLES
+        or reason_l.startswith("ringkasan isi clip:")
+        or reason_l == subtitle_l
+        or reason_l == title_l
+    ):
+        reason = distinct_viral_reason(title, subtitle)
     return {
         "title_hook": title,
         "hook_subtitle": subtitle,
-        "viral_reason": reason or subtitle,
+        "viral_reason": reason,
         "source": f"llm_{provider}",
     }
 

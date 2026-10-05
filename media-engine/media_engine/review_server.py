@@ -35,6 +35,7 @@ from .explainer_pipeline import (
 from .ingest_longform import ingest_longform
 from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_generate
 from .cursor_cloud import CursorCloudError
+from .angle_recommend import cheap_caption_excerpt, recommend_content_angles
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
 from .genres import genre_catalog
 from .source_resolve import resolve_youtube_source
@@ -985,6 +986,40 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 return
             except sqlite3.Error as exc:
                 self._send_json({"error": str(exc)}, status=503)
+                return
+            self._send_json(job, status=202)
+            return
+
+        if parsed.path == "/api/recommend-angles":
+            load_env_file(ENV_FILE)
+            title = str(payload.get("title") or "").strip()
+            description = str(payload.get("description") or "").strip()
+            excerpt = str(payload.get("excerpt") or "").strip()
+            video_id = str(payload.get("video_id") or "").strip()
+            if not excerpt and video_id:
+                excerpt = cheap_caption_excerpt(video_id)
+            if not title and not excerpt:
+                self._send_json({"error": "title or excerpt is required"}, status=400)
+                return
+            result = recommend_content_angles(
+                title=title,
+                description=description,
+                excerpt=excerpt,
+                provider=str(payload.get("llm_provider") or ""),
+            )
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/generation-jobs/render":
+            load_env_file(ENV_FILE)
+            payload = {**payload, "stage": "render"}
+            if not payload.get("candidate_ids"):
+                self._send_json({"error": "candidate_ids is required"}, status=400)
+                return
+            try:
+                job = create_generation_job(payload, start=True)
+            except (ValueError, RuntimeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(job, status=202)
             return

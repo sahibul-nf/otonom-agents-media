@@ -615,6 +615,15 @@ def _title_is_relevant(title: str, span: str) -> bool:
     return overlap >= max(1, min(2, len(title_words) // 2))
 
 
+def _looks_like_transcript_slice(title: str, span: str) -> bool:
+    """Reject LLM hooks that are just a copied stretch of the transcript."""
+    normalized_title = " ".join(str(title or "").lower().split())
+    normalized_span = " ".join(str(span or "").lower().split())
+    if len(normalized_title.split()) < 6 or not normalized_span:
+        return False
+    return normalized_title in normalized_span
+
+
 def _subtitle_is_relevant(subtitle: str, span: str) -> bool:
     normalized_subtitle = subtitle.strip().lower()
     if not normalized_subtitle or normalized_subtitle in STATIC_FALLBACK_SUBTITLES:
@@ -808,7 +817,11 @@ def build_candidate(
     pre_refine_span = " ".join(item.text for item in pre_refine_window)
     relevance_span = pre_refine_span if llm_suggestion else span
     suggested_title = str((llm_suggestion or {}).get("title_hook") or "").strip()
-    if suggested_title and _title_is_relevant(suggested_title, relevance_span):
+    if (
+        suggested_title
+        and _title_is_relevant(suggested_title, relevance_span)
+        and not _looks_like_transcript_slice(suggested_title, relevance_span)
+    ):
         title = suggested_title
         title_source = "llm"
     else:
@@ -822,12 +835,16 @@ def build_candidate(
         hook_subtitle = hook_subtitle_for_span(span, title)
         subtitle_source = "heuristic_span"
     suggested_reason = str((llm_suggestion or {}).get("viral_reason") or "").strip()
-    if suggested_reason and _subtitle_is_relevant(suggested_reason, relevance_span):
+    reason_key = suggested_reason.casefold()
+    copies_hook = reason_key in {hook_subtitle.strip().casefold(), title.strip().casefold()}
+    if suggested_reason and not copies_hook and _subtitle_is_relevant(suggested_reason, relevance_span):
         viral_reason = suggested_reason
         reason_source = "llm"
     else:
-        viral_reason = hook_subtitle
-        reason_source = subtitle_source
+        from .metadata_refresh import distinct_viral_reason
+
+        viral_reason = distinct_viral_reason(title, hook_subtitle)
+        reason_source = "heuristic_reason"
     content_angle = str((llm_suggestion or {}).get("content_angle") or "").strip().lower()
     if content_angle not in GENRE_OPTIONS:
         content_angle = ""
@@ -935,6 +952,9 @@ def llm_rank_suggestions(
         + "dan overlay {kicker, headline, subhead, stamp, line_a, line_b} dari transcript clip itu. "
         "Batas karakter overlay: kicker 28, headline 56, subhead 80, stamp 22, line_a 32, line_b 32. "
         "Jangan pakai copy dummy katalog (contoh More clarity, MUSTARD MODE, LEVEL UP, BOOST YOUR BUSINESS). "
+        "title_hook harus opini atau ketegangan 4-8 kata, bukan potongan kalimat pertama transkrip. "
+        "viral_reason satu kalimat kenapa layak diposting, dan tidak boleh menyalin title atau subtitle. "
+        "Tolak momen yang hanya mengulang pembukaan tanpa poin. "
         "Niche dan brand voice datang dari workspace, bukan dari daftar genre kustom."
     )
     angle_line = genre_prompt_phrase(genres)

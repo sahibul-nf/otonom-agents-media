@@ -37,6 +37,10 @@ SOURCES_DIR = Path(__file__).resolve().parent.parent / "sources"
 HASHTAG_RE = re.compile(r"(?<!\w)#[\w\u00c0-\u024f\u0600-\u06ff_]+", re.UNICODE)
 
 SOURCE_ATTRIBUTION_PLACEHOLDER = "Source: Channel clip"
+_ATTRIBUTION_LINE = re.compile(r"(?i)^(source|sumber)\s*:\s*(.+)$")
+_GENERIC_ATTRIBUTION_TAIL = re.compile(
+    r"(?i)^(channel(?:\s+clip)?|youtube(?:\s+(?:clip|video|kajian))?|klip(?:\s+\S+){0,6}|kajian(?:\s+\S+){0,6}|video(?:\s+clip)?)$"
+)
 
 
 def format_source_attribution(channel: str, prefix: str = "Source:") -> str:
@@ -49,13 +53,34 @@ def format_source_attribution(channel: str, prefix: str = "Source:") -> str:
     return f"{pref}: {name}"
 
 
-def is_placeholder_source_attribution(value: str) -> bool:
+def _attribution_tail(value: str) -> str:
+    match = _ATTRIBUTION_LINE.match(str(value or "").strip())
+    if not match:
+        return ""
+    return " ".join(match.group(2).split())
+
+
+def is_placeholder_source_attribution(value: str, channel: str = "") -> bool:
     text = str(value or "").strip()
     if not text:
         return True
-    return text.casefold() == SOURCE_ATTRIBUTION_PLACEHOLDER.casefold() or text.casefold() in {
+    if text.casefold() in {
+        SOURCE_ATTRIBUTION_PLACEHOLDER.casefold(),
         "source: channel",
         "source: channel clip",
+    }:
+        return True
+    tail = _attribution_tail(text)
+    if not tail:
+        return False
+    resolved = " ".join(str(channel or "").split())
+    if resolved and tail.casefold() == resolved.casefold():
+        return False
+    return bool(_GENERIC_ATTRIBUTION_TAIL.match(tail)) or tail.casefold() in {
+        "channel clip",
+        "klip kajian youtube",
+        "klip youtube",
+        "kajian youtube",
     }
 
 
@@ -231,6 +256,26 @@ def _split_hashtags(text: str) -> tuple[str, list[str]]:
     return body, hashtags
 
 
+def _fit_text(text: str, limit: int) -> str:
+    """Shorten at a sentence or word boundary. Do not append an ellipsis."""
+    cleaned = text.strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    window = cleaned[:limit]
+    best = -1
+    for mark in (". ", "! ", "? ", ".\n", "!\n", "?\n"):
+        index = window.rfind(mark)
+        if index > best:
+            best = index
+    if best >= int(limit * 0.45):
+        end = best + (2 if window[best : best + 2] in {". ", "! ", "? "} else 1)
+        return window[:end].strip()
+    space = window.rfind(" ")
+    if space >= int(limit * 0.5):
+        return window[:space].rstrip(" ,;:-")
+    return window.rstrip()
+
+
 def sanitize_post_caption(text: str, limit: int = MAX_POST_COPY_CHARS, max_hashtags: int = MAX_POST_COPY_HASHTAGS) -> str:
     """Normalize user/edit generated post copy for short-form platform reuse."""
     normalized = re.sub(r"[ \t]+", " ", str(text or "").replace("\r\n", "\n").replace("\r", "\n"))
@@ -243,19 +288,27 @@ def sanitize_post_caption(text: str, limit: int = MAX_POST_COPY_CHARS, max_hasht
         hashtag_line = " ".join(hashtags[:1])[:limit].rstrip()
     if hashtag_line:
         body_limit = max(0, limit - len(hashtag_line) - 2)
-        if len(body) > body_limit:
-            suffix = "..."
-            body = body[: max(0, body_limit - len(suffix))].rstrip() + suffix
+        body = _fit_text(body, body_limit)
         return f"{body}\n\n{hashtag_line}".strip()
-    if len(body) > limit:
-        body = body[: max(0, limit - 3)].rstrip() + "..."
-    return body.strip()
+    return _fit_text(body, limit)
 
 
-def _strip_placeholder_attribution(text: str) -> str:
-    cleaned = re.sub(r"(?im)^source:\s*channel(?:\s+clip)?\s*$", "", str(text or ""))
-    cleaned = re.sub(r"(?i)\bsource:\s*channel(?:\s+clip)?\b", "", cleaned)
+def strip_unresolved_attribution(text: str, channel: str = "") -> str:
+    kept: list[str] = []
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if _ATTRIBUTION_LINE.match(stripped) and is_placeholder_source_attribution(stripped, channel):
+            continue
+        if re.search(r"(?i)\b(source|sumber):\s*channel(?:\s+clip)?\b", stripped):
+            continue
+        kept.append(line)
+    cleaned = "\n".join(kept)
+    cleaned = re.sub(r"(?i)\b(source|sumber):\s*channel(?:\s+clip)?\b", "", cleaned)
     return sanitize_post_caption(cleaned)
+
+
+def _strip_placeholder_attribution(text: str, channel: str = "") -> str:
+    return strip_unresolved_attribution(text, channel)
 
 
 def _compact_lines(lines: list[str], limit: int | None = None) -> str:
@@ -263,9 +316,9 @@ def _compact_lines(lines: list[str], limit: int | None = None) -> str:
     if limit is None or len(text) <= limit:
         return sanitize_post_caption(text, limit or MAX_POST_COPY_CHARS)
     hashtags = lines[-1] if lines else ""
-    room = max(0, limit - len(hashtags) - 5)
+    room = max(0, limit - len(hashtags) - 2)
     body = "\n\n".join(lines[:-1]).strip()
-    return sanitize_post_caption(f"{body[:room].rstrip()}...\n\n{hashtags}", limit)
+    return sanitize_post_caption(f"{_fit_text(body, room)}\n\n{hashtags}", limit)
 
 
 def build_post_caption(
@@ -309,14 +362,9 @@ def _local_generated_post_caption(
         or _render_subtitle(render_job)
         or str(candidate.get("viral_reason") or "").strip()
     )
-    span = str(candidate.get("transcript_span") or "").strip()
-    excerpt_words = [word.strip(".,!?;:()[]{}\"'“”‘’") for word in span.split() if len(word.strip(".,!?;:()[]{}\"'“”‘’")) > 3]
-    excerpt = " ".join(excerpt_words[:14])
     body = title
     if subtitle:
         body = f"{title}\n\n{subtitle}"
-    if excerpt and excerpt.lower() not in body.lower():
-        body = f"{body}\n\n{excerpt}..."
     if ctx.cta_text and ctx.cta_text.lower() not in body.lower():
         body = f"{body}\n\n{ctx.cta_text}"
     attribution = _usable_source_attribution(ctx.source_attribution, candidate)
@@ -361,7 +409,10 @@ def generate_post_caption(
     elif ctx.source_attribution and not is_placeholder_source_attribution(ctx.source_attribution):
         rules.append(f"Include a short source line like: {ctx.source_attribution}")
     else:
-        rules.append("Do not invent a source line. Never write 'Source: Channel clip'.")
+        rules.append(
+            "Do not invent a source line. Never write 'Source: Channel clip', 'Sumber: klip kajian YouTube', or any generic Sumber/Source line."
+        )
+    rules.append("If the caption must be shortened, end on a complete sentence. Do not end with an ellipsis.")
 
     user_prompt = json.dumps(
         {
@@ -391,7 +442,8 @@ def generate_post_caption(
     if not isinstance(result, dict):
         raise LLMError("post copy generation failed: LLM response is not JSON object")
     caption = sanitize_post_caption(str(result.get("post_caption") or ""))
-    caption = _strip_placeholder_attribution(caption)
+    channel = _channel_from_candidate(candidate) or _attribution_tail(ctx.source_attribution)
+    caption = _strip_placeholder_attribution(caption, channel)
     if not caption:
         caption = _local_generated_post_caption(candidate, render_job, ctx)
         return {
