@@ -123,7 +123,7 @@ def _candidate_python_bins() -> list[Path]:
 
 
 def resolve_generation_python(config: dict[str, Any]) -> str:
-    if config.get("renderer") == "hyperframes":
+    if config.get("renderer") == "hyperframes" and config.get("stage") != "shortlist":
         hyperframes = check_hyperframes_runtime(run_doctor=False)
         if not hyperframes["ready"]:
             raise RuntimeError(f"HyperFrames runtime is not ready: {hyperframes['reason']}")
@@ -307,6 +307,10 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if canonical_url:
         source_url = canonical_url
     source_attribution = format_source_attribution(str(source_metadata.get("channel") or "").strip())
+    stage = _choice(payload.get("stage"), {"batch", "shortlist", "render"}, "batch")
+    candidate_ids = [str(item).strip() for item in (payload.get("candidate_ids") or []) if str(item).strip()]
+    if stage == "render" and not candidate_ids:
+        raise ValueError("candidate_ids is required to render a shortlist")
     return {
         "profile_id": profile_id,
         "source_id": source_id,
@@ -341,6 +345,14 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "niche": str(payload.get("niche") or "").strip(),
         "workspace_name": str(payload.get("workspace_name") or "").strip(),
         "source_attribution": source_attribution,
+        "stage": stage,
+        "min_editorial_score": _int_range(
+            payload.get("min_editorial_score"),
+            80 if stage == "shortlist" else 0,
+            0,
+            100,
+        ),
+        "candidate_ids": candidate_ids,
         "shell_components": (
             {}
             if is_template_only_style(brand_template)
@@ -351,11 +363,13 @@ def normalize_generation_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def build_generation_command(config: dict[str, Any], validate_runtime: bool = False) -> list[str]:
     python_bin = resolve_generation_python(config) if validate_runtime else _preferred_python_for_command()
+    stage = str(config.get("stage") or "batch")
+    verb = "premium-curate" if stage == "shortlist" else "premium-render-selected" if stage == "render" else "premium-batch"
     command = [
         python_bin,
         "-m",
         "media_engine.cli",
-        "premium-batch",
+        verb,
         "--profile",
         config["profile_id"],
         "--source-id",
@@ -404,7 +418,11 @@ def build_generation_command(config: dict[str, Any], validate_runtime: bool = Fa
         config["env_file"],
         "--source-attribution",
         str(config.get("source_attribution") or ""),
+        "--min-editorial-score",
+        str(int(config.get("min_editorial_score") or 0)),
     ]
+    if stage == "render":
+        command.extend(["--candidate-ids", ",".join(config.get("candidate_ids") or [])])
     if config.get("shell_components"):
         command.extend(
             ["--shell-components", json.dumps(config["shell_components"], separators=(",", ":"))]
@@ -709,13 +727,14 @@ def run_generation_job(job_id: str, command: list[str]) -> None:
             )
         else:
             partial_error = _partial_batch_message(result if isinstance(result, dict) else {})
+            status = "shortlist" if isinstance(result, dict) and result.get("stage") == "shortlist" else "completed"
             conn.execute(
                 """
                 UPDATE generation_jobs
-                SET status = 'completed', progress = 100, result_json = ?, error = ?, updated_at = CURRENT_TIMESTAMP
+                SET status = ?, progress = 100, result_json = ?, error = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
-                (json.dumps(result, ensure_ascii=False), partial_error, job_id),
+                (status, json.dumps(result, ensure_ascii=False), partial_error, job_id),
             )
         conn.commit()
     except Exception as exc:  # pragma: no cover - defensive background guard

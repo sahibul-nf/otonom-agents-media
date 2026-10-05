@@ -28,7 +28,7 @@ function WorkflowRail({steps, onSection}: {steps: WorkflowStep[]; onSection: (se
           <p className="mt-0.5 text-xs text-zinc-500">Create → Review → Schedule → Publish</p>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {steps.map((step, index) => {
           const isReady = step.status === "ready";
           const isActive = step.status === "active";

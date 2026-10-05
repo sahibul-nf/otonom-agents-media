@@ -546,27 +546,34 @@ def finalize_candidate_metadata(candidate: dict[str, Any], contract: dict[str, A
     }
 
 
-def cmd_premium_curate(args: argparse.Namespace) -> None:
-    bar = ProgressBar(4)
-    bar.step("loading environment and profile")
-    load_env_file(args.env_file)
-    conn = connect(args.db)
-    profile, _source = load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
-    bar.step("fetching YouTube transcript")
-    entries = fetch_youtube_transcript(args.youtube_url, languages=parse_languages(args.transcript_languages))
+def _style_for_args(args: argparse.Namespace) -> dict[str, Any]:
     style = load_style_for_render(
         args.style,
         hyperframes_template=getattr(args, "hyperframes_template", "auto"),
         hyperframes_format=getattr(args, "hyperframes_format", "auto"),
         genres=parse_genres(args.genres, args.profile),
     )
-    bar.step(f"curating {args.count} candidates with llm_provider={args.llm_provider}")
+    shell_components_raw = str(getattr(args, "shell_components", "") or "").strip()
+    if shell_components_raw:
+        try:
+            parsed_shell = json.loads(shell_components_raw)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"invalid --shell-components JSON: {exc}") from exc
+        style = {**style, "shell_components": normalize_shell_components(parsed_shell)}
+    return style
+
+
+def curate_premium_shortlist(args: argparse.Namespace, conn, profile: dict[str, Any], source: dict[str, Any] | None, entries, style: dict[str, Any]):
+    from .editorial import editorial_pool_count, public_shortlist_candidate, select_editorial_shortlist
+
+    floor = int(getattr(args, "min_editorial_score", 0) or 0)
+    pool = editorial_pool_count(args.count, floor)
     candidates = choose_nourbit_premium_candidates(
         args.profile,
         args.source_id,
         entries,
         style,
-        count=args.count,
+        count=pool,
         llm_provider=args.llm_provider,
         duration_preset=args.clip_length_preset,
         clip_min_seconds=args.clip_min_seconds,
@@ -582,12 +589,58 @@ def cmd_premium_curate(args: argparse.Namespace) -> None:
         niche=getattr(args, "niche", None) or profile.get("niche"),
         workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
         profile=profile,
-        source=_source,
+        source=source,
     )
+    if floor > 0:
+        kept, stats = select_editorial_shortlist(
+            candidates,
+            provider=args.llm_provider,
+            min_score=floor,
+            limit=args.count,
+        )
+    else:
+        kept, stats = candidates[: args.count], {"considered": len(candidates), "passed": min(len(candidates), args.count), "floor": 0}
+    return kept, stats, public_shortlist_candidate
+
+
+def cmd_premium_curate(args: argparse.Namespace) -> None:
+    bar = ProgressBar(4)
+    bar.step("loading environment and profile")
+    load_env_file(args.env_file)
+    conn = connect(args.db)
+    profile, _source = load_profile_and_source(conn, args.profile, args.source_id, args.youtube_url)
+    bar.step("fetching curation transcript")
+    languages = parse_languages(args.transcript_languages, niche=getattr(args, "niche", None) or profile.get("niche"), profile_id=args.profile)
+    entries, curation_meta = fetch_curation_transcript_entries(
+        args.youtube_url,
+        languages=languages,
+        curation_source=str(getattr(args, "curation_source", "youtube") or "youtube"),
+        profile_id=args.profile,
+        asr_model=getattr(args, "asr_model", "medium"),
+        speech_language=getattr(args, "speech_language", "auto"),
+        niche=getattr(args, "niche", None) or profile.get("niche") or "",
+    )
+    style = _style_for_args(args)
+    bar.step(f"curating up to {args.count} candidates with llm_provider={args.llm_provider}")
+    candidates, stats, present = curate_premium_shortlist(args, conn, profile, _source, entries, style)
     for candidate in candidates:
         insert_candidate(conn, candidate)
     bar.step(f"curation complete: {len(candidates)} candidates")
-    print(json.dumps({"count": len(candidates), "candidates": candidates}, indent=2, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "stage": "shortlist",
+                "count": len(candidates),
+                "considered": stats["considered"],
+                "passed": stats["passed"],
+                "floor": stats["floor"],
+                "candidates": [present(candidate) for candidate in candidates],
+                "curation": curation_meta,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
 
 def cmd_premium_batch(args: argparse.Namespace) -> None:
@@ -608,43 +661,9 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
         speech_language=getattr(args, "speech_language", "auto"),
         niche=getattr(args, "niche", None) or profile.get("niche") or "",
     )
-    style = load_style_for_render(
-        args.style,
-        hyperframes_template=getattr(args, "hyperframes_template", "auto"),
-        hyperframes_format=getattr(args, "hyperframes_format", "auto"),
-        genres=parse_genres(args.genres, args.profile),
-    )
-    shell_components_raw = str(getattr(args, "shell_components", "") or "").strip()
-    if shell_components_raw:
-        try:
-            parsed_shell = json.loads(shell_components_raw)
-        except json.JSONDecodeError as exc:
-            raise SystemExit(f"invalid --shell-components JSON: {exc}") from exc
-        style = {**style, "shell_components": normalize_shell_components(parsed_shell)}
+    style = _style_for_args(args)
     bar.step(f"selecting top {args.count} candidates with llm_provider={args.llm_provider}")
-    candidates = choose_nourbit_premium_candidates(
-        args.profile,
-        args.source_id,
-        entries,
-        style,
-        count=args.count,
-        llm_provider=args.llm_provider,
-        duration_preset=args.clip_length_preset,
-        clip_min_seconds=args.clip_min_seconds,
-        clip_max_seconds=args.clip_max_seconds,
-        genres=parse_genres(args.genres, args.profile),
-        niche=getattr(args, "niche", None) or profile.get("niche"),
-        workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
-    )
-    enrich_candidates_metadata(
-        candidates,
-        llm_provider=args.llm_provider,
-        workspace_id=args.profile,
-        niche=getattr(args, "niche", None) or profile.get("niche"),
-        workspace_name=getattr(args, "workspace_name", None) or profile.get("name"),
-        profile=profile,
-        source=_source,
-    )
+    candidates, _stats, _present = curate_premium_shortlist(args, conn, profile, _source, entries, style)
     attribution = resolve_cli_source_attribution(args)
     renders: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
@@ -682,6 +701,73 @@ def cmd_premium_batch(args: argparse.Namespace) -> None:
             bar.step(f"[{index}/{len(candidates)}] failed {candidate['id']}: {message[:120]}")
     bar.step(f"batch complete: {len(renders)} rendered, {len(failures)} failed")
     payload = {"count": len(renders), "renders": renders, "failures": failures, "curation": curation_meta}
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if not renders:
+        raise SystemExit(1)
+
+
+def _candidate_from_row(row) -> dict[str, Any]:
+    def _load(value: str, fallback: Any) -> Any:
+        try:
+            return json.loads(value or "")
+        except json.JSONDecodeError:
+            return fallback
+
+    return {
+        "id": row["id"],
+        "profile_id": row["profile_id"],
+        "source_id": row["source_id"],
+        "start_ms": row["start_ms"],
+        "end_ms": row["end_ms"],
+        "title_hook": row["title_hook"],
+        "hook_subtitle": row["hook_subtitle"],
+        "viral_reason": row["viral_reason"],
+        "transcript_span": row["transcript_span"],
+        "risk_flags": _load(row["risk_flags_json"], []),
+        "score": _load(row["score_json"], {}),
+        "curation_metadata": _load(row["curation_metadata_json"], {}),
+        "caption_source": row["caption_source"],
+        "status": row["status"],
+    }
+
+
+def cmd_premium_render_selected(args: argparse.Namespace) -> None:
+    load_env_file(args.env_file)
+    conn = connect(args.db)
+    profile, _source = load_profile_and_source(conn, args.profile, args.source_id or f"{args.profile}_source", args.youtube_url)
+    style = _style_for_args(args)
+    ids = [part.strip() for part in str(args.candidate_ids or "").split(",") if part.strip()]
+    if not ids:
+        raise SystemExit("candidate_ids is required")
+    attribution = resolve_cli_source_attribution(args)
+    renders: list[dict[str, Any]] = []
+    failures: list[dict[str, str]] = []
+    bar = ProgressBar(1 + len(ids) * 4)
+    for index, candidate_id in enumerate(ids, start=1):
+        row = conn.execute("SELECT * FROM clip_candidates WHERE id = ?", (candidate_id,)).fetchone()
+        if not row:
+            failures.append({"candidate_id": candidate_id, "title_hook": "", "error": "candidate not found"})
+            continue
+        candidate = _candidate_from_row(row)
+        try:
+            renders.append(
+                render_premium_candidate(
+                    conn,
+                    candidate,
+                    profile,
+                    args.youtube_url,
+                    attribution,
+                    args.renderer,
+                    style,
+                    args,
+                    progress_label=f"[{index}/{len(ids)}]",
+                    bar=bar,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            message = str(exc).strip() or exc.__class__.__name__
+            failures.append({"candidate_id": candidate_id, "title_hook": candidate.get("title_hook") or "", "error": message[:500]})
+    payload = {"stage": "render", "count": len(renders), "renders": renders, "failures": failures}
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     if not renders:
         raise SystemExit(1)
@@ -942,6 +1028,18 @@ def build_parser() -> argparse.ArgumentParser:
     premium_curate.add_argument("--workspace-name", default="", help="Workspace display name for curation context")
     premium_curate.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_curate.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    premium_curate.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
+    premium_curate.add_argument("--curation-source", choices=["youtube", "audio", "auto"], default="youtube")
+    premium_curate.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
+    premium_curate.add_argument("--speech-language", default="auto")
+    premium_curate.add_argument("--hyperframes-template", default="auto")
+    premium_curate.add_argument("--hyperframes-format", choices=["auto", "short_9_16", "long_16_9"], default="auto")
+    premium_curate.add_argument("--shell-components", default="")
+    premium_curate.add_argument("--renderer", default="hyperframes")
+    premium_curate.add_argument("--brand-system-template-id", default="")
+    premium_curate.add_argument("--quality", default="production")
+    premium_curate.add_argument("--source-attribution", default="")
+    premium_curate.add_argument("--min-editorial-score", type=int, default=0)
     premium_curate.add_argument("--transcript-languages", default="auto", help="YouTube transcript order: auto (detect+niche), or comma-separated e.g. id,en")
     premium_curate.add_argument("--env-file")
     premium_curate.set_defaults(func=cmd_premium_curate)
@@ -971,8 +1069,39 @@ def build_parser() -> argparse.ArgumentParser:
     premium_batch.add_argument("--style", help="Path to a JSON style override. Defaults to profiles/nourbit_opus_style.json")
     premium_batch.add_argument("--shell-components", default="", help="JSON toggles for hook, watermark, source, cta shell layers")
     premium_batch.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    premium_batch.add_argument("--min-editorial-score", type=int, default=0)
     premium_batch.add_argument("--env-file")
     premium_batch.set_defaults(func=cmd_premium_batch)
+
+    premium_render = sub.add_parser("premium-render-selected")
+    premium_render.add_argument("--profile", default="nourbit")
+    premium_render.add_argument("--source-id", default="")
+    premium_render.add_argument("--youtube-url", required=True)
+    premium_render.add_argument("--candidate-ids", required=True, help="Comma-separated draft candidate ids")
+    premium_render.add_argument("--count", type=int, default=1)
+    premium_render.add_argument("--curation-source", default="auto")
+    premium_render.add_argument("--clip-length-preset", default="auto")
+    premium_render.add_argument("--clip-min-seconds", type=int, default=20)
+    premium_render.add_argument("--clip-max-seconds", type=int, default=180)
+    premium_render.add_argument("--min-editorial-score", type=int, default=0)
+    premium_render.add_argument("--source-attribution", default="")
+    premium_render.add_argument("--renderer", choices=["ffmpeg", "remotion", "hyperframes"], default="hyperframes")
+    premium_render.add_argument("--hyperframes-template", default="auto")
+    premium_render.add_argument("--brand-system-template-id", default="")
+    premium_render.add_argument("--hyperframes-format", choices=["auto", "short_9_16", "long_16_9"], default="auto")
+    premium_render.add_argument("--quality", choices=["draft", "production"], default="draft")
+    premium_render.add_argument("--caption-source", choices=["youtube", "whisper", "hybrid"], default="youtube")
+    premium_render.add_argument("--asr-model", choices=["small", "medium", "large-v3-turbo"], default="medium")
+    premium_render.add_argument("--speech-language", default="auto")
+    premium_render.add_argument("--transcript-languages", default="auto")
+    premium_render.add_argument("--genres", default="")
+    premium_render.add_argument("--niche", default="")
+    premium_render.add_argument("--workspace-name", default="")
+    premium_render.add_argument("--style", default="")
+    premium_render.add_argument("--shell-components", default="")
+    premium_render.add_argument("--llm-provider", choices=["none", "openai", "deepseek", "groq"], default="none")
+    premium_render.add_argument("--env-file")
+    premium_render.set_defaults(func=cmd_premium_render_selected)
 
     review = sub.add_parser("review")
     review.add_argument("--profile", default="nourbit")
