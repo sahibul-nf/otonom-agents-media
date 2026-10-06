@@ -16,9 +16,10 @@
 
 (Optional — separate issues.)
 
-## Complexity / risk (optional metadata)
+## Complexity / reasoning (optional metadata)
 
 - Complexity: easy | medium | hard (or label `complexity:*`)
+- Reasoning tier (required label, one of): `reasoning:low` | `reasoning:medium` | `reasoning:high` | `reasoning:xhigh`
 - High-risk areas (auth, payments, migrations): note here — agent must ask before implementing
 
 **Authorization for autonomous work:** GitHub Project Status **Ready for AI** (set by human on the board). Labels do not authorize execution.

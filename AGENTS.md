@@ -18,22 +18,23 @@ See `docs/agent-platforms.md` for official doc links.
 
 ## Git & deploy
 
-- **Branch model:** **`dev`** = integration (PRs land here). **`main`** = production / PM2 ops clone.
-- **CI / deploy:** PM2 runs from a **`main`** checkout (`otonom-agents-media-ops`). Agents never push or merge to **`main`**. After a green full test suite, orchestrators **may merge PRs into `dev`**.
-- **Commits:** Only when the user explicitly asks (orchestrator PR runs may push the feature branch).
-- **Full contract:** `CONTRIBUTING.md`
+- **Branch model:** dual — integration **`dev`** then production **`main`**
+- **CI tests:** push to **`dev`** runs `cd media-engine && python3 -m unittest discover -s tests -p 'test_*.py'`
+- **Production deploy:** push **`main`** when ready
+- **Commits:** Only when the user explicitly asks
 
-### Merge & push (AI)
+### Merge & push order (AI)
+
+CI/tests run on **`git push origin dev`**, not on **`main`** alone.
 
 ```text
-1. branch from origin/dev → feat/#N-slug or fix/#N-slug
-2. write/extend tests for the AC if missing; run full media-engine unittest suite
-3. open PR into dev (Fixes #N) + How to test (UI)
-4. if suite exit 0: merge PR into origin/dev; do NOT git push origin main
-5. if suite red: do not merge
+1. merge feat/* → dev
+2. git push origin dev   ← CI / tests
+3. merge dev → main
+4. git push origin main    ← deploy
 ```
 
-Human UI-checks `dev`, then later `main` ← `dev` on the ops machine.
+**Before merge/push:** run `git branch -a` — if **`dev`** does not exist, use single-branch flow below instead of inventing the branch.
 
 ## Changelog (`CHANGELOG.md`)
 
@@ -67,7 +68,7 @@ Classify every user message before acting:
 |---------|------|
 | **GitHub Issue** | Unit of work + acceptance criteria |
 | **Project Status** | Workflow state and **authorization** for autonomous execution |
-| **Labels** | Metadata (`bug`, `priority:*`, `complexity:*`, `ai-blocked`) — not execution triggers |
+| **Labels** | Metadata (`bug`, `priority:*`, `complexity:*`, `reasoning:*`, `ai-blocked`) — not execution triggers |
 | **Coding agent** | Implements one issue; follows this file |
 | **Orchestrator** | Optional control plane — polls board, assigns agent runs |
 | **Pull Request** | Reviewable implementation artifact |
@@ -104,7 +105,7 @@ Script keys (preferred column → fallback): `backlog` → Backlog\|Todo · `rea
 4. New issue via `./scripts/gh-triage-issue.sh`:
    - Title: `[Bug]:` / `[Feature]:`
    - Body: follow `docs/issue-body.example.md` — must include `## Acceptance criteria` with `- [ ]` lines
-   - Labels: `bug` / `enhancement`; `priority:high|medium|low`; optional `complexity:*`, `client-facing`
+   - Labels: `bug` / `enhancement`; `priority:high|medium|low`; **exactly one** `reasoning:low|medium|high|xhigh`; optional `complexity:*`, `client-facing`
 5. Board: script adds to project; `./scripts/gh-set-issue-status.sh N backlog` if needed. **Never** set **Ready for AI** in triage.
 6. Reply with issue URL; **stop**.
 
@@ -121,7 +122,7 @@ Triggers: *Implement #N*, *kerjakan #N*, *LGTM #N* (chat authorization). Orchest
 5. `./scripts/gh-set-issue-status.sh N ai-working` (falls back to **In Progress** on legacy boards)
 6. **Self-verify** (required before claiming done) — see below.
 7. `./scripts/gh-set-issue-status.sh N ai-review` when self-verify passes or stops at gate (falls back to **QA**)
-8. PR: `Fixes #N`. Commits only when user asks (or user says *commit* / *PR*). Orchestrators: merge into **`dev` only** when the full unittest suite exits 0 (`CONTRIBUTING.md`). Never merge **`main`**.
+8. PR: `Fixes #N`. Commits only when user asks (or user says *commit* / *PR*). **Do not merge** unless explicit future policy says otherwise.
 
 Do **not** close the issue after self-verify. Human moves to **Human Review** / reviews PR; *sudah work* closes it.
 
@@ -148,10 +149,14 @@ When blocked, state: (1) what is ambiguous/risky, (2) decision required, (3) opt
 
 - **One issue per execution** — no draining the backlog autonomously
 - **No continuous autonomous loops** without human or orchestrator scheduling the next run
-- **Smallest capable model**; escalate only when stuck
+- **Smallest capable model**; escalate only when stuck. Issue label `reasoning:*` is the suggested tier (metadata — not a board field, not authorization):
+  - `reasoning:low` — copy, typo, obvious one-file fix
+  - `reasoning:medium` — typical bug/feature with clear AC (default if unsure)
+  - `reasoning:high` — multi-file design, unclear edge cases, cross-cutting behavior
+  - `reasoning:xhigh` — architecture, auth, payments, migrations, or high ambiguity — prefer strongest model and human checkpoints
 - **Retry cap** — `VERIFY_MAX_ROUNDS` (override per task in chat only)
 - **Stop when unclear** — move to Human Review or comment; do not speculate on high-risk decisions
-- **Human UI after `dev` merge** — suite green → agent may merge **`dev`**; **`main`/ops** stay human
+- **Human review before merge** — PR is for review, not auto-merge
 - **Minimal context** — AC scope lock; avoid full-app exploration unless asked
 
 ## Phase 3 — Close-out (human QA)
@@ -232,12 +237,9 @@ Do **not** use Playwright or Cursor browser for native mobile apps.
 
 ### Non-UI evidence
 
-- If the AC has no unittest lock, **add tests first** (or in the same PR) covering that contract. Maximize coverage of the **changed module**, not a new E2E framework unless the issue asks for it.
-- Always run the **full** suite before claiming done / merging to `dev`:
-  `cd media-engine && PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'`
+- Run relevant tests (`cd media-engine && python3 -m unittest discover -s tests -p 'test_*.py'` or focused subset tied to changed files).
 - Typecheck/lint when contracts change.
 - API: real requests (curl/script) including error paths in AC.
-- The suite is the regression oracle for other media-engine flows. Dashboard UI still needs the PR **How to test (UI)** (no dashboard E2E yet).
 
 ### Loop gate (max 3 rounds)
 
@@ -255,15 +257,14 @@ One round = implement/patch → verify → pass or fail.
 - Each round needs a new hypothesis, not random tweaks.
 - After stop: report what was proven per AC, gaps vs AC, last evidence, what you need from the user.
 
-## Merge & push
+## Merge & push (when user asks)
 
-**Chat sessions:** do not merge unless the user asks. Open/update PR into **`dev`**.
+1. Merge to **`dev`** → **`git push origin dev`** first (CI).
+2. Then **`main`** → **`git push origin main`**.
 
-**Orchestrators (FORGE):** after the full unittest suite **exits 0**, merge the PR into **`dev`** and push `origin/dev`. **Never** merge or push **`main`** unless the user names `main` and the ops deploy in the same message.
+If **`dev`** is missing (`git branch -a`), use single branch **`main`** only.
 
-If the user explicitly asks to merge in chat: merge the feature branch into **`dev`**, then `git push origin dev`.
-
-Before merge/push: run `git branch -a`. Use `.workflow-kit.env` (`SINGLE_BRANCH=false`, `INTEGRATION_BRANCH=dev`, `PRODUCTION_BRANCH=main`).
+Before merge/push: run `git branch -a`. Use `.workflow-kit.env` (`SINGLE_BRANCH`, `INTEGRATION_BRANCH`, `PRODUCTION_BRANCH`). Never invent branches.
 
 ## Orchestrator integration (optional)
 
@@ -272,9 +273,8 @@ Platform-agnostic pattern for external runtimes (e.g. Paperclip, custom workers)
 1. Monitor GitHub Project **Status**.
 2. Select issues in **Ready for AI** only — ignore Backlog/Todo, In Progress, labels, and `ai-ready` labels.
 3. Assign one issue to a coding agent; agent reads `AGENTS.md` and repository instructions.
-4. Agent sets **AI Working** → implements on a branch from **`dev`** → writes/extends tests → full unittest suite → PR **into `dev`** (never `main`).
-5. If suite green: agent merges **into `dev`**, board **Human Review**. If red: **AI Review**, no merge.
-6. Human UI-checks using the PR how-to-test → later ships **`main`** on ops → *sudah work* → **Done** via Phase 3.
+4. Agent sets **AI Working** → implements → self-verifies → **AI Review** → opens/updates PR.
+5. Human reviews PR (**Human Review** / **QA**) → merges → *sudah work* → **Done** via Phase 3.
 
 This workflow works **without** any orchestrator (interactive Cursor/Codex/Claude/Gemini sessions).
 
@@ -295,7 +295,6 @@ If the user has not given a task, briefly list open issues with **Focus = This w
 
 ## Related
 
-- `CONTRIBUTING.md` — PR base `dev`, never `main` / ops / PM2
 - `docs/github-workflow.md` — cheatsheet, board Status, daily flow
 - `docs/orchestrator-integration.md` — optional Paperclip-style board polling
 - `docs/agent-platforms.md` — per-platform official setup

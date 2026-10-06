@@ -25,7 +25,7 @@ git clone https://github.com/sahibul-nf/solo-dev-ai-kit.git /tmp/solo-dev-ai-kit
 
 1. Baca `.workflow-kit/installed` — catat `kit_version`, `tools`, `app_stack`.
 2. Baca `.workflow-kit.env` — terutama `GH_PROJECT_NUM`, branch, `CI_TEST_COMMAND`, `VERIFY_MAX_ROUNDS`, `APP_STACK`.
-3. Beri tahu saya loncatan versi (mis. `6` → `7`) dan apa yang akan di-update.
+3. Beri tahu loncatan versi (mis. `11` → `12`) dan ringkas perubahan (baca `CHANGELOG.md` di repo kit).
 4. **Dry-run dulu** (disarankan):
 
 ```bash

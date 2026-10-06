@@ -15,13 +15,14 @@ Solo dev + AI: **Issues**, **Projects**, and agent rules stay in sync.
 | *test end-to-end full* | Full app regression (you asked — not default) |
 
 **Verify scope:** acceptance criteria only · **Default max rounds:** see `VERIFY_MAX_ROUNDS` in `.workflow-kit.env`  
-**Docs:** `AGENTS.md` · `CONTRIBUTING.md` · `docs/how-to-run.md` · `docs/orchestrator-integration.md` · `docs/troubleshooting.md` · `scripts/README.md`
+**Docs:** `AGENTS.md` · `docs/how-to-run.md` · `docs/orchestrator-integration.md` · `docs/troubleshooting.md` · `scripts/README.md`
 
 ## Issues
 
 - **One issue = one shippable outcome** with acceptance criteria.
-- Labels: `bug`, `enhancement`, `priority:*`, optional `complexity:*`, `ai-blocked`, `ai-needs-human`, `client-facing`.
+- Labels: `bug`, `enhancement`, `priority:*`, **`reasoning:*`** (exactly one), optional `complexity:*`, `ai-blocked`, `ai-needs-human`, `client-facing`.
 - **Labels are metadata** — they do **not** authorize AI execution. **Project Status** does.
+- **`reasoning:*` ≠ board Priority.** Priority (High/Medium/Low) is urgency on the project. `reasoning:low|medium|high|xhigh` is the LLM effort tier for whoever implements the issue (AI or human choosing a model).
 - Templates: `.github/ISSUE_TEMPLATE/`
 - Body template for AI: `docs/issue-body.example.md`
 - Link PRs: `Fixes #NNN`
@@ -37,8 +38,8 @@ Board: **Otonom Media delivery** — (set after ./scripts/gh-setup-project.sh)
 | **Backlog** / **Todo** | Not started — AI must not autonomously execute |
 | **Ready for AI** | Human authorized — orchestrators may pick up |
 | **AI Working** | Agent implementing (legacy: **In Progress**) |
-| **AI Review** | Verify done, PR ready |
-| **Human Review** | Human reviews PR |
+| **AI Review** | Verify done, PR ready (legacy: **QA**) |
+| **Human Review** / **QA** | Human reviews PR |
 | **Done** | Merged/closed after human confirmation |
 
 Setup columns (idempotent; does not move existing cards):
@@ -68,18 +69,18 @@ Filter **Focus = This week** for your sprint.
 ```
 
 1. Triage → **Backlog**. Human moves to **Ready for AI** when requirements are clear (or say *Implement #N* in chat).
-2. Branch `feat/#N-slug` from **`dev`** → implement → tests for AC → full unittest suite.
-3. PR **into `dev`** (`Fixes #N`). If suite green, agent merges to **`dev`** → board **Human Review** (UI how-to-test). Human later ships **`main`** on the ops clone.
+2. Branch `feat/#N-slug` → implement → self-verify → **AI Review** on board.
+3. PR `Fixes #N` → human reviews (**Human Review** / **QA**) → merge when ready.
 4. You confirm *works* → AI runs `gh-close-verified-issue.sh` → issue closed + **Done**.
 
 ## CI & deploy
 
 | Step | Branch | Action |
 |------|--------|--------|
-| Integration | `dev` | Agent PRs land here; agent merges after green full test suite |
-| Production | `main` | PM2 ops clone (`otonom-agents-media-ops`). Human merges `main` ← `dev` after review |
+| Integration | `dev` | `cd media-engine && python3 -m unittest discover -s tests -p 'test_*.py'` on push |
+| Production | `main` | Deploy on push |
 
-See `CONTRIBUTING.md`. Agents never push `main` or restart PM2.
+**Always push `dev` before `main`** when both exist. If `dev` is missing, push **`main`** only.
 
 ## Default AI behavior
 

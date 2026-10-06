@@ -6,12 +6,17 @@ When [solo-dev-ai-kit](https://github.com/sahibul-nf/solo-dev-ai-kit) releases u
 
 ```bash
 cat .workflow-kit/installed
-# kit_version=12
+# kit_version=13
 # tools=cursor,antigravity
 # app_stack=mobile
 ```
 
-Compare with the latest kit repo after `git pull`.
+Compare with the latest kit repo after `git pull`:
+
+```bash
+# In your solo-dev-ai-kit clone
+cat CHANGELOG.md   # or open on GitHub — lists changes per kit_version
+```
 
 ## Safe update (recommended)
 

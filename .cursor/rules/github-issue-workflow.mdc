@@ -19,6 +19,6 @@ alwaysApply: true
 7. **`update workflow kit` / `/update`** → read `docs/update-prompt.md` + `docs/updating-workflow-kit.md`; dry-run bootstrap, then apply without `--force`.
 8. **`uninstall workflow kit` / `/uninstall`** → read `docs/uninstall-prompt.md`; dry-run `uninstall-workflow-kit.sh`; no GitHub board changes.
 
-**Orchestrators:** only **Project Status = Ready for AI** authorizes autonomous pickup — not `ai-ready` labels. PRs target **`dev`**; merge to `dev` only after green full test suite; never **`main`** / ops / PM2.
+**Orchestrators:** only **Project Status = Ready for AI** authorizes autonomous pickup — not `ai-ready` labels.
 
-Repo: `sahibul-nf/otonom-agents-media` · Board: https://github.com/users/sahibul-nf/projects/7
+Repo: `sahibul-nf/otonom-agents-media` · Board: (set after ./scripts/gh-setup-project.sh)

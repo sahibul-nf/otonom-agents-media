@@ -33,6 +33,12 @@ create_label "priority:low" "0E8A16" "Polish / later"
 create_label "complexity:easy" "C5DEF5" "Low-risk scope — metadata for orchestrators"
 create_label "complexity:medium" "BFD4F2" "Moderate scope — metadata for orchestrators"
 create_label "complexity:hard" "F9D0C4" "High scope — metadata for orchestrators"
+
+# LLM reasoning tier — metadata only (not Priority, not authorization).
+create_label "reasoning:low" "C2E0C6" "Straightforward — fast/small model is enough"
+create_label "reasoning:medium" "BFD4F2" "Normal feature or bug — default model"
+create_label "reasoning:high" "F9D0C4" "Design tradeoffs or cross-cutting change — stronger model"
+create_label "reasoning:xhigh" "5319E7" "Architecture, security, or high ambiguity — strongest model + careful human review"
 create_label "ai-blocked" "E99695" "Agent blocked — needs human decision (metadata only)"
 create_label "ai-needs-human" "FEF2C0" "Agent needs human input before continuing (metadata only)"
 

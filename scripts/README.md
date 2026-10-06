@@ -2,7 +2,7 @@
 
 Shell helpers for GitHub Issues + Project board. All scripts load `.workflow-kit.env` from the repo root.
 
-**Full workflow:** `AGENTS.md` · **PRs / unattended AI:** `CONTRIBUTING.md` · **Daily flow:** `docs/github-workflow.md` · **Orchestrators:** `docs/orchestrator-integration.md` · **Problems:** `docs/troubleshooting.md`
+**Full workflow:** `AGENTS.md` · **Daily flow:** `docs/github-workflow.md` · **Orchestrators:** `docs/orchestrator-integration.md` · **Problems:** `docs/troubleshooting.md`
 
 ## Quick reference
 
@@ -21,10 +21,8 @@ Shell helpers for GitHub Issues + Project board. All scripts load `.workflow-kit
 | `gh-setup-all.sh` | One-shot: labels + project board + status columns |
 | `gh-setup-project.sh` | Create/link project; writes `GH_PROJECT_NUM` to `.workflow-kit.env` |
 | `gh-configure-project.sh` | Board title, Priority/Focus fields, sync from labels |
-| `gh-create-labels.sh` | Standard labels (`bug`, `enhancement`, `priority:*`, `complexity:*`, `ai-blocked`) |
+| `gh-create-labels.sh` | Standard labels (`bug`, `enhancement`, `priority:*`, `complexity:*`, `reasoning:*`, `ai-blocked`) |
 | `gh-ensure-project-status-qa.sh` | Legacy wrapper → `gh-ensure-project-status.sh` |
-| `gh-remove-qa-status.sh` | Move QA cards → **Human Review**, remove **QA** Status option (Otonom) |
-| `gh-sync-project-status.sh` | Closed issues → **Done**; board summary (Otonom) |
 
 ## Examples
 
@@ -33,7 +31,7 @@ Shell helpers for GitHub Issues + Project board. All scripts load `.workflow-kit
 ./scripts/gh-triage-issue.sh \
   --title "[Bug]: Login redirect loop" \
   --body-file /tmp/issue-body.md \
-  --labels "bug,priority:high,complexity:medium"
+  --labels "bug,priority:high,complexity:medium,reasoning:medium"
 
 # Board status
 ./scripts/gh-set-issue-status.sh 12 ready-for-ai   # human authorization
@@ -72,8 +70,8 @@ Shell helpers for GitHub Issues + Project board. All scripts load `.workflow-kit
 | `backlog` | Backlog | Todo |
 | `ready-for-ai` | Ready for AI | *(none — run ensure script)* |
 | `progress`, `ai-working` | AI Working | In Progress |
-| `ai-review` | AI Review | — |
-| `qa`, `human-review` | Human Review | — |
+| `ai-review` | AI Review | QA |
+| `qa`, `human-review` | Human Review | QA |
 | `done` | Done | Done |
 
 **Project Status authorizes orchestrators — not labels.** An `ai-ready` label does not trigger execution.

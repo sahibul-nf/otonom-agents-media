@@ -11,8 +11,8 @@
 #   backlog              → Backlog | Todo
 #   ready-for-ai         → Ready for AI (no fallback — run gh-ensure-project-status.sh)
 #   progress, ai-working → AI Working | In Progress
-#   ai-review            → AI Review
-#   qa, human-review     → Human Review
+#   ai-review            → AI Review | QA
+#   qa, human-review     → Human Review | QA
 #   done                 → Done
 #
 # Project Status is the workflow authorization gate — not issue labels.
@@ -52,8 +52,8 @@ status_option_names() {
     backlog) printf '%s\n' "Backlog" "Todo" ;;
     ready-for-ai) printf '%s\n' "Ready for AI" ;;
     ai-working) printf '%s\n' "AI Working" "In Progress" ;;
-    ai-review) printf '%s\n' "AI Review" ;;
-    human-review) printf '%s\n' "Human Review" ;;
+    ai-review) printf '%s\n' "AI Review" "QA" ;;
+    human-review) printf '%s\n' "Human Review" "QA" ;;
     done) printf '%s\n' "Done" ;;
     *)
       echo "error: internal unknown key '$1'" >&2

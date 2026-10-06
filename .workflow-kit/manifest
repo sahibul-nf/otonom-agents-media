@@ -1,7 +1,7 @@
 # solo-dev-ai-kit:managed
 # solo-dev-ai-kit manifest — paths installed by bootstrap
-kit_version=12
-generated_at=2026-09-28T19:42:18Z
+kit_version=13
+generated_at=2026-10-06T08:09:31Z
 
 path=.agents/rules/code-principles.md
 path=.agents/rules/issue-workflow.md
@@ -21,7 +21,6 @@ path=AGENTS.md
 path=docs/agent-platforms.md
 path=docs/close-comment.example.md
 path=docs/github-workflow.md
-path=docs/how-to-run.md
 path=docs/issue-body.example.md
 path=docs/orchestrator-integration.md
 path=docs/troubleshooting.md

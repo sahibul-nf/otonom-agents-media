@@ -3,7 +3,7 @@
 # Create a GitHub issue and add it to the project board.
 #
 # Usage:
-#   ./scripts/gh-triage-issue.sh --title "[Bug]: …" --body-file /tmp/body.md --labels "bug,priority:high"
+#   ./scripts/gh-triage-issue.sh --title "[Bug]: …" --body-file /tmp/body.md --labels "bug,priority:high,reasoning:medium"
 #
 # Validates body via gh-validate-issue-body.sh. Duplicate open title → returns existing URL, exit 0.
 # See: docs/issue-body.example.md · scripts/README.md

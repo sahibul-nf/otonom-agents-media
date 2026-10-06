@@ -32,7 +32,7 @@ Check `.workflow-kit.env` — `GH_PROJECT_NUM` should be a number. Re-run setup 
 ./scripts/gh-ensure-project-status.sh
 ```
 
-Adds **Ready for AI**, **AI Working**, **AI Review**, **Human Review** without moving existing cards. Drop redundant **QA** with `./scripts/gh-remove-qa-status.sh`. Reorder columns in GitHub: Project → … → Fields → Status if needed.
+Adds **Ready for AI**, **AI Working**, **AI Review**, **Human Review**, and **QA** without moving existing cards. Reorder columns in GitHub: Project → … → Fields → Status if needed.
 
 ## Orchestrator picked up wrong issue
 

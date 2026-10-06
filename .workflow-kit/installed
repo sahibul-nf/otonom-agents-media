@@ -1,5 +1,5 @@
-kit_version=12
+kit_version=13
 tools=cursor,antigravity
 app_stack=web
-single_branch=true
-installed_at=2026-09-28T19:42:18Z
+single_branch=false
+installed_at=2026-10-06T08:09:31Z
