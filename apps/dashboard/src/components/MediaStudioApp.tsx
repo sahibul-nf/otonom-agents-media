@@ -1286,6 +1286,9 @@ export function MediaStudioApp() {
 
   async function publishContentPackage(packageId: string) {
     const key = `package:publish:${packageId}`;
+    const row = contentPackages.find((item) => item.id === packageId);
+    const platform =
+      row?.format === "still" || row?.format === "carousel" ? "instagram" : "telegram_channel";
     try {
       await runAction(
         key,
@@ -1294,7 +1297,7 @@ export function MediaStudioApp() {
           apiPost("content-package-publish", {
             package_id: packageId,
             profile_id: profileId,
-            platform: "telegram_channel",
+            platform,
           }),
         "Package published",
       );

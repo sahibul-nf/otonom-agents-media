@@ -83,6 +83,23 @@ class PostizClientTests(unittest.TestCase):
         self.assertEqual(body["posts"][0]["value"][0]["image"][0]["id"], "m1")
         self.assertEqual(body["posts"][0]["settings"]["__type"], "telegram")
 
+    def test_create_post_body_carousel_media_list(self):
+        body = build_create_post_body(
+            integration_id="int_ig",
+            caption="Swipe",
+            media_list=[
+                {"id": "a", "path": "https://cdn/a.png"},
+                {"id": "b", "path": "https://cdn/b.png"},
+                {"id": "c", "path": "https://cdn/c.png"},
+            ],
+            platform="instagram",
+            title="Carousel",
+        )
+        images = body["posts"][0]["value"][0]["image"]
+        self.assertEqual(len(images), 3)
+        self.assertEqual(images[2]["id"], "c")
+        self.assertEqual(body["posts"][0]["settings"]["post_type"], "post")
+
     def test_create_post_body_schedule_type(self):
         body = build_create_post_body(
             integration_id="int1",

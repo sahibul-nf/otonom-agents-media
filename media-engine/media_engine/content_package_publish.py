@@ -1,4 +1,9 @@
-"""Publish approved content packages via Postiz."""
+"""Publish approved content packages via Postiz.
+
+Platform defaults (Review UI, no picker yet):
+- text_only / short / long_form / clip → ``telegram_channel`` unless ``platform`` is set
+- still / carousel → ``instagram`` (feed post / multi-image carousel) — map that channel in Publish first
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,30 @@ from typing import Any
 from .content_package import ContentPackage
 from .content_package_explainer import refresh_package_explainer_artifacts
 from .content_package_store import get_package, save_package
-from .postiz_client import PostizError, build_create_text_post_body, channel_id_for_platform, create_post, extract_remote_id, publish_video, validate_channel
+from .postiz_client import (
+    PostizError,
+    build_create_text_post_body,
+    channel_id_for_platform,
+    create_post,
+    extract_remote_id,
+    publish_images,
+    publish_video,
+    validate_channel,
+)
+
+_IMAGE_FORMAT_DEFAULT_PLATFORMS = ("instagram", "instagram_reels", "telegram_channel")
+
+
+def resolve_publish_platform(pkg: ContentPackage, platform: str, profile_id: str) -> str:
+    explicit = (platform or "").strip()
+    if explicit and explicit not in ("telegram_channel", "default"):
+        return explicit
+    if pkg.format in ("still", "carousel"):
+        for candidate in _IMAGE_FORMAT_DEFAULT_PLATFORMS:
+            if channel_id_for_platform(candidate, profile_id):
+                return candidate
+        return "instagram"
+    return "telegram_channel"
 
 
 def publish_content_package(
@@ -27,9 +55,39 @@ def publish_content_package(
     if pkg.status != "approved":
         raise ValueError("package must be approved before publish")
 
-    platform = (platform or "telegram_channel").strip()
+    platform = resolve_publish_platform(pkg, platform, profile_id)
     if pkg.format == "text_only":
         result = _publish_text(pkg, platform=platform, profile_id=profile_id, post_type=post_type, date_iso=date_iso)
+    elif pkg.format == "still":
+        paths = [p for p in pkg.artifacts.image_paths if p]
+        if not paths or not all(_artifact_ready(p) for p in paths):
+            raise ValueError("still image artifact is not ready — re-create or re-render the package")
+        result = publish_images(
+            platform,
+            {
+                "image_paths": paths,
+                "caption": pkg.caption,
+                "title": pkg.title or pkg.caption[:80],
+            },
+            profile_id=profile_id,
+            post_type=post_type,
+            date_iso=date_iso,
+        )
+    elif pkg.format == "carousel":
+        paths = [p for p in pkg.artifacts.slide_paths if p]
+        if len(paths) < 3 or not all(_artifact_ready(p) for p in paths):
+            raise ValueError("carousel slides are not ready — need 3–5 rendered PNGs")
+        result = publish_images(
+            platform,
+            {
+                "image_paths": paths,
+                "caption": pkg.caption,
+                "title": pkg.title or pkg.caption[:80],
+            },
+            profile_id=profile_id,
+            post_type=post_type,
+            date_iso=date_iso,
+        )
     elif pkg.format in ("short", "long_form", "clip"):
         video_path = pkg.artifacts.video_path
         if not video_path or not Path(video_path).exists() or Path(video_path).stat().st_size == 0:
@@ -88,3 +146,8 @@ def _publish_text(
         "remote_url": "",
         "raw": result,
     }
+
+
+def _artifact_ready(path: str) -> bool:
+    p = Path(path)
+    return p.is_file() and p.stat().st_size > 0

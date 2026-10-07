@@ -7,6 +7,8 @@ Every generated **content package** has exactly one format. Editorial catalog al
 | `text_only` | Caption only | Take, reflection (`inform`) |
 | `still` | Caption + one PNG (HTML/CSS → headless render) | One thesis (`inform`) |
 | `carousel` | Caption + 3–5 slide PNGs | Framework, checklist (`teach`, `save_for_later`) |
+
+**Postiz publish (Review):** `text_only` and video packages default to `telegram_channel`. `still` and `carousel` default to the first mapped channel among `instagram`, `instagram_reels`, and `telegram_channel` (UI sends `instagram` when mapped).
 | `short` | 30–60s vertical video + caption | Hook, impact (`inform`) |
 | `long_form` | 3–12 min video + title, description, caption | Deep dive (`teach`) |
 | `clip` | Short cut from approved `long_form` + caption | Distribution wedge |

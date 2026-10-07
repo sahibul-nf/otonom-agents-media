@@ -30,6 +30,7 @@ PLATFORM_IDENTIFIERS: dict[str, set[str]] = {
     "facebook_reels": {"facebook", "facebook-page"},
     "tiktok": {"tiktok"},
     "telegram_channel": {"telegram"},
+    "instagram": {"instagram", "instagram-standalone"},
     "instagram_reels": {"instagram", "instagram-standalone"},
 }
 
@@ -276,6 +277,8 @@ def settings_for_platform(platform: str, *, title: str, caption: str) -> dict[st
         return {"__type": "facebook"}
     if platform == "telegram_channel":
         return {"__type": "telegram"}
+    if platform == "instagram":
+        return {"__type": "instagram", "post_type": "post"}
     if platform == "instagram_reels":
         return {"__type": "instagram", "post_type": "reel"}
     raise PostizError(f"Postiz settings are not defined for {platform}")
@@ -383,16 +386,26 @@ def build_create_post_body(
     *,
     integration_id: str,
     caption: str,
-    media: dict[str, str],
     platform: str,
     title: str,
     post_type: str = "now",
     date_iso: str | None = None,
+    media: dict[str, str] | None = None,
+    media_list: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     stamp = to_postiz_date(date_iso) if date_iso else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     kind = (post_type or "now").strip().lower()
     if kind not in {"now", "schedule", "draft"}:
         kind = "now"
+    images: list[dict[str, str]] = []
+    if media_list:
+        for item in media_list:
+            images.append({"id": item["id"], "path": item["path"]})
+    elif media:
+        images.append({"id": media["id"], "path": media["path"]})
+    value_entry: dict[str, Any] = {"content": caption or title or "Post"}
+    if images:
+        value_entry["image"] = images
     return {
         "type": kind,
         "date": stamp,
@@ -401,12 +414,7 @@ def build_create_post_body(
         "posts": [
             {
                 "integration": {"id": integration_id},
-                "value": [
-                    {
-                        "content": caption or title or "Short",
-                        "image": [{"id": media["id"], "path": media["path"]}],
-                    }
-                ],
+                "value": [value_entry],
                 "settings": settings_for_platform(platform, title=title, caption=caption),
             }
         ],
@@ -486,7 +494,7 @@ def validate_channel(platform: str, profile_id: str | None = None) -> dict[str, 
 def upload_media(video_path: str | Path, profile_id: str | None = None) -> dict[str, str]:
     path = Path(video_path)
     if not path.exists():
-        raise PostizError(f"video file is missing: {path}")
+        raise PostizError(f"media file is missing: {path}")
     mime = mimetypes.guess_type(path.name)[0] or "video/mp4"
     boundary = f"----Otonom{uuid.uuid4().hex}"
     filename = path.name
@@ -798,6 +806,73 @@ def publish_video(
         "remote_url": remote_url,
         "post_type": kind,
         "postiz_media": media,
+        "raw": result,
+    }
+    if error:
+        payload_out["error"] = error
+    return payload_out
+
+
+def publish_images(
+    platform: str,
+    payload: dict[str, Any],
+    profile_id: str | None = None,
+    post_type: str = "now",
+    date_iso: str | None = None,
+) -> dict[str, Any]:
+    """Upload one or more images and create a Postiz post (still or carousel)."""
+    validate_channel(platform, profile_id)
+    integration_id = channel_id_for_platform(platform, profile_id)
+    paths = [str(p) for p in (payload.get("image_paths") or []) if str(p).strip()]
+    if not paths:
+        raise PostizError("image_paths is required")
+    uploaded: list[dict[str, str]] = []
+    for path in paths:
+        item = Path(path)
+        if not item.is_file() or item.stat().st_size == 0:
+            raise PostizError(f"image artifact is not ready: {path}")
+        uploaded.append(upload_media(item, profile_id=profile_id))
+    kind = (post_type or "now").strip().lower()
+    body = build_create_post_body(
+        integration_id=integration_id,
+        caption=str(payload.get("caption") or ""),
+        media_list=uploaded,
+        platform=platform,
+        title=str(payload.get("title") or "Post"),
+        post_type=kind,
+        date_iso=date_iso,
+    )
+    result = create_post(body, profile_id=profile_id)
+    exclude = {item.get("id", "") for item in uploaded}
+    remote_id = extract_remote_id(result, exclude=exclude)
+    status = "queued" if kind == "schedule" else "accepted"
+    remote_url = ""
+    error = ""
+    polled = None
+    if remote_id:
+        try:
+            polled = get_post(remote_id, profile_id=profile_id)
+        except PostizError:
+            polled = None
+    if polled:
+        mapped = map_postiz_delivery_status(polled, platform=platform)
+        if mapped == "live":
+            status = "live"
+            remote_url = str(polled.get("releaseURL") or polled.get("url") or result.get("url") or "")
+            if remote_url and not is_public_release_url(remote_url, platform):
+                remote_url = ""
+        elif mapped == "failed":
+            status = "failed"
+            error = postiz_delivery_failure_message(polled, platform=platform)
+    payload_out: dict[str, Any] = {
+        "platform": platform,
+        "status": status,
+        "backend": "postiz",
+        "remote_id": remote_id,
+        "remote_url": remote_url,
+        "post_type": kind,
+        "postiz_media": uploaded,
+        "image_count": len(uploaded),
         "raw": result,
     }
     if error:

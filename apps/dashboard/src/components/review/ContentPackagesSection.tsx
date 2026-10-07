@@ -77,7 +77,18 @@ export function ContentPackagesSection({
             (pkg.format === "short" || pkg.format === "long_form" || pkg.format === "clip") &&
             videoReady &&
             onPublish;
-          const canPublish = (pkg.status === "approved" && pkg.format === "text_only" && onPublish) || canPublishVideo;
+          const canPublishImage =
+            pkg.status === "approved" && (pkg.format === "still" || pkg.format === "carousel") && pkg.qa?.passed && onPublish;
+          const canPublish =
+            (pkg.status === "approved" && pkg.format === "text_only" && onPublish) ||
+            canPublishVideo ||
+            canPublishImage;
+          const publishLabel =
+            pkg.format === "text_only"
+              ? "Publish (Telegram)"
+              : pkg.format === "still" || pkg.format === "carousel"
+                ? "Publish images (Instagram)"
+                : "Publish video (Telegram)";
           const explainerLabel = explainerStatusLabel(pkg.meta?.explainer_status);
           return (
             <li
@@ -150,7 +161,7 @@ export function ContentPackagesSection({
                       className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-200 hover:bg-violet-500/20 disabled:opacity-50"
                     >
                       <Send className="h-3.5 w-3.5" aria-hidden />
-                      {pkg.format === "text_only" ? "Publish (Telegram)" : "Publish video (Telegram)"}
+                      {publishLabel}
                     </button>
                   ) : null}
                 </div>
