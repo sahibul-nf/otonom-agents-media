@@ -272,6 +272,8 @@ export type CredentialStatus = {
     api_origin?: string;
     channels?: Record<string, {id: string; name?: string; identifier?: string}>;
   };
+  llm?: Record<string, {ready?: boolean; key_env?: string}>;
+  vault?: {has_secrets?: boolean; secret_keys?: string[]};
   settings: {
     nourbit_daily_content_cap: string;
     nourbit_default_publish_mode: string;

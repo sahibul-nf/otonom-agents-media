@@ -2,7 +2,7 @@
 
 export const disabledPublishPlatforms: Record<string, string> = {
   tiktok:
-    "TikTok rejected personal/internal developer apps for production posting. Use the TikTok app manually until a vendor-approved API channel is available.",
+    "Native TikTok OAuth is not supported (developer app removed). Post manually in the TikTok app, or map TikTok in Postiz when that connector is available.",
 };
 
 export type PublishDestinationPlatform =

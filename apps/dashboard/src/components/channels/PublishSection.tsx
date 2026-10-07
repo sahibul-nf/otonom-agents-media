@@ -5,6 +5,7 @@ import {type FormEvent, type ReactNode, useState} from "react";
 import {EmptyState, RecoveryAction} from "@/components/shared/StudioPrimitives";
 import {disabledPublishPlatformReason, isPublishPlatformDisabled} from "@/lib/publish-platforms";
 import {classifyPublishError} from "@/lib/publish-recovery";
+import {LlmKeysSection} from "@/components/channels/LlmKeysSection";
 import {platformLabel, type CredentialStatus, type PostizIntegration, type PublishAttempt, type PublishTarget} from "@/lib/media-api";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
@@ -445,6 +446,8 @@ export function PublishSection({
   onLoadPostizIntegrations,
   onUpdateDelivery,
   onRefresh,
+  profileId,
+  onSaveLlm,
   publicAccountLabel,
   publishActionHint,
   formatPlatformMode,
@@ -452,6 +455,8 @@ export function PublishSection({
   statusTone,
 }: {
   targets: PublishTarget[];
+  profileId: string;
+  onSaveLlm?: (values: Record<string, string>) => void | Promise<void>;
   credentials: CredentialStatus | null;
   attempts: PublishAttempt[];
   selectedPlatforms: string[];
@@ -696,6 +701,19 @@ export function PublishSection({
                   </div>
                 ) : null}
 
+                {unavailable && target.platform === "tiktok" && onDisconnect ? (
+                  (credentials?.vault?.secret_keys || []).some((key) => key.startsWith("TIKTOK_")) ? (
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => onDisconnect(target.platform)}
+                      className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/10 px-4 text-xs font-bold uppercase tracking-wider text-amber-200 hover:bg-amber-500/20 disabled:opacity-50"
+                    >
+                      Clear stale credentials
+                    </button>
+                  ) : null
+                ) : null}
+
                 <div className="mt-4 flex items-center gap-2">
                   {!unavailable && showPostizMap ? (
                     <button
@@ -824,6 +842,15 @@ export function PublishSection({
           loading={mapLoading}
           onClose={() => setMapPlatform("")}
           onSave={(integration) => onMapPostiz(mapPlatform, integration)}
+        />
+      ) : null}
+
+      {onSaveLlm ? (
+        <LlmKeysSection
+          credentials={credentials}
+          profileId={profileId}
+          actionStates={actionStates}
+          onSaveLlm={onSaveLlm}
         />
       ) : null}
     </section>

@@ -21,6 +21,8 @@ from .explainer_pipeline import (
     read_explainer_status,
     run_explainer,
 )
+from .content_package_service import create_content_package, get_content_package
+from .content_package_store import list_packages
 from .ingest_longform import ingest_longform
 from .heygen_client import (
     DEFAULT_AVATAR_LOOK_ID,
@@ -161,6 +163,74 @@ TOOLS = [
             "properties": {
                 "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
                 "limit": {"type": "integer", "default": 20},
+            },
+        },
+    },
+    {
+        "name": "create_content_package",
+        "description": (
+            "Create a publish-ready content package (text, still, carousel, short, long_form, clip). "
+            "Returns package id and QA status. Approve via dashboard."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["text_only", "still", "carousel", "short", "long_form", "clip"],
+                },
+                "source_kind": {
+                    "type": "string",
+                    "enum": ["youtube", "chat", "topic"],
+                    "default": "youtube",
+                },
+                "source_ref": {"type": "string", "description": "YouTube URL or source text"},
+                "topic": {"type": "string"},
+                "job": {
+                    "type": "string",
+                    "enum": ["inform", "teach", "save_for_later"],
+                    "default": "inform",
+                },
+                "brand_preset": {
+                    "type": "string",
+                    "enum": ["blank", "techtalk", "personal"],
+                    "default": "blank",
+                },
+                "llm_provider": {
+                    "type": "string",
+                    "enum": ["none", "openai", "deepseek", "groq", "agent"],
+                    "default": "none",
+                },
+                "video_engine": {
+                    "type": "string",
+                    "enum": ["av_explainer", "motion", "heygen", "clip_cut"],
+                },
+                "parent_package_id": {"type": "string"},
+                "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
+            },
+            "required": ["format"],
+        },
+    },
+    {
+        "name": "get_content_package",
+        "description": "Read a content package by id",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "package_id": {"type": "string"},
+            },
+            "required": ["package_id"],
+        },
+    },
+    {
+        "name": "list_content_packages",
+        "description": "List recent content packages for review",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
+                "status": {"type": "string"},
+                "limit": {"type": "integer", "default": 30},
             },
         },
     },
@@ -312,6 +382,37 @@ def call_tool(name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
             profile_id = str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID)
             limit = int(args.get("limit") or 20)
             return _tool_result(list_explainer_jobs(profile_id=profile_id, limit=limit))
+
+        if name == "create_content_package":
+            fmt = str(args.get("format") or "").strip()
+            if not fmt:
+                raise ValueError("format is required")
+            result = create_content_package(
+                format=fmt,  # type: ignore[arg-type]
+                source_kind=str(args.get("source_kind") or "youtube"),
+                source_ref=str(args.get("source_ref") or ""),
+                topic=str(args.get("topic") or ""),
+                job=str(args.get("job") or "inform"),  # type: ignore[arg-type]
+                profile_id=str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
+                brand_preset=str(args.get("brand_preset") or "blank"),
+                llm_provider=str(args.get("llm_provider") or "none"),
+                parent_package_id=str(args.get("parent_package_id") or ""),
+                video_engine=args.get("video_engine"),  # type: ignore[arg-type]
+                db_path=DEFAULT_DB,
+            )
+            return _tool_result(result)
+
+        if name == "get_content_package":
+            package_id = str(args.get("package_id") or "").strip()
+            return _tool_result(get_content_package(package_id, db_path=DEFAULT_DB))
+
+        if name == "list_content_packages":
+            profile_id = str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID)
+            status = str(args.get("status") or "").strip() or None
+            limit = int(args.get("limit") or 30)
+            return _tool_result(
+                list_packages(db_path=DEFAULT_DB, profile_id=profile_id, status=status, limit=limit)
+            )
 
         if name == "ingest_longform":
             result = ingest_longform(

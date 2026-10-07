@@ -19,7 +19,17 @@ _lock = threading.RLock()
 _active_profile: ContextVar[str | None] = ContextVar("credential_profile", default=None)
 
 # App-level OAuth client config stays in global .env; account tokens live in the vault.
+LLM_ENV_KEYS = frozenset(
+    {
+        "OPENAI_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "GROQ_API_KEY",
+        "OTONOM_LLM_AGENT_COMMAND",
+    }
+)
+
 ACCOUNT_ENV_KEYS = {
+    *LLM_ENV_KEYS,
     "META_PAGE_ID",
     "META_PAGE_ACCESS_TOKEN",
     "NOURBIT_FACEBOOK_PAGE_ID",
@@ -270,9 +280,23 @@ def credential_status_for_profile(profile_id: str) -> dict[str, Any]:
             "postiz_integration_id": mapped.get("id", ""),
             "postiz_integration_name": mapped.get("name", ""),
         }
+    llm: dict[str, Any] = {}
+    for name, env_key in (
+        ("openai", "OPENAI_API_KEY"),
+        ("deepseek", "DEEPSEEK_API_KEY"),
+        ("groq", "GROQ_API_KEY"),
+    ):
+        llm[name] = {
+            "ready": bool(vault.get(env_key, "").strip() or os.environ.get(env_key, "").strip()),
+            "key_env": env_key,
+        }
+    agent_cmd = vault.get("OTONOM_LLM_AGENT_COMMAND", "").strip() or os.environ.get("OTONOM_LLM_AGENT_COMMAND", "").strip()
+    llm["agent"] = {"ready": bool(agent_cmd), "key_env": "OTONOM_LLM_AGENT_COMMAND"}
+
     return {
         "profile_id": profile_id,
         "postiz": connection_status(profile_id),
+        "llm": llm,
         "platforms": platforms,
         "settings": {
             "nourbit_daily_content_cap": os.environ.get("NOURBIT_DAILY_CONTENT_CAP", "2"),

@@ -1,46 +1,34 @@
 <!-- solo-dev-ai-kit:managed -->
-# How to run this app (fill in once)
+# How to run this app
 
-AI agents read this file before UI verification. **Replace every `TBD` with real values.** Delete sections that do not apply.
+AI agents read this file before UI verification.
 
-**App stack:** `web` (`web` · `mobile` · `both`)
+**App stack:** `web`
 
-## Tests (all stacks)
+## Tests
 
 | Item | Value |
 |------|--------|
 | **Test command** | `pip install -r media-engine/requirements-dev.txt` then `cd media-engine && PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'` |
-| **Focused test example** | `TBD — e.g. npm test -- src/auth.test.ts OR flutter test test/widgets/header_test.dart` |
+| **Focused test example** | `cd media-engine && PYTHONPATH=. python3 -m unittest tests.test_credential_vault` |
 
-## Web app (delete this section if not a web app)
-
-| Item | Value |
-|------|--------|
-| **Start command** | `TBD — e.g. npm run dev` |
-| **Local URL** | `TBD — e.g. http://localhost:3000` |
-| **Health check** | `TBD — e.g. curl -s -o /dev/null -w "%{http_code}" http://localhost:3000` |
-
-**UI verify (web):** Cursor IDE browser (default) → Playwright only if already installed. Kit does not auto-install.
-
-## Mobile app (delete this section if not a mobile app)
+## Web app
 
 | Item | Value |
 |------|--------|
-| **Start command** | `TBD — e.g. flutter run` |
-| **Emulator / simulator** | `TBD — e.g. flutter emulators --launch Pixel_7` |
-| **Integration test** | `TBD — e.g. flutter test integration_test/login_test.dart` |
-| **Widget / golden test** | `TBD — e.g. flutter test test/widgets/` |
+| **Start command** | From the repo root: `npm install && cd apps/dashboard && npm install && cd ../.. && npm run dev` |
+| **Local URL** | `http://127.0.0.1:3100` |
+| **Health check** | `npm run health` (API defaults to `http://127.0.0.1:8765`) |
 
-**UI verify (mobile):** `flutter test` first → [MobAI](https://mobai.run) optional (`npx mobai-mcp` + MobAI desktop). Kit does not install MobAI.
+Copy `.env.example` to `.env.local` before the first start. The dashboard proxies engine calls with `MEDIA_ENGINE_API_BASE` (default `http://127.0.0.1:8765`).
 
-## Test accounts (if login required)
-
-| Role | Email / user | Password / notes |
-|------|----------------|------------------|
-| Demo user | `TBD` | `TBD — use test creds only; never commit secrets` |
+**UI verify (web):** Cursor IDE browser. Playwright only if it is already installed.
 
 ## Notes
 
-- Staging URL (optional): `TBD`
-- Env: copy `.env.example` → `.env` (never commit secrets)
-- Known quirks: `TBD — e.g. run migrations before dev server`
+- Isolated worktree (do not steal PM2 ports `8765` / `3100`): `npm run dev:isolated` → API `:8766`, dashboard `:3101`.
+- Env: copy `.env.example` → `.env.local`. Never commit secrets. See `docs/SECRETS.md`.
+- Login: the local dashboard has no hosted demo account. Platform publish needs your own OAuth tokens in `.env.local` (YouTube, Meta, Telegram). **TikTok:** native OAuth is not supported — use manual posting or Postiz when available; see `docs/SECRETS.md`.
+- Engine CLI details: `media-engine/README.md`.
+- Brand presets: `brand-pack/` (`techtalk`, `personal`, `blank`) or `CONTENT_OS_PATH`.
+- Content packages API: `GET /api/content-packages`, `POST /api/content-package-create`, `POST /api/content-package-approve`.

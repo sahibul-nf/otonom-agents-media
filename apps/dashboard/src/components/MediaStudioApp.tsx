@@ -20,6 +20,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import {type ReactNode, useEffect, useMemo, useRef, useState} from "react";
+import {ContentPackagesSection, type ContentPackageRow} from "@/components/review/ContentPackagesSection";
 import {ReviewStudioSection} from "@/components/review/ReviewStudioSection";
 import {BrandSection} from "@/components/brand/BrandSection";
 import {FocusModal} from "@/components/FocusModal";
@@ -441,6 +442,7 @@ export function MediaStudioApp() {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [watchChannels, setWatchChannels] = useState<WatchChannel[]>([]);
   const [clips, setClips] = useState<ClipCandidate[]>([]);
+  const [contentPackages, setContentPackages] = useState<ContentPackageRow[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [targets, setTargets] = useState<PublishTarget[]>([]);
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null);
@@ -609,6 +611,7 @@ export function MediaStudioApp() {
         pathAResult,
         profilesResult,
         watchResult,
+        packagesResult,
       ] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>(`targets?profile_id=${encodeURIComponent(activeProfile)}`),
@@ -628,6 +631,7 @@ export function MediaStudioApp() {
         apiGet<{jobs: PathAJob[]}>("path-a-jobs").then((payload) => ({ok: true as const, jobs: payload.jobs || []})).catch((error) => ({ok: false as const, error})),
         apiGet<{profiles: MediaProfile[]}>("profiles").then((payload) => ({ok: true as const, profiles: payload.profiles || []})).catch((error) => ({ok: false as const, error})),
         apiGet<{channels: WatchChannel[]}>(`watch-channels?profile_id=${encodeURIComponent(activeProfile)}`).then((payload) => ({ok: true as const, channels: payload.channels || []})).catch((error) => ({ok: false as const, error})),
+        apiGet<{packages: ContentPackageRow[]}>(`content-packages?profile_id=${encodeURIComponent(activeProfile)}&limit=30`).then((payload) => ({ok: true as const, packages: payload.packages || []})).catch((error) => ({ok: false as const, error})),
       ]);
       // Opportunistic due-channel poll (respects interval server-side).
       void apiGet<{results: unknown[]}>(`watch-poll?profile_id=${encodeURIComponent(activeProfile)}`).catch(() => null);
@@ -656,6 +660,7 @@ export function MediaStudioApp() {
       setPathAJobs(pathAResult.ok ? pathAResult.jobs : []);
       setProfiles(profilesResult.ok ? profilesResult.profiles : []);
       setWatchChannels(watchResult.ok ? watchResult.channels : []);
+      setContentPackages(packagesResult.ok ? packagesResult.packages : []);
       setPublishSelection((current) => {
         const enabled = targetRows
           .filter((target) => publishPlatforms.includes(target.platform) && target.mode !== "off" && (target.enabled ?? true))
@@ -1260,6 +1265,65 @@ export function MediaStudioApp() {
         approved.has(item.id) ? {...item, status: "approved", review_deadline_at: ""} : item,
       ),
     );
+  }
+
+  async function saveLlmCredentials(values: Record<string, string>) {
+    const key = `llm:save:${profileId}`;
+    try {
+      await runAction(
+        key,
+        "Saving LLM settings…",
+        () => apiPost("llm-credentials", {profile_id: profileId, values}),
+        "LLM settings saved",
+      );
+      await refreshAll();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "LLM save failed");
+      throw error;
+    }
+  }
+
+  async function publishContentPackage(packageId: string) {
+    const key = `package:publish:${packageId}`;
+    try {
+      await runAction(
+        key,
+        "Publishing package…",
+        () =>
+          apiPost("content-package-publish", {
+            package_id: packageId,
+            profile_id: profileId,
+            platform: "telegram_channel",
+          }),
+        "Package published",
+      );
+      setContentPackages((rows) =>
+        rows.map((row) => (row.id === packageId ? {...row, status: "published"} : row)),
+      );
+      pushToast("Content package sent via Postiz", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Publish failed";
+      pushToast(message, "error");
+    }
+  }
+
+  async function approveContentPackage(packageId: string) {
+    const key = `package:approve:${packageId}`;
+    try {
+      await runAction(
+        key,
+        "Approving package…",
+        () => apiPost("content-package-approve", {package_id: packageId}),
+        "Package approved",
+      );
+      setContentPackages((rows) =>
+        rows.map((row) => (row.id === packageId ? {...row, status: "approved"} : row)),
+      );
+      pushToast("Content package approved", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Approve failed";
+      pushToast(message, "error");
+    }
   }
 
   async function performApproveClip(candidateId: string) {
@@ -1926,6 +1990,12 @@ export function MediaStudioApp() {
 
           {section === "review" && (
             <div className="mx-auto w-full max-w-[1180px]">
+              <ContentPackagesSection
+                packages={contentPackages}
+                actionStates={actionStates}
+                onApprove={(packageId) => void approveContentPackage(packageId)}
+                onPublish={(packageId) => void publishContentPackage(packageId)}
+              />
               <ReviewStudioSection
                 clips={filtered}
                 filter={reviewFilter}
@@ -1985,6 +2055,7 @@ export function MediaStudioApp() {
           {section === "publish" && (
             <PublishSection
               targets={activeTargets}
+              profileId={profileId}
               credentials={credentials}
               attempts={publishAttempts}
               selectedPlatforms={publishSelection}
@@ -1994,6 +2065,7 @@ export function MediaStudioApp() {
               onStartOauth={startOauthConnect}
               onDisconnect={disconnectPlatform}
               onSaveCredentials={saveConnectionCredentials}
+              onSaveLlm={saveLlmCredentials}
               onConnectPostiz={connectPostiz}
               onDisconnectPostiz={disconnectPostiz}
               onMapPostiz={mapPostizChannel}

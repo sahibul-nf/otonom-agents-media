@@ -1,143 +1,77 @@
-# Otonom Agents Media
+# Otonom Media
 
-Workspace for autonomous media systems across multiple niches.
+**The system for a one-person media company.**
 
-## Projects
+Open-source brand brain plus factory: turn a source into publish-ready social content in your voice — text, stills, carousels, shorts, long-form, and clips. A human approves. A connector publishes.
 
-- `media-engine/` — shared local-first multimedia engine, currently focused on Nourbit video clipping, review, render contracts, scheduled publishing, and multi-platform publish adapters.
-- `apps/dashboard/` — Next.js SaaS dashboard for media operations, connected to the local `media-engine` review API.
-- `techtalk-autonomous/` — existing standalone TechTalk Intel automation.
+```text
+source → generate package → Review → schedule → Postiz (or legacy connectors)
+         ↑ brand pack          ↑ you            ↑ OAuth stays off-repo
+         ↑ MCP for agents
+```
 
-## Dashboard
+[MIT](LICENSE) · [Brand](docs/BRAND.md) · [Formats](docs/FORMATS.md) · [Secrets](docs/SECRETS.md)
 
-Start both local services together from the workspace root:
+## Who it is for
+
+Solo media operators and the agents that help them (Cursor, Antigravity, OpenMausBot). HeyGen and NotebookLM stay **upstream tools** — optional sources or engines, not the product.
+
+Maintainer case studies (TechTalk Intel, Nourbit, personal brand) are documented in [content-os](https://github.com/sahibul-nf/content-os). This repo ships **brand presets** in `brand-pack/` so you do not rebuild that editorial system from scratch.
+
+## Layout
+
+| Path | Role |
+|------|------|
+| `media-engine/` | Python factory: packages, review API, clip/explainer render, Postiz publisher |
+| `apps/dashboard/` | Review and operations UI |
+| `brand-pack/` | Starter brand brains (`techtalk`, `personal`, `blank`) |
+| `techtalk-autonomous/` | Legacy text automation |
+| `docs/` | Product and ops |
+
+## Quick start
 
 ```bash
+git clone https://github.com/sahibul-nf/otonom-agents-media.git
+cd otonom-agents-media
+cp .env.example .env.local   # never commit real keys
+npm install && cd apps/dashboard && npm install && cd ../..
 npm run dev
 ```
 
-Check system health/status:
+- Dashboard: [http://127.0.0.1:3100](http://127.0.0.1:3100)
+- Engine API: `http://127.0.0.1:8765` (`MEDIA_ENGINE_API_BASE`)
+- Health: `npm run health`
+
+Optional full brain from a local [content-os](https://github.com/sahibul-nf/content-os) checkout:
 
 ```bash
-npm run health
+export CONTENT_OS_PATH=/path/to/content-os
 ```
 
-This prints a JSON summary for:
-
-- backend port + review API
-- frontend port + HTTP response
-- configured publish credentials detected by the local media engine
-
-If you still want to run them separately:
-
-Start the local media API first:
+## MCP (agents)
 
 ```bash
-cd media-engine
-PYTHONPATH=. python3 -m media_engine.review_server
+cd media-engine && PYTHONPATH=. python3 -m media_engine.otonom_mcp
 ```
 
-Then start the SaaS dashboard (Next.js only — no media engine API):
-
-```bash
-cd apps/dashboard
-npm install
-npm run dev:next
-```
-
-To start **both** backend + dashboard from `apps/dashboard`, use `npm run dev` (same as repo root).
-
-Open `http://127.0.0.1:3100`. The dashboard proxies local engine calls through `MEDIA_ENGINE_API_BASE`, defaulting to `http://127.0.0.1:8765`. Port `3100` avoids colliding with Postiz (`:3000` / `:4200`) on the same machine.
-
-## PM2 Auto-Restart
-
-For Mac Mini uptime, run generate + Review + due-publish **natively under PM2**. Postiz stays in Docker/cloud for OAuth delivery. Full topology, worktree, and Postiz env: [`docs/local-ops.md`](docs/local-ops.md).
-
-Do **not** run `npm run dev` in the ops checkout while PM2 is live — it steals `:8765` / `:3100`. Use `npm run dev:isolated` in a git worktree instead.
-
-First dashboard production start needs a build (`cd apps/dashboard && npm run build`); PM2 then uses `next start`. `npm run pm2:restart` / `pm2:stop` include the publisher worker.
-
-Start (or restore after reboot):
-
-```bash
-cd "/Volumes/XPG SSD 1T/projects/otonom-agents-media"
-npm run pm2:start
-pm2 save
-pm2 startup
-```
-
-This ecosystem starts:
-
-- `otonom-media-api`
-- `otonom-media-dashboard`
-- `otonom-media-health`
-- `otonom-media-publisher`
-
-Useful commands:
-
-```bash
-npm run pm2:status
-npm run pm2:logs
-npm run health
-```
-
-The health monitor checks backend/frontend every 60 seconds and sends Telegram alerts on:
-
-- monitor online / boot
-- unhealthy / degraded state
-- recovery back to healthy
-
-Telegram notification target resolution:
-
-1. `TELEGRAM_STATUS_CHAT_ID`
-2. `TELEGRAM_CHAT_ID`
-3. `TELEGRAM_CHANNEL_ID`
-
-Optional thread fallback:
-
-1. `TELEGRAM_STATUS_THREAD_ID`
-2. `TELEGRAM_THREAD_ID`
-
-PM2 uses `.env.local` automatically through the wrapper scripts in `scripts/`.
-
-The dashboard now supports the daily Nourbit production loop:
-
-- Generate a production batch from a YouTube URL, clip count, length preset, renderer, caption source, LLM provider, and brand template.
-- Track background generation progress without blocking the browser.
-- Review and approve rendered clips.
-- Schedule approved clips into the next Nourbit publish slot. The V1 cadence is 2 posts per day at 09:00 and 19:30 WIB.
-- Publish due clips automatically through the PM2 publisher worker, with Telegram, YouTube Shorts, Facebook Reels, and TikTok attempts recorded per platform.
-
-Clip length uses canonical strategy presets rather than raw second ranges:
-
-- `quick_hit` — fast 20-60s clips for news, sports, quotes, and visual moments.
-- `standard_short` — balanced 35-90s clips for tech updates and explainers.
-- `deep_context` — Nourbit default, 45-120s clips for kajian, podcasts, and reflective content.
-- `platform_max` — 90-180s clips for deeper shorts when the topic can sustain retention.
-
-## Security First
-
-Live credentials are local-only. Start from:
-
-- `.env.example`
-- `techtalk-autonomous/config/fb_pages.example.json`
-- `docs/SECRETS.md`
-
-Before committing:
-
-```bash
-python3 scripts/secret_scan.py
-git status --ignored --short
-```
-
-Git hooks are configured with:
-
-```bash
-git config core.hooksPath .githooks
-```
+Example config: [docs/otonom-mcp.cursor.example.json](docs/otonom-mcp.cursor.example.json). Tools include `create_content_package`, `get_content_package`, explainer ingest, and review queue.
 
 ## Tests
 
 ```bash
-PYTHONPATH=media-engine python3 -m unittest discover -s media-engine/tests -v
+pip install -r media-engine/requirements-dev.txt
+cd media-engine && PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'
 ```
+
+## Related experiments (not merged)
+
+- [social-media-content-ai-generation](https://github.com/sahibul-nf/social-media-content-ai-generation) — multi-format UI prototype
+- [chat-to-content](https://github.com/sahibul-nf/chat-to-content) — chat → post prototype
+
+Patterns from those repos inform packages here; code stays in this factory.
+
+## Contributing
+
+PRs target `dev`. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/how-to-run.md](docs/how-to-run.md).
+
+`package.json` `"private": true` only blocks npm publish, not GitHub visibility.

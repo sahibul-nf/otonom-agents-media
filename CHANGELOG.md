@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- **Content factory:** six-format packages with YouTube/chat/topic sources, vault-stored LLM keys or local agent CLI (`docs/LLM_CONNECTORS.md`), Review approve + Postiz text publish, explainer job hook for short/long packages.
+- **TikTok (#113):** native OAuth marked unsupported (dev app removed); updated Publish copy, vault disconnect for all `TIKTOK_*` keys, docs, and legacy-gated `scripts/tiktok_oauth_helper.py`.
 - Create finds a **text shortlist** before rendering. Slide to find clips, set a minimum editorial score (default 80), then render only the ideas you keep. Suggested content angles appear after a YouTube link resolves.
 - Optional **Jev** decisions (`TYPESAFE_API_KEY` or `JEV_API_KEY`) can score keep/drop and pick a content angle. Copy is still written by the existing LLM.
 - `docs/saas-readiness.md` — local-first → multi-user checklist (DB, auth seam, credentials, artifacts, workers); no cloud implementation.

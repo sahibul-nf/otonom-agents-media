@@ -351,6 +351,34 @@ def on_postiz_calendar(result: dict[str, Any] | None) -> bool:
     return str(result.get("status") or "") in POSTIZ_HELD_STATUSES
 
 
+def build_create_text_post_body(
+    *,
+    integration_id: str,
+    caption: str,
+    platform: str,
+    title: str,
+    post_type: str = "now",
+    date_iso: str | None = None,
+) -> dict[str, Any]:
+    stamp = to_postiz_date(date_iso) if date_iso else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    kind = (post_type or "now").strip().lower()
+    if kind not in {"now", "schedule", "draft"}:
+        kind = "now"
+    return {
+        "type": kind,
+        "date": stamp,
+        "shortLink": False,
+        "tags": [],
+        "posts": [
+            {
+                "integration": {"id": integration_id},
+                "value": [{"content": caption or title or "Post"}],
+                "settings": settings_for_platform(platform, title=title, caption=caption),
+            }
+        ],
+    }
+
+
 def build_create_post_body(
     *,
     integration_id: str,

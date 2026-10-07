@@ -882,7 +882,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
                       />
                       <SelectTile label="Speech language" value={config.speechLanguage} options={["auto", "id", "ar", "en", "ms"]} onChange={(value) => update({speechLanguage: value})} />
                       <SelectTile label="Transcripts" value={config.transcriptLanguages} options={["auto", "id,en", "id", "en,id", "ar,id", "ms,id"]} onChange={(value) => update({transcriptLanguages: value})} />
-                      <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "none"]} onChange={(value) => update({llmProvider: value})} />
+                      <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "agent", "none"]} onChange={(value) => update({llmProvider: value})} />
                       <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
                     </div>
                     <div className="rounded-xl border border-white/[0.06] bg-canvas-deep/60 p-2.5">

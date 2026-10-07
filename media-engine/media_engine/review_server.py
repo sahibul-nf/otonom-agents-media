@@ -21,7 +21,8 @@ from .clip_boundaries import update_clip_boundary
 from .db import ARTIFACTS_DIR, DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID, ROOT, connect, fetch_all, fetch_one, initialize
 from .silence_trim import captions_duration_ms, remove_pause_from_captions, remove_pauses_batch_from_captions, word_pause_gaps
 from .credentials import credential_status
-from .credential_vault import ensure_default_migration, set_profile_secrets, unset_profile_secrets
+from .credential_vault import LLM_ENV_KEYS, ensure_default_migration, set_profile_secrets, unset_profile_secrets
+from .content_package_publish import publish_content_package
 from .duration_presets import duration_preset_options
 from .env_loader import load_env_file
 from .explainer_pipeline import (
@@ -32,6 +33,8 @@ from .explainer_pipeline import (
     save_explainer_scene_plan,
     start_explainer_run,
 )
+from .content_package_service import create_content_package, get_content_package
+from .content_package_store import approve_package, list_packages
 from .ingest_longform import ingest_longform
 from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_generate
 from .cursor_cloud import CursorCloudError
@@ -111,7 +114,13 @@ PLATFORM_DISCONNECT_KEYS: dict[str, list[str]] = {
     "youtube_shorts": ["YOUTUBE_REFRESH_TOKEN"],
     "youtube_video": ["YOUTUBE_REFRESH_TOKEN"],
     "facebook_reels": ["META_PAGE_ACCESS_TOKEN", "META_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_TOKEN", "NOURBIT_FACEBOOK_PAGE_ID"],
-    "tiktok": ["TIKTOK_ACCESS_TOKEN", "TIKTOK_REFRESH_TOKEN", "TIKTOK_OPEN_ID"],
+    "tiktok": [
+        "TIKTOK_ACCESS_TOKEN",
+        "TIKTOK_REFRESH_TOKEN",
+        "TIKTOK_OPEN_ID",
+        "TIKTOK_CLIENT_KEY",
+        "TIKTOK_CLIENT_SECRET",
+    ],
 }
 
 
@@ -660,6 +669,25 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 )
             )
             return
+        if parsed.path == "/api/content-packages":
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", [""])[0] or "").strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            status = (query.get("status", [""])[0] or "").strip() or None
+            package_id = (query.get("package_id", [""])[0] or "").strip()
+            if package_id:
+                try:
+                    self._send_json(get_content_package(package_id, db_path=DEFAULT_DB))
+                except ValueError as exc:
+                    self._send_json({"error": str(exc)}, status=404)
+                return
+            try:
+                limit = int(query.get("limit", ["50"])[0] or 50)
+            except ValueError:
+                limit = 50
+            self._send_json(
+                {"packages": list_packages(db_path=DEFAULT_DB, profile_id=profile_id, status=status, limit=max(1, min(limit, 100)))}
+            )
+            return
         if parsed.path == "/api/explainers":
             query = parse_qs(parsed.query)
             profile_id = query.get("profile_id", [DEFAULT_WORKSPACE_PROFILE_ID])[0] or DEFAULT_WORKSPACE_PROFILE_ID
@@ -765,6 +793,13 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 row["payload"] = _loads(row.get("payload_json"), {})
             self._send_json(rows)
             return
+        if parsed.path == "/api/llm-status":
+            query = parse_qs(parsed.query)
+            profile_id = (query.get("profile_id", [""])[0] or "").strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            _safe_load_env()
+            status = credential_status(profile_id)
+            self._send_json({"profile_id": profile_id, "llm": status.get("llm") or {}})
+            return
         if parsed.path == "/api/credentials":
             _safe_load_env()
             query = parse_qs(parsed.query)
@@ -853,6 +888,76 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             payload = self._read_json()
         except json.JSONDecodeError:
             self._send_json({"error": "invalid JSON"}, status=400)
+            return
+
+        if parsed.path == "/api/content-package-create":
+            try:
+                fmt = str(payload.get("format") or "").strip()
+                if not fmt:
+                    raise ValueError("format is required")
+                created = create_content_package(
+                    format=fmt,  # type: ignore[arg-type]
+                    source_kind=str(payload.get("source_kind") or "youtube"),
+                    source_ref=str(payload.get("source_ref") or ""),
+                    topic=str(payload.get("topic") or ""),
+                    job=str(payload.get("job") or "inform"),  # type: ignore[arg-type]
+                    profile_id=str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
+                    brand_preset=str(payload.get("brand_preset") or "blank"),
+                    llm_provider=str(payload.get("llm_provider") or "none"),
+                    parent_package_id=str(payload.get("parent_package_id") or ""),
+                    video_engine=payload.get("video_engine"),  # type: ignore[arg-type]
+                    db_path=DEFAULT_DB,
+                )
+                self._send_json(created)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+            return
+
+        if parsed.path == "/api/content-package-approve":
+            package_id = str(payload.get("package_id") or "").strip()
+            if not package_id:
+                self._send_json({"error": "package_id is required"}, status=400)
+                return
+            try:
+                pkg = approve_package(package_id, db_path=DEFAULT_DB)
+                self._send_json(pkg.to_dict())
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=404)
+            return
+
+        if parsed.path == "/api/content-package-publish":
+            package_id = str(payload.get("package_id") or "").strip()
+            platform = str(payload.get("platform") or "telegram_channel").strip()
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip()
+            post_type = str(payload.get("post_type") or "now").strip()
+            date_iso = str(payload.get("date_iso") or "").strip() or None
+            if not package_id:
+                self._send_json({"error": "package_id is required"}, status=400)
+                return
+            try:
+                result = publish_content_package(
+                    package_id,
+                    platform=platform,
+                    profile_id=profile_id,
+                    post_type=post_type,
+                    date_iso=date_iso,
+                    db_path=DEFAULT_DB,
+                )
+                self._send_json(result)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+            return
+
+        if parsed.path == "/api/llm-credentials":
+            _safe_load_env()
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip()
+            values = payload.get("values") if isinstance(payload.get("values"), dict) else {}
+            updates = {str(k): str(v) for k, v in values.items() if str(k) in LLM_ENV_KEYS and str(v).strip()}
+            if not updates:
+                self._send_json({"error": "no LLM credential values provided"}, status=400)
+                return
+            set_profile_secrets(profile_id, updates)
+            self._send_json({"profile_id": profile_id, "status": "saved", "keys": sorted(updates.keys())})
             return
 
         if parsed.path == "/api/approve":

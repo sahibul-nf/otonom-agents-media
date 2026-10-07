@@ -43,6 +43,7 @@ logs/
 **/*.db
 **/data/
 **/artifacts/
+**/artifacts-dev/
 **/archives/
 
 # Dependencies and build output

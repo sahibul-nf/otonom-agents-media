@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-# TikTok Content Posting API rejects personal/internal developer apps in production.
-# Re-enable when using a vendor-approved OAuth app (e.g. Postiz cloud) or approved public app.
+# Native TikTok OAuth / Content Posting API is not supported in this repo (dev app removed).
+# If TikTok returns via Postiz, map a Postiz channel — do not register a local TikTok developer app here.
 DISABLED_PUBLISH_PLATFORMS: frozenset[str] = frozenset({"tiktok"})
 
 DISABLED_PUBLISH_PLATFORM_REASONS: dict[str, str] = {
     "tiktok": (
-        "TikTok rejected personal/internal developer apps for production posting. "
-        "Use the TikTok app manually until a vendor-approved API channel is available."
+        "Native TikTok OAuth is not supported (developer app removed). "
+        "Post manually in the TikTok app, or map TikTok in Postiz when that connector is available."
     ),
 }
 

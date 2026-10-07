@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-TikTok OAuth Helper for Nourbit Sandbox
-Usage:
-  1. Add redirect URI to TikTok app: http://localhost:3000/callback
-  2. Run this script
-  3. Open the authorization URL in browser and authorize
-  4. Script will automatically capture the callback and exchange tokens
+LEGACY — not supported for Otonom Media.
+
+Native TikTok developer OAuth was removed from this project (dev app deleted).
+Use manual TikTok posting or Postiz when TikTok is offered there.
+
+This script remains only for operators who explicitly opt in with:
+
+  ALLOW_LEGACY_TIKTOK_OAUTH=1
+
+Never hardcode client key or secret; read from the environment.
 """
 
 import os
@@ -20,17 +24,23 @@ import socketserver
 import threading
 import webbrowser
 
-# Sandbox credentials
-CLIENT_KEY = "sbawp3fupcpjhvsflv"
-CLIENT_SECRET = "pCrw2bzBVHP2yNwMWx3QnNyrwAHkNLQC"
+def _required_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise SystemExit(f"Missing {name}. Set it in the environment or .env.local. Do not commit it.")
+    return value
 
-# Use ngrok URL (e.g. https://abc123.ngrok.io/callback) or any valid public URL.
-# TikTok sandbox does NOT support localhost/127.0.0.1 as redirect URI.
-REDIRECT_URI = os.environ.get(
-    "TIKTOK_REDIRECT_URI",
-    "https://9243-2401-e320-bcc-cc08-ace6-9f66-84c3-e5cf.ngrok-free.app/callback"
-)
-SCOPES = "user.info.basic,video.upload,video.publish"
+
+def _legacy_allowed() -> bool:
+    return os.environ.get("ALLOW_LEGACY_TIKTOK_OAUTH", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _load_tiktok_config() -> tuple[str, str, str, str]:
+    client_key = _required_env("TIKTOK_CLIENT_KEY")
+    client_secret = _required_env("TIKTOK_CLIENT_SECRET")
+    redirect_uri = _required_env("TIKTOK_REDIRECT_URI")
+    scopes = os.environ.get("TIKTOK_SCOPES", "user.info.basic,video.upload,video.publish")
+    return client_key, client_secret, redirect_uri, scopes
 
 
 def generate_pkce():
@@ -44,13 +54,13 @@ def generate_pkce():
     return code_verifier, code_challenge
 
 
-def get_authorization_url():
+def get_authorization_url(client_key: str, redirect_uri: str, scopes: str):
     """Build TikTok OAuth authorization URL with PKCE."""
     code_verifier, code_challenge = generate_pkce()
     params = {
-        "client_key": CLIENT_KEY,
-        "redirect_uri": REDIRECT_URI,
-        "scope": SCOPES,
+        "client_key": client_key,
+        "redirect_uri": redirect_uri,
+        "scope": scopes,
         "response_type": "code",
         "state": "nourbit123",
         "code_challenge": code_challenge,
@@ -73,28 +83,35 @@ def _post_form(url: str, data: dict) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def exchange_code_for_tokens(code: str, code_verifier: str) -> dict:
+def exchange_code_for_tokens(
+    code: str,
+    code_verifier: str,
+    *,
+    client_key: str,
+    client_secret: str,
+    redirect_uri: str,
+) -> dict:
     """Exchange authorization code for access_token, refresh_token, and open_id."""
     return _post_form(
         "https://open.tiktokapis.com/v2/oauth/token/",
         {
-            "client_key": CLIENT_KEY,
-            "client_secret": CLIENT_SECRET,
+            "client_key": client_key,
+            "client_secret": client_secret,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": redirect_uri,
             "code_verifier": code_verifier,
         },
     )
 
 
-def refresh_access_token(refresh_token: str) -> dict:
+def refresh_access_token(refresh_token: str, *, client_key: str, client_secret: str) -> dict:
     """Refresh access token using refresh_token."""
     return _post_form(
         "https://open.tiktokapis.com/v2/oauth/token/",
         {
-            "client_key": CLIENT_KEY,
-            "client_secret": CLIENT_SECRET,
+            "client_key": client_key,
+            "client_secret": client_secret,
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         },
@@ -145,8 +162,15 @@ def start_callback_server(port=3000):
 
 
 def main():
+    if not _legacy_allowed():
+        raise SystemExit(
+            "Native TikTok OAuth is disabled in this repo (developer app removed).\n"
+            "Clear stale TIKTOK_* keys in the dashboard vault. To run this legacy helper anyway:\n"
+            "  ALLOW_LEGACY_TIKTOK_OAUTH=1 python3 scripts/tiktok_oauth_helper.py"
+        )
+    client_key, client_secret, redirect_uri, scopes = _load_tiktok_config()
     print("=" * 60)
-    print("TikTok OAuth Helper for Nourbit Sandbox")
+    print("TikTok OAuth Helper (legacy opt-in)")
     print("=" * 60)
     print()
     print("IMPORTANT: TikTok sandbox does NOT support localhost/127.0.0.1")
@@ -160,12 +184,12 @@ def main():
     print("  5. Add that URI in TikTok Developer Portal → Login Kit → Redirect URI")
     print()
     print("Current Redirect URI:")
-    print(f"  {REDIRECT_URI}")
+    print(f"  {redirect_uri}")
     print()
     print("-" * 60)
 
     # Generate OAuth URL
-    auth_url, code_verifier = get_authorization_url()
+    auth_url, code_verifier = get_authorization_url(client_key, redirect_uri, scopes)
 
     # Start callback server in background thread
     server_thread = threading.Thread(target=start_callback_server, daemon=True)
@@ -200,7 +224,13 @@ def main():
     # Exchange tokens immediately while code is still fresh
     print("\nExchanging code for tokens...")
     try:
-        tokens = exchange_code_for_tokens(CallbackHandler.auth_code, code_verifier)
+        tokens = exchange_code_for_tokens(
+            CallbackHandler.auth_code,
+            code_verifier,
+            client_key=client_key,
+            client_secret=client_secret,
+            redirect_uri=redirect_uri,
+        )
         # TikTok returns tokens at root level (not under "data")
         if tokens.get("access_token"):
             print("\n" + "=" * 60)

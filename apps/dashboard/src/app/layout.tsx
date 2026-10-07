@@ -2,8 +2,9 @@ import type {Metadata} from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Otonom Media Studio OS",
-  description: "Autonomous media operations dashboard for public multi-brand video production.",
+  title: "Otonom Media",
+  description:
+    "Open-source brand brain plus factory: publish-ready social content across text, stills, carousels, shorts, long-form, and clips.",
 };
 
 export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {

@@ -203,6 +203,24 @@ CREATE TABLE IF NOT EXISTS watch_channels (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(profile_id, channel_url)
 );
+
+CREATE TABLE IF NOT EXISTS content_packages (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  format TEXT NOT NULL,
+  job TEXT NOT NULL,
+  source_json TEXT NOT NULL,
+  caption TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  video_engine TEXT,
+  parent_package_id TEXT NOT NULL DEFAULT '',
+  brand_preset TEXT NOT NULL DEFAULT 'blank',
+  artifacts_json TEXT NOT NULL DEFAULT '{}',
+  qa_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
