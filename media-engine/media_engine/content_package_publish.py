@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .content_package import ContentPackage
+from .content_package_explainer import refresh_package_explainer_artifacts
 from .content_package_store import get_package, save_package
 from .postiz_client import PostizError, build_create_text_post_body, channel_id_for_platform, create_post, extract_remote_id, publish_video, validate_channel
 
@@ -22,6 +23,7 @@ def publish_content_package(
     pkg = get_package(package_id, db_path=db_path)
     if not pkg:
         raise ValueError(f"package not found: {package_id}")
+    pkg = refresh_package_explainer_artifacts(pkg, db_path=db_path)
     if pkg.status != "approved":
         raise ValueError("package must be approved before publish")
 

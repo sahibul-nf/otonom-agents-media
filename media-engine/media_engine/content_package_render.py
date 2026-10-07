@@ -8,6 +8,7 @@ from typing import Any
 from .content_package import ContentPackage, apply_qa_status
 from .content_package_still_render import carousel_slide_texts, render_carousel_slide_png, render_still_png
 from .db import ARTIFACTS_DIR
+from .content_package_explainer import link_explainer_job_to_content_package
 from .explainer_pipeline import create_explainer_job
 
 
@@ -69,6 +70,7 @@ def attach_render_artifacts(
         if job_id:
             meta["explainer_job_id"] = job_id
             meta["explainer_status"] = "planned"
+            link_explainer_job_to_content_package(job_id, profile_id=pkg.profile_id, package_id=pkg.id)
     elif pkg.format == "clip":
         clip = root / "clip.mp4"
         clip.write_bytes(b"")

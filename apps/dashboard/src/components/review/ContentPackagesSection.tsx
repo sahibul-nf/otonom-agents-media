@@ -14,6 +14,12 @@ export type ContentPackageRow = {
   brand_preset?: string;
   qa?: {passed?: boolean; errors?: string[]};
   source?: {kind?: string; ref?: string};
+  meta?: {
+    explainer_job_id?: string;
+    explainer_status?: string;
+    explainer_error?: string;
+    explainer_duration_seconds?: number;
+  };
 };
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
@@ -23,9 +29,25 @@ export type ContentPackagesSectionProps = {
   actionStates: Record<string, ActionUiState>;
   onApprove: (packageId: string) => void;
   onPublish?: (packageId: string) => void;
+  onOpenExplainer?: (jobId: string) => void;
 };
 
-export function ContentPackagesSection({packages, actionStates, onApprove, onPublish}: ContentPackagesSectionProps) {
+function explainerStatusLabel(status: string | undefined): string | null {
+  if (!status) return null;
+  if (status === "planned") return "Explainer queued";
+  if (status === "rendering") return "Explainer rendering…";
+  if (status === "rendered") return "Video ready";
+  if (status === "failed") return "Explainer failed";
+  return `Explainer: ${status}`;
+}
+
+export function ContentPackagesSection({
+  packages,
+  actionStates,
+  onApprove,
+  onPublish,
+  onOpenExplainer,
+}: ContentPackagesSectionProps) {
   if (!packages.length) {
     return null;
   }
@@ -47,7 +69,16 @@ export function ContentPackagesSection({packages, actionStates, onApprove, onPub
           const busy = actionStates[approveKey]?.status === "running";
           const publishBusy = actionStates[publishKey]?.status === "running";
           const canApprove = pkg.status === "ready_for_review" || (pkg.status === "draft" && pkg.qa?.passed);
-          const canPublish = pkg.status === "approved" && pkg.format === "text_only" && onPublish;
+          const videoReady =
+            pkg.meta?.explainer_status === "rendered" ||
+            (pkg.format !== "short" && pkg.format !== "long_form");
+          const canPublishVideo =
+            pkg.status === "approved" &&
+            (pkg.format === "short" || pkg.format === "long_form" || pkg.format === "clip") &&
+            videoReady &&
+            onPublish;
+          const canPublish = (pkg.status === "approved" && pkg.format === "text_only" && onPublish) || canPublishVideo;
+          const explainerLabel = explainerStatusLabel(pkg.meta?.explainer_status);
           return (
             <li
               key={pkg.id}
@@ -62,7 +93,34 @@ export function ContentPackagesSection({packages, actionStates, onApprove, onPub
                     <span>{pkg.status}</span>
                     {pkg.video_engine ? <span className="text-zinc-500">engine {pkg.video_engine}</span> : null}
                     {pkg.brand_preset ? <span className="text-zinc-500">preset {pkg.brand_preset}</span> : null}
+                    {explainerLabel ? (
+                      <span
+                        className={
+                          pkg.meta?.explainer_status === "failed"
+                            ? "rounded bg-red-500/15 px-2 py-0.5 text-red-300"
+                            : pkg.meta?.explainer_status === "rendered"
+                              ? "rounded bg-emerald-500/15 px-2 py-0.5 text-emerald-300"
+                              : "rounded bg-amber-500/15 px-2 py-0.5 text-amber-200"
+                        }
+                      >
+                        {explainerLabel}
+                      </span>
+                    ) : null}
                   </div>
+                  {pkg.meta?.explainer_job_id ? (
+                    <p className="mt-1 font-mono text-xs text-zinc-500">
+                      explainer job {pkg.meta.explainer_job_id}
+                      {onOpenExplainer ? (
+                        <button
+                          type="button"
+                          className="ml-2 text-cyan-400 hover:text-cyan-300"
+                          onClick={() => onOpenExplainer(pkg.meta!.explainer_job_id!)}
+                        >
+                          Open in Explainer
+                        </button>
+                      ) : null}
+                    </p>
+                  ) : null}
                   {pkg.title ? <p className="mt-2 font-medium text-zinc-100">{pkg.title}</p> : null}
                   <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-sm text-zinc-300">{pkg.caption}</p>
                   {pkg.qa?.errors?.length ? (
@@ -92,7 +150,7 @@ export function ContentPackagesSection({packages, actionStates, onApprove, onPub
                       className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-200 hover:bg-violet-500/20 disabled:opacity-50"
                     >
                       <Send className="h-3.5 w-3.5" aria-hidden />
-                      Publish (Telegram)
+                      {pkg.format === "text_only" ? "Publish (Telegram)" : "Publish video (Telegram)"}
                     </button>
                   ) : null}
                 </div>

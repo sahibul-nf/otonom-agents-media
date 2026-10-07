@@ -33,8 +33,8 @@ from .explainer_pipeline import (
     save_explainer_scene_plan,
     start_explainer_run,
 )
-from .content_package_service import create_content_package, get_content_package
-from .content_package_store import approve_package, list_packages
+from .content_package_service import create_content_package, get_content_package, list_content_packages
+from .content_package_store import approve_package
 from .ingest_longform import ingest_longform
 from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_generate
 from .cursor_cloud import CursorCloudError
@@ -685,7 +685,14 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             except ValueError:
                 limit = 50
             self._send_json(
-                {"packages": list_packages(db_path=DEFAULT_DB, profile_id=profile_id, status=status, limit=max(1, min(limit, 100)))}
+                {
+                    "packages": list_content_packages(
+                        db_path=DEFAULT_DB,
+                        profile_id=profile_id,
+                        status=status,
+                        limit=max(1, min(limit, 100)),
+                    )
+                }
             )
             return
         if parsed.path == "/api/explainers":

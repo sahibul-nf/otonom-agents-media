@@ -596,11 +596,28 @@ def run_explainer(
             }
         )
         _write_status(root, status)
+        from .content_package_explainer import notify_explainer_render_complete
+
+        notify_explainer_render_complete(
+            job_id=job_id,
+            profile_id=profile_id,
+            output_path=output_path,
+            duration_seconds=duration,
+            db_path=db_path,
+        )
         return status
     except Exception as exc:
         status["status"] = "failed"
         status["error"] = str(exc)
         _write_status(root, status)
+        from .content_package_explainer import notify_explainer_render_failed
+
+        notify_explainer_render_failed(
+            job_id=job_id,
+            profile_id=profile_id,
+            error=str(exc),
+            db_path=db_path,
+        )
         raise
 
 

@@ -2027,6 +2027,7 @@ export function MediaStudioApp() {
                 actionStates={actionStates}
                 onApprove={(packageId) => void approveContentPackage(packageId)}
                 onPublish={(packageId) => void publishContentPackage(packageId)}
+                onOpenExplainer={() => setSection("explainer")}
               />
               <ReviewStudioSection
                 clips={filtered}

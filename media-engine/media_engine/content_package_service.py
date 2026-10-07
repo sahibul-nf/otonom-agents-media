@@ -9,6 +9,7 @@ from .brand_pack import load_brain_text
 from .content_package import Format, Job, VideoEngine, stub_generate_package
 from .content_package_llm import apply_llm_to_package
 from .content_package_render import attach_render_artifacts
+from .content_package_explainer import refresh_package_explainer_artifacts
 from .content_package_store import get_package, list_packages, save_package
 from .db import DEFAULT_DB, DEFAULT_WORKSPACE_PROFILE_ID
 from .llm import LLMError, llm_provider_ready
@@ -104,4 +105,23 @@ def get_content_package(package_id: str, *, db_path: str | Path = DEFAULT_DB) ->
     pkg = get_package(package_id, db_path=db_path)
     if not pkg:
         raise ValueError(f"package not found: {package_id}")
+    pkg = refresh_package_explainer_artifacts(pkg, db_path=db_path)
     return pkg.to_dict()
+
+
+def list_content_packages(
+    *,
+    db_path: str | Path = DEFAULT_DB,
+    profile_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    rows = list_packages(db_path=db_path, profile_id=profile_id, status=status, limit=limit)
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        pkg = get_package(str(row["id"]), db_path=db_path)
+        if not pkg:
+            continue
+        pkg = refresh_package_explainer_artifacts(pkg, db_path=db_path)
+        out.append(pkg.to_dict())
+    return out
