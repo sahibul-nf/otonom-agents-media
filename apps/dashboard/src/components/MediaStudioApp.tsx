@@ -25,6 +25,7 @@ import {ReviewStudioSection} from "@/components/review/ReviewStudioSection";
 import {BrandSection} from "@/components/brand/BrandSection";
 import {FocusModal} from "@/components/FocusModal";
 import {DashboardSection} from "@/components/home/DashboardSection";
+import {ContentPackageCreateSection, type ContentPackageCreateResult} from "@/components/generate/ContentPackageCreateSection";
 import {GenerateSection} from "@/components/generate/GenerateSection";
 import {WatchChannelsSection} from "@/components/generate/WatchChannelsSection";
 import {WorkspaceManagerModal} from "@/components/workspace/WorkspaceManagerModal";
@@ -1307,6 +1308,29 @@ export function MediaStudioApp() {
     }
   }
 
+  function handleContentPackageCreated(pkg: ContentPackageCreateResult) {
+    setContentPackages((rows) => {
+      const row = {
+        id: pkg.id,
+        format: pkg.format,
+        status: pkg.status,
+        caption: pkg.caption || "",
+        qa: pkg.qa,
+      };
+      const rest = rows.filter((r) => r.id !== pkg.id);
+      return [row, ...rest];
+    });
+  }
+
+  async function createContentPackageRequest(payload: Record<string, unknown>) {
+    return runAction(
+      "package:create",
+      "Creating content package…",
+      () => apiPost<ContentPackageCreateResult>("content-package-create", payload),
+      "Content package created",
+    );
+  }
+
   async function approveContentPackage(packageId: string) {
     const key = `package:approve:${packageId}`;
     try {
@@ -1892,6 +1916,14 @@ export function MediaStudioApp() {
               renderReadinessLine={(props) => <ReadinessLine {...props} />}
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
               renderEmptyState={renderEmpty}
+            />
+            <ContentPackageCreateSection
+              profileId={profileId}
+              actionState={actionStates["package:create"]}
+              onCreate={createContentPackageRequest}
+              onCreated={handleContentPackageCreated}
+              onOpenReview={() => setSection("review")}
+              onOpenPublish={() => setSection("publish")}
             />
             <details className="rounded-[28px] border border-white/[0.08] bg-surface/30 p-5">
               <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-300">
