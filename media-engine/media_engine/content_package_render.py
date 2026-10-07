@@ -1,18 +1,14 @@
-"""Attach render artifacts to content packages (explainer jobs, placeholders)."""
+"""Attach render artifacts to content packages (explainer jobs, still/carousel PNG)."""
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 from typing import Any
 
 from .content_package import ContentPackage, apply_qa_status
+from .content_package_still_render import carousel_slide_texts, render_carousel_slide_png, render_still_png
 from .db import ARTIFACTS_DIR
 from .explainer_pipeline import create_explainer_job
-
-_MIN_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-)
 
 
 def _package_dir(pkg_id: str) -> Path:
@@ -32,18 +28,31 @@ def attach_render_artifacts(
     meta = dict(pkg.artifacts.package_meta)
 
     if pkg.format == "still":
+        headline = (pkg.title or pkg.caption or "Untitled").split("\n", 1)[0].strip()
+        body = pkg.caption if pkg.title else ""
         img = root / "still.png"
-        img.write_bytes(_MIN_PNG)
+        render_still_png(img, headline=headline, body=body, brand_preset=pkg.brand_preset)
         pkg.artifacts.image_paths = [str(img)]
+        meta["render"] = {"kind": "still_png", "path": str(img)}
     elif pkg.format == "carousel":
-        n = len(pkg.artifacts.slide_paths) or 3
-        n = max(3, min(n, 5))
-        paths = []
-        for i in range(1, n + 1):
+        slides = carousel_slide_texts(pkg)
+        headline = (pkg.title or pkg.caption or "Carousel").split("\n", 1)[0].strip()
+        paths: list[str] = []
+        total = len(slides)
+        for i, slide_text in enumerate(slides, start=1):
             slide = root / f"slide_{i}.png"
-            slide.write_bytes(_MIN_PNG)
+            render_carousel_slide_png(
+                slide,
+                headline=headline,
+                slide_text=slide_text,
+                slide_index=i,
+                slide_total=total,
+                brand_preset=pkg.brand_preset,
+            )
             paths.append(str(slide))
         pkg.artifacts.slide_paths = paths
+        meta["render"] = {"kind": "carousel_png", "slides": len(paths)}
+        meta["slide_texts"] = slides
     elif pkg.format in ("short", "long_form"):
         topic = (pkg.title or pkg.caption or source_text)[:500].strip() or "Untitled"
         job = create_explainer_job(
