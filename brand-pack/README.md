@@ -14,3 +14,13 @@ Engine env:
 export OTONOM_BRAND_PRESET=techtalk   # optional default
 export CONTENT_OS_PATH=/path/to/content-os   # overrides preset when set
 ```
+
+## Wordmarks and logos (optional)
+
+Full PNG marks live in **content-os**, not in git. Set `CONTENT_OS_PATH` to your local clone; the engine resolves paths under `techtalk-production/brand/` (see `brand_pack.py` and `brand-pack/techtalk/README.md`).
+
+You can:
+
+- **Reference only** — keep content-os elsewhere; env var is enough for render.
+- **Symlink** — `ln -s /path/to/content-os/techtalk-production/brand ./brand-pack/techtalk/assets` for local preview (do not commit symlinks to private paths).
+- **Copy** — duplicate PNGs into a private workspace; still prefer `CONTENT_OS_PATH` so one checkout stays canonical.

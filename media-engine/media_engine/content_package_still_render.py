@@ -5,6 +5,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+from .brand_pack import resolve_wordmark_path
 from .content_package import ContentPackage
 from .explainer_stitch import _render_title_png
 
@@ -55,6 +56,22 @@ def carousel_slide_texts(pkg: ContentPackage) -> list[str]:
     return slides[:5]
 
 
+def _overlay_wordmark(path: Path, wordmark: Path) -> None:
+    from PIL import Image
+
+    base = Image.open(path).convert("RGBA")
+    mark = Image.open(wordmark).convert("RGBA")
+    max_w = max(120, int(base.width * 0.22))
+    if mark.width > max_w:
+        ratio = max_w / mark.width
+        mark = mark.resize((int(mark.width * ratio), int(mark.height * ratio)), Image.Resampling.LANCZOS)
+    padding = max(24, int(base.width * 0.04))
+    x = base.width - mark.width - padding
+    y = padding
+    base.alpha_composite(mark, (x, y))
+    base.convert("RGB").save(path, format="PNG")
+
+
 def _fit_cover(path: Path, width: int, height: int) -> None:
     from PIL import Image
 
@@ -66,6 +83,14 @@ def _fit_cover(path: Path, width: int, height: int) -> None:
     top = (resized.height - height) // 2
     cropped = resized.crop((left, top, left + width, top + height))
     cropped.save(path, format="PNG")
+
+
+def _finish_frame(path: Path, brand_preset: str) -> None:
+    w, h = output_dimensions(brand_preset)
+    _fit_cover(path, w, h)
+    wordmark = resolve_wordmark_path(preset=brand_preset)
+    if wordmark:
+        _overlay_wordmark(path, wordmark)
 
 
 def render_still_png(
@@ -85,8 +110,7 @@ def render_still_png(
         label=label,
         scene_type="text",
     )
-    w, h = output_dimensions(brand_preset)
-    _fit_cover(path, w, h)
+    _finish_frame(path, brand_preset)
     return path
 
 
@@ -107,6 +131,5 @@ def render_carousel_slide_png(
         label=micro,
         scene_type="text",
     )
-    w, h = output_dimensions(brand_preset)
-    _fit_cover(path, w, h)
+    _finish_frame(path, brand_preset)
     return path

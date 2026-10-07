@@ -9,6 +9,7 @@
 - **Still/carousel (#109):** content packages render TechTalk-style PNGs (1080² or 1080×1920 personal) via explainer card layers, not 1×1 placeholders.
 - **Explainer sync (#110):** when an explainer job finishes, linked short/long packages get `video_path` from `final.mp4`, explainer status in Review, and publish refreshes before Postiz video upload.
 - **Still/carousel publish (#111):** approved packages upload PNGs via Postiz (`publish_images`, multi-image post body); Review defaults to mapped `instagram`.
+- **Brand wordmarks (#112):** `CONTENT_OS_PATH` resolves TechTalk wordmark/logo PNGs from content-os for still/carousel overlay; documented in `brand-pack/`.
 - Create finds a **text shortlist** before rendering. Slide to find clips, set a minimum editorial score (default 80), then render only the ideas you keep. Suggested content angles appear after a YouTube link resolves.
 - Optional **Jev** decisions (`TYPESAFE_API_KEY` or `JEV_API_KEY`) can score keep/drop and pick a content angle. Copy is still written by the existing LLM.
 - `docs/saas-readiness.md` — local-first → multi-user checklist (DB, auth seam, credentials, artifacts, workers); no cloud implementation.
