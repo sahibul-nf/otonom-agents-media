@@ -10,6 +10,7 @@ export type PublishDestinationPlatform =
   | "youtube_shorts"
   | "youtube_video"
   | "facebook_reels"
+  | "instagram"
   | "tiktok";
 
 export const publishDestinationPlatforms: string[] = [
@@ -17,6 +18,7 @@ export const publishDestinationPlatforms: string[] = [
   "youtube_shorts",
   "youtube_video",
   "facebook_reels",
+  "instagram",
   "tiktok",
 ];
 

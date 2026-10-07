@@ -53,6 +53,7 @@ PLATFORM_ACCOUNT_KEYS: dict[str, list[str]] = {
     "youtube_video": ["YOUTUBE_REFRESH_TOKEN"],
     "facebook_reels": ["META_PAGE_ID", "META_PAGE_ACCESS_TOKEN", "NOURBIT_FACEBOOK_PAGE_ID", "NOURBIT_FACEBOOK_PAGE_TOKEN"],
     "tiktok": ["TIKTOK_ACCESS_TOKEN", "TIKTOK_REFRESH_TOKEN", "TIKTOK_OPEN_ID"],
+    "instagram": [],
 }
 
 PLATFORM_REQUIRED_GROUPS: dict[str, list[list[str]]] = {
@@ -64,6 +65,8 @@ PLATFORM_REQUIRED_GROUPS: dict[str, list[list[str]]] = {
         ["META_PAGE_ACCESS_TOKEN", "NOURBIT_FACEBOOK_PAGE_TOKEN"],
     ],
     "tiktok": [["TIKTOK_CLIENT_KEY"], ["TIKTOK_CLIENT_SECRET"], ["TIKTOK_ACCESS_TOKEN"], ["TIKTOK_REFRESH_TOKEN"]],
+    # Postiz-only — native keys intentionally absent; map channel in Publish.
+    "instagram": [["OTONOM_POSTIZ_INSTAGRAM_CHANNEL"]],
 }
 
 

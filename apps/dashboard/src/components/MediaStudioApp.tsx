@@ -1590,6 +1590,7 @@ export function MediaStudioApp() {
       facebook_reels: ["facebook"],
       tiktok: ["tiktok"],
       telegram_channel: ["telegram"],
+      instagram: ["instagram"],
       instagram_reels: ["instagram"],
     };
     const wanted = new Set(aliases[platform] || []);

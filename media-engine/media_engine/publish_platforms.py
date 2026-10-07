@@ -18,6 +18,7 @@ _ALL_OPERATOR_PLATFORMS: tuple[str, ...] = (
     "youtube_shorts",
     "youtube_video",
     "facebook_reels",
+    "instagram",
     "tiktok",
 )
 

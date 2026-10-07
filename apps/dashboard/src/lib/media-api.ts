@@ -836,6 +836,8 @@ export function platformLabel(platform: string) {
     youtube_video: "YouTube Video",
     tiktok: "TikTok",
     telegram_channel: "Telegram Channel",
+    instagram: "Instagram",
+    instagram_reels: "Instagram Reels",
   };
   return labels[platform] || platform;
 }

@@ -20,6 +20,7 @@ _DEFAULT_PUBLISH_PLATFORM_LABELS: tuple[tuple[str, str], ...] = (
     ("youtube_shorts", "{name} YouTube Shorts"),
     ("youtube_video", "{name} YouTube Video"),
     ("facebook_reels", "{name} Facebook Reels"),
+    ("instagram", "{name} Instagram"),
     ("tiktok", "{name} TikTok"),
 )
 

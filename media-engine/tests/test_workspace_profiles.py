@@ -75,7 +75,7 @@ class WorkspaceProfileTests(unittest.TestCase):
         platforms = [row[0] for row in rows]
         self.assertEqual(
             platforms,
-            ["facebook_reels", "telegram_channel", "tiktok", "youtube_shorts", "youtube_video"],
+            ["facebook_reels", "instagram", "telegram_channel", "tiktok", "youtube_shorts", "youtube_video"],
         )
         tiktok = self.conn.execute(
             "SELECT enabled, mode FROM publish_targets WHERE profile_id = ? AND platform = 'tiktok'",
@@ -95,14 +95,14 @@ class WorkspaceProfileTests(unittest.TestCase):
             "SELECT COUNT(*) FROM publish_targets WHERE profile_id = ?",
             ("workspace",),
         ).fetchone()[0]
-        self.assertEqual(count, 5)
+        self.assertEqual(count, 6)
         # Idempotent — does not duplicate when already present
         list_profiles(self.conn)
         count = self.conn.execute(
             "SELECT COUNT(*) FROM publish_targets WHERE profile_id = ?",
             ("workspace",),
         ).fetchone()[0]
-        self.assertEqual(count, 5)
+        self.assertEqual(count, 6)
 
     def test_create_update_delete(self):
         created = create_profile(
