@@ -5,7 +5,7 @@ import {type FormEvent, type ReactNode, useState} from "react";
 import {EmptyState, RecoveryAction} from "@/components/shared/StudioPrimitives";
 import {disabledPublishPlatformReason, isPublishPlatformDisabled} from "@/lib/publish-platforms";
 import {classifyPublishError} from "@/lib/publish-recovery";
-import {LlmKeysSection} from "@/components/channels/LlmKeysSection";
+import {LlmKeysSection, type LlmStatusPayload} from "@/components/channels/LlmKeysSection";
 import {platformLabel, type CredentialStatus, type PostizIntegration, type PublishAttempt, type PublishTarget} from "@/lib/media-api";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
@@ -448,6 +448,10 @@ export function PublishSection({
   onRefresh,
   profileId,
   onSaveLlm,
+  onConnectLlmConnector,
+  onTestLlmAgent,
+  llmStatus,
+  llmStatusLoading,
   publicAccountLabel,
   publishActionHint,
   formatPlatformMode,
@@ -457,6 +461,10 @@ export function PublishSection({
   targets: PublishTarget[];
   profileId: string;
   onSaveLlm?: (values: Record<string, string>) => void | Promise<void>;
+  onConnectLlmConnector?: (connectorId: string) => void | Promise<void>;
+  onTestLlmAgent?: () => void | Promise<void>;
+  llmStatus?: LlmStatusPayload | null;
+  llmStatusLoading?: boolean;
   credentials: CredentialStatus | null;
   attempts: PublishAttempt[];
   selectedPlatforms: string[];
@@ -849,8 +857,12 @@ export function PublishSection({
         <LlmKeysSection
           credentials={credentials}
           profileId={profileId}
+          llmStatus={llmStatus ?? null}
+          llmStatusLoading={llmStatusLoading}
           actionStates={actionStates}
           onSaveLlm={onSaveLlm}
+          onConnectConnector={onConnectLlmConnector}
+          onTestAgent={onTestLlmAgent}
         />
       ) : null}
     </section>

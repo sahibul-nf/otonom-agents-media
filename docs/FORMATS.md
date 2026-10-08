@@ -32,6 +32,12 @@ Every generated **content package** has exactly one format. Editorial catalog al
 
 Human approve is always required before publish.
 
+## Batch create (one action, many packages)
+
+Create UI and `POST /api/content-package-create` accept **`formats`: string[]** (minimum one). The server resolves the source **once**, then creates **one package per format**. Each package’s `meta` includes **`batch_id`** and **`batch_formats`** so Review can show related outputs together. Single-format clients may still send **`format`** only (unchanged response shape).
+
+`clip` requires **`parent_package_id`**; enable it in the UI only after the parent id is set. MCP `create_content_package` accepts the same `formats` array.
+
 ## QA (built-in)
 
 - Claims and sources present when the format needs them.

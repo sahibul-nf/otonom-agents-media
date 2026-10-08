@@ -21,7 +21,12 @@ from .explainer_pipeline import (
     read_explainer_status,
     run_explainer,
 )
-from .content_package_service import create_content_package, get_content_package
+from .content_package_service import (
+    create_content_package,
+    create_content_packages_batch,
+    get_content_package,
+    parse_create_formats,
+)
 from .content_package_store import list_packages
 from .ingest_longform import ingest_longform
 from .heygen_client import (
@@ -178,6 +183,15 @@ TOOLS = [
                 "format": {
                     "type": "string",
                     "enum": ["text_only", "still", "carousel", "short", "long_form", "clip"],
+                    "description": "Single format (use formats for batch create)",
+                },
+                "formats": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["text_only", "still", "carousel", "short", "long_form", "clip"],
+                    },
+                    "description": "Create multiple packages in one call (shared source, batch_id in meta)",
                 },
                 "source_kind": {
                     "type": "string",
@@ -208,7 +222,6 @@ TOOLS = [
                 "parent_package_id": {"type": "string"},
                 "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
             },
-            "required": ["format"],
         },
     },
     {
@@ -384,22 +397,27 @@ def call_tool(name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
             return _tool_result(list_explainer_jobs(profile_id=profile_id, limit=limit))
 
         if name == "create_content_package":
-            fmt = str(args.get("format") or "").strip()
-            if not fmt:
-                raise ValueError("format is required")
-            result = create_content_package(
-                format=fmt,  # type: ignore[arg-type]
-                source_kind=str(args.get("source_kind") or "youtube"),
-                source_ref=str(args.get("source_ref") or ""),
-                topic=str(args.get("topic") or ""),
-                job=str(args.get("job") or "inform"),  # type: ignore[arg-type]
-                profile_id=str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
-                brand_preset=str(args.get("brand_preset") or "blank"),
-                llm_provider=str(args.get("llm_provider") or "none"),
+            formats_list = parse_create_formats(
+                format=str(args.get("format") or "").strip() or None,
+                formats=args.get("formats") if isinstance(args.get("formats"), list) else None,
                 parent_package_id=str(args.get("parent_package_id") or ""),
-                video_engine=args.get("video_engine"),  # type: ignore[arg-type]
-                db_path=DEFAULT_DB,
             )
+            common = {
+                "source_kind": str(args.get("source_kind") or "youtube"),
+                "source_ref": str(args.get("source_ref") or ""),
+                "topic": str(args.get("topic") or ""),
+                "job": str(args.get("job") or "inform"),  # type: ignore[arg-type]
+                "profile_id": str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
+                "brand_preset": str(args.get("brand_preset") or "blank"),
+                "llm_provider": str(args.get("llm_provider") or "none"),
+                "parent_package_id": str(args.get("parent_package_id") or ""),
+                "video_engine": args.get("video_engine"),  # type: ignore[arg-type]
+                "db_path": DEFAULT_DB,
+            }
+            if len(formats_list) > 1:
+                result = create_content_packages_batch(formats=formats_list, **common)
+            else:
+                result = create_content_package(format=formats_list[0], **common)
             return _tool_result(result)
 
         if name == "get_content_package":

@@ -11,12 +11,16 @@
 - **Still/carousel publish (#111):** approved packages upload PNGs via Postiz (`publish_images`, multi-image post body); Review defaults to mapped `instagram`.
 - **Brand wordmarks (#112):** `CONTENT_OS_PATH` resolves TechTalk wordmark/logo PNGs from content-os for still/carousel overlay; documented in `brand-pack/`.
 - **Publish:** Instagram (Postiz-only) destination on Channels so still/carousel packages can map a feed channel before Review publish.
+- **LLM connectors (#114):** discover local harnesses (Cursor, Antigravity/`agy`, Codex, Claude Code, OpenCode), Connect/Test in Publish, `llm-status` + connector API; BYO subscription via official CLI only. Cursor connector uses `--trust` for non-interactive workspace trust.
+- **LLM connector state:** `stale` when vault command drifts from harness spec; unified agent `state` on credentials + `llm_status` on connect/test/save; dashboard loads harness list with workspace sync (no duplicate fetch).
+- **Multi-format create (#116):** select several outputs on Generate → one batch (`batch_id` in package meta), shared source resolve, `formats` on API/MCP.
 - Create finds a **text shortlist** before rendering. Slide to find clips, set a minimum editorial score (default 80), then render only the ideas you keep. Suggested content angles appear after a YouTube link resolves.
 - Optional **Jev** decisions (`TYPESAFE_API_KEY` or `JEV_API_KEY`) can score keep/drop and pick a content angle. Copy is still written by the existing LLM.
 - `docs/saas-readiness.md` — local-first → multi-user checklist (DB, auth seam, credentials, artifacts, workers); no cloud implementation.
 - HyperFrames: **8** new built-in caption recipes (`swiss_grid_explainer`, `vignelli_portrait_headline`, `decision_tree_tutorial`, `kinetic_type_promo`, `nyt_graph_data_story`, `eva_neon_cyber`, `volt_lime_kinetic`, `ember_sunset_gradient`) with catalog metadata, dashboard preview overlays, and stock preview mapping.
 
 - Dashboard **light theme**: OS light mode no longer leaves near-white `zinc` text on pale canvas. Shell uses semantic tokens; video preview overlays stay light-on-dark.
+- Dashboard **appearance**: manual System / Light / Dark toggle (sidebar + header); preference in `localStorage` (`otonom-color-theme`).
 
 ### Changed
 - Dashboard **Main Flow UX (#105)**:

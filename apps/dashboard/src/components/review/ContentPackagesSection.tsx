@@ -15,6 +15,8 @@ export type ContentPackageRow = {
   qa?: {passed?: boolean; errors?: string[]};
   source?: {kind?: string; ref?: string};
   meta?: {
+    batch_id?: string;
+    batch_formats?: string[];
     explainer_job_id?: string;
     explainer_status?: string;
     explainer_error?: string;
@@ -104,6 +106,11 @@ export function ContentPackagesSection({
                     <span>{pkg.status}</span>
                     {pkg.video_engine ? <span className="text-zinc-500">engine {pkg.video_engine}</span> : null}
                     {pkg.brand_preset ? <span className="text-zinc-500">preset {pkg.brand_preset}</span> : null}
+                    {pkg.meta?.batch_id ? (
+                      <span className="rounded bg-violet-500/15 px-2 py-0.5 font-mono text-violet-200">
+                        batch {pkg.meta.batch_id}
+                      </span>
+                    ) : null}
                     {explainerLabel ? (
                       <span
                         className={

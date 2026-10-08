@@ -25,6 +25,9 @@ LLM_ENV_KEYS = frozenset(
         "DEEPSEEK_API_KEY",
         "GROQ_API_KEY",
         "OTONOM_LLM_AGENT_COMMAND",
+        "OTONOM_LLM_AGENT_CONNECTOR",
+        "OTONOM_LLM_AGENT_LAST_ERROR",
+        "OTONOM_LLM_AGENT_TEST_OK",
     }
 )
 
@@ -293,8 +296,9 @@ def credential_status_for_profile(profile_id: str) -> dict[str, Any]:
             "ready": bool(vault.get(env_key, "").strip() or os.environ.get(env_key, "").strip()),
             "key_env": env_key,
         }
-    agent_cmd = vault.get("OTONOM_LLM_AGENT_COMMAND", "").strip() or os.environ.get("OTONOM_LLM_AGENT_COMMAND", "").strip()
-    llm["agent"] = {"ready": bool(agent_cmd), "key_env": "OTONOM_LLM_AGENT_COMMAND"}
+    from .llm import llm_provider_ready
+
+    llm["agent"] = {**llm_provider_ready("agent", profile_id=profile_id), "key_env": "OTONOM_LLM_AGENT_COMMAND"}
 
     return {
         "profile_id": profile_id,

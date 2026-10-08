@@ -23,16 +23,51 @@ curl -s -X POST http://127.0.0.1:8765/api/llm-credentials \
 
 Keys never belong in git. See [docs/SECRETS.md](SECRETS.md).
 
-## Agent CLI (`llm_provider=agent`)
+## Local harness (BYO subscription, no API key)
 
-Set a command template that receives the user prompt on stdin and must print **raw JSON** on stdout:
+Same model as [OpenMausBot](https://github.com/sahibul-nf/openmausbot) and [T3 Code](https://t3.codes): Otonom **does not** resell tokens or scrape ChatGPT/Gemini web UIs. You install the vendor CLI, log in on the machine (`codex login`, Cursor app, Antigravity/Google, `claude auth login`, etc.), then connect from the dashboard.
+
+**Publish → LLM connectors**
+
+1. **Connect** — picks a fixed allowlisted command (`cursor_agent`, `antigravity`, `codex`, `claude_code`, `opencode`) and stores it in the workspace vault.
+2. **Test** — runs a tiny JSON ping through the active harness.
+3. **Custom** — paste `OTONOM_LLM_AGENT_COMMAND` under *API keys / custom CLI* (no shell metacharacters).
+
+Connector state (`GET /api/llm-status`): `undetected` → `detected` → `configured` → `ready` (after test), `error` (last test failed), or `stale` (active connector id no longer matches the stored command — use **Reconnect**).
+
+Connect, Test, and Save LLM settings responses include `llm_status` so the dashboard can refresh without a race. Agent pills on `/api/credentials` use the same `state` field (`configured` vs `ready`) as the connector list.
 
 ```bash
-export OTONOM_LLM_AGENT_COMMAND='cursor agent --print --output-format json'
-# or a thin wrapper script that calls your local CLI
+curl -s "http://127.0.0.1:8765/api/llm-status?profile_id=workspace" | jq .
+curl -s -X POST http://127.0.0.1:8765/api/llm-connector-connect \
+  -H 'Content-Type: application/json' \
+  -d '{"profile_id":"workspace","connector_id":"cursor_agent"}'
+curl -s -X POST http://127.0.0.1:8765/api/llm-connector-test \
+  -H 'Content-Type: application/json' \
+  -d '{"profile_id":"workspace"}'
 ```
 
-Optional per-workspace override in vault: `OTONOM_LLM_AGENT_COMMAND`.
+Vault keys: `OTONOM_LLM_AGENT_COMMAND`, `OTONOM_LLM_AGENT_CONNECTOR`, `OTONOM_LLM_AGENT_TEST_OK`, `OTONOM_LLM_AGENT_LAST_ERROR`.
+
+## Agent CLI (`llm_provider=agent`)
+
+The command receives a JSON payload on stdin (`system`, `user`, `response_format`) and must print **raw JSON** on stdout.
+
+Manual env (optional):
+
+```bash
+export OTONOM_LLM_AGENT_COMMAND='cursor agent --print --output-format json --trust'
+```
+
+### Cursor: "Workspace Trust Required"
+
+When the review engine runs `cursor agent` non-interactively, Cursor refuses to run until the workspace is trusted. The bundled connector adds **`--trust`** (same as `-f` / `--yolo` in the CLI hint). Alternatively, run `cursor agent` once interactively in the repo root and approve the prompt.
+
+Re-**Connect** Cursor in the dashboard if you connected before this flag was added (vault may still hold the old command without `--trust`).
+
+### Antigravity (`agy`)
+
+Binary name is usually **`agy`** (add `~/.local/bin` to `PATH` if Connect says "not found"). Connect stores `agy -p --output-format json --dangerously-skip-permissions` so tool approvals do not block headless Test/Create.
 
 If the command is missing, package creation falls back to `none` (stub) and records the error in package QA.
 

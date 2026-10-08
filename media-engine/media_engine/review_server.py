@@ -33,7 +33,13 @@ from .explainer_pipeline import (
     save_explainer_scene_plan,
     start_explainer_run,
 )
-from .content_package_service import create_content_package, get_content_package, list_content_packages
+from .content_package_service import (
+    create_content_package,
+    create_content_packages_batch,
+    get_content_package,
+    list_content_packages,
+    parse_create_formats,
+)
 from .content_package_store import approve_package
 from .ingest_longform import ingest_longform
 from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_generate
@@ -804,8 +810,9 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             query = parse_qs(parsed.query)
             profile_id = (query.get("profile_id", [""])[0] or "").strip() or DEFAULT_WORKSPACE_PROFILE_ID
             _safe_load_env()
-            status = credential_status(profile_id)
-            self._send_json({"profile_id": profile_id, "llm": status.get("llm") or {}})
+            from .llm_connectors import build_llm_status_payload
+
+            self._send_json({"profile_id": profile_id, **build_llm_status_payload(profile_id)})
             return
         if parsed.path == "/api/credentials":
             _safe_load_env()
@@ -899,23 +906,33 @@ class ReviewHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/content-package-create":
             try:
-                fmt = str(payload.get("format") or "").strip()
-                if not fmt:
-                    raise ValueError("format is required")
-                created = create_content_package(
-                    format=fmt,  # type: ignore[arg-type]
-                    source_kind=str(payload.get("source_kind") or "youtube"),
-                    source_ref=str(payload.get("source_ref") or ""),
-                    topic=str(payload.get("topic") or ""),
-                    job=str(payload.get("job") or "inform"),  # type: ignore[arg-type]
-                    profile_id=str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
-                    brand_preset=str(payload.get("brand_preset") or "blank"),
-                    llm_provider=str(payload.get("llm_provider") or "none"),
+                formats_raw = payload.get("formats")
+                formats_list = parse_create_formats(
+                    format=str(payload.get("format") or "").strip() or None,
+                    formats=formats_raw if isinstance(formats_raw, list) else None,
                     parent_package_id=str(payload.get("parent_package_id") or ""),
-                    video_engine=payload.get("video_engine"),  # type: ignore[arg-type]
-                    db_path=DEFAULT_DB,
                 )
-                self._send_json(created)
+                common = {
+                    "source_kind": str(payload.get("source_kind") or "youtube"),
+                    "source_ref": str(payload.get("source_ref") or ""),
+                    "topic": str(payload.get("topic") or ""),
+                    "job": str(payload.get("job") or "inform"),  # type: ignore[arg-type]
+                    "profile_id": str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
+                    "brand_preset": str(payload.get("brand_preset") or "blank"),
+                    "llm_provider": str(payload.get("llm_provider") or "none"),
+                    "parent_package_id": str(payload.get("parent_package_id") or ""),
+                    "video_engine": payload.get("video_engine"),  # type: ignore[arg-type]
+                    "db_path": DEFAULT_DB,
+                }
+                multi_request = isinstance(formats_raw, list) and len(formats_list) > 1
+                if len(formats_list) > 1 or multi_request:
+                    created = create_content_packages_batch(formats=formats_list, **common)
+                    self._send_json(created)
+                elif len(formats_list) == 1:
+                    created = create_content_package(format=formats_list[0], **common)
+                    self._send_json(created)
+                else:
+                    raise ValueError("format or formats is required")
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=400)
             return
@@ -963,8 +980,53 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             if not updates:
                 self._send_json({"error": "no LLM credential values provided"}, status=400)
                 return
+            agent_cmd = updates.get("OTONOM_LLM_AGENT_COMMAND")
+            if agent_cmd:
+                from .llm_connectors import is_allowed_agent_command
+
+                if not is_allowed_agent_command(agent_cmd):
+                    self._send_json(
+                        {"error": "agent command rejected — use Connect for known harnesses or avoid shell metacharacters"},
+                        status=400,
+                    )
+                    return
+            from .llm_connectors import build_llm_status_payload, merge_llm_agent_credential_updates
+
+            updates = merge_llm_agent_credential_updates(profile_id, updates)
             set_profile_secrets(profile_id, updates)
-            self._send_json({"profile_id": profile_id, "status": "saved", "keys": sorted(updates.keys())})
+            self._send_json(
+                {
+                    "profile_id": profile_id,
+                    "status": "saved",
+                    "keys": sorted(updates.keys()),
+                    "llm_status": build_llm_status_payload(profile_id),
+                }
+            )
+            return
+
+        if parsed.path == "/api/llm-connector-connect":
+            _safe_load_env()
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip()
+            connector_id = str(payload.get("connector_id") or "").strip()
+            from .llm_connectors import connect_connector
+
+            try:
+                result = connect_connector(profile_id, connector_id)
+                self._send_json(result)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+            return
+
+        if parsed.path == "/api/llm-connector-test":
+            _safe_load_env()
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip()
+            from .llm_connectors import test_active_connector
+
+            try:
+                result = test_active_connector(profile_id)
+                self._send_json(result)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
             return
 
         if parsed.path == "/api/approve":

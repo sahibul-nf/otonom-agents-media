@@ -84,7 +84,25 @@ def llm_provider_ready(provider: str, profile_id: str | None = None) -> dict[str
         cmd = resolve_env_value("OTONOM_LLM_AGENT_COMMAND", profile_id=profile_id) or os.environ.get(
             "OTONOM_LLM_AGENT_COMMAND", ""
         ).strip()
-        return {"ready": bool(cmd), "mode": "agent", "missing": [] if cmd else ["OTONOM_LLM_AGENT_COMMAND"]}
+        connector_id = resolve_env_value("OTONOM_LLM_AGENT_CONNECTOR", profile_id=profile_id) or os.environ.get(
+            "OTONOM_LLM_AGENT_CONNECTOR", ""
+        ).strip()
+        tested = (
+            resolve_env_value("OTONOM_LLM_AGENT_TEST_OK", profile_id=profile_id)
+            or os.environ.get("OTONOM_LLM_AGENT_TEST_OK", "")
+        ).strip() == "1"
+        state = "configured" if cmd else "undetected"
+        if cmd and tested:
+            state = "ready"
+        elif cmd:
+            state = "configured"
+        return {
+            "ready": bool(cmd),
+            "mode": "agent",
+            "state": state,
+            "connector_id": connector_id,
+            "missing": [] if cmd else ["OTONOM_LLM_AGENT_COMMAND"],
+        }
     if provider not in LLM_API_KEY_ENV:
         return {"ready": False, "mode": "unknown", "missing": [provider]}
     env_key = LLM_API_KEY_ENV[provider]

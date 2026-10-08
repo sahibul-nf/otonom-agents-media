@@ -40,6 +40,13 @@ export type ContentPackageCreateResult = {
   status: string;
   caption?: string;
   qa?: {passed?: boolean; errors?: string[]};
+  meta?: {batch_id?: string; batch_formats?: string[]};
+};
+
+export type ContentPackageCreateBatchResult = {
+  batch_id?: string;
+  packages: ContentPackageCreateResult[];
+  errors?: {format: string; error: string}[];
 };
 
 function SelectField({
@@ -76,7 +83,7 @@ function SelectField({
 
 export type ContentPackageCreatePayload = {
   profile_id: string;
-  format: string;
+  formats: string[];
   source_kind: string;
   source_ref: string;
   topic: string;
@@ -89,8 +96,8 @@ export type ContentPackageCreatePayload = {
 export type ContentPackageCreateSectionProps = {
   profileId: string;
   actionState?: ActionUiState;
-  onCreate: (payload: ContentPackageCreatePayload) => Promise<ContentPackageCreateResult>;
-  onCreated: (pkg: ContentPackageCreateResult) => void;
+  onCreate: (payload: ContentPackageCreatePayload) => Promise<ContentPackageCreateBatchResult>;
+  onCreated: (batch: ContentPackageCreateBatchResult) => void;
   onOpenReview?: () => void;
   onOpenPublish?: () => void;
 };
@@ -103,7 +110,7 @@ export function ContentPackageCreateSection({
   onOpenReview,
   onOpenPublish,
 }: ContentPackageCreateSectionProps) {
-  const [format, setFormat] = useState("text_only");
+  const [selectedFormats, setSelectedFormats] = useState<string[]>(["text_only"]);
   const [sourceKind, setSourceKind] = useState("youtube");
   const [sourceRef, setSourceRef] = useState("");
   const [topic, setTopic] = useState("");
@@ -111,30 +118,44 @@ export function ContentPackageCreateSection({
   const [job, setJob] = useState("inform");
   const [llmProvider, setLlmProvider] = useState("deepseek");
   const [parentPackageId, setParentPackageId] = useState("");
-  const [lastResult, setLastResult] = useState<ContentPackageCreateResult | null>(null);
+  const [lastBatch, setLastBatch] = useState<ContentPackageCreateBatchResult | null>(null);
   const [error, setError] = useState("");
 
   const busy = actionState?.status === "running";
   const sourceLabel =
     sourceKind === "youtube" ? "YouTube URL" : sourceKind === "chat" ? "Chat transcript" : "Topic text";
+  const hasParent = Boolean(parentPackageId.trim());
+
+  function toggleFormat(value: string) {
+    if (value === "clip" && !hasParent) return;
+    setSelectedFormats((current) => {
+      if (current.includes(value)) {
+        const next = current.filter((f) => f !== value);
+        return next.length ? next : ["text_only"];
+      }
+      return [...current, value];
+    });
+  }
 
   async function handleSubmit() {
     setError("");
-    setLastResult(null);
+    setLastBatch(null);
     const ref = sourceRef.trim();
     const topicText = topic.trim();
-    if (format !== "clip" && !ref && !topicText) {
+    const formats = [...selectedFormats];
+    const needsSource = formats.some((f) => f !== "clip");
+    if (needsSource && !ref && !topicText) {
       setError("Source URL, chat text, or topic is required.");
       return;
     }
-    if (format === "clip" && !parentPackageId.trim()) {
+    if (formats.includes("clip") && !hasParent) {
       setError("Clip format requires a parent package id.");
       return;
     }
     try {
       const created = await onCreate({
         profile_id: profileId,
-        format,
+        formats,
         source_kind: sourceKind,
         source_ref: ref,
         topic: topicText,
@@ -143,7 +164,7 @@ export function ContentPackageCreateSection({
         llm_provider: llmProvider,
         parent_package_id: parentPackageId.trim(),
       });
-      setLastResult(created);
+      setLastBatch(created);
       onCreated(created);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
@@ -159,11 +180,40 @@ export function ContentPackageCreateSection({
       </summary>
 
       <p className="mt-3 text-xs leading-relaxed text-zinc-500">
-        Build a publish-ready package from YouTube, chat paste, or a topic. Results land in Review → Content packages.
+        Build publish-ready packages from one source. Select multiple outputs — each becomes its own row in Review → Content
+        packages (shared batch id).
       </p>
 
+      <div className="mt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Outputs</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {FORMATS.map((opt) => {
+            const active = selectedFormats.includes(opt.value);
+            const clipLocked = opt.value === "clip" && !hasParent;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                disabled={clipLocked}
+                onClick={() => toggleFormat(opt.value)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  active
+                    ? "border-violet-400/60 bg-violet-500/20 text-violet-100"
+                    : clipLocked
+                      ? "cursor-not-allowed border-white/[0.06] bg-zinc-900/40 text-zinc-600"
+                      : "border-white/[0.10] bg-black/20 text-zinc-400 hover:border-white/[0.18] hover:text-zinc-200"
+                }`}
+                aria-pressed={active}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-[11px] text-zinc-600">Default: text only. Clip unlocks when parent package id is set.</p>
+      </div>
+
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <SelectField label="Format" value={format} options={FORMATS} onChange={setFormat} />
         <SelectField label="Source" value={sourceKind} options={SOURCE_KINDS} onChange={setSourceKind} />
         <SelectField label="Brand preset" value={brandPreset} options={BRAND_PRESETS} onChange={setBrandPreset} />
         <SelectField label="Job" value={job} options={JOBS} onChange={setJob} />
@@ -209,27 +259,34 @@ export function ContentPackageCreateSection({
         </label>
       )}
 
-      {format === "clip" ? (
-        <label className="mt-3 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Parent package id
-          <input
-            value={parentPackageId}
-            onChange={(e) => setParentPackageId(e.target.value)}
-            className="mt-1.5 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan/40"
-          />
-        </label>
-      ) : null}
+      <label className="mt-3 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        Parent package id (for clip)
+        <input
+          value={parentPackageId}
+          onChange={(e) => setParentPackageId(e.target.value)}
+          className="mt-1.5 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan/40"
+        />
+      </label>
 
       {error ? <p className="mt-3 text-xs text-danger">{error}</p> : null}
 
-      {lastResult ? (
+      {lastBatch?.packages?.length ? (
         <div className="mt-3 rounded-2xl border border-success/25 bg-success/[0.06] p-3 text-xs text-zinc-300">
-          <p>
-            Created <span className="font-mono text-success">{lastResult.id}</span> · {lastResult.status}
-            {lastResult.qa?.passed ? " · QA passed" : ""}
-          </p>
-          {lastResult.qa?.errors?.length ? (
-            <p className="mt-2 text-amber-300/90">QA: {lastResult.qa.errors.join("; ")}</p>
+          {lastBatch.batch_id ? (
+            <p className="font-mono text-zinc-500">Batch {lastBatch.batch_id}</p>
+          ) : null}
+          <ul className="mt-2 space-y-1">
+            {lastBatch.packages.map((pkg) => (
+              <li key={pkg.id}>
+                <span className="font-mono text-success">{pkg.id}</span> · {pkg.format} · {pkg.status}
+                {pkg.qa?.passed ? " · QA passed" : ""}
+              </li>
+            ))}
+          </ul>
+          {lastBatch.errors?.length ? (
+            <p className="mt-2 text-amber-300/90">
+              Partial errors: {lastBatch.errors.map((e) => `${e.format}: ${e.error}`).join("; ")}
+            </p>
           ) : null}
           <div className="mt-2 flex flex-wrap gap-2">
             {onOpenReview ? (
@@ -253,7 +310,7 @@ export function ContentPackageCreateSection({
         className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-violet-600 text-xs font-bold uppercase tracking-wider text-white hover:bg-violet-500 disabled:opacity-50 sm:w-auto sm:px-8"
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Sparkles className="h-4 w-4" aria-hidden />}
-        Create package
+        Create {selectedFormats.length > 1 ? `${selectedFormats.length} packages` : "package"}
       </button>
     </details>
   );

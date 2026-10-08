@@ -13,7 +13,12 @@ from media_engine.content_package import (
     stub_generate_package,
     validate_package,
 )
-from media_engine.content_package_service import create_content_package, get_content_package
+from media_engine.content_package_service import (
+    create_content_package,
+    create_content_packages_batch,
+    get_content_package,
+    parse_create_formats,
+)
 from media_engine.content_package_store import approve_package, list_packages
 
 
@@ -75,6 +80,34 @@ class ContentPackageTests(unittest.TestCase):
             self.assertEqual(loaded["id"], created["id"])
             rows = list_packages(db_path=db)
             self.assertEqual(len(rows), 1)
+
+    def test_parse_create_formats_rejects_empty(self):
+        with self.assertRaises(ValueError):
+            parse_create_formats()
+
+    def test_parse_create_formats_clip_requires_parent(self):
+        with self.assertRaises(ValueError):
+            parse_create_formats(format="clip", parent_package_id="")
+
+    def test_batch_create_multiple_formats(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "t.sqlite"
+            batch = create_content_packages_batch(
+                formats=["text_only", "still"],
+                source_kind="topic",
+                topic="AI regulation brief",
+                llm_provider="none",
+                db_path=db,
+            )
+            self.assertEqual(len(batch["packages"]), 2)
+            self.assertTrue(batch["batch_id"])
+            ids = {p["format"] for p in batch["packages"]}
+            self.assertEqual(ids, {"text_only", "still"})
+            for pkg in batch["packages"]:
+                self.assertEqual(pkg["meta"]["batch_id"], batch["batch_id"])
+                self.assertEqual(pkg["meta"]["batch_formats"], ["text_only", "still"])
+            rows = list_packages(db_path=db)
+            self.assertEqual(len(rows), 2)
 
     def test_approve_package(self):
         with tempfile.TemporaryDirectory() as tmp:

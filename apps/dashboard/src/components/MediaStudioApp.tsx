@@ -25,7 +25,11 @@ import {ReviewStudioSection} from "@/components/review/ReviewStudioSection";
 import {BrandSection} from "@/components/brand/BrandSection";
 import {FocusModal} from "@/components/FocusModal";
 import {DashboardSection} from "@/components/home/DashboardSection";
-import {ContentPackageCreateSection, type ContentPackageCreateResult} from "@/components/generate/ContentPackageCreateSection";
+import {
+  ContentPackageCreateSection,
+  type ContentPackageCreateBatchResult,
+  type ContentPackageCreateResult,
+} from "@/components/generate/ContentPackageCreateSection";
 import {GenerateSection} from "@/components/generate/GenerateSection";
 import {WatchChannelsSection} from "@/components/generate/WatchChannelsSection";
 import {WorkspaceManagerModal} from "@/components/workspace/WorkspaceManagerModal";
@@ -34,6 +38,8 @@ import {ExplainerSection} from "@/components/explainer/ExplainerSection";
 import {TemplatesSection} from "@/components/templates/TemplatesSection";
 import {CalendarSection} from "@/components/calendar/CalendarSection";
 import {PublishSection} from "@/components/channels/PublishSection";
+import type {LlmStatusPayload} from "@/components/channels/LlmKeysSection";
+import {ColorThemeToggle} from "@/components/shared/ColorThemeToggle";
 import {EmptyState, InlineActionStatus, LoadingState, SettingTile} from "@/components/shared/StudioPrimitives";
 import {
   apiGet,
@@ -447,6 +453,7 @@ export function MediaStudioApp() {
   const [selectedId, setSelectedId] = useState("");
   const [targets, setTargets] = useState<PublishTarget[]>([]);
   const [credentials, setCredentials] = useState<CredentialStatus | null>(null);
+  const [llmStatus, setLlmStatus] = useState<LlmStatusPayload | null>(null);
   const [style, setStyle] = useState<StyleProfile | null>(null);
   const [templates, setTemplates] = useState<BrandTemplate[]>([]);
   const [hyperframesTemplates, setHyperframesTemplates] = useState<HyperframesTemplate[]>([]);
@@ -613,6 +620,7 @@ export function MediaStudioApp() {
         profilesResult,
         watchResult,
         packagesResult,
+        llmStatusResult,
       ] = await Promise.all([
         apiGet<ClipCandidate[]>("review"),
         apiGet<PublishTarget[]>(`targets?profile_id=${encodeURIComponent(activeProfile)}`),
@@ -633,6 +641,9 @@ export function MediaStudioApp() {
         apiGet<{profiles: MediaProfile[]}>("profiles").then((payload) => ({ok: true as const, profiles: payload.profiles || []})).catch((error) => ({ok: false as const, error})),
         apiGet<{channels: WatchChannel[]}>(`watch-channels?profile_id=${encodeURIComponent(activeProfile)}`).then((payload) => ({ok: true as const, channels: payload.channels || []})).catch((error) => ({ok: false as const, error})),
         apiGet<{packages: ContentPackageRow[]}>(`content-packages?profile_id=${encodeURIComponent(activeProfile)}&limit=30`).then((payload) => ({ok: true as const, packages: payload.packages || []})).catch((error) => ({ok: false as const, error})),
+        apiGet<LlmStatusPayload>(`llm-status?profile_id=${encodeURIComponent(activeProfile)}`)
+          .then((payload) => ({ok: true as const, payload}))
+          .catch((error) => ({ok: false as const, error})),
       ]);
       // Opportunistic due-channel poll (respects interval server-side).
       void apiGet<{results: unknown[]}>(`watch-poll?profile_id=${encodeURIComponent(activeProfile)}`).catch(() => null);
@@ -662,6 +673,7 @@ export function MediaStudioApp() {
       setProfiles(profilesResult.ok ? profilesResult.profiles : []);
       setWatchChannels(watchResult.ok ? watchResult.channels : []);
       setContentPackages(packagesResult.ok ? packagesResult.packages : []);
+      setLlmStatus(llmStatusResult.ok ? llmStatusResult.payload : null);
       setPublishSelection((current) => {
         const enabled = targetRows
           .filter((target) => publishPlatforms.includes(target.platform) && target.mode !== "off" && (target.enabled ?? true))
@@ -689,6 +701,7 @@ export function MediaStudioApp() {
     setProfileId(nextProfileId);
     setTargets([]);
     setCredentials(null);
+    setLlmStatus(null);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(PROFILE_STORAGE_KEY, nextProfileId);
     }
@@ -1268,19 +1281,66 @@ export function MediaStudioApp() {
     );
   }
 
+  function applyLlmStatusFromResponse(body: unknown) {
+    if (!body || typeof body !== "object") return;
+    const llm = (body as {llm_status?: LlmStatusPayload}).llm_status;
+    if (llm) setLlmStatus(llm);
+  }
+
   async function saveLlmCredentials(values: Record<string, string>) {
     const key = `llm:save:${profileId}`;
     try {
-      await runAction(
+      const result = await runAction(
         key,
         "Saving LLM settings…",
-        () => apiPost("llm-credentials", {profile_id: profileId, values}),
+        () => apiPost<{llm_status?: LlmStatusPayload}>("llm-credentials", {profile_id: profileId, values}),
         "LLM settings saved",
       );
+      applyLlmStatusFromResponse(result);
       await refreshAll();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "LLM save failed");
       throw error;
+    }
+  }
+
+  async function connectLlmConnector(connectorId: string) {
+    const key = `llm:connect:${connectorId}`;
+    try {
+      const result = await runAction(
+        key,
+        "Connecting harness…",
+        () =>
+          apiPost<{llm_status?: LlmStatusPayload}>("llm-connector-connect", {
+            profile_id: profileId,
+            connector_id: connectorId,
+          }),
+        "Harness connected",
+      );
+      applyLlmStatusFromResponse(result);
+      await refreshAll();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Connect failed";
+      pushToast(message, "error");
+      throw error;
+    }
+  }
+
+  async function testLlmAgent() {
+    const key = `llm:test:${profileId}`;
+    try {
+      const result = await runAction(
+        key,
+        "Testing agent harness…",
+        () => apiPost<{llm_status?: LlmStatusPayload}>("llm-connector-test", {profile_id: profileId}),
+        "Harness test passed",
+      );
+      applyLlmStatusFromResponse(result);
+      await refreshAll();
+      pushToast("Local agent returned valid JSON", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Harness test failed";
+      pushToast(message, "error");
     }
   }
 
@@ -1311,27 +1371,44 @@ export function MediaStudioApp() {
     }
   }
 
-  function handleContentPackageCreated(pkg: ContentPackageCreateResult) {
-    setContentPackages((rows) => {
-      const row = {
-        id: pkg.id,
-        format: pkg.format,
-        status: pkg.status,
-        caption: pkg.caption || "",
-        qa: pkg.qa,
-      };
-      const rest = rows.filter((r) => r.id !== pkg.id);
-      return [row, ...rest];
-    });
+  function normalizePackageCreateResponse(
+    result: ContentPackageCreateBatchResult | ContentPackageCreateResult,
+  ): ContentPackageCreateBatchResult {
+    if (result && typeof result === "object" && Array.isArray((result as ContentPackageCreateBatchResult).packages)) {
+      return result as ContentPackageCreateBatchResult;
+    }
+    return {packages: [result as ContentPackageCreateResult], errors: []};
+  }
+
+  function handleContentPackageCreated(batch: ContentPackageCreateBatchResult) {
+    const newRows = batch.packages.map((pkg) => ({
+      id: pkg.id,
+      format: pkg.format,
+      status: pkg.status,
+      caption: pkg.caption || "",
+      qa: pkg.qa,
+      meta: pkg.meta,
+    }));
+    const ids = new Set(newRows.map((r) => r.id));
+    setContentPackages((rows) => [...newRows, ...rows.filter((r) => !ids.has(r.id))]);
   }
 
   async function createContentPackageRequest(payload: Record<string, unknown>) {
-    return runAction(
+    const formats = payload.formats;
+    const multi = Array.isArray(formats) && formats.length > 1;
+    const result = await runAction(
       "package:create",
-      "Creating content package…",
-      () => apiPost<ContentPackageCreateResult>("content-package-create", payload),
-      "Content package created",
+      multi ? "Creating content packages…" : "Creating content package…",
+      async () => {
+        const raw = await apiPost<ContentPackageCreateBatchResult | ContentPackageCreateResult>(
+          "content-package-create",
+          payload,
+        );
+        return normalizePackageCreateResponse(raw);
+      },
+      multi ? `${formats.length} packages created` : "Content package created",
     );
+    return result;
   }
 
   async function approveContentPackage(packageId: string) {
@@ -1830,6 +1907,10 @@ export function MediaStudioApp() {
         </nav>
 
         <div className="mt-4 grid shrink-0 gap-3">
+          <div className="flex items-center justify-between gap-2 px-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-600">Appearance</span>
+            <ColorThemeToggle compact />
+          </div>
           <div className="rounded-[22px] border border-white/[0.07] bg-white/[0.035] p-4">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-sm font-semibold">Next action</span>
@@ -1867,17 +1948,24 @@ export function MediaStudioApp() {
               </h2>
               <p className="mt-1 max-w-[calc(100vw-40px)] break-words text-sm text-zinc-400 md:max-w-2xl">{sectionCopy[section].subtitle}</p>
             </div>
-            {!focusedWorkflow ? (
-              <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:flex sm:flex-wrap">
-                <button onClick={() => setSection(nextAction.section)} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink">
-                  <Wand2 className="h-4 w-4" /> {nextAction.label}
-                </button>
-                <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
+            <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:flex sm:flex-wrap sm:justify-end">
+              <ColorThemeToggle />
+              {!focusedWorkflow ? (
+                <>
+                  <button onClick={() => setSection(nextAction.section)} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink">
+                    <Wand2 className="h-4 w-4" /> {nextAction.label}
+                  </button>
+                  <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised">
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh
+                  </button>
+                  <StatusPill busy={busy} status={headerStatus} />
+                </>
+              ) : (
+                <button onClick={refreshAll} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full border border-white/[0.10] bg-surface px-4 text-sm font-medium text-zinc-200 hover:bg-surface-raised lg:hidden">
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />} Refresh
                 </button>
-                <StatusPill busy={busy} status={headerStatus} />
-              </div>
-            ) : null}
+              )}
+            </div>
           </div>
         </header>
 
@@ -2094,6 +2182,8 @@ export function MediaStudioApp() {
               targets={activeTargets}
               profileId={profileId}
               credentials={credentials}
+              llmStatus={llmStatus}
+              llmStatusLoading={busy && !llmStatus}
               attempts={publishAttempts}
               selectedPlatforms={publishSelection}
               actionStates={actionStates}
@@ -2103,6 +2193,8 @@ export function MediaStudioApp() {
               onDisconnect={disconnectPlatform}
               onSaveCredentials={saveConnectionCredentials}
               onSaveLlm={saveLlmCredentials}
+              onConnectLlmConnector={(id) => void connectLlmConnector(id)}
+              onTestLlmAgent={() => void testLlmAgent()}
               onConnectPostiz={connectPostiz}
               onDisconnectPostiz={disconnectPostiz}
               onMapPostiz={mapPostizChannel}
