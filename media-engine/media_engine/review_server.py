@@ -1008,7 +1008,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             _safe_load_env()
             profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip()
             connector_id = str(payload.get("connector_id") or "").strip()
-            from .llm_connectors import activate_connector, connect_connector, deactivate_connector
+            from .llm_connectors import activate_connector, connect_connector, deactivate_connector, select_connector_model
 
             try:
                 action = str(payload.get("action") or "connect").strip().lower()
@@ -1016,6 +1016,12 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     result = activate_connector(profile_id, connector_id)
                 elif action == "deactivate":
                     result = deactivate_connector(profile_id, connector_id)
+                elif action == "select-model":
+                    result = select_connector_model(
+                        profile_id,
+                        connector_id,
+                        str(payload.get("model_id") or ""),
+                    )
                 else:
                     result = connect_connector(profile_id, connector_id)
                 self._send_json(result)

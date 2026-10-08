@@ -21,6 +21,7 @@
 - **LLM connectors (#114):** discover local harnesses (Cursor, Antigravity/`agy`, Codex, Claude Code, OpenCode), Connect/Test in Publish, `llm-status` + connector API; BYO subscription via official CLI only. Cursor connector uses `--trust` for non-interactive workspace trust.
 - **LLM connector state:** `stale` when vault command drifts from harness spec; unified agent `state` on credentials + `llm_status` on connect/test/save; dashboard loads harness list with workspace sync (no duplicate fetch).
 - **LLM connectors:** multiple harnesses in vault (`OTONOM_LLM_CONNECTORS_JSON`); several **Active** at once; runtime fallback chain (catalog order); **Pause** / **Enable**; Test runs all active harnesses.
+- **Agent models (#117):** per-harness model picker from a documented catalog; selection stored in the connector registry and passed as an allowlisted `--model` flag.
 - **Multi-format create (#116):** select several outputs on Generate → one batch (`batch_id` in package meta), shared source resolve, `formats` on API/MCP.
 - Create finds a **text shortlist** before rendering. Slide to find clips, set a minimum editorial score (default 80), then render only the ideas you keep. Suggested content angles appear after a YouTube link resolves.
 - Optional **Jev** decisions (`TYPESAFE_API_KEY` or `JEV_API_KEY`) can score keep/drop and pick a content angle. Copy is still written by the existing LLM.

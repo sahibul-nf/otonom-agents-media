@@ -82,6 +82,36 @@ _ALLOWED_COMMANDS = frozenset(
     {spec.command for spec in CONNECTOR_SPECS} | {CURSOR_AGENT_COMMAND_LEGACY}
 )
 
+# Static catalogs: these CLIs do not share one list API. Ids are the vendor --model values.
+# Empty selection means the harness default (no model flag).
+CONNECTOR_MODEL_FLAG = "--model"
+CONNECTOR_MODELS: dict[str, tuple[tuple[str, str], ...]] = {
+    "cursor_agent": (
+        ("auto", "Auto"),
+        ("composer-2.5", "Composer 2.5"),
+        ("gpt-5.4", "GPT-5.4"),
+        ("claude-4.6-sonnet", "Claude 4.6 Sonnet"),
+    ),
+    "antigravity": (
+        ("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("gemini-2.5-flash", "Gemini 2.5 Flash"),
+        ("gemini-3-pro", "Gemini 3 Pro"),
+    ),
+    "codex": (
+        ("gpt-5.4", "GPT-5.4"),
+        ("gpt-5.4-mini", "GPT-5.4 mini"),
+    ),
+    "claude_code": (
+        ("claude-opus-4.6", "Claude Opus 4.6"),
+        ("claude-sonnet-4.6", "Claude Sonnet 4.6"),
+        ("claude-haiku-4.5", "Claude Haiku 4.5"),
+    ),
+    "opencode": (
+        ("gpt-5.4", "GPT-5.4"),
+        ("claude-sonnet-4.6", "Claude Sonnet 4.6"),
+    ),
+}
+
 
 def command_matches_connector(spec: LlmConnectorSpec, command: str) -> bool:
     text = (command or "").strip()
@@ -113,6 +143,7 @@ def _normalize_registry_entry(raw: Any) -> dict[str, str]:
         "test_ok": str(raw.get("test_ok") or "").strip(),
         "last_error": str(raw.get("last_error") or "").strip(),
         "enabled": enabled,
+        "model": str(raw.get("model") or "").strip(),
     }
 
 
@@ -135,6 +166,7 @@ def load_connectors_registry(profile_id: str) -> dict[str, dict[str, str]]:
                 "test_ok": str(vault.get(VAULT_TEST_OK_KEY) or "").strip(),
                 "last_error": str(vault.get(VAULT_LAST_ERROR_KEY) or "").strip(),
                 "enabled": "1",
+                "model": "",
             }
         }
     return {}
@@ -154,6 +186,30 @@ def _enabled_ids_from_registry(registry: dict[str, dict[str, str]]) -> list[str]
 
 def enabled_connector_ids(profile_id: str) -> list[str]:
     return _enabled_ids_from_registry(load_connectors_registry(profile_id))
+
+
+def catalog_models(connector_id: str) -> list[dict[str, str]]:
+    rows = CONNECTOR_MODELS.get((connector_id or "").strip(), ())
+    return [{"id": mid, "label": label, "source": "catalog"} for mid, label in rows]
+
+
+def model_allowed(connector_id: str, model_id: str) -> bool:
+    text = (model_id or "").strip()
+    if not text:
+        return True
+    return any(row["id"] == text for row in catalog_models(connector_id))
+
+
+def effective_agent_command(connector_id: str, command: str, model_id: str) -> str:
+    base = (command or "").strip()
+    model = (model_id or "").strip()
+    if not model:
+        return base
+    if not model_allowed(connector_id, model):
+        raise ValueError(f"unknown model for {connector_id}: {model}")
+    if any(ch in model for ch in " \t\n;|&$`<>()"):
+        raise ValueError(f"unknown model for {connector_id}: {model}")
+    return f"{base} {CONNECTOR_MODEL_FLAG} {model}"
 
 
 def agent_provider_ready(profile_id: str) -> dict[str, Any]:
@@ -213,7 +269,12 @@ def call_agent_json_for_profile(
     enabled = _enabled_ids_from_registry(registry)
     errors: list[str] = []
     for cid in enabled:
-        cmd = registry.get(cid, {}).get("command", "")
+        entry = registry.get(cid, {})
+        try:
+            cmd = effective_agent_command(cid, entry.get("command", ""), entry.get("model", ""))
+        except ValueError as exc:
+            errors.append(f"{cid}: {exc}")
+            continue
         try:
             return run_agent_shell_command(
                 cmd,
@@ -278,6 +339,7 @@ def merge_llm_agent_credential_updates(profile_id: str, updates: dict[str, str])
         "test_ok": out.get(VAULT_TEST_OK_KEY, ""),
         "last_error": out.get(VAULT_LAST_ERROR_KEY, ""),
         "enabled": registry.get(cid, {}).get("enabled", "1"),
+        "model": registry.get(cid, {}).get("model", ""),
     }
     out[VAULT_CONNECTORS_REGISTRY_KEY] = json.dumps(registry, ensure_ascii=False)
     return out
@@ -397,6 +459,8 @@ def connector_status_rows(profile_id: str, *, path: str | None = None) -> list[d
                     "connected": connected,
                     "last_error": last_error,
                     "command_outdated": state == CONNECTOR_STATE_STALE,
+                    "models": [],
+                    "selected_model": "",
                 }
             )
             continue
@@ -421,6 +485,8 @@ def connector_status_rows(profile_id: str, *, path: str | None = None) -> list[d
                 "connected": connected,
                 "last_error": last_error,
                 "command_outdated": command_outdated,
+                "models": catalog_models(cid) if connected else [],
+                "selected_model": entry.get("model", "") if connected else "",
             }
         )
     return rows
@@ -458,10 +524,19 @@ def connect_connector(profile_id: str, connector_id: str) -> dict[str, Any]:
 
     registry = load_connectors_registry(profile_id)
     existing = registry.get(spec.id, {})
+    kept_model = existing.get("model", "")
+    if not model_allowed(spec.id, kept_model):
+        kept_model = ""
     if existing.get("command") and command_matches_connector(spec, existing.get("command", "")):
-        registry[spec.id] = {**existing, "enabled": "1"}
+        registry[spec.id] = {**existing, "enabled": "1", "model": kept_model}
     else:
-        registry[spec.id] = {"command": spec.command, "test_ok": "", "last_error": "", "enabled": "1"}
+        registry[spec.id] = {
+            "command": spec.command,
+            "test_ok": "",
+            "last_error": "",
+            "enabled": "1",
+            "model": kept_model,
+        }
     _persist_connectors_registry(profile_id, registry)
 
     return {
@@ -505,6 +580,26 @@ def deactivate_connector(profile_id: str, connector_id: str) -> dict[str, Any]:
     }
 
 
+def select_connector_model(profile_id: str, connector_id: str, model_id: str) -> dict[str, Any]:
+    cid = (connector_id or "").strip()
+    model = (model_id or "").strip()
+    if not model_allowed(cid, model):
+        raise ValueError(f"unknown model for {cid}: {model}")
+    registry = load_connectors_registry(profile_id)
+    entry = registry.get(cid)
+    if not entry or not entry.get("command"):
+        raise ValueError(f"{cid} is not connected — use Connect first")
+    registry[cid] = {**entry, "model": model}
+    _persist_connectors_registry(profile_id, registry)
+    return {
+        "profile_id": profile_id,
+        "connector_id": cid,
+        "model": model,
+        "status": "saved",
+        "llm_status": build_llm_status_payload(profile_id),
+    }
+
+
 def test_active_connector(profile_id: str, *, timeout_seconds: int = 90) -> dict[str, Any]:
     enabled = enabled_connector_ids(profile_id)
     if not enabled:
@@ -513,10 +608,17 @@ def test_active_connector(profile_id: str, *, timeout_seconds: int = 90) -> dict
     user = '{"task":"ping","reply_shape":{"ok":true}}'
     registry = load_connectors_registry(profile_id)
     tested: list[str] = []
+    tested_models: dict[str, str] = {}
     failures: list[str] = []
     sample_keys: list[str] = []
     for cid in enabled:
-        cmd = registry.get(cid, {}).get("command", "")
+        entry = registry.get(cid, {})
+        model = entry.get("model", "")
+        try:
+            cmd = effective_agent_command(cid, entry.get("command", ""), model)
+        except ValueError as exc:
+            failures.append(f"{cid}: {exc}")
+            continue
         try:
             result = run_agent_shell_command(
                 cmd,
@@ -538,6 +640,7 @@ def test_active_connector(profile_id: str, *, timeout_seconds: int = 90) -> dict
         registry[cid]["last_error"] = ""
         registry[cid]["test_ok"] = "1"
         tested.append(cid)
+        tested_models[cid] = model
         sample_keys = sorted(result.keys())[:8]
     _persist_connectors_registry(profile_id, registry)
     if not tested:
@@ -547,6 +650,7 @@ def test_active_connector(profile_id: str, *, timeout_seconds: int = 90) -> dict
         "status": "ready",
         "connector_id": ",".join(tested),
         "tested_connector_ids": tested,
+        "tested_models": tested_models,
         "failures": failures,
         "sample_keys": sample_keys,
         "llm_status": build_llm_status_payload(profile_id),

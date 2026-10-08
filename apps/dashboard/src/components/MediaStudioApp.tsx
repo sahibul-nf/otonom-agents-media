@@ -1372,6 +1372,30 @@ export function MediaStudioApp() {
     }
   }
 
+  async function selectLlmModel(connectorId: string, modelId: string) {
+    const key = `llm:model:${connectorId}`;
+    try {
+      const result = await runAction(
+        key,
+        "Saving model…",
+        () =>
+          apiPost<{llm_status?: LlmStatusPayload}>("llm-connector-connect", {
+            profile_id: profileId,
+            connector_id: connectorId,
+            action: "select-model",
+            model_id: modelId,
+          }),
+        modelId ? "Model saved" : "Using harness default",
+      );
+      if (result?.llm_status) setLlmStatus(result.llm_status);
+      else applyLlmStatusFromResponse(result);
+      await refreshAll();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Model save failed";
+      pushToast(message, "error");
+    }
+  }
+
   async function testLlmAgent() {
     const key = `llm:test:${profileId}`;
     try {
@@ -2270,6 +2294,7 @@ export function MediaStudioApp() {
               onSaveCredentials={saveConnectionCredentials}
               onSaveLlm={saveLlmCredentials}
               onConnectLlmConnector={(id, action) => void connectLlmConnector(id, action)}
+              onSelectLlmModel={(id, modelId) => void selectLlmModel(id, modelId)}
               onTestLlmAgent={() => void testLlmAgent()}
               onConnectPostiz={connectPostiz}
               onDisconnectPostiz={disconnectPostiz}

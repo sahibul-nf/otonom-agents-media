@@ -33,7 +33,8 @@ Same model as [OpenMausBot](https://github.com/sahibul-nf/openmausbot) and [T3 C
 2. **Pause** — disables a harness without forgetting its command (re-enable with **Enable**).
 3. **Test** — JSON ping through every **Active** harness (per-harness pass/fail in vault).
 4. **Runtime** — `llm_provider=agent` tries enabled harnesses in catalog order; first successful JSON response wins.
-5. **Custom** — paste `OTONOM_LLM_AGENT_COMMAND` under *API keys / custom CLI* (no shell metacharacters).
+5. **Model** — each connected harness shows a documented catalog (these CLIs do not share one list API). The choice is stored on the harness and appended as `--model <id>`. Unknown ids are rejected. Pause and Reconnect keep the saved model. Empty means the harness default.
+6. **Custom** — paste `OTONOM_LLM_AGENT_COMMAND` under *API keys / custom CLI* (no shell metacharacters).
 
 Connector state (`GET /api/llm-status`): `undetected` → `detected` → `configured` → `ready` (after test), `error` (last test failed), or `stale` (active connector id no longer matches the stored command — use **Reconnect**).
 

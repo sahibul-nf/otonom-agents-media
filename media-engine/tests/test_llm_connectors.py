@@ -16,10 +16,12 @@ from media_engine.llm_connectors import (
     connect_connector,
     connector_spec,
     discover_connectors,
+    effective_agent_command,
     is_allowed_agent_command,
     connector_status_rows,
     load_connectors_registry,
     merge_llm_agent_credential_updates,
+    select_connector_model,
     test_active_connector,
 )
 
@@ -202,6 +204,52 @@ class LlmConnectorTests(unittest.TestCase):
             )
             self.assertEqual(merged.get("OTONOM_LLM_AGENT_TEST_OK"), "")
             self.assertEqual(merged.get("OTONOM_LLM_AGENT_CONNECTOR"), "custom")
+
+    def test_select_model_persists_and_survives_pause_and_reconnect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            import media_engine.credential_vault as vault_mod
+
+            object.__setattr__(vault_mod, "VAULT_DIR", Path(tmp))
+            profile = "models"
+            with patch("media_engine.llm_connectors._which", return_value="/usr/bin/cursor"):
+                connect_connector(profile, "cursor_agent")
+                select_connector_model(profile, "cursor_agent", "composer-2.5")
+                from media_engine.llm_connectors import deactivate_connector
+
+                deactivate_connector(profile, "cursor_agent")
+                self.assertEqual(load_connectors_registry(profile)["cursor_agent"]["model"], "composer-2.5")
+                registry = load_connectors_registry(profile)
+                registry["cursor_agent"]["command"] = "cursor agent --print --output-format json --trust --old"
+                from media_engine.llm_connectors import _persist_connectors_registry
+
+                _persist_connectors_registry(profile, registry)
+                connect_connector(profile, "cursor_agent")
+            saved = load_connectors_registry(profile)["cursor_agent"]
+            spec = connector_spec("cursor_agent")
+            assert spec is not None
+            self.assertEqual(saved["command"], spec.command)
+            self.assertEqual(saved["model"], "composer-2.5")
+            self.assertEqual(
+                effective_agent_command("cursor_agent", saved["command"], saved["model"]),
+                f"{spec.command} --model composer-2.5",
+            )
+            with self.assertRaises(ValueError):
+                select_connector_model(profile, "cursor_agent", "not-a-real-model")
+
+    def test_ping_reports_selected_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            import media_engine.credential_vault as vault_mod
+
+            object.__setattr__(vault_mod, "VAULT_DIR", Path(tmp))
+            profile = "ping_model"
+            with patch("media_engine.llm_connectors._which", return_value="/usr/bin/cursor"):
+                connect_connector(profile, "cursor_agent")
+                select_connector_model(profile, "cursor_agent", "gpt-5.4")
+            with patch("media_engine.llm_connectors.run_agent_shell_command", return_value={"ok": True}) as run:
+                out = test_active_connector(profile)
+            self.assertEqual(out["tested_models"], {"cursor_agent": "gpt-5.4"})
+            command = run.call_args.args[0]
+            self.assertIn("--model gpt-5.4", command)
 
 
 if __name__ == "__main__":

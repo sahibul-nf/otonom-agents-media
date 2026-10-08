@@ -19,6 +19,8 @@ export type LlmConnectorRow = {
   command_preview?: string;
   last_error?: string;
   command_outdated?: boolean;
+  models?: {id: string; label: string}[];
+  selected_model?: string;
 };
 
 export type LlmStatusPayload = {
@@ -76,6 +78,7 @@ export type LlmKeysSectionProps = {
   actionStates: Record<string, ActionUiState>;
   onSaveLlm: (values: Record<string, string>) => Promise<void>;
   onConnectConnector?: (connectorId: string, action?: "connect" | "activate" | "deactivate") => Promise<void>;
+  onSelectModel?: (connectorId: string, modelId: string) => Promise<void>;
   onTestAgent?: () => Promise<void>;
 };
 
@@ -87,6 +90,7 @@ export function LlmKeysSection({
   actionStates,
   onSaveLlm,
   onConnectConnector,
+  onSelectModel,
   onTestAgent,
 }: LlmKeysSectionProps) {
   const [open, setOpen] = useState(false);
@@ -194,6 +198,23 @@ export function LlmKeysSection({
                   <p className="mt-1 text-[11px] text-zinc-500">{row.auth_hint}</p>
                   {row.version ? <p className="mt-0.5 font-mono text-[10px] text-zinc-600">{row.version}</p> : null}
                   {row.last_error ? <p className="mt-1 text-[11px] text-red-300/90">{row.last_error}</p> : null}
+                  {row.connected && row.models && row.models.length > 0 && onSelectModel ? (
+                    <label className="mt-2 flex items-center gap-2 text-[11px] text-zinc-400">
+                      Model
+                      <select
+                        value={row.selected_model || ""}
+                        onChange={(event) => void onSelectModel(row.id, event.target.value)}
+                        className="max-w-[220px] rounded-lg border border-white/10 bg-zinc-900 px-2 py-1 text-[11px] text-zinc-100"
+                      >
+                        <option value="">Harness default</option>
+                        {row.models.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 gap-2">
                   {showConnectButton ? (
