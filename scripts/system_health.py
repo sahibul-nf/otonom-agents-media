@@ -59,7 +59,7 @@ def collect_status() -> dict[str, Any]:
             "port_open": port_open("127.0.0.1", frontend_port),
             "url": frontend_base,
             "http_ok": frontend_ok,
-            "looks_like_dashboard": frontend_ok and ("Otonom Media Dashboard" in frontend_body or "Media Operations Studio" in frontend_body),
+            "looks_like_dashboard": frontend_ok and ("Otonom Media Dashboard" in frontend_body or "Media Operations Studio" in frontend_body or "Otonom Media Studio OS" in frontend_body),
         },
     }
 

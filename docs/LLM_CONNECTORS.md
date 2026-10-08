@@ -29,9 +29,11 @@ Same model as [OpenMausBot](https://github.com/sahibul-nf/openmausbot) and [T3 C
 
 **Publish → LLM connectors**
 
-1. **Connect** — picks a fixed allowlisted command (`cursor_agent`, `antigravity`, `codex`, `claude_code`, `opencode`) and stores it in the workspace vault.
-2. **Test** — runs a tiny JSON ping through the active harness.
-3. **Custom** — paste `OTONOM_LLM_AGENT_COMMAND` under *API keys / custom CLI* (no shell metacharacters).
+1. **Connect** — registers a fixed allowlisted command per harness (`cursor_agent`, `antigravity`, …) in `OTONOM_LLM_CONNECTORS_JSON`. Each connect also **enables** that harness. Multiple rows can be **Active** at once.
+2. **Pause** — disables a harness without forgetting its command (re-enable with **Enable**).
+3. **Test** — JSON ping through every **Active** harness (per-harness pass/fail in vault).
+4. **Runtime** — `llm_provider=agent` tries enabled harnesses in catalog order; first successful JSON response wins.
+5. **Custom** — paste `OTONOM_LLM_AGENT_COMMAND` under *API keys / custom CLI* (no shell metacharacters).
 
 Connector state (`GET /api/llm-status`): `undetected` → `detected` → `configured` → `ready` (after test), `error` (last test failed), or `stale` (active connector id no longer matches the stored command — use **Reconnect**).
 

@@ -673,7 +673,7 @@ export function MediaStudioApp() {
       setProfiles(profilesResult.ok ? profilesResult.profiles : []);
       setWatchChannels(watchResult.ok ? watchResult.channels : []);
       setContentPackages(packagesResult.ok ? packagesResult.packages : []);
-      setLlmStatus(llmStatusResult.ok ? llmStatusResult.payload : null);
+      setLlmStatus((prev) => (llmStatusResult.ok ? llmStatusResult.payload : prev));
       setPublishSelection((current) => {
         const enabled = targetRows
           .filter((target) => publishPlatforms.includes(target.platform) && target.mode !== "off" && (target.enabled ?? true))
@@ -1304,20 +1304,37 @@ export function MediaStudioApp() {
     }
   }
 
-  async function connectLlmConnector(connectorId: string) {
+  async function connectLlmConnector(
+    connectorId: string,
+    action: "connect" | "activate" | "deactivate" = "connect",
+  ) {
     const key = `llm:connect:${connectorId}`;
+    const label =
+      action === "deactivate"
+        ? "Pausing harness…"
+        : action === "activate"
+          ? "Enabling harness…"
+          : "Connecting harness…";
+    const done =
+      action === "deactivate"
+        ? "Harness paused"
+        : action === "activate"
+          ? "Harness enabled for agent"
+          : "Harness connected";
     try {
       const result = await runAction(
         key,
-        "Connecting harness…",
+        label,
         () =>
           apiPost<{llm_status?: LlmStatusPayload}>("llm-connector-connect", {
             profile_id: profileId,
             connector_id: connectorId,
+            action,
           }),
-        "Harness connected",
+        done,
       );
-      applyLlmStatusFromResponse(result);
+      if (result?.llm_status) setLlmStatus(result.llm_status);
+      else applyLlmStatusFromResponse(result);
       await refreshAll();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Connect failed";
@@ -2193,7 +2210,7 @@ export function MediaStudioApp() {
               onDisconnect={disconnectPlatform}
               onSaveCredentials={saveConnectionCredentials}
               onSaveLlm={saveLlmCredentials}
-              onConnectLlmConnector={(id) => void connectLlmConnector(id)}
+              onConnectLlmConnector={(id, action) => void connectLlmConnector(id, action)}
               onTestLlmAgent={() => void testLlmAgent()}
               onConnectPostiz={connectPostiz}
               onDisconnectPostiz={disconnectPostiz}

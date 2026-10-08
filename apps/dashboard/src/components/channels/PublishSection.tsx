@@ -461,7 +461,7 @@ export function PublishSection({
   targets: PublishTarget[];
   profileId: string;
   onSaveLlm?: (values: Record<string, string>) => void | Promise<void>;
-  onConnectLlmConnector?: (connectorId: string) => void | Promise<void>;
+  onConnectLlmConnector?: (connectorId: string, action?: "connect" | "activate" | "deactivate") => void | Promise<void>;
   onTestLlmAgent?: () => void | Promise<void>;
   llmStatus?: LlmStatusPayload | null;
   llmStatusLoading?: boolean;

@@ -1,0 +1,13 @@
+{
+    admin off
+}
+
+:80 {
+    handle /api/* {
+        reverse_proxy media-engine:8765
+    }
+
+    handle {
+        reverse_proxy dashboard:3100
+    }
+}

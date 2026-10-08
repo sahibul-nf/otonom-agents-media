@@ -1,6 +1,6 @@
 "use client";
 
-import {Brain, Loader2, Plug, Zap} from "lucide-react";
+import {Brain, Check, Loader2, Plug, Zap} from "lucide-react";
 import {type FormEvent, useState} from "react";
 import type {CredentialStatus} from "@/lib/media-api";
 
@@ -14,6 +14,7 @@ export type LlmConnectorRow = {
   version?: string;
   state: string;
   active?: boolean;
+  connected?: boolean;
   auth_hint?: string;
   command_preview?: string;
   last_error?: string;
@@ -74,7 +75,7 @@ export type LlmKeysSectionProps = {
   llmStatusLoading?: boolean;
   actionStates: Record<string, ActionUiState>;
   onSaveLlm: (values: Record<string, string>) => Promise<void>;
-  onConnectConnector?: (connectorId: string) => Promise<void>;
+  onConnectConnector?: (connectorId: string, action?: "connect" | "activate" | "deactivate") => Promise<void>;
   onTestAgent?: () => Promise<void>;
 };
 
@@ -127,8 +128,9 @@ export function LlmKeysSection({
         </button>
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        BYO subscription: connect official local harnesses (Cursor, Antigravity, Codex, Claude Code, OpenCode) — same idea as
-        OpenMausBot and{" "}
+        Connect multiple harnesses (e.g. Cursor and Antigravity together). Every row marked{" "}
+        <span className="text-violet-300">Active</span> runs for{" "}
+        <code className="text-zinc-400">llm_provider=agent</code> — first success wins if one fails. Same idea as OpenMausBot and{" "}
         <a href="https://t3.codes" className="text-cyan-400 hover:underline" target="_blank" rel="noreferrer">
           T3 Code
         </a>
@@ -166,8 +168,11 @@ export function LlmKeysSection({
           const connectKey = `llm:connect:${row.id}`;
           const connectBusy = actionStates[connectKey]?.status === "running";
           const canConnect = row.detected && row.id !== "custom" && onConnectConnector;
-          const connectLabel =
-            row.active && (row.state === "stale" || row.command_outdated) ? "Reconnect" : "Connect";
+          const needsReconnect = row.state === "stale" || row.command_outdated;
+          const connectLabel = needsReconnect ? "Reconnect" : row.connected && !row.active ? "Enable" : "Connect";
+          const connectAction: "connect" | "activate" | "deactivate" =
+            row.connected && !row.active && !needsReconnect ? "activate" : "connect";
+          const showConnectButton = canConnect && (!row.connected || needsReconnect || !row.active);
           return (
             <div
               key={row.id}
@@ -182,6 +187,8 @@ export function LlmKeysSection({
                     </span>
                     {row.active ? (
                       <span className="text-[10px] uppercase tracking-wider text-violet-300">Active</span>
+                    ) : row.connected ? (
+                      <span className="text-[10px] uppercase tracking-wider text-zinc-500">Connected</span>
                     ) : null}
                   </div>
                   <p className="mt-1 text-[11px] text-zinc-500">{row.auth_hint}</p>
@@ -189,16 +196,35 @@ export function LlmKeysSection({
                   {row.last_error ? <p className="mt-1 text-[11px] text-red-300/90">{row.last_error}</p> : null}
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  {canConnect ? (
+                  {showConnectButton ? (
                     <button
                       type="button"
                       disabled={connectBusy}
-                      onClick={() => void onConnectConnector(row.id)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                      onClick={() => void onConnectConnector(row.id, connectAction)}
+                      className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold disabled:opacity-50 ${
+                        connectAction === "activate"
+                          ? "border border-violet-400/40 bg-violet-500/15 text-violet-100 hover:bg-violet-500/25"
+                          : "bg-violet-600 text-white hover:bg-violet-500"
+                      }`}
                     >
                       {connectBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />}
                       {connectLabel}
                     </button>
+                  ) : null}
+                  {row.active && row.connected && onConnectConnector ? (
+                    <button
+                      type="button"
+                      disabled={connectBusy}
+                      onClick={() => void onConnectConnector(row.id, "deactivate")}
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/[0.10] px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-50"
+                    >
+                      Pause
+                    </button>
+                  ) : null}
+                  {row.active && row.connected && !showConnectButton ? (
+                    <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-200">
+                      <Check className="h-3 w-3" /> Active
+                    </span>
                   ) : null}
                 </div>
               </div>

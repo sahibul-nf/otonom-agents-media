@@ -81,28 +81,9 @@ def llm_provider_ready(provider: str, profile_id: str | None = None) -> dict[str
     if provider == "none":
         return {"ready": True, "mode": "stub"}
     if provider == "agent":
-        cmd = resolve_env_value("OTONOM_LLM_AGENT_COMMAND", profile_id=profile_id) or os.environ.get(
-            "OTONOM_LLM_AGENT_COMMAND", ""
-        ).strip()
-        connector_id = resolve_env_value("OTONOM_LLM_AGENT_CONNECTOR", profile_id=profile_id) or os.environ.get(
-            "OTONOM_LLM_AGENT_CONNECTOR", ""
-        ).strip()
-        tested = (
-            resolve_env_value("OTONOM_LLM_AGENT_TEST_OK", profile_id=profile_id)
-            or os.environ.get("OTONOM_LLM_AGENT_TEST_OK", "")
-        ).strip() == "1"
-        state = "configured" if cmd else "undetected"
-        if cmd and tested:
-            state = "ready"
-        elif cmd:
-            state = "configured"
-        return {
-            "ready": bool(cmd),
-            "mode": "agent",
-            "state": state,
-            "connector_id": connector_id,
-            "missing": [] if cmd else ["OTONOM_LLM_AGENT_COMMAND"],
-        }
+        from .llm_connectors import agent_provider_ready
+
+        return agent_provider_ready(profile_id or "")
     if provider not in LLM_API_KEY_ENV:
         return {"ready": False, "mode": "unknown", "missing": [provider]}
     env_key = LLM_API_KEY_ENV[provider]
@@ -110,19 +91,23 @@ def llm_provider_ready(provider: str, profile_id: str | None = None) -> dict[str
     return {"ready": bool(key), "mode": "api", "missing": [] if key else [env_key]}
 
 
-def call_llm_agent_json(system_prompt: str, user_prompt: str, *, profile_id: str | None = None, timeout_seconds: int = 120) -> Any:
-    command = resolve_env_value("OTONOM_LLM_AGENT_COMMAND", profile_id=profile_id) or os.environ.get(
-        "OTONOM_LLM_AGENT_COMMAND", ""
-    ).strip()
-    if not command:
-        raise LLMError("OTONOM_LLM_AGENT_COMMAND is not set (local agent CLI)")
+def run_agent_shell_command(
+    command: str,
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    timeout_seconds: int = 120,
+) -> Any:
+    text = (command or "").strip()
+    if not text:
+        raise LLMError("agent command is empty")
     payload = json.dumps(
         {"system": system_prompt, "user": user_prompt, "response_format": "json_object"},
         ensure_ascii=False,
     )
     try:
         completed = subprocess.run(
-            command,
+            text,
             input=payload,
             capture_output=True,
             text=True,
@@ -135,6 +120,17 @@ def call_llm_agent_json(system_prompt: str, user_prompt: str, *, profile_id: str
     if completed.returncode != 0:
         raise LLMError(f"agent CLI exit {completed.returncode}: {(completed.stderr or completed.stdout)[:500]}")
     return parse_strict_json(completed.stdout or "{}")
+
+
+def call_llm_agent_json(system_prompt: str, user_prompt: str, *, profile_id: str | None = None, timeout_seconds: int = 120) -> Any:
+    from .llm_connectors import call_agent_json_for_profile
+
+    return call_agent_json_for_profile(
+        system_prompt,
+        user_prompt,
+        profile_id=profile_id,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def call_llm_json(

@@ -1,7 +1,8 @@
 "use client";
 
-import {AlertTriangle, ArrowDownUp} from "lucide-react";
+import {AlertTriangle, ArrowDownUp, Zap} from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
+import {QuickTriageModal} from "@/components/review/QuickTriageModal";
 import {ReviewMasonry} from "@/components/review/ReviewMasonry";
 import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewSourceGroup} from "@/components/review/ReviewSourceGroup";
@@ -68,6 +69,7 @@ export function ReviewStudioSection({
   const batchRerenderState = actionStates["review:batch-rerender"];
   const batchApproveState = actionStates["review:batch-approve"];
   const [selectionMode, setSelectionMode] = useState(false);
+  const [quickTriageOpen, setQuickTriageOpen] = useState(false);
   const [sortOrder, setSortOrder] = useState<ReviewSortOrder>("newest");
   const flattenGroups = filter === "published" || filter === "scheduled";
   const groups = useMemo(
@@ -122,6 +124,16 @@ export function ReviewStudioSection({
           >
             <ArrowDownUp className="h-3.5 w-3.5" />
             {sortOrder === "newest" ? "Newest" : "Oldest"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuickTriageOpen(true)}
+            disabled={!clips.length}
+            title="Fast keyboard triage cockpit (Space, A, D, J, K)"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-teal/40 bg-teal/10 px-3.5 text-xs font-semibold text-teal transition hover:bg-teal/20 hover:border-teal/60 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal"
+          >
+            <Zap className="h-3.5 w-3.5 fill-current" />
+            <span>Quick Triage</span>
           </button>
           {!selectionMode ? (
             <ReviewSelectionChrome
@@ -198,6 +210,13 @@ export function ReviewStudioSection({
           </button>
         </div>
       </details>
+      <QuickTriageModal
+        isOpen={quickTriageOpen}
+        onClose={() => setQuickTriageOpen(false)}
+        clips={clips}
+        onApproveClip={onApproveClip}
+        onDeleteClip={onDeleteClip}
+      />
     </section>
   );
 }

@@ -1,0 +1,53 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: otonom-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - dashboard
+      - media-engine
+
+  dashboard:
+    build:
+      context: ../apps/dashboard
+      dockerfile: Dockerfile
+    container_name: otonom-dashboard
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - MEDIA_ENGINE_API_BASE=http://media-engine:8765
+      - DASHBOARD_PORT=3100
+    expose:
+      - "3100"
+    depends_on:
+      - media-engine
+
+  media-engine:
+    build:
+      context: ../media-engine
+      dockerfile: Dockerfile
+    container_name: otonom-engine
+    restart: unless-stopped
+    environment:
+      - MEDIA_ENGINE_PORT=8765
+      - MEDIA_ENGINE_DB=/app/data/media_engine.sqlite
+      - MEDIA_ENGINE_ARTIFACTS=/app/artifacts
+    volumes:
+      - engine_data:/app/data
+      - engine_artifacts:/app/artifacts
+      - ../secrets:/app/secrets:ro
+    expose:
+      - "8765"
+
+volumes:
+  caddy_data:
+  caddy_config:
+  engine_data:
+  engine_artifacts:

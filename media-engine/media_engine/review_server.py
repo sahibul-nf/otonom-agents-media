@@ -1008,10 +1008,16 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             _safe_load_env()
             profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip()
             connector_id = str(payload.get("connector_id") or "").strip()
-            from .llm_connectors import connect_connector
+            from .llm_connectors import activate_connector, connect_connector, deactivate_connector
 
             try:
-                result = connect_connector(profile_id, connector_id)
+                action = str(payload.get("action") or "connect").strip().lower()
+                if action == "activate":
+                    result = activate_connector(profile_id, connector_id)
+                elif action == "deactivate":
+                    result = deactivate_connector(profile_id, connector_id)
+                else:
+                    result = connect_connector(profile_id, connector_id)
                 self._send_json(result)
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=400)

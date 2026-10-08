@@ -179,6 +179,19 @@ export function ReviewQueueCard({
           loop
           preload="metadata"
           posterSeekSeconds={0.5}
+          onMouseEnter={() => {
+            const video = videoRef.current;
+            if (video && video.paused && !playing) {
+              video.muted = true;
+              video.play().catch(() => undefined);
+            }
+          }}
+          onMouseLeave={() => {
+            const video = videoRef.current;
+            if (video && !playing) {
+              video.pause();
+            }
+          }}
           spacing="none"
           rounded="panel"
           showPlayHint={false}
