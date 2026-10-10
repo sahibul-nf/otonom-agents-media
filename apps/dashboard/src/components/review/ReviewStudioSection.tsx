@@ -1,11 +1,12 @@
 "use client";
 
-import {AlertTriangle, ArrowDownUp, Zap} from "lucide-react";
+import {ArrowDownUp, Zap} from "lucide-react";
 import {useEffect, useMemo, useState} from "react";
 import {QuickTriageModal} from "@/components/review/QuickTriageModal";
 import {ReviewMasonry} from "@/components/review/ReviewMasonry";
 import {ReviewSelectionChrome} from "@/components/review/ReviewSelectionChrome";
 import {ReviewSourceGroup} from "@/components/review/ReviewSourceGroup";
+import {EmptyState} from "@/components/shared/StudioPrimitives";
 import type {ClipCandidate} from "@/lib/media-api";
 import {groupReviewClips, sortReviewGroups, type ReviewSortOrder} from "@/lib/review-groups";
 import {useReviewSelection} from "@/lib/use-review-selection";
@@ -40,6 +41,7 @@ export type ReviewStudioSectionProps = {
   onPublishClipNow?: (clip: ClipCandidate, platforms: string[], options?: {republish?: boolean}) => void;
   publishTargets?: string[];
   defaultPublishPlatforms?: (clip: ClipCandidate) => string[];
+  onOpenCreate?: () => void;
 };
 
 export function ReviewStudioSection({
@@ -63,6 +65,7 @@ export function ReviewStudioSection({
   publishTargets,
   defaultPublishPlatforms,
   statusTone,
+  onOpenCreate,
 }: ReviewStudioSectionProps) {
   const clearState = actionStates["queue:clear"];
   const batchDeleteState = actionStates["review:batch-delete"];
@@ -191,12 +194,13 @@ export function ReviewStudioSection({
           ))}
         </ReviewMasonry>
       ) : (
-        <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center text-sm text-zinc-500">
-      <div>
-        <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-zinc-600" />
-            No results in this view. Generate a batch or choose another filter.
-          </div>
-        </div>
+        <EmptyState
+          tone="idle"
+          title="Nothing in this view"
+          text="Create a clip batch, or pick another filter to see approved and scheduled items."
+          actionLabel={onOpenCreate ? "Go to Create" : undefined}
+          onAction={onOpenCreate}
+        />
       )}
       <details className="justify-self-end text-xs text-zinc-500">
         <summary className="cursor-pointer list-none rounded-full px-3 py-2 hover:text-zinc-300">Queue options</summary>

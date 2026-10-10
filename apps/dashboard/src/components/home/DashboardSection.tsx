@@ -160,9 +160,9 @@ export function DashboardSection({
                 <>
                   <span className="font-editorial italic font-normal text-cyan">Review</span> {nextAction.label.replace("Review", "").trim()}
                 </>
-              ) : nextAction.label.startsWith("Generate") ? (
+              ) : nextAction.label.startsWith("Create") ? (
                 <>
-                  <span className="font-editorial italic font-normal text-cyan">Generate</span> {nextAction.label.replace("Generate", "").trim()}
+                  <span className="font-editorial italic font-normal text-cyan">Create</span> {nextAction.label.replace("Create", "").trim()}
                 </>
               ) : nextAction.label.startsWith("Choose") ? (
                 <>

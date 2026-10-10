@@ -2,8 +2,10 @@
 import type {ClipCandidate, GenerationJob} from "./media-api";
 
 export type Section = "dashboard" | "generate" | "explainer" | "templates" | "review" | "calendar" | "publish" | "brand";
+export type CreateMode = "clips" | "packages" | "watch";
 
 export const SECTION_IDS: readonly Section[] = ["dashboard", "generate", "explainer", "templates", "review", "calendar", "publish", "brand"];
+export const CREATE_MODE_IDS: readonly CreateMode[] = ["clips", "packages", "watch"];
 
 export type NextAction = {
   label: string;
@@ -47,8 +49,32 @@ export function sectionFromSearch(search: string): Section {
 /** Returns a search string for `section`, preserving unrelated params (e.g. `ops=1`). Home has no param. */
 export function searchForSection(search: string, section: Section): string {
   const params = new URLSearchParams(search);
-  if (section === "dashboard") params.delete("section");
-  else params.set("section", section);
+  if (section === "dashboard") {
+    params.delete("section");
+    params.delete("create");
+  } else {
+    params.set("section", section);
+    if (section !== "generate") params.delete("create");
+  }
+  const next = params.toString();
+  return next ? `?${next}` : "";
+}
+
+export function isCreateMode(value: string | null | undefined): value is CreateMode {
+  return Boolean(value) && (CREATE_MODE_IDS as readonly string[]).includes(value as string);
+}
+
+/** Create sub-mode via `?create=`; defaults to clips. */
+export function createModeFromSearch(search: string): CreateMode {
+  const value = new URLSearchParams(search).get("create");
+  return isCreateMode(value) ? value : "clips";
+}
+
+export function searchForCreateMode(search: string, mode: CreateMode): string {
+  const params = new URLSearchParams(search);
+  params.set("section", "generate");
+  if (mode === "clips") params.delete("create");
+  else params.set("create", mode);
   const next = params.toString();
   return next ? `?${next}` : "";
 }
@@ -93,7 +119,7 @@ export function getNextAction(input: FlowInput): NextAction {
     return {label: "Choose a visual style", detail: "Pick a template so new clips match your brand look.", section: "templates", tone: "primary"};
   }
   if (!clips.length) {
-    return {label: "Generate first clips", detail: "Paste a long YouTube video and land candidates in Review.", section: "generate", tone: "primary"};
+    return {label: "Create first clips", detail: "Paste a long YouTube video and land candidates in Review.", section: "generate", tone: "primary"};
   }
   if (approvedCount > 0 && targetCount > 0 && readyPlatforms === 0) {
     return {label: "Connect an account first", detail: "Connect at least one publish account before scheduling approved clips.", section: "publish", tone: "warning"};
@@ -109,7 +135,7 @@ export function getNextAction(input: FlowInput): NextAction {
   if (targetCount > 0 && readyPlatforms < targetCount) {
     return {label: `Connect ${plural(targetCount - readyPlatforms, "publish account")}`, detail: "Connect the remaining accounts so scheduled clips can go live.", section: "publish", tone: "warning"};
   }
-  return {label: "Generate next batch", detail: "Queue is clear — create the next set of clips when you’re ready.", section: "generate", tone: "primary"};
+  return {label: "Create next batch", detail: "Queue is clear — create the next set of clips when you’re ready.", section: "generate", tone: "primary"};
 }
 
 /** Main loop only: Create → Review → Schedule → Publish. Setup items live in `buildSetupDetails`. */
