@@ -89,7 +89,10 @@ export function ReviewQueueCard({
   const canReschedule = Boolean(onSchedule && (isScheduled || isPublished) && !rerendering);
   const canPublish = Boolean(onPublishNow && (clip.status === "approved" || isScheduled) && !rerendering);
   const canRepublish = Boolean(onPublishNow && isPublished && !rerendering);
-  const hasCardMenu = Boolean(onDelete || canApprove || onSchedule || onPublishNow || (canMakeShortsFromClip(clip) && onMakeShorts));
+  const hasPrimaryActions = canApprove || canSchedule || canPublish;
+  const hasCardMenu = Boolean(
+    onDelete || canReschedule || canRepublish || (canMakeShortsFromClip(clip) && onMakeShorts),
+  );
   const menuBusy = deleting || approving || scheduling || publishing;
   const activityLabel = formatReviewActivityAt(clip.updated_at || clip.created_at);
 
@@ -264,21 +267,6 @@ export function ReviewQueueCard({
                 role="menu"
                 className="absolute right-0 top-10 z-50 w-56 overflow-hidden rounded-2xl border border-white/[0.08] bg-canvas-deep/95 p-1 shadow-2xl backdrop-blur-xl"
               >
-                {canApprove ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={menuBusy || rerendering}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onApprove?.(clip);
-                    }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-teal transition hover:bg-teal/[0.08] disabled:opacity-40"
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Approve
-                  </button>
-                ) : null}
                 {canMakeShortsFromClip(clip) && onMakeShorts ? (
                   <button
                     type="button"
@@ -294,18 +282,6 @@ export function ReviewQueueCard({
                     Make shorts
                   </button>
                 ) : null}
-                {canSchedule ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={menuBusy}
-                    onClick={() => openDistribute("schedule")}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-40"
-                  >
-                    <Calendar className="h-3.5 w-3.5 text-cyan" />
-                    Schedule
-                  </button>
-                ) : null}
                 {canReschedule ? (
                   <button
                     type="button"
@@ -316,18 +292,6 @@ export function ReviewQueueCard({
                   >
                     <Calendar className="h-3.5 w-3.5 text-cyan" />
                     Reschedule
-                  </button>
-                ) : null}
-                {canPublish ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={menuBusy}
-                    onClick={() => openDistribute("publish")}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:opacity-40"
-                  >
-                    <Zap className="h-3.5 w-3.5 text-cyan" />
-                    Publish now
                   </button>
                 ) : null}
                 {canRepublish ? (
@@ -449,6 +413,43 @@ export function ReviewQueueCard({
               Edit <ArrowUpRight className="h-3.5 w-3.5" />
             </Link>
         </div>
+        {hasPrimaryActions && !selectionMode ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {canApprove ? (
+              <button
+                type="button"
+                disabled={menuBusy || rerendering}
+                onClick={() => onApprove?.(clip)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-teal/40 bg-teal/15 px-3 text-xs font-semibold text-teal transition hover:bg-teal/25 disabled:opacity-40"
+              >
+                {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Approve
+              </button>
+            ) : null}
+            {canSchedule ? (
+              <button
+                type="button"
+                disabled={menuBusy}
+                onClick={() => openDistribute("schedule")}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-cyan/35 bg-cyan/10 px-3 text-xs font-semibold text-cyan transition hover:bg-cyan/20 disabled:opacity-40"
+              >
+                {scheduling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Calendar className="h-3.5 w-3.5" />}
+                Schedule
+              </button>
+            ) : null}
+            {canPublish ? (
+              <button
+                type="button"
+                disabled={menuBusy}
+                onClick={() => openDistribute("publish")}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/[0.12] bg-white/[0.05] px-3 text-xs font-semibold text-zinc-100 transition hover:border-cyan/30 hover:text-cyan disabled:opacity-40"
+              >
+                {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                Publish
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {distributeIntent ? (
         <ReviewDistributeDialog

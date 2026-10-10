@@ -388,8 +388,19 @@ type GenerateConfig = {
 
 const reviewFilters = [
   {id: "all", label: "All", hint: "Every clip that is still visible in this workspace.", statuses: []},
-  {id: "review", label: "Review", hint: "Clips waiting for approve or skip — not caption copy-edit.", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
-  {id: "scheduled", label: "Scheduled", hint: "Approved clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
+  {
+    id: "needs_review",
+    label: "Needs review",
+    hint: "Draft, rendered, or held clips waiting for approve or skip.",
+    statuses: ["draft", "rendered", "held", "pending_auto_schedule"],
+  },
+  {
+    id: "ready_to_ship",
+    label: "Ready to ship",
+    hint: "Approved clips ready to schedule or publish.",
+    statuses: ["approved"],
+  },
+  {id: "scheduled", label: "Scheduled", hint: "Clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
   {id: "published", label: "Published", hint: "Clips already sent to a live channel.", statuses: ["published"]},
 ] as const;
 
@@ -531,7 +542,7 @@ export function MediaStudioApp() {
     [clips, profileId],
   );
   const selected = useMemo(() => profileClips.find((clip) => clip.id === selectedId) || profileClips[0], [profileClips, selectedId]);
-  const reviewFilter = filter === "repair" ? "review" : filter;
+  const reviewFilter = filter === "repair" || filter === "review" ? "needs_review" : filter;
   const filtered = useMemo(
     () =>
       profileClips

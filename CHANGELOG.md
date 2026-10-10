@@ -32,6 +32,7 @@
   - Unified `LoadingState` and `RecoveryAction` components across Dashboard sections; failed publish items now surface immediate recovery actions (Reconnect account, Re-render in Review, Retry now).
   - Added unit test suites for `studio-flow` and `publish-recovery` (24 passing unit tests).
   - **Wave 1 polish:** Create mode tabs (Clips | Packages | Watch) with `?create=`; UI naming always “Create”; Review empty CTA; `EmptyState` idle tone; toast/dialog a11y (aria-live, Escape, focus trap); CLI command only with `ops=1`.
+  - **Wave 2 Review ship path (#119):** primary Approve / Schedule / Publish on cards; Quick Triage **E** opens editor; performance score 0–100; filters Needs review / Ready to ship; Packages vs Clips lane labels.
 - Post captions drop generic `Sumber:` / `Source:` lines that are not the real channel, and no longer end a short caption with `...`.
 - Hook prompts reject transcript slices. `viral_reason` stays a reason to post, not a copy of the subtitle.
 - Upgraded **solo-dev-ai-kit** to **kit_version=12** (bootstrap merge; `GH_PROJECT_NUM=7` preserved). New kit: `gh-set-issue-status.sh`, `/update` + `/verify` Cursor commands, orchestrator Status columns (`gh-ensure-project-status.sh`). Otonom-only: `gh-sync-project-status.sh` (thin wrapper).

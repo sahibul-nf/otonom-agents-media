@@ -97,7 +97,15 @@ export function ReviewStudioSection({
   }
 
   return (
-    <section className="grid w-full gap-5">
+    <section className="grid w-full gap-5" aria-labelledby="review-clips-lane">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-teal/30 bg-teal/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-teal">
+          Clips
+        </span>
+        <h3 id="review-clips-lane" className="text-sm font-semibold text-zinc-200">
+          Video clip candidates
+        </h3>
+      </div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
           <p className="text-sm leading-6 text-zinc-400">Open a batch to review siblings from one source, or edit a single clip.</p>

@@ -55,14 +55,19 @@ export function ContentPackagesSection({
   }
 
   return (
-    <section className="mb-8 rounded-2xl border border-white/10 bg-zinc-900/40 p-5">
-      <div className="mb-4 flex items-center gap-2 text-sm font-medium text-zinc-200">
-        <Package className="h-4 w-4 text-cyan-400" aria-hidden />
-        Content packages
-        <span className="text-zinc-500">({packages.length})</span>
+    <section className="mb-6 rounded-2xl border border-white/10 bg-surface/40 p-5" aria-labelledby="review-packages-lane">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-cyan/30 bg-cyan/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-cyan">
+          Packages
+        </span>
+        <div id="review-packages-lane" className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+          <Package className="h-4 w-4 text-cyan-400" aria-hidden />
+          Content packages
+          <span className="text-zinc-500">({packages.length})</span>
+        </div>
       </div>
       <p className="mb-4 text-xs text-zinc-500">
-        Text, stills, carousels, shorts, long-form, and clips — separate from video clip candidates below.
+        Stills, carousels, and text posts — separate lane from video clip candidates below.
       </p>
       <ul className="space-y-3">
         {packages.map((pkg) => {
