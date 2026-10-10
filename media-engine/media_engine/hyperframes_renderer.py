@@ -698,7 +698,30 @@ def prepare_hyperframes_project(
 ) -> Path:
     media_dir = project_dir / "media"
     media_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_video_path, media_dir / "source.mp4")
+    if Path(source_video_path).exists():
+        shutil.copy2(source_video_path, media_dir / "source.mp4")
+
+    # Sound design audio assets
+    try:
+        from .sound_design import ensure_default_sound_assets
+        sound_assets = ensure_default_sound_assets()
+        for name, p in sound_assets.items():
+            dest = media_dir / p.name
+            if not dest.exists():
+                shutil.copy2(p, dest)
+        contract = {**contract, "hasSoundDesignAssets": True}
+    except Exception:
+        pass
+
+    # Optional subject cutout depth assets
+    try:
+        from .subject_cutout import generate_subject_depth_assets
+        cutout_res = generate_subject_depth_assets(source_video_path, media_dir, contract)
+        if cutout_res.get("has_cutout_matte"):
+            contract = {**contract, "hasSubjectCutout": True}
+    except Exception:
+        pass
+
     html = build_hyperframes_index_html(contract, hyperframes_template, hyperframes_format, genres)
     index_path = project_dir / "index.html"
     index_path.write_text(html, encoding="utf-8")

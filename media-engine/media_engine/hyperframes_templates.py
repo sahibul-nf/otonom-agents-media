@@ -26,6 +26,8 @@ ALIASES = {
     "play_mode_social": "cove_callout_pill",
     "product_promo_showcase": "prism_pro_pricing",
     "align_minimal_box": "byline_trust_quote",
+    "kinetic_talking_head": "studio_kinetic_reel",
+    "talking_head_reel": "studio_kinetic_reel",
 }
 OFFICIAL_PREVIEW_VIDEOS: dict[str, dict[str, str]] = {
     "spiritual_reflective": {
@@ -532,6 +534,21 @@ TEMPLATES: tuple[HyperframesTemplate, ...] = (
         secondary_accent="#facc15",
         overlay_class="template-reflective",
         preview_source_video="story_handwritten.mp4",
+    ),
+    HyperframesTemplate(
+        id="studio_kinetic_reel",
+        label="Studio Kinetic Reel",
+        category="Promo",
+        best_for="Kinetic talking-head reels with cutout depth, punch typography, and sound design.",
+        effects=("cutout depth", "punch typography", "floating 3d card", "sound design"),
+        caption_style="Kinetic punch hierarchy",
+        default_genres=("creator", "social", "promo", "podcast", "business", "growth"),
+        status="ready",
+        tone="Kinetic, premium, high-impact",
+        accent="#00f5a0",
+        secondary_accent="#00d2ff",
+        overlay_class="template-promo",
+        preview_source_video="grit_training_stamp.mp4",
     ),
 )
 

@@ -65,6 +65,7 @@ _RECIPE_CATEGORY: dict[str, str] = {
     "eva_neon_cyber": "Promo",
     "volt_lime_kinetic": "Promo",
     "ember_sunset_gradient": "Spiritual",
+    "studio_kinetic_reel": "Promo",
 }
 
 
@@ -674,4 +675,7 @@ _BUILTIN_BY_ID = {spec["id"]: recipe_from_spec(spec) for spec in _RECIPE_SPECS}
 
 
 def get_builtin_recipe(template_id: str):
+    if template_id == "studio_kinetic_reel":
+        from .studio_kinetic_reel import recipe as studio_recipe
+        return studio_recipe
     return _BUILTIN_BY_ID[template_id]

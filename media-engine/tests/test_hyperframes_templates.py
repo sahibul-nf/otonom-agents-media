@@ -22,11 +22,12 @@ class HyperframesTemplateTests(unittest.TestCase):
         templates = list_hyperframes_templates()
         builtin = [template for template in templates if not str(template["id"]).startswith("brand:")]
 
-        self.assertEqual(len(builtin), 28)
+        self.assertEqual(len(builtin), 29)
         self.assertEqual({template["status"] for template in builtin}, {"ready"})
         self.assertTrue(any(template["id"] == "energy_warm_question" for template in builtin))
         self.assertTrue(any(template["id"] == "spiritual_reflective" for template in builtin))
         self.assertTrue(any(template["id"] == "techtalk_intel_brief" for template in builtin))
+        self.assertTrue(any(template["id"] == "studio_kinetic_reel" for template in builtin))
 
     def test_explicit_override_wins(self):
         template = resolve_hyperframes_template("prism_pro_pricing", genres=["kajian"])
@@ -122,7 +123,7 @@ class HyperframesTemplateTests(unittest.TestCase):
         self.assertEqual(dimensions_for_format("auto"), (1080, 1920, "short_9_16"))
 
     def test_builtin_template_count(self):
-        self.assertEqual(len(hyperframes_template_ids()), 28)
+        self.assertEqual(len(hyperframes_template_ids()), 29)
 
     def test_techtalk_recipe_overlay(self):
         from media_engine.hyperframes_recipes import LayoutContext, get_recipe

@@ -40,6 +40,7 @@ export const recipeThemes: Record<string, RecipeTheme> = {
   eva_neon_cyber: base({accent: "#ff2a85", secondary: "#00f3ff", caption: "CYBER", caption2: "scanline neon", fontFamily: "Syne, sans-serif", captionStyle: "Cyber neon", motionPreset: "cyber-glitch", colorGrade: "cyber neon"}),
   volt_lime_kinetic: base({accent: "#a3e635", secondary: "#22c55e", caption: "VOLT", caption2: "lime impact", fontFamily: "Archivo Black, sans-serif", captionStyle: "Lime impact", motionPreset: "volt-slam", colorGrade: "volt lime"}),
   ember_sunset_gradient: base({accent: "#ff5e36", secondary: "#facc15", caption: "warm glow", caption2: "sunset script", fontFamily: "Fraunces, serif", captionStyle: "Sunset script", motionPreset: "ember-glow", colorGrade: "sunset warm"}),
+  studio_kinetic_reel: base({accent: "#00f5a0", secondary: "#00d2ff", caption: "SCALE 10X", caption2: "kinetic reel impact", fontFamily: "Outfit, sans-serif", captionStyle: "Kinetic punch hierarchy", motionPreset: "kinetic-reel", colorGrade: "studio kinetic"}),
 };
 
 export function getRecipeTheme(templateId: string): RecipeTheme {

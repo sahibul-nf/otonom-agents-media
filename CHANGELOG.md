@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Added
+- **Studio Kinetic Reel engine (#118):** high-end kinetic talking-head reel recipe (`studio_kinetic_reel`) featuring:
+  - Visual hierarchy typography: thin filler words (600 weight, 78% opacity) vs. 2-3x bold punch words with neon mint/cyan glow and GSAP scale punch.
+  - Floating tilted 3D proof card overlay with glassmorphism, perspective tilt, verified metrics, and subtle ambient sine floating.
+  - Subject cutout depth layer placing prominent title hook keywords behind the speaker (with optional local `rembg` / `u2netp` matting and graceful depth fallback).
+  - Multi-layer sound design pipeline: automated background music bed ducking under speaker speech (`sidechaincompress`) and hook impact sub-bass boom SFX.
+  - Built-in zero-dependency synthetic audio generators (hook boom, transition whoosh, ambient music bed) via standard library `wave`.
+  - Added template definition to HyperFrames catalog, 9:16 preview asset, and dashboard theme support (`recipeThemes.ts`).
 - **Content factory:** six-format packages with YouTube/chat/topic sources, vault-stored LLM keys or local agent CLI (`docs/LLM_CONNECTORS.md`), Review approve + Postiz text publish, explainer job hook for short/long packages.
 - **TikTok (#113):** native OAuth marked unsupported (dev app removed); updated Publish copy, vault disconnect for all `TIKTOK_*` keys, docs, and legacy-gated `scripts/tiktok_oauth_helper.py`.
 - **Create (#108):** content package form (six formats, source kinds, brand preset, writing model including agent) on the Generate tab.

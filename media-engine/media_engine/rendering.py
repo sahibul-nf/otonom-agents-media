@@ -14,6 +14,12 @@ from .db import ARTIFACTS_DIR, ROOT
 from .overlay_copy import overlay_slots_for_candidate
 from .hyperframes_renderer import check_hyperframes_runtime, render_premium_hyperframes as _render_hyperframes_contract
 from .silence_trim import captions_duration_ms, probe_duration_ms, source_already_silence_trimmed
+from .sound_design import (
+    apply_sound_design_to_video,
+    build_audio_ducking_filter_graph,
+    ensure_default_sound_assets,
+    get_sound_design_config,
+)
 from .styles import load_style
 
 PREMIUM_PRESET = "nourbit_premium_v1"
@@ -623,5 +629,13 @@ def render_premium_ffmpeg(
     result = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg premium render failed: {result.stderr[-1600:]}")
+    
+    sound_config = get_sound_design_config(contract)
+    if sound_config.get("enabled"):
+        sound_output = out_dir / f"{job_id}_premium_sound.mp4"
+        if apply_sound_design_to_video(output, sound_output, contract, overlay_dir):
+            output.unlink(missing_ok=True)
+            sound_output.rename(output)
+
     metadata_path.write_text(json.dumps(contract, indent=2, ensure_ascii=False), encoding="utf-8")
     return str(output), contract
