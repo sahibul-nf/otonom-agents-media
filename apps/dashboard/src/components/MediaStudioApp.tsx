@@ -89,9 +89,12 @@ import {isPublishPlatformDisabled, oauthPlatforms, publishDestinationPlatforms, 
 import {
   buildSetupDetails,
   buildWorkflowSteps,
+  createModeFromSearch,
   getNextAction,
+  searchForCreateMode,
   searchForSection,
   sectionFromSearch,
+  type CreateMode,
   type FlowInput,
   type NextAction,
   type Section,
@@ -213,8 +216,13 @@ const secondaryNav = [
 
 const nav = [...primaryNav, ...secondaryNav] as const;
 
-const mobilePrimaryNav = primaryNav.filter((item) => item.id !== "dashboard");
+const mobilePrimaryNav = primaryNav;
 
+const createModeTabs: {id: CreateMode; label: string; hint: string}[] = [
+  {id: "clips", label: "Clips", hint: "YouTube → shortlist → Review"},
+  {id: "packages", label: "Packages", hint: "Multi-format stills & posts"},
+  {id: "watch", label: "Watch", hint: "Optional auto-clip sources"},
+];
 
 const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   dashboard: {
@@ -223,7 +231,7 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
   generate: {
     title: "Create",
-    subtitle: "Paste a long video link and generate short clips for Review.",
+    subtitle: "Choose a create mode, then land work in Review.",
   },
   explainer: {
     title: "Long video",
@@ -243,7 +251,7 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
   publish: {
     title: "Publish accounts",
-    subtitle: "Connect the accounts this workspace publishes to.",
+    subtitle: "Connect delivery accounts. Writing models live under the Models tab.",
   },
   brand: {
     title: "Brand",
@@ -277,7 +285,7 @@ function renderEditorialTitle(title: string) {
   if (title === "Create") {
     return (
       <>
-        <span className="font-editorial italic font-normal text-cyan">Create</span> clips
+        <span className="font-editorial italic font-normal text-cyan">Create</span>
       </>
     );
   }
@@ -380,8 +388,19 @@ type GenerateConfig = {
 
 const reviewFilters = [
   {id: "all", label: "All", hint: "Every clip that is still visible in this workspace.", statuses: []},
-  {id: "review", label: "Review", hint: "Clips waiting for approve or skip — not caption copy-edit.", statuses: ["draft", "rendered", "approved", "held", "pending_auto_schedule"]},
-  {id: "scheduled", label: "Scheduled", hint: "Approved clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
+  {
+    id: "needs_review",
+    label: "Needs review",
+    hint: "Draft, rendered, or held clips waiting for approve or skip.",
+    statuses: ["draft", "rendered", "held", "pending_auto_schedule"],
+  },
+  {
+    id: "ready_to_ship",
+    label: "Ready to ship",
+    hint: "Approved clips ready to schedule or publish.",
+    statuses: ["approved"],
+  },
+  {id: "scheduled", label: "Scheduled", hint: "Clips already placed into the publishing queue.", statuses: ["scheduled", "ready_to_publish"]},
   {id: "published", label: "Published", hint: "Clips already sent to a live channel.", statuses: ["published"]},
 ] as const;
 
@@ -430,13 +449,23 @@ ${shellLine}  --llm-provider ${config.llmProvider} \\
 
 export function MediaStudioApp() {
   const [section, setSectionState] = useState<Section>("dashboard");
+  const [createMode, setCreateModeState] = useState<CreateMode>("clips");
   const [initialLoaded, setInitialLoaded] = useState(false);
+  const [opsMode, setOpsMode] = useState(false);
   function renderEmpty(title: string, text: string) {
-    return initialLoaded ? <EmptyState title={title} text={text} /> : <LoadingState text="Syncing your workspace…" />;
+    return initialLoaded ? <EmptyState tone="idle" title={title} text={text} /> : <LoadingState text="Syncing your workspace…" />;
   }
   function setSection(next: Section) {
     setSectionState(next);
+    if (next !== "generate") setCreateModeState("clips");
     const search = searchForSection(window.location.search, next);
+    if (search === window.location.search) return;
+    window.history.pushState(null, "", `${window.location.pathname}${search}${window.location.hash}`);
+  }
+  function setCreateMode(mode: CreateMode) {
+    setSectionState("generate");
+    setCreateModeState(mode);
+    const search = searchForCreateMode(window.location.search, mode);
     if (search === window.location.search) return;
     window.history.pushState(null, "", `${window.location.pathname}${search}${window.location.hash}`);
   }
@@ -513,7 +542,7 @@ export function MediaStudioApp() {
     [clips, profileId],
   );
   const selected = useMemo(() => profileClips.find((clip) => clip.id === selectedId) || profileClips[0], [profileClips, selectedId]);
-  const reviewFilter = filter === "repair" ? "review" : filter;
+  const reviewFilter = filter === "repair" || filter === "review" ? "needs_review" : filter;
   const filtered = useMemo(
     () =>
       profileClips
@@ -1793,7 +1822,12 @@ export function MediaStudioApp() {
   }, []);
 
   useEffect(() => {
-    const syncFromUrl = () => setSectionState(sectionFromSearch(window.location.search));
+    const syncFromUrl = () => {
+      const search = window.location.search;
+      setSectionState(sectionFromSearch(search));
+      setCreateModeState(createModeFromSearch(search));
+      setOpsMode(new URLSearchParams(search).get("ops") === "1");
+    };
     const frame = window.requestAnimationFrame(syncFromUrl);
     window.addEventListener("popstate", syncFromUrl);
     return () => {
@@ -1855,7 +1889,7 @@ export function MediaStudioApp() {
             <h1 className="text-base font-semibold leading-5 font-sans">
               <span className="font-editorial italic font-normal text-cyan">Otonom</span> Media
             </h1>
-            <p className="text-xs text-zinc-400">Create · Review · Publish</p>
+            <p className="text-xs text-text-secondary">Create · Review · Publish</p>
           </div>
         </div>
 
@@ -1868,8 +1902,8 @@ export function MediaStudioApp() {
           />
         </div>
 
-        <nav className="mt-6 grid min-h-0 flex-1 auto-rows-min content-start gap-1 overflow-y-auto pr-1">
-          <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">Loop</p>
+        <nav aria-label="Studio loop" className="mt-6 grid min-h-0 flex-1 auto-rows-min content-start gap-1 overflow-y-auto pr-1">
+          <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary">Loop</p>
           {primaryNav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
@@ -1877,31 +1911,34 @@ export function MediaStudioApp() {
             return (
               <button
                 key={item.id}
+                type="button"
+                aria-current={active ? "page" : undefined}
                 onClick={() => setSection(item.id)}
                 className={`group relative flex min-h-[52px] items-center gap-3 overflow-hidden rounded-[18px] border px-3.5 py-2 text-left text-sm font-medium transition ${
                   active
                     ? "border-cyan/[0.30] bg-cyan/[0.09] text-cyan shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                    : "border-transparent text-zinc-500 hover:bg-white/[0.035] hover:text-zinc-100"
+                    : "border-transparent text-text-tertiary hover:bg-white/[0.035] hover:text-text-primary"
                 }`}
               >
-                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-2xl transition ${active ? "bg-cyan text-ink" : "bg-white/[0.035] text-zinc-500 group-hover:text-zinc-200"}`}>
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-2xl transition ${active ? "bg-cyan text-ink" : "bg-white/[0.035] text-text-tertiary group-hover:text-text-secondary"}`}>
                   <Icon className="h-3.5 w-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-semibold">{item.label}</span>
-                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{step?.detail || "—"}</span>
+                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-text-tertiary"}`}>{step?.detail || "—"}</span>
                 </span>
                 {step ? <span className={`h-1.5 w-1.5 rounded-full ${step.status === "ready" ? "bg-teal" : step.status === "active" ? "bg-cyan" : step.status === "blocked" ? "bg-warning" : "bg-white/[0.16]"}`} /> : null}
               </button>
             );
           })}
-          <p className="mt-3 px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">Setup &amp; tools</p>
+          <p className="mt-3 px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary">Setup &amp; tools</p>
           {secondaryNav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => setSection(item.id)}
                 aria-current={active ? "page" : undefined}
                 className={`group relative flex min-h-[48px] items-center gap-3 overflow-hidden rounded-[18px] border px-3.5 py-2 text-left text-sm font-medium transition ${
@@ -1917,7 +1954,6 @@ export function MediaStudioApp() {
                   <span className="block truncate text-[13px] font-semibold">{item.label}</span>
                   <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{setupDetails[item.id] || "—"}</span>
                 </span>
-
               </button>
             );
           })}
@@ -1966,7 +2002,9 @@ export function MediaStudioApp() {
               <p className="mt-1 max-w-[calc(100vw-40px)] break-words text-sm text-zinc-400 md:max-w-2xl">{sectionCopy[section].subtitle}</p>
             </div>
             <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:flex sm:flex-wrap sm:justify-end">
-              <ColorThemeToggle />
+              <div className="lg:hidden">
+                <ColorThemeToggle />
+              </div>
               {!focusedWorkflow ? (
                 <>
                   <button onClick={() => setSection(nextAction.section)} className="inline-flex h-11 min-w-0 items-center justify-center gap-2 rounded-full bg-cyan px-4 text-sm font-semibold text-ink">
@@ -2002,44 +2040,65 @@ export function MediaStudioApp() {
 
           {section === "generate" && (
             <div className="mx-auto grid w-full max-w-[1600px] gap-6">
-            <GenerateSection
-              config={generateConfig}
-              templates={templates}
-              hyperframesTemplates={hyperframesTemplates}
-              hyperframesCatalog={hyperframesCatalog}
-              durationPresets={durationPresets}
-              genres={genres}
-              genrePackLabel={genrePackLabel}
-              jobs={jobs.filter((job) => !job.profile_id || job.profile_id === profileId)}
-              engineHealth={engineHealth}
-              actionState={actionStates["generate:start"]}
-              setConfig={setGenerateConfig}
-              command={command}
-              defaultTemplatePath={defaultTemplate}
-              statusTone={statusTone}
-              onGenerate={startGeneration}
-              onRenderSelected={(source, ids) => void renderSelectedClips(source, ids)}
-              onOpenReview={() => setSection("review")}
-              onOpenBrand={() => setSection("brand")}
-              onCopy={() => copyText(command, "Production command copied")}
-              renderReadinessLine={(props) => <ReadinessLine {...props} />}
-              renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
-              renderEmptyState={renderEmpty}
-            />
-            <ContentPackageCreateSection
-              profileId={profileId}
-              actionState={actionStates["package:create"]}
-              onCreate={createContentPackageRequest}
-              onCreated={handleContentPackageCreated}
-              onOpenReview={() => setSection("review")}
-              onOpenPublish={() => setSection("publish")}
-            />
-            <details className="rounded-[28px] border border-white/[0.08] bg-surface/30 p-5">
-              <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-300">
-                Watch YouTube sources
-                <span className="ml-2 text-xs font-medium text-zinc-600">optional auto-clip</span>
-              </summary>
-              <div className="mt-4 border-t border-white/[0.06] pt-4">
+              <div className="flex flex-wrap gap-2" role="tablist" aria-label="Create mode">
+                {createModeTabs.map((tab) => {
+                  const active = createMode === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setCreateMode(tab.id)}
+                      className={`min-h-[44px] rounded-full border px-4 py-2 text-left transition ${
+                        active
+                          ? "border-cyan/40 bg-cyan/10 text-cyan"
+                          : "border-white/[0.08] bg-black/20 text-zinc-400 hover:border-white/[0.14] hover:text-zinc-200"
+                      }`}
+                    >
+                      <span className="block text-xs font-semibold">{tab.label}</span>
+                      <span className={`mt-0.5 block text-[10px] ${active ? "text-cyan/70" : "text-zinc-600"}`}>{tab.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {createMode === "clips" ? (
+                <GenerateSection
+                  config={generateConfig}
+                  templates={templates}
+                  hyperframesTemplates={hyperframesTemplates}
+                  hyperframesCatalog={hyperframesCatalog}
+                  durationPresets={durationPresets}
+                  genres={genres}
+                  genrePackLabel={genrePackLabel}
+                  jobs={jobs.filter((job) => !job.profile_id || job.profile_id === profileId)}
+                  engineHealth={engineHealth}
+                  actionState={actionStates["generate:start"]}
+                  setConfig={setGenerateConfig}
+                  command={command}
+                  defaultTemplatePath={defaultTemplate}
+                  statusTone={statusTone}
+                  onGenerate={startGeneration}
+                  onRenderSelected={(source, ids) => void renderSelectedClips(source, ids)}
+                  onOpenReview={() => setSection("review")}
+                  onOpenBrand={() => setSection("brand")}
+                  onCopy={() => copyText(command, "Production command copied")}
+                  renderReadinessLine={(props) => <ReadinessLine {...props} />}
+                  renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
+                  showCliCommand={opsMode}
+                />
+              ) : null}
+              {createMode === "packages" ? (
+                <ContentPackageCreateSection
+                  profileId={profileId}
+                  actionState={actionStates["package:create"]}
+                  onCreate={createContentPackageRequest}
+                  onCreated={handleContentPackageCreated}
+                  onOpenReview={() => setSection("review")}
+                  onOpenPublish={() => setSection("publish")}
+                />
+              ) : null}
+              {createMode === "watch" ? (
                 <WatchChannelsSection
                   channels={watchChannels}
                   workspaceName={profiles.find((profile) => profile.id === profileId)?.name || profileId}
@@ -2050,8 +2109,7 @@ export function MediaStudioApp() {
                   onDelete={deleteWatchChannel}
                   renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
                 />
-              </div>
-            </details>
+              ) : null}
             </div>
           )}
 
@@ -2104,7 +2162,7 @@ export function MediaStudioApp() {
                         : current.brandTemplate,
                   shellComponents: shellComponentsForTemplate(hyperframesTemplates, templateId),
                 }));
-                setSection("generate");
+                setCreateMode("clips");
                 pushToast("Template selected for Create", "success");
               }}
               onSetDefault={(templateId) => {
@@ -2163,6 +2221,7 @@ export function MediaStudioApp() {
                 }
                 publishTargets={activeTargets.map((target) => target.platform)}
                 defaultPublishPlatforms={defaultPublishPlatformsForClip}
+                onOpenCreate={() => setCreateMode("clips")}
               />
             </div>
           )}
@@ -2175,7 +2234,7 @@ export function MediaStudioApp() {
               selectedPlatforms={publishSelection}
               actionStates={actionStates}
               credentials={credentials}
-              showRecoveryTools={typeof window !== "undefined" && new URLSearchParams(window.location.search).get("ops") === "1"}
+              showRecoveryTools={opsMode}
               onToggleDefaultPlatform={togglePublishSelection}
               onSchedule={scheduleNext}
               onUnschedule={unscheduleClip}
@@ -2358,10 +2417,16 @@ function ReadinessLine({ready, label, detail}: {ready: boolean; label: string; d
 function ToastStack({toasts, onDismiss}: {toasts: ToastMessage[]; onDismiss: (id: string) => void}) {
   if (!toasts.length) return null;
   return (
-    <div className="fixed right-4 top-24 z-50 grid w-[min(360px,calc(100vw-32px))] gap-2">
+    <div
+      className="fixed right-4 top-24 z-50 grid w-[min(360px,calc(100vw-32px))] gap-2"
+      role="status"
+      aria-live="polite"
+      aria-relevant="additions text"
+    >
       {toasts.map((toast) => (
         <button
           key={toast.id}
+          type="button"
           onClick={() => onDismiss(toast.id)}
           className={`rounded-2xl border px-4 py-3 text-left text-sm shadow-2xl backdrop-blur-xl ${
             toast.tone === "error"
@@ -2384,7 +2449,11 @@ function ActionMonitor({actionStates}: {actionStates: Record<string, ActionUiSta
     .slice(0, 4);
   if (!actions.length) return null;
   return (
-    <div className="fixed bottom-20 right-4 z-40 grid w-[min(360px,calc(100vw-32px))] gap-2 lg:bottom-5">
+    <div
+      className="fixed bottom-24 right-4 z-40 grid w-[min(360px,calc(100vw-32px))] gap-2 lg:bottom-5"
+      role="status"
+      aria-live="polite"
+    >
       {actions.map(([key, state]) => (
         <div
           key={key}
@@ -2408,18 +2477,61 @@ function ActionMonitor({actionStates}: {actionStates: Record<string, ActionUiSta
 }
 
 function ConfirmDialog({dialog, onClose}: {dialog: ConfirmDialogState | null; onClose: () => void}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!dialog) return;
+    const previous = document.activeElement as HTMLElement | null;
+    cancelRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !panelRef.current) return;
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'),
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      previous?.focus?.();
+    };
+  }, [dialog, onClose]);
+
   if (!dialog) return null;
   const danger = dialog.tone === "danger";
   return (
-    <div className="fixed inset-0 z-[60] grid place-items-center bg-black/60 px-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-      <div className="w-full max-w-md rounded-[28px] border border-white/[0.10] bg-surface p-5 shadow-2xl">
+    <div
+      className="fixed inset-0 z-[60] grid place-items-center bg-black/60 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div ref={panelRef} className="w-full max-w-md rounded-[28px] border border-white/[0.10] bg-surface p-5 shadow-2xl">
         <div className={`mb-4 grid h-12 w-12 place-items-center rounded-2xl ${danger ? "bg-danger/[0.14] text-danger" : "bg-teal/[0.14] text-cyan"}`}>
-          <AlertTriangle className="h-5 w-5" />
+          <AlertTriangle className="h-5 w-5" aria-hidden />
         </div>
         <h3 id="confirm-title" className="text-xl font-semibold text-white">{dialog.title}</h3>
         <p className="mt-2 text-sm leading-6 text-zinc-400">{dialog.message}</p>
         <div className="mt-6 grid gap-2 sm:grid-cols-2">
-          <button type="button" onClick={onClose} className="h-11 rounded-full border border-white/[0.10] text-sm font-semibold text-zinc-300 hover:bg-white/[0.04]">
+          <button ref={cancelRef} type="button" onClick={onClose} className="h-11 rounded-full border border-white/[0.10] text-sm font-semibold text-zinc-300 hover:bg-white/[0.04]">
             {dialog.cancelLabel || "Cancel"}
           </button>
           <button

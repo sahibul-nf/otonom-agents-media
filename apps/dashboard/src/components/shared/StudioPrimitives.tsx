@@ -1,6 +1,6 @@
 "use client";
 
-import {AlertTriangle, Loader2} from "lucide-react";
+import {AlertTriangle, Inbox, Loader2} from "lucide-react";
 
 export type ActionUiState = {status: "running" | "done" | "failed"; message: string};
 
@@ -36,11 +36,25 @@ export function SettingTile({label, value}: {label: string; value: string | numb
   );
 }
 
-export function EmptyState({title = "Nothing here yet", text, actionLabel, onAction}: {title?: string; text: string; actionLabel?: string; onAction?: () => void}) {
+export function EmptyState({
+  title = "Nothing here yet",
+  text,
+  actionLabel,
+  onAction,
+  tone = "idle",
+}: {
+  title?: string;
+  text: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  /** `idle` for empty queues; `warning` when something needs attention */
+  tone?: "idle" | "warning";
+}) {
+  const Icon = tone === "warning" ? AlertTriangle : Inbox;
   return (
     <div className="grid min-h-[140px] place-items-center rounded-[22px] border border-dashed border-white/[0.10] bg-canvas-deep p-6 text-center">
       <div>
-        <AlertTriangle className="mx-auto mb-3 h-6 w-6 text-zinc-600" />
+        <Icon className={`mx-auto mb-3 h-6 w-6 ${tone === "warning" ? "text-warning" : "text-zinc-600"}`} aria-hidden />
         <p className="text-sm font-semibold text-zinc-300">{title}</p>
         <p className="mt-1 max-w-sm text-sm leading-6 text-zinc-500">{text}</p>
         {actionLabel && onAction ? (

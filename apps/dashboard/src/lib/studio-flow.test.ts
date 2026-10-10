@@ -3,7 +3,9 @@ import {describe, it} from "node:test";
 import {
   buildSetupDetails,
   buildWorkflowSteps,
+  createModeFromSearch,
   getNextAction,
+  searchForCreateMode,
   searchForSection,
   sectionFromSearch,
   type FlowInput,
@@ -68,7 +70,7 @@ describe("getNextAction", () => {
 
   it("asks for a template, then first clips", () => {
     assert.equal(getNextAction({...base, hasTemplate: false}).section, "templates");
-    assert.equal(getNextAction(base).label, "Generate first clips");
+    assert.equal(getNextAction(base).label, "Create first clips");
   });
 
   it("asks to connect an account before scheduling when none is ready", () => {
@@ -104,7 +106,7 @@ describe("getNextAction", () => {
 
   it("falls back to the next batch", () => {
     const action = getNextAction({...base, clips: [clip("published")], targetCount: 1, readyPlatforms: 1});
-    assert.equal(action.label, "Generate next batch");
+    assert.equal(action.label, "Create next batch");
   });
 });
 
@@ -148,5 +150,16 @@ describe("section URL helpers", () => {
     assert.equal(searchForSection("?ops=1", "calendar"), "?ops=1&section=calendar");
     assert.equal(searchForSection("?section=review&ops=1", "dashboard"), "?ops=1");
     assert.equal(searchForSection("?section=review", "dashboard"), "");
+  });
+
+  it("clears create mode when leaving Create", () => {
+    assert.equal(searchForSection("?section=generate&create=packages", "review"), "?section=review");
+  });
+
+  it("reads and writes Create mode", () => {
+    assert.equal(createModeFromSearch(""), "clips");
+    assert.equal(createModeFromSearch("?create=packages"), "packages");
+    assert.equal(searchForCreateMode("", "packages"), "?section=generate&create=packages");
+    assert.equal(searchForCreateMode("?section=generate&create=watch", "clips"), "?section=generate");
   });
 });

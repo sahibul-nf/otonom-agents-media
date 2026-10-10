@@ -203,7 +203,7 @@ export function GenerateSection<T extends GenerateConfigLike>({
   onCopy,
   renderReadinessLine,
   renderActionStatus,
-  renderEmptyState,
+  showCliCommand = false,
 }: {
   config: T;
   templates: BrandTemplate[];
@@ -226,7 +226,8 @@ export function GenerateSection<T extends GenerateConfigLike>({
   onCopy: () => void;
   renderReadinessLine: ReadinessLineComponent;
   renderActionStatus: (state?: ActionUiState) => ReactNode;
-  renderEmptyState: (title: string, text: string) => ReactNode;
+  /** Ops-only: show the shell production command under Advanced */
+  showCliCommand?: boolean;
 }) {
   const latest = jobs[0];
   const hasActiveJob = jobs.some((job) => job.status === "queued" || job.status === "running");
@@ -885,15 +886,17 @@ export function GenerateSection<T extends GenerateConfigLike>({
                       <SelectTile label="Writing model" value={config.llmProvider} options={["deepseek", "openai", "groq", "agent", "none"]} onChange={(value) => update({llmProvider: value})} />
                       <SelectTile label="Quality" value={config.quality} options={["production", "draft"]} onChange={(value) => update({quality: value})} />
                     </div>
-                    <div className="rounded-xl border border-white/[0.06] bg-canvas-deep/60 p-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-white">CLI Command</span>
-                        <button type="button" onClick={onCopy} className="inline-flex rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-zinc-200 hover:border-cyan/30 hover:text-cyan">
-                          <Copy className="mr-1.5 h-3 w-3" /> Copy
-                        </button>
+                    {showCliCommand ? (
+                      <div className="rounded-xl border border-white/[0.06] bg-canvas-deep/60 p-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-semibold text-white">CLI Command</span>
+                          <button type="button" onClick={onCopy} className="inline-flex rounded-full border border-white/[0.10] bg-white/[0.04] px-2.5 py-1 text-[11px] font-semibold text-zinc-200 hover:border-cyan/30 hover:text-cyan">
+                            <Copy className="mr-1.5 h-3 w-3" /> Copy
+                          </button>
+                        </div>
+                        <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/[0.06] bg-black/40 p-2 text-[10px] leading-4 text-zinc-500">{command}</pre>
                       </div>
-                      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/[0.06] bg-black/40 p-2 text-[10px] leading-4 text-zinc-500">{command}</pre>
-                    </div>
+                    ) : null}
                   </div>
                 </details>
               </div>
@@ -1082,8 +1085,6 @@ export function GenerateSection<T extends GenerateConfigLike>({
           ) : null}
         </div>
       </div>
-
-      {!latest ? renderEmptyState("Ready when you are", "Paste a YouTube link above to create your first clip batch.") : null}
 
       <HyperframesTemplatePickerModal
         open={templatePickerOpen}

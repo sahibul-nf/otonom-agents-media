@@ -141,12 +141,17 @@ export function QuickTriageModal({
       } else if (e.key.toLowerCase() === "m") {
         e.preventDefault();
         setIsMuted((prev) => !prev);
+      } else if (e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        if (currentClip) {
+          window.location.assign(`/review/${encodeURIComponent(currentClip.id)}`);
+        }
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, togglePlay, handleApprove, handleDelete, goNext, goPrev]);
+  }, [isOpen, onClose, togglePlay, handleApprove, handleDelete, goNext, goPrev, currentClip]);
 
   if (!isOpen) return null;
 
@@ -312,10 +317,10 @@ export function QuickTriageModal({
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
                   <Flame className="h-4 w-4 text-warning" />
-                  Viral Potential Score
+                  Performance score
                 </span>
                 <span className="font-mono text-sm font-bold text-cyan">
-                  {score ? `${score.toFixed(1)} / 10` : "Unrated"}
+                  {score != null ? `${Math.round(score)}` : "Unrated"}
                 </span>
               </div>
               {currentClip.viral_reason && (
