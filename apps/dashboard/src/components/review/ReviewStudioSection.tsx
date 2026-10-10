@@ -108,8 +108,8 @@ export function ReviewStudioSection({
       </div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-          <p className="text-sm leading-6 text-zinc-400">Open a batch to review siblings from one source, or edit a single clip.</p>
-          <p className="mt-1 text-xs font-medium text-zinc-600">
+          <p className="text-sm leading-6 text-text-secondary">Open a batch to review siblings from one source, or edit a single clip.</p>
+          <p className="mt-1 text-xs font-medium text-text-tertiary">
             {clips.length} result{clips.length === 1 ? "" : "s"} in this view
             {!flattenGroups && batchCount ? ` · ${batchCount} source batch${batchCount === 1 ? "" : "es"}` : ""}
           </p>

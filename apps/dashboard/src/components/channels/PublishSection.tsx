@@ -487,6 +487,7 @@ export function PublishSection({
   cleanPublishStatus: (status?: string) => string;
   statusTone: (status: string) => string;
 }) {
+  const [publishPane, setPublishPane] = useState<"accounts" | "models">("accounts");
   const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
   const [postizDialogOpen, setPostizDialogOpen] = useState(false);
   const [mapPlatform, setMapPlatform] = useState("");
@@ -520,10 +521,56 @@ export function PublishSection({
   }
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[1fr_360px]">
+    <section className="grid gap-6">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Publish setup">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={publishPane === "accounts"}
+          onClick={() => setPublishPane("accounts")}
+          className={`min-h-[44px] rounded-full border px-4 py-2 text-xs font-semibold transition ${
+            publishPane === "accounts"
+              ? "border-cyan/40 bg-cyan/10 text-cyan"
+              : "border-white/[0.08] bg-black/20 text-text-secondary hover:text-text-primary"
+          }`}
+        >
+          Accounts
+        </button>
+        {onSaveLlm ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={publishPane === "models"}
+            onClick={() => setPublishPane("models")}
+            className={`min-h-[44px] rounded-full border px-4 py-2 text-xs font-semibold transition ${
+              publishPane === "models"
+                ? "border-cyan/40 bg-cyan/10 text-cyan"
+                : "border-white/[0.08] bg-black/20 text-text-secondary hover:text-text-primary"
+            }`}
+          >
+            Models
+          </button>
+        ) : null}
+      </div>
+
+      {publishPane === "models" && onSaveLlm ? (
+        <LlmKeysSection
+          credentials={credentials}
+          profileId={profileId}
+          llmStatus={llmStatus ?? null}
+          llmStatusLoading={llmStatusLoading}
+          actionStates={actionStates}
+          onSaveLlm={onSaveLlm}
+          onConnectConnector={onConnectLlmConnector}
+          onTestAgent={onTestLlmAgent}
+        />
+      ) : null}
+
+      {publishPane === "accounts" ? (
+    <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
       <div className="rounded-[32px] border border-white/[0.08] bg-surface/30 p-6 backdrop-blur-md">
         <div className="flex items-center justify-between gap-3 pb-5 border-b border-white/[0.06]">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-text-secondary">
             {targets.length === 0
               ? "No destinations yet"
               : `${connectedCount} of ${connectableTargets.length} connected`}
@@ -853,17 +900,7 @@ export function PublishSection({
         />
       ) : null}
 
-      {onSaveLlm ? (
-        <LlmKeysSection
-          credentials={credentials}
-          profileId={profileId}
-          llmStatus={llmStatus ?? null}
-          llmStatusLoading={llmStatusLoading}
-          actionStates={actionStates}
-          onSaveLlm={onSaveLlm}
-          onConnectConnector={onConnectLlmConnector}
-          onTestAgent={onTestLlmAgent}
-        />
+    </div>
       ) : null}
     </section>
   );

@@ -251,7 +251,7 @@ const sectionCopy: Record<Section, {title: string; subtitle: string}> = {
   },
   publish: {
     title: "Publish accounts",
-    subtitle: "Connect the accounts this workspace publishes to.",
+    subtitle: "Connect delivery accounts. Writing models live under the Models tab.",
   },
   brand: {
     title: "Brand",
@@ -1889,7 +1889,7 @@ export function MediaStudioApp() {
             <h1 className="text-base font-semibold leading-5 font-sans">
               <span className="font-editorial italic font-normal text-cyan">Otonom</span> Media
             </h1>
-            <p className="text-xs text-zinc-400">Create · Review · Publish</p>
+            <p className="text-xs text-text-secondary">Create · Review · Publish</p>
           </div>
         </div>
 
@@ -1903,7 +1903,7 @@ export function MediaStudioApp() {
         </div>
 
         <nav aria-label="Studio loop" className="mt-6 grid min-h-0 flex-1 auto-rows-min content-start gap-1 overflow-y-auto pr-1">
-          <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">Loop</p>
+          <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary">Loop</p>
           {primaryNav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
@@ -1917,21 +1917,21 @@ export function MediaStudioApp() {
                 className={`group relative flex min-h-[52px] items-center gap-3 overflow-hidden rounded-[18px] border px-3.5 py-2 text-left text-sm font-medium transition ${
                   active
                     ? "border-cyan/[0.30] bg-cyan/[0.09] text-cyan shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
-                    : "border-transparent text-zinc-500 hover:bg-white/[0.035] hover:text-zinc-100"
+                    : "border-transparent text-text-tertiary hover:bg-white/[0.035] hover:text-text-primary"
                 }`}
               >
-                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-2xl transition ${active ? "bg-cyan text-ink" : "bg-white/[0.035] text-zinc-500 group-hover:text-zinc-200"}`}>
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-2xl transition ${active ? "bg-cyan text-ink" : "bg-white/[0.035] text-text-tertiary group-hover:text-text-secondary"}`}>
                   <Icon className="h-3.5 w-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-semibold">{item.label}</span>
-                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-zinc-600"}`}>{step?.detail || "—"}</span>
+                  <span className={`mt-0.5 block truncate text-[10px] font-medium ${active ? "text-cyan/70" : "text-text-tertiary"}`}>{step?.detail || "—"}</span>
                 </span>
                 {step ? <span className={`h-1.5 w-1.5 rounded-full ${step.status === "ready" ? "bg-teal" : step.status === "active" ? "bg-cyan" : step.status === "blocked" ? "bg-warning" : "bg-white/[0.16]"}`} /> : null}
               </button>
             );
           })}
-          <p className="mt-3 px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-zinc-600">Setup &amp; tools</p>
+          <p className="mt-3 px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary">Setup &amp; tools</p>
           {secondaryNav.map((item) => {
             const Icon = item.icon;
             const active = section === item.id;
