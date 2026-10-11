@@ -685,6 +685,26 @@ export type ExplainerJob = {
   duration_seconds?: number;
 };
 
+export type TopicProposal = {
+  id: string;
+  title: string;
+  angle: string;
+  confidence: number;
+  score?: number;
+  sources: Array<{source?: string; title?: string; url?: string; points?: number}>;
+  storyboard?: string;
+  niche?: string;
+};
+
+export type ProposeTopicResponse = {
+  ok?: boolean;
+  niche?: string;
+  generated_at?: string;
+  signal_count?: number;
+  candidates: TopicProposal[];
+  error?: string;
+};
+
 export type PathAJob = {
   job_id: string;
   profile_id?: string;
@@ -701,6 +721,13 @@ export type PathAJob = {
   telegram_notified?: boolean;
   cursor_run_status?: string;
   trigger_mode?: string;
+  topic_proposal?: {
+    candidate_id?: string;
+    sources?: TopicProposal["sources"];
+    confidence?: number;
+    angle?: string;
+    niche?: string;
+  };
 };
 
 export function apiPath(path: string) {

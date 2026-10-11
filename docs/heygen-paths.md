@@ -43,12 +43,17 @@ No public URL / tunnel required: **Otonom pulls** Cursor results; Cloud Agent ne
 
 ### Dashboard
 
-Explainer → **Generate via Cursor (Path A)** → topic / optional title + script → button.
+Explainer → **Generate video** (manual topic) or **Generate next** (empty topic → niche signals) → finished video waits in Review.
+
+Autonomous topic ranking: `docs/topic-engine.md` (`POST /api/propose-topic`, `POST /api/generate-next`).
 
 API:
 
-- `POST /api/path-a-generate` `{topic, title?, script?}` → `202` job
+- `POST /api/path-a-generate` `{topic, title?, script?}` → `202` job (manual)
+- `POST /api/path-a-generate` `{generate_next: true}` → autonomous top topic → Path A
+- `POST /api/propose-topic` / `POST /api/generate-next` → see topic engine docs
 - `GET /api/path-a-jobs` / `GET /api/path-a-status?job_id=`
+
 
 ### Cursor Automation setup
 

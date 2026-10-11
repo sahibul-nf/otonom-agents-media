@@ -3,7 +3,7 @@
 import {ChevronDown, Clapperboard, Film, Loader2, Sparkles, Wand2} from "lucide-react";
 import {useEffect, useMemo, useState, type ReactNode} from "react";
 import {type ActionUiState, type HyperframesTemplate} from "@/components/generate/types";
-import {type ExplainerJob, type PathAJob} from "@/lib/media-api";
+import {type ExplainerJob, type PathAJob, type TopicProposal} from "@/lib/media-api";
 
 function friendlyStatus(status: string): string {
   const map: Record<string, string> = {
@@ -81,8 +81,11 @@ export function ExplainerSection({
   onOpenReview,
   onIngest,
   onPathAGenerate,
+  onProposeTopics,
+  onGenerateNext,
   ingesting,
   pathAGenerating,
+  proposingTopics,
   renderActionStatus,
   renderEmptyState,
 }: {
@@ -97,8 +100,11 @@ export function ExplainerSection({
   onOpenReview: (candidateId?: string | null) => void;
   onIngest: (payload: {source: string; title: string; mode: "review_only" | "clip_batch"}) => Promise<void>;
   onPathAGenerate: (payload: {topic: string; title: string; script: string}) => Promise<void>;
+  onProposeTopics: () => Promise<TopicProposal[]>;
+  onGenerateNext: (candidateId?: string) => Promise<void>;
   ingesting?: boolean;
   pathAGenerating?: boolean;
+  proposingTopics?: boolean;
   renderActionStatus: (state?: ActionUiState) => ReactNode;
   renderEmptyState: (title: string, text: string) => ReactNode;
 }) {
@@ -113,6 +119,9 @@ export function ExplainerSection({
   const [ingestSource, setIngestSource] = useState("");
   const [ingestTitle, setIngestTitle] = useState("");
   const [ingestMode, setIngestMode] = useState<"review_only" | "clip_batch">("review_only");
+  const [proposals, setProposals] = useState<TopicProposal[]>([]);
+  const [selectedProposalId, setSelectedProposalId] = useState("");
+  const [proposeError, setProposeError] = useState("");
 
   const templateOptions = useMemo(() => {
     const preferred = templates.filter((item) =>
@@ -172,13 +181,43 @@ export function ExplainerSection({
     });
   }
 
+  async function handlePropose() {
+    setProposeError("");
+    try {
+      const items = await onProposeTopics();
+      setProposals(items);
+      setSelectedProposalId(items[0]?.id || "");
+      if (items[0]) {
+        setBrief(items[0].title);
+        if (items[0].storyboard) {
+          setExtraNotes(items[0].storyboard);
+          setShowNotes(true);
+        }
+      }
+    } catch (error) {
+      setProposeError(error instanceof Error ? error.message : "Propose topics failed");
+      setProposals([]);
+    }
+  }
+
+  function applyProposal(item: TopicProposal) {
+    setSelectedProposalId(item.id);
+    setBrief(item.title);
+    if (item.storyboard) {
+      setExtraNotes(item.storyboard);
+      setShowNotes(true);
+    }
+  }
+
   return (
     <div className="mx-auto grid w-full max-w-4xl gap-5">
       <section className="rounded-[32px] border border-white/[0.08] bg-surface/40 p-6 backdrop-blur-md">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan">New long video</p>
-            <p className="mt-2 text-sm leading-6 text-zinc-500">Describe the story. The finished video waits in Review for your approval.</p>
+            <p className="mt-2 text-sm leading-6 text-zinc-500">
+              Type a topic, or leave it empty and use Generate next from niche signals. Finished videos wait in Review — nothing auto-publishes.
+            </p>
           </div>
           <Film className="h-5 w-5 shrink-0 text-cyan" />
         </div>
@@ -188,7 +227,7 @@ export function ExplainerSection({
           value={brief}
           onChange={(event) => setBrief(event.target.value)}
           rows={3}
-          placeholder="e.g. Apakah membeli Bitcoin itu bodoh? Angle: risk vs FOMO for beginners"
+          placeholder="e.g. Apakah membeli Bitcoin itu bodoh? Angle: risk vs FOMO for beginners — or leave blank for Generate next"
           className="mt-2 w-full rounded-2xl border border-white/[0.08] bg-black/30 px-4 py-3 text-sm text-white outline-none ring-cyan/30 placeholder:text-zinc-600 focus:ring-2"
         />
 
@@ -220,7 +259,59 @@ export function ExplainerSection({
             {pathAGenerating || pathAActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
             Generate video
           </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onGenerateNext(selectedProposalId || undefined)}
+            className="inline-flex items-center gap-2 rounded-full border border-cyan/40 bg-cyan/10 px-5 py-2.5 text-sm font-semibold text-cyan disabled:opacity-40"
+            title="Rank niche signals and start Path A with the top (or selected) proposal"
+          >
+            {pathAGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Generate next
+          </button>
+          <button
+            type="button"
+            disabled={busy || proposingTopics}
+            onClick={() => void handlePropose()}
+            className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm font-semibold text-zinc-200 disabled:opacity-40"
+          >
+            {proposingTopics ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Propose topics
+          </button>
         </div>
+        {proposeError ? <p className="mt-2 text-xs text-danger">{proposeError}</p> : null}
+        {proposals.length ? (
+          <ul className="mt-4 space-y-2">
+            {proposals.map((item) => {
+              const active = item.id === selectedProposalId;
+              const topSource = item.sources?.[0];
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => applyProposal(item)}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                      active ? "border-cyan/50 bg-cyan/10" : "border-white/[0.08] bg-black/20 hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-white">{item.title}</p>
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                        {Math.round((item.confidence || 0) * 100)}% fit
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-500">{item.angle}</p>
+                    {topSource?.url ? (
+                      <p className="mt-1 truncate text-[11px] text-zinc-600">
+                        {topSource.source || "source"}: {topSource.title || topSource.url}
+                      </p>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
         <div className="mt-3">{renderActionStatus(actionState)}</div>
         {currentActivity ? (
           <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-canvas-deep p-4" aria-live="polite">
