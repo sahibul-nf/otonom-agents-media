@@ -58,8 +58,8 @@ Use `./scripts/gh-validate-issue-body.sh --body-file /tmp/body.md` before create
 
 ### Web — browser cannot reach app
 
-1. Fill `docs/how-to-run.md` — **Local URL** and **Start command** (replace all `TBD`).
-2. Start dev server before verify.
+1. Confirm `docs/how-to-run.md` **Local URL** (`http://127.0.0.1:3100`) and **Start command** (`npm run dev`).
+2. Start the dev server before verify (`npm run health` should pass).
 3. Run `./scripts/gh-check-ui-tools.sh`.
 
 Kit **never** auto-installs Playwright. Cursor IDE browser is default in Cursor.
