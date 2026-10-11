@@ -10,14 +10,16 @@ from unittest.mock import patch
 
 from media_engine.autonomy import evaluate_quality_gate, get_autonomy_settings, update_autonomy_settings
 from media_engine.channel_watcher import (
+    DEFAULT_POLL_INTERVAL_MINUTES,
     add_watch_channel,
     list_watch_channels,
     normalize_channel_url,
+    poll_due_watch_channels,
     poll_watch_channel,
     update_publish_target,
     update_watch_channel,
 )
-from media_engine.db import initialize
+from media_engine.db import initialize, migrate_watch_poll_interval_defaults
 from media_engine.scheduler import DEFAULT_TZ, enabled_delivery_platforms, process_due_auto_schedule
 
 
@@ -64,7 +66,64 @@ class ChannelWatcherTests(unittest.TestCase):
             )
         self.assertEqual(channel["last_seen_video_id"], "vid_old")
         self.assertTrue(channel["enabled"])
+        self.assertEqual(channel["poll_interval_minutes"], DEFAULT_POLL_INTERVAL_MINUTES)
+        self.assertEqual(DEFAULT_POLL_INTERVAL_MINUTES, 1440)
         self.assertEqual(len(list_watch_channels(conn, "nourbit")), 1)
+        conn.close()
+
+    def test_poll_due_respects_interval_without_force(self):
+        conn = self._conn()
+        with patch(
+            "media_engine.channel_watcher.list_channel_video_ids",
+            return_value=[{"id": "vid_a", "title": "A", "url": "https://www.youtube.com/watch?v=vid_a"}],
+        ):
+            channel = add_watch_channel(
+                conn,
+                channel_url="https://youtube.com/@nouraniyyahofficial",
+                profile_id="nourbit",
+            )
+        recent = datetime.now().astimezone().isoformat(timespec="seconds")
+        conn.execute(
+            "UPDATE watch_channels SET last_polled_at = ? WHERE id = ?",
+            (recent, channel["id"]),
+        )
+        conn.commit()
+        with patch("media_engine.channel_watcher.poll_watch_channel") as poll:
+            results = poll_due_watch_channels(conn, profile_id="nourbit", force=False)
+        self.assertEqual(results, [])
+        poll.assert_not_called()
+        with patch("media_engine.channel_watcher.poll_watch_channel") as poll_forced:
+            poll_forced.return_value = {"channel": channel, "new_videos": [], "jobs": [], "skipped": None}
+            forced = poll_due_watch_channels(conn, profile_id="nourbit", force=True)
+        self.assertEqual(len(forced), 1)
+        poll_forced.assert_called_once()
+        conn.close()
+
+    def test_migrate_old_30m_poll_interval_to_daily(self):
+        conn = self._conn()
+        conn.execute(
+            """
+            INSERT INTO watch_channels
+              (id, profile_id, channel_url, label, permission_status, enabled, poll_interval_minutes)
+            VALUES (?, ?, ?, ?, ?, 1, 30)
+            """,
+            ("watch_old", "nourbit", "https://www.youtube.com/@legacy/videos", "Legacy", "user_attested"),
+        )
+        conn.execute(
+            """
+            INSERT INTO watch_channels
+              (id, profile_id, channel_url, label, permission_status, enabled, poll_interval_minutes)
+            VALUES (?, ?, ?, ?, ?, 1, 120)
+            """,
+            ("watch_custom", "nourbit", "https://www.youtube.com/@custom/videos", "Custom", "user_attested"),
+        )
+        conn.commit()
+        bumped = migrate_watch_poll_interval_defaults(conn)
+        conn.commit()
+        self.assertEqual(bumped, 1)
+        rows = {row["id"]: row["poll_interval_minutes"] for row in list_watch_channels(conn, "nourbit")}
+        self.assertEqual(rows["watch_old"], 1440)
+        self.assertEqual(rows["watch_custom"], 120)
         conn.close()
 
     def test_poll_enqueues_only_new_videos(self):

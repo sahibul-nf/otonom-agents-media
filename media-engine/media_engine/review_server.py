@@ -82,6 +82,7 @@ from .publishers import build_payload, create_dry_run_attempt
 from .rerender import attach_active_rerender_jobs, create_batch_rerender_jobs, create_rerender_job, list_rerender_jobs
 from .schedule_publisher import archive_legacy_permission_attempts, process_due_publishes, publish_schedule_now
 from .channel_watcher import (
+    DEFAULT_POLL_INTERVAL_MINUTES,
     add_watch_channel,
     delete_watch_channel,
     list_media_profiles,
@@ -2411,7 +2412,9 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     profile_id=str(payload.get("profile_id") or "nourbit").strip() or "nourbit",
                     label=str(payload.get("label") or "").strip(),
                     permission_status=str(payload.get("permission_status") or "user_attested").strip(),
-                    poll_interval_minutes=int(payload.get("poll_interval_minutes") or 30),
+                    poll_interval_minutes=int(
+                        payload.get("poll_interval_minutes") or DEFAULT_POLL_INTERVAL_MINUTES
+                    ),
                     generation_defaults=payload.get("generation_defaults") if isinstance(payload.get("generation_defaults"), dict) else None,
                     bootstrap_seen=bool(payload.get("bootstrap_seen", True)),
                 )
