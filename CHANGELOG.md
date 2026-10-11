@@ -7,6 +7,8 @@
 - **HyperFrames overlay lifecycle (#100):** staggered enter + ambient + timed exit for `.template-layer`, CTA/caption dedupe (no dual `brand-social-pill` + shell `.cta`), catalog lifecycle metadata from vendored OSS; skills refresh docs; unit tests for timing/dedupe/catalog.
 - **HyperFrames OSS wire-up (#101):** Brand Builder presets use only wired intro layouts (`none` / `template-hook` / `lower-third-hook`); dead transition-family preset fields removed; Brand Studio fixture asserts `hyperframes lint` with 0 errors when OSS CTA/caption/texture are selected.
 - **Text + image posts (#24):** product note `docs/text-image-posts.md` (formats, platforms, approve gate, Postiz gaps); north-star link; Create content-package path remains the dashboard surface (text/still/carousel → Review → publish).
+- **LLM Brand Studio (#80):** Brand Builder prompt → validated `brand_system` (existing starter only), preview, save as `brand:custom_*`; `POST /api/brand-studio-generate` + workspace default template; architecture layer 4 documented.
+- **Explainer epic (#4):** architecture status updated — children #5/#6/#8 closed, #7 Direct API shipped (pending human QA); no auto-publish.
 
 ### Changed
 - **Mac Mini ops (#92):** PM2 ecosystem `cwd` is checkout-relative (`__dirname`); publisher worker runs `publish-due --profile all` (every workspace vault) unless `PUBLISH_WORKER_PROFILE` is set.

@@ -44,6 +44,7 @@ from .content_package_store import approve_package
 from .ingest_longform import ingest_longform
 from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_generate
 from .topic_engine import TopicEngineError, generate_next_topic, propose_topics
+from .brand_studio_llm import BrandStudioLlmError, generate_brand_from_prompt, set_workspace_default_template
 from .cursor_cloud import CursorCloudError
 from .angle_recommend import cheap_caption_excerpt, recommend_content_angles
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
@@ -1456,6 +1457,42 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
                 return
             self._send_json(template, status=201)
+            return
+
+        if parsed.path == "/api/brand-studio-generate":
+            prompt = str(payload.get("prompt") or "").strip()
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            provider = str(payload.get("llm_provider") or "auto").strip() or "auto"
+            allow_fallback = bool(payload.get("allow_heuristic_fallback", True))
+            load_env_file(ENV_FILE)
+            try:
+                result = generate_brand_from_prompt(
+                    prompt,
+                    profile_id=profile_id,
+                    llm_provider=provider,
+                    allow_heuristic_fallback=allow_fallback,
+                )
+            except BrandStudioLlmError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            except (OSError, ValueError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/workspace-default-template":
+            template_ref = str(payload.get("template_ref") or payload.get("default_template") or "").strip()
+            style_path = str(payload.get("style_path") or "").strip() or None
+            try:
+                result = set_workspace_default_template(template_ref, style_path=style_path)
+            except BrandStudioLlmError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
             return
 
         if parsed.path == "/api/brand-system-templates":
