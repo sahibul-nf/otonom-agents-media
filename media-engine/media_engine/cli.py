@@ -29,7 +29,7 @@ from .metadata_refresh import enrich_candidates_metadata
 from .post_copy import is_placeholder_source_attribution
 from .rendering import PREMIUM_PRESET, render_minimal_ffmpeg, render_premium_ffmpeg, render_premium_hyperframes, render_premium_remotion
 from .rerender import rerender_from_args
-from .schedule_publisher import process_due_publishes
+from .schedule_publisher import process_due_publishes, process_due_publishes_all
 from .shell_components import normalize_shell_components
 from .silence_trim import apply_silence_trim_for_render
 from .styles import load_style, load_style_for_render
@@ -869,14 +869,24 @@ def cmd_publish_live(args: argparse.Namespace) -> None:
 
 
 def cmd_publish_due(args: argparse.Namespace) -> None:
-    result = process_due_publishes(
-        db_path=args.db,
-        env_file=args.env_file,
-        profile_id=args.profile,
-        limit=args.limit,
-        dry_run=args.dry_run,
-        notify=not args.no_notify,
-    )
+    profile = str(args.profile or "").strip()
+    if not profile or profile.lower() == "all":
+        result = process_due_publishes_all(
+            db_path=args.db,
+            env_file=args.env_file,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            notify=not args.no_notify,
+        )
+    else:
+        result = process_due_publishes(
+            db_path=args.db,
+            env_file=args.env_file,
+            profile_id=profile,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            notify=not args.no_notify,
+        )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
@@ -1128,7 +1138,11 @@ def build_parser() -> argparse.ArgumentParser:
     publish_live.set_defaults(func=cmd_publish_live)
 
     publish_due = sub.add_parser("publish-due")
-    publish_due.add_argument("--profile", default="nourbit")
+    publish_due.add_argument(
+        "--profile",
+        default="all",
+        help="Workspace id, or 'all' (default) for every media_profiles row",
+    )
     publish_due.add_argument("--env-file", default="../.env.local")
     publish_due.add_argument("--limit", type=int, default=5)
     publish_due.add_argument("--dry-run", action="store_true")

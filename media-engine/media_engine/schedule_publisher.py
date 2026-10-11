@@ -280,6 +280,49 @@ def publish_candidate_platform(
     return {"platform": platform, "status": attempt_status, "attempt_id": attempt["id"], **result}
 
 
+def list_publish_profile_ids(conn) -> list[str]:
+    rows = conn.execute("SELECT id FROM media_profiles ORDER BY id ASC").fetchall()
+    ids = [str(row["id"]) for row in rows if row and row["id"]]
+    return ids or ["nourbit"]
+
+
+def process_due_publishes_all(
+    db_path: str | Path = DEFAULT_DB,
+    env_file: str | Path | None = None,
+    now: datetime | None = None,
+    limit: int = 5,
+    dry_run: bool = False,
+    notify: bool = False,
+) -> dict[str, Any]:
+    """Run due publish for every workspace (PM2 publisher default)."""
+    if env_file:
+        load_env_file(env_file)
+    conn = connect(db_path)
+    initialize(conn)
+    profiles = list_publish_profile_ids(conn)
+    conn.close()
+    processed: list[dict[str, Any]] = []
+    for profile_id in profiles:
+        result = process_due_publishes(
+            db_path=db_path,
+            env_file=None,
+            profile_id=profile_id,
+            now=now,
+            limit=limit,
+            dry_run=dry_run,
+            notify=notify,
+        )
+        for item in result.get("processed") or []:
+            processed.append({**item, "profile_id": profile_id})
+    return {
+        "status": "ok",
+        "dry_run": dry_run,
+        "profiles": profiles,
+        "count": len(processed),
+        "processed": processed,
+    }
+
+
 def process_due_publishes(
     db_path: str | Path = DEFAULT_DB,
     env_file: str | Path | None = None,

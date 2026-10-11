@@ -2,19 +2,23 @@
 
 Otonom generate/render stays **native on macOS**. Postiz (OAuth + delivery) stays **Docker or `postiz.nourdaily.com`**. Do not put Whisper/HyperFrames in the Postiz container.
 
+Issue **#92** is the shipped loop: Create → Review (approve) → Schedule → Postiz delivers to mapped channels.
+
 ## Topology
 
 ```text
-Postiz API  https://api-postiz.nourdaily.com  (OAuth + send)
-Otonom ops (PM2 on this Mini)
+Postiz API  https://api-postiz.nourdaily.com  (OAuth + send)  — Docker/cloud, separate from Otonom
+Otonom ops (PM2 on this Mini, native macOS)
   :8765  media-engine API
-  :3100  dashboard (next start)
-  publisher worker  publish-due every 60s → Postiz Public API
+  :3100  dashboard (next start — not next dev)
+  publisher worker  publish-due every 60s → vault Postiz (all workspaces)
   watch worker      watch-poll ~daily (no --force; channel interval gates)
 
-Dev (optional git worktree)
+Dev (optional git worktree — own MEDIA_ENGINE_DB)
   :8766 / :3101  own SQLite + artifacts
 ```
+
+`scripts/media-engine-pm2.config.cjs` sets `cwd` from `__dirname` (checkout root). No absolute path edits when you clone to `otonom-agents-media-ops`.
 
 ## First-time ops
 
@@ -30,15 +34,17 @@ pm2 save
 pm2 startup
 ```
 
-UI: `http://127.0.0.1:3100`. Engine: `http://127.0.0.1:8765`.
+`npm run pm2:restart` / `pm2:stop` include `otonom-media-publisher` (and watch). UI: `http://127.0.0.1:3100`. Engine: `http://127.0.0.1:8765`.
 
 ## Postiz delivery
 
-Connect in the dashboard **Publish** tab (per workspace). Default API host: [https://api-postiz.nourdaily.com/](https://api-postiz.nourdaily.com/) (normalized to `/public/v1`). The API key is stored in the workspace credential vault — not `.env`.
+Connect in the dashboard **Publish → Accounts** (per workspace). Default API host: [https://api-postiz.nourdaily.com/](https://api-postiz.nourdaily.com/) (normalized to `/public/v1`). The API key is stored in the workspace credential vault — not `.env` `POSTIZ_CHANNEL_*`.
 
-Then map each destination to a Postiz integration. Unmapped platforms still use native tokens (legacy).
+Then map each destination to a Postiz integration (`POSTIZ_CHANNEL_MAP` in the vault). Unmapped platforms (or disconnected Postiz) still use native tokens (legacy fallback).
 
-TikTok posts as `SELF_ONLY` until you change `settings_for_platform` — first ship is conservative.
+The PM2 publisher runs `publish-due --profile all` so every workspace with due schedules is processed. Override with `PUBLISH_WORKER_PROFILE=<id>` in the PM2 env if needed.
+
+TikTok remains unavailable for native OAuth; map via Postiz only when the platform is ready.
 
 ## Develop without stopping ops
 

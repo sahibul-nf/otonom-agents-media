@@ -26,9 +26,10 @@ Copy `.env.example` to `.env.local` before the first start. The dashboard proxie
 
 ## Notes
 
+- **Mac Mini ops (PM2 + Postiz):** see [`docs/local-ops.md`](local-ops.md) — ops on `:8765`/`:3100` (`next start`); coding uses `npm run dev:isolated` → `:8766`/`:3101` + own `MEDIA_ENGINE_DB`.
 - Isolated worktree (do not steal PM2 ports `8765` / `3100`): `npm run dev:isolated` → API `:8766`, dashboard `:3101`.
-- Env: copy `.env.example` → `.env.local`. Never commit secrets. See `docs/SECRETS.md`.
-- Login: the local dashboard has no hosted demo account. Platform publish needs your own OAuth tokens in `.env.local` (YouTube, Meta, Telegram). **TikTok:** native OAuth is not supported — use manual posting or Postiz when available; see `docs/SECRETS.md`.
+- Env: copy `.env.example` → `.env.local`. Never commit secrets. See `docs/SECRETS.md`. Postiz API key + channel map live in the **workspace vault** (Publish → Connect), not `.env`.
+- Login: the local dashboard has no hosted demo account. Platform publish needs your own OAuth tokens in `.env.local` (YouTube, Meta, Telegram) **or** Postiz mapping. **TikTok:** native OAuth is not supported — see `docs/SECRETS.md`.
 - Engine CLI details: `media-engine/README.md`.
 - Brand presets: `brand-pack/` (`techtalk`, `personal`, `blank`) or `CONTENT_OS_PATH`.
 - Content packages API: `GET /api/content-packages`, `POST /api/content-package-create`, `POST /api/content-package-approve`.

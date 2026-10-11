@@ -29,7 +29,9 @@ from media_engine.postiz_client import (
 )
 from media_engine.postiz_sync import reconcile_profile_schedules, same_schedule_slot
 from media_engine.schedule_publisher import (
+    list_publish_profile_ids,
     process_due_publishes,
+    process_due_publishes_all,
     publish_candidate_platform,
     rollup_schedule_status,
 )
@@ -560,6 +562,38 @@ class PostizDuePublishTests(unittest.TestCase):
             self.assertEqual(result["processed"][0]["status"], "scheduled")
             mock_postiz.assert_not_called()
             mock_native.assert_called_once()
+
+    def test_due_publish_all_profiles_walks_each_workspace(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = f"{tmpdir}/media_engine.sqlite"
+            from media_engine.db import connect, initialize as init_db
+
+            conn = connect(db_path)
+            init_db(conn)
+            for pid in ("alpha", "beta"):
+                conn.execute(
+                    "INSERT OR IGNORE INTO media_profiles (id, name, niche, languages_json, default_render_preset, cta_text, watermark_text) VALUES (?, ?, '', '[]', '', '', '')",
+                    (pid, pid),
+                )
+            conn.commit()
+            profiles = list_publish_profile_ids(conn)
+            conn.close()
+            self.assertIn("alpha", profiles)
+            self.assertIn("beta", profiles)
+
+            calls: list[str] = []
+
+            def _fake_due(**kwargs):
+                pid = str(kwargs.get("profile_id") or "")
+                calls.append(pid)
+                return {"status": "ok", "dry_run": False, "count": 0, "processed": []}
+
+            with patch("media_engine.schedule_publisher.process_due_publishes", side_effect=_fake_due):
+                result = process_due_publishes_all(db_path=db_path, limit=3)
+
+            self.assertEqual(result["status"], "ok")
+            self.assertEqual(set(result["profiles"]), set(profiles))
+            self.assertEqual(set(calls), set(profiles))
 
 
 if __name__ == "__main__":
