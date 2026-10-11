@@ -29,6 +29,7 @@ LLM_ENV_KEYS = frozenset(
         "OTONOM_LLM_AGENT_LAST_ERROR",
         "OTONOM_LLM_AGENT_TEST_OK",
         "OTONOM_LLM_CONNECTORS_JSON",
+        "OTONOM_LLM_ROUTING_JSON",
     }
 )
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from media_engine.credential_vault import get_profile_secrets, set_profile_secrets
+from media_engine.llm import LLMError, call_llm_json
 from media_engine.llm_connectors import (
     CONNECTOR_STATE_CONFIGURED,
     CONNECTOR_STATE_READY,
@@ -20,9 +21,12 @@ from media_engine.llm_connectors import (
     is_allowed_agent_command,
     connector_status_rows,
     load_connectors_registry,
+    load_routing_policy,
     merge_llm_agent_credential_updates,
+    save_routing_policy,
     select_connector_model,
     test_active_connector,
+    validate_routing_policy,
 )
 
 
@@ -250,6 +254,45 @@ class LlmConnectorTests(unittest.TestCase):
             self.assertEqual(out["tested_models"], {"cursor_agent": "gpt-5.4"})
             command = run.call_args.args[0]
             self.assertIn("--model gpt-5.4", command)
+
+    def test_routing_policy_validates_and_persists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            import media_engine.credential_vault as vault_mod
+
+            object.__setattr__(vault_mod, "VAULT_DIR", Path(tmp))
+            profile = "route_test"
+            with patch("media_engine.llm_connectors._which", return_value="/usr/bin/cursor"):
+                connect_connector(profile, "cursor_agent")
+            policy = save_routing_policy(
+                profile,
+                primary="deepseek",
+                fallbacks=["agent:cursor_agent", "groq"],
+            )["routing"]
+            self.assertEqual(policy["primary"], "deepseek")
+            self.assertEqual(policy["fallbacks"], ["agent:cursor_agent", "groq"])
+            loaded = load_routing_policy(profile)
+            self.assertEqual(loaded, policy)
+            with self.assertRaises(ValueError):
+                validate_routing_policy(profile, primary="deepseek", fallbacks=["deepseek"])
+            with self.assertRaises(ValueError):
+                validate_routing_policy(profile, primary="agent:missing", fallbacks=[])
+
+    def test_call_llm_json_auto_falls_back_on_primary_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            import media_engine.credential_vault as vault_mod
+
+            object.__setattr__(vault_mod, "VAULT_DIR", Path(tmp))
+            profile = "route_fb"
+            with patch("media_engine.llm_connectors._which", return_value="/usr/bin/cursor"):
+                connect_connector(profile, "cursor_agent")
+            save_routing_policy(profile, primary="openai", fallbacks=["agent:cursor_agent"])
+            with patch("media_engine.llm._call_llm_api_json", side_effect=LLMError("no key")), patch(
+                "media_engine.llm_connectors.call_agent_json_for_connector",
+                return_value={"ok": True, "via": "cursor"},
+            ) as agent_call:
+                result = call_llm_json("auto", "sys", "user", profile_id=profile)
+            self.assertEqual(result["via"], "cursor")
+            agent_call.assert_called_once()
 
 
 if __name__ == "__main__":

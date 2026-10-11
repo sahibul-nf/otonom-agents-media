@@ -32,7 +32,14 @@ const JOBS = [
   {value: "save_for_later", label: "Save for later"},
 ] as const;
 
-const LLM_PROVIDERS = ["none", "deepseek", "openai", "groq", "agent"] as const;
+const LLM_PROVIDERS = [
+  {value: "auto", label: "Auto (routing policy)"},
+  {value: "none", label: "none"},
+  {value: "deepseek", label: "deepseek"},
+  {value: "openai", label: "openai"},
+  {value: "groq", label: "groq"},
+  {value: "agent", label: "agent"},
+] as const;
 
 export type ContentPackageCreateResult = {
   id: string;
@@ -116,7 +123,7 @@ export function ContentPackageCreateSection({
   const [topic, setTopic] = useState("");
   const [brandPreset, setBrandPreset] = useState("blank");
   const [job, setJob] = useState("inform");
-  const [llmProvider, setLlmProvider] = useState("deepseek");
+  const [llmProvider, setLlmProvider] = useState("auto");
   const [parentPackageId, setParentPackageId] = useState("");
   const [lastBatch, setLastBatch] = useState<ContentPackageCreateBatchResult | null>(null);
   const [error, setError] = useState("");
@@ -220,11 +227,16 @@ export function ContentPackageCreateSection({
         <SelectField
           label="Writing model"
           value={llmProvider}
-          options={LLM_PROVIDERS.map((p) => ({value: p, label: p}))}
+          options={LLM_PROVIDERS.map((p) => ({value: p.value, label: p.label}))}
           onChange={setLlmProvider}
         />
       </div>
 
+      {llmProvider === "auto" ? (
+        <p className="mt-3 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100">
+          Uses Publish → Models <strong className="font-semibold">routing policy</strong> (primary, then fallbacks).
+        </p>
+      ) : null}
       {llmProvider === "agent" ? (
         <p className="mt-3 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-xs text-violet-200">
           Set <code className="text-violet-100">OTONOM_LLM_AGENT_COMMAND</code> in Publish → LLM keys (or vault). The command must read JSON from stdin and print JSON on stdout.

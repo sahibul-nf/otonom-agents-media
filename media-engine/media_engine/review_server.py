@@ -1042,6 +1042,30 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=400)
             return
 
+        if parsed.path == "/api/llm-routing":
+            _safe_load_env()
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip()
+            from .llm_connectors import load_routing_policy, save_routing_policy
+
+            if payload.get("primary") is None and payload.get("fallbacks") is None:
+                self._send_json({"profile_id": profile_id, "routing": load_routing_policy(profile_id)})
+                return
+            primary = str(payload.get("primary") or "").strip()
+            fallbacks_raw = payload.get("fallbacks")
+            if not isinstance(fallbacks_raw, list):
+                self._send_json({"error": "fallbacks must be a list"}, status=400)
+                return
+            try:
+                result = save_routing_policy(
+                    profile_id,
+                    primary=primary,
+                    fallbacks=[str(item) for item in fallbacks_raw],
+                )
+                self._send_json(result)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+            return
+
         if parsed.path == "/api/approve":
             candidate_id = str(payload.get("candidate_id", "")).strip()
             if not candidate_id:

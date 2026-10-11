@@ -1414,6 +1414,29 @@ export function MediaStudioApp() {
     }
   }
 
+  async function saveLlmRouting(primary: string, fallbacks: string[]) {
+    const key = `llm:routing:${profileId}`;
+    try {
+      const result = await runAction(
+        key,
+        "Saving routing policy…",
+        () =>
+          apiPost<{llm_status?: LlmStatusPayload; routing?: {primary?: string; fallbacks?: string[]}}>("llm-routing", {
+            profile_id: profileId,
+            primary,
+            fallbacks,
+          }),
+        "Routing policy saved",
+      );
+      if (result?.llm_status) setLlmStatus(result.llm_status);
+      else applyLlmStatusFromResponse(result);
+      await refreshAll();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Routing save failed";
+      pushToast(message, "error");
+    }
+  }
+
   async function publishContentPackage(packageId: string) {
     const key = `package:publish:${packageId}`;
     const row = contentPackages.find((item) => item.id === packageId);
@@ -2295,6 +2318,7 @@ export function MediaStudioApp() {
               onSaveLlm={saveLlmCredentials}
               onConnectLlmConnector={(id, action) => void connectLlmConnector(id, action)}
               onSelectLlmModel={(id, modelId) => void selectLlmModel(id, modelId)}
+              onSaveLlmRouting={(primary, fallbacks) => void saveLlmRouting(primary, fallbacks)}
               onTestLlmAgent={() => void testLlmAgent()}
               onConnectPostiz={connectPostiz}
               onDisconnectPostiz={disconnectPostiz}

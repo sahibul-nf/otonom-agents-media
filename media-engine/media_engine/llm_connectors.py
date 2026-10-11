@@ -24,6 +24,11 @@ VAULT_LAST_ERROR_KEY = "OTONOM_LLM_AGENT_LAST_ERROR"
 VAULT_TEST_OK_KEY = "OTONOM_LLM_AGENT_TEST_OK"
 VAULT_COMMAND_KEY = "OTONOM_LLM_AGENT_COMMAND"
 VAULT_CONNECTORS_REGISTRY_KEY = "OTONOM_LLM_CONNECTORS_JSON"
+VAULT_ROUTING_KEY = "OTONOM_LLM_ROUTING_JSON"
+
+# Routing entries: API provider id, or agent:<connector_id> for a connected harness.
+ROUTING_API_PROVIDERS = frozenset({"none", "openai", "deepseek", "groq"})
+DEFAULT_ROUTING_POLICY: dict[str, Any] = {"primary": "deepseek", "fallbacks": ["agent"]}
 
 
 @dataclass(frozen=True)
@@ -186,6 +191,110 @@ def _enabled_ids_from_registry(registry: dict[str, dict[str, str]]) -> list[str]
 
 def enabled_connector_ids(profile_id: str) -> list[str]:
     return _enabled_ids_from_registry(load_connectors_registry(profile_id))
+
+
+def normalize_route_entry(raw: str) -> str:
+    text = (raw or "").strip().lower()
+    if not text:
+        raise ValueError("empty routing entry")
+    if text in ROUTING_API_PROVIDERS or text == "agent":
+        return text
+    if text.startswith("agent:"):
+        cid = text.split(":", 1)[1].strip()
+        if not cid:
+            raise ValueError("agent routing entry needs connector_id")
+        return f"agent:{cid}"
+    # Bare connector id → agent:<id>
+    if connector_spec(text) or text == "custom":
+        return f"agent:{text}"
+    raise ValueError(f"unknown routing entry: {raw}")
+
+
+def load_routing_policy(profile_id: str) -> dict[str, Any]:
+    vault = get_profile_secrets(profile_id)
+    raw = str(vault.get(VAULT_ROUTING_KEY) or "").strip()
+    if not raw:
+        return dict(DEFAULT_ROUTING_POLICY)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return dict(DEFAULT_ROUTING_POLICY)
+    if not isinstance(data, dict):
+        return dict(DEFAULT_ROUTING_POLICY)
+    primary = str(data.get("primary") or DEFAULT_ROUTING_POLICY["primary"])
+    fallbacks_raw = data.get("fallbacks")
+    fallbacks = list(fallbacks_raw) if isinstance(fallbacks_raw, list) else list(DEFAULT_ROUTING_POLICY["fallbacks"])
+    try:
+        return {
+            "primary": normalize_route_entry(primary),
+            "fallbacks": [normalize_route_entry(str(item)) for item in fallbacks],
+        }
+    except ValueError:
+        return dict(DEFAULT_ROUTING_POLICY)
+
+
+def validate_routing_policy(
+    profile_id: str,
+    *,
+    primary: str,
+    fallbacks: list[str],
+) -> dict[str, Any]:
+    primary_n = normalize_route_entry(primary)
+    fallbacks_n = [normalize_route_entry(str(item)) for item in fallbacks]
+    chain = [primary_n, *fallbacks_n]
+    if len(chain) != len(set(chain)):
+        raise ValueError("routing policy has duplicate entries")
+    registry = load_connectors_registry(profile_id)
+    for entry in chain:
+        if entry in ROUTING_API_PROVIDERS:
+            continue
+        if entry == "agent":
+            if not _enabled_ids_from_registry(registry) and not str(
+                get_profile_secrets(profile_id).get(VAULT_COMMAND_KEY) or ""
+            ).strip():
+                raise ValueError("routing entry 'agent' needs at least one connected harness")
+            continue
+        if entry.startswith("agent:"):
+            cid = entry.split(":", 1)[1]
+            if not registry.get(cid, {}).get("command"):
+                raise ValueError(f"routing entry {entry} is not connected")
+            continue
+        raise ValueError(f"unknown routing entry: {entry}")
+    return {"primary": primary_n, "fallbacks": fallbacks_n}
+
+
+def save_routing_policy(profile_id: str, *, primary: str, fallbacks: list[str]) -> dict[str, Any]:
+    policy = validate_routing_policy(profile_id, primary=primary, fallbacks=fallbacks)
+    set_profile_secrets(profile_id, {VAULT_ROUTING_KEY: json.dumps(policy, ensure_ascii=False)})
+    return {
+        "profile_id": profile_id,
+        "routing": policy,
+        "llm_status": build_llm_status_payload(profile_id),
+    }
+
+
+def routing_chain(profile_id: str) -> list[str]:
+    policy = load_routing_policy(profile_id)
+    return [policy["primary"], *list(policy.get("fallbacks") or [])]
+
+
+def call_agent_json_for_connector(
+    connector_id: str,
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    profile_id: str,
+    timeout_seconds: int = 120,
+) -> Any:
+    registry = load_connectors_registry(profile_id)
+    cid = (connector_id or "").strip()
+    entry = registry.get(cid, {})
+    if not entry.get("command"):
+        raise LLMError(f"agent harness {cid} is not connected")
+    if entry.get("enabled", "1") != "1":
+        raise LLMError(f"agent harness {cid} is paused")
+    cmd = effective_agent_command(cid, entry.get("command", ""), entry.get("model", ""))
+    return run_agent_shell_command(cmd, system_prompt, user_prompt, timeout_seconds=timeout_seconds)
 
 
 def catalog_models(connector_id: str) -> list[dict[str, str]]:
@@ -500,6 +609,7 @@ def build_llm_status_payload(profile_id: str, *, path: str | None = None) -> dic
     agent_ready = agent_provider_ready(profile_id)
     connected_ids = [str(row["id"]) for row in connectors if row.get("connected")]
     active_ids = [str(row["id"]) for row in connectors if row.get("active")]
+    routing = load_routing_policy(profile_id)
     return {
         "providers": base,
         "agent": {
@@ -509,6 +619,7 @@ def build_llm_status_payload(profile_id: str, *, path: str | None = None) -> dic
             "active_connector_ids": active_ids,
         },
         "connectors": connectors,
+        "routing": routing,
     }
 
 

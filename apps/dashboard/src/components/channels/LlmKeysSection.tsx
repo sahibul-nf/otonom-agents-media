@@ -1,7 +1,7 @@
 "use client";
 
 import {Brain, Check, Loader2, Plug, Zap} from "lucide-react";
-import {type FormEvent, useState} from "react";
+import {type FormEvent, useEffect, useState} from "react";
 import type {CredentialStatus} from "@/lib/media-api";
 
 type ActionUiState = {status: "running" | "done" | "failed"; message: string};
@@ -23,11 +23,17 @@ export type LlmConnectorRow = {
   selected_model?: string;
 };
 
+export type LlmRoutingPolicy = {
+  primary?: string;
+  fallbacks?: string[];
+};
+
 export type LlmStatusPayload = {
   profile_id?: string;
   providers?: Record<string, {ready?: boolean}>;
   agent?: {ready?: boolean; connector_id?: string; state?: string; command_set?: boolean};
   connectors?: LlmConnectorRow[];
+  routing?: LlmRoutingPolicy;
 };
 
 const LLM_FIELDS = [
@@ -79,8 +85,17 @@ export type LlmKeysSectionProps = {
   onSaveLlm: (values: Record<string, string>) => Promise<void>;
   onConnectConnector?: (connectorId: string, action?: "connect" | "activate" | "deactivate") => Promise<void>;
   onSelectModel?: (connectorId: string, modelId: string) => Promise<void>;
+  onSaveRouting?: (primary: string, fallbacks: string[]) => Promise<void>;
   onTestAgent?: () => Promise<void>;
 };
+
+const ROUTE_API_OPTIONS = [
+  {value: "none", label: "none (stub)"},
+  {value: "deepseek", label: "deepseek"},
+  {value: "openai", label: "openai"},
+  {value: "groq", label: "groq"},
+  {value: "agent", label: "agent (any active harness)"},
+] as const;
 
 export function LlmKeysSection({
   credentials,
@@ -91,13 +106,25 @@ export function LlmKeysSection({
   onSaveLlm,
   onConnectConnector,
   onSelectModel,
+  onSaveRouting,
   onTestAgent,
 }: LlmKeysSectionProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const busy = actionStates[`llm:save:${profileId}`]?.status === "running";
+  const routingBusy = actionStates[`llm:routing:${profileId}`]?.status === "running";
   const llm = credentials?.llm;
   const agentSummary = llmStatus?.agent ?? (llm?.agent as LlmStatusPayload["agent"] | undefined);
+  const routing = llmStatus?.routing;
+  const [primary, setPrimary] = useState(routing?.primary || "deepseek");
+  const [fallbacks, setFallbacks] = useState<string[]>(routing?.fallbacks || ["agent"]);
+  const [fallbackDraft, setFallbackDraft] = useState("agent");
+
+  useEffect(() => {
+    if (!routing || routingBusy) return;
+    setPrimary(routing.primary || "deepseek");
+    setFallbacks(Array.isArray(routing.fallbacks) ? [...routing.fallbacks] : ["agent"]);
+  }, [routing, routingBusy]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -109,6 +136,12 @@ export function LlmKeysSection({
   }
 
   const connectors = llmStatus?.connectors?.filter((c) => c.id !== "custom") ?? [];
+  const routeOptions = [
+    ...ROUTE_API_OPTIONS,
+    ...connectors
+      .filter((c) => c.connected)
+      .map((c) => ({value: `agent:${c.id}`, label: `${c.label} (harness)`})),
+  ];
   const showTest =
     onTestAgent &&
     Boolean(agentSummary?.connector_id) &&
@@ -132,13 +165,9 @@ export function LlmKeysSection({
         </button>
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        Connect multiple harnesses (e.g. Cursor and Antigravity together). Every row marked{" "}
-        <span className="text-violet-300">Active</span> runs for{" "}
-        <code className="text-zinc-400">llm_provider=agent</code> — first success wins if one fails. Same idea as OpenMausBot and{" "}
-        <a href="https://t3.codes" className="text-cyan-400 hover:underline" target="_blank" rel="noreferrer">
-          T3 Code
-        </a>
-        . No API keys resold.
+        Connect multiple harnesses, then set a <span className="text-cyan-300">routing policy</span> (primary +
+        fallbacks). Create → Writing model <code className="text-zinc-400">auto</code> follows that policy. No API keys
+        resold.
       </p>
 
       <ul className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -253,6 +282,105 @@ export function LlmKeysSection({
           );
         })}
       </div>
+
+      {onSaveRouting ? (
+        <div className="mt-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+          <p className="text-xs font-semibold text-cyan-100">Routing policy (llm_provider=auto)</p>
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Primary runs first; fallbacks run in order on failure / missing credentials.
+          </p>
+          <label className="mt-3 block text-[11px] text-zinc-400">
+            Primary
+            <select
+              value={primary}
+              onChange={(e) => setPrimary(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100"
+            >
+              {routeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="mt-2 space-y-1">
+            {fallbacks.map((entry, index) => (
+              <div key={`${entry}-${index}`} className="flex items-center gap-2 text-[11px] text-zinc-300">
+                <span className="min-w-0 flex-1 truncate font-mono text-zinc-400">
+                  {index + 1}. {entry}
+                </span>
+                <button
+                  type="button"
+                  className="text-zinc-500 hover:text-zinc-200"
+                  disabled={index === 0}
+                  onClick={() =>
+                    setFallbacks((rows) => {
+                      const next = [...rows];
+                      [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                      return next;
+                    })
+                  }
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="text-zinc-500 hover:text-zinc-200"
+                  disabled={index >= fallbacks.length - 1}
+                  onClick={() =>
+                    setFallbacks((rows) => {
+                      const next = [...rows];
+                      [next[index + 1], next[index]] = [next[index], next[index + 1]];
+                      return next;
+                    })
+                  }
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  className="text-red-300/80 hover:text-red-200"
+                  onClick={() => setFallbacks((rows) => rows.filter((_, i) => i !== index))}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <select
+              value={fallbackDraft}
+              onChange={(e) => setFallbackDraft(e.target.value)}
+              className="rounded-lg border border-white/10 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-100"
+            >
+              {routeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="rounded-lg border border-white/10 px-2 py-1.5 text-[11px] font-semibold text-zinc-200 hover:border-cyan/40"
+              onClick={() => {
+                if (!fallbackDraft || fallbackDraft === primary || fallbacks.includes(fallbackDraft)) return;
+                setFallbacks((rows) => [...rows, fallbackDraft]);
+              }}
+            >
+              Add fallback
+            </button>
+            <button
+              type="button"
+              disabled={routingBusy}
+              onClick={() => void onSaveRouting(primary, fallbacks)}
+              className="inline-flex items-center gap-1 rounded-lg bg-cyan-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-cyan-500 disabled:opacity-50"
+            >
+              {routingBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              Save routing
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {showTest ? (
         <button

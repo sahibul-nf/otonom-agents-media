@@ -212,7 +212,7 @@ TOOLS = [
                 },
                 "llm_provider": {
                     "type": "string",
-                    "enum": ["none", "openai", "deepseek", "groq", "agent"],
+                    "enum": ["none", "openai", "deepseek", "groq", "agent", "auto"],
                     "default": "none",
                 },
                 "video_engine": {

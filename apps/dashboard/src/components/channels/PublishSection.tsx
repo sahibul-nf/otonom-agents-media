@@ -450,6 +450,7 @@ export function PublishSection({
   onSaveLlm,
   onConnectLlmConnector,
   onSelectLlmModel,
+  onSaveLlmRouting,
   onTestLlmAgent,
   llmStatus,
   llmStatusLoading,
@@ -464,6 +465,7 @@ export function PublishSection({
   onSaveLlm?: (values: Record<string, string>) => void | Promise<void>;
   onConnectLlmConnector?: (connectorId: string, action?: "connect" | "activate" | "deactivate") => void | Promise<void>;
   onSelectLlmModel?: (connectorId: string, modelId: string) => void | Promise<void>;
+  onSaveLlmRouting?: (primary: string, fallbacks: string[]) => void | Promise<void>;
   onTestLlmAgent?: () => void | Promise<void>;
   llmStatus?: LlmStatusPayload | null;
   llmStatusLoading?: boolean;
@@ -565,6 +567,7 @@ export function PublishSection({
           onSaveLlm={onSaveLlm}
           onConnectConnector={onConnectLlmConnector}
           onSelectModel={onSelectLlmModel}
+          onSaveRouting={onSaveLlmRouting}
           onTestAgent={onTestLlmAgent}
         />
       ) : null}

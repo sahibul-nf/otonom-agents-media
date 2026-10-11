@@ -32,13 +32,14 @@ Same model as [OpenMausBot](https://github.com/sahibul-nf/openmausbot) and [T3 C
 1. **Connect** — registers a fixed allowlisted command per harness (`cursor_agent`, `antigravity`, …) in `OTONOM_LLM_CONNECTORS_JSON`. Each connect also **enables** that harness. Multiple rows can be **Active** at once.
 2. **Pause** — disables a harness without forgetting its command (re-enable with **Enable**).
 3. **Test** — JSON ping through every **Active** harness (per-harness pass/fail in vault).
-4. **Runtime** — `llm_provider=agent` tries enabled harnesses in catalog order; first successful JSON response wins.
-5. **Model** — each connected harness shows a documented catalog (these CLIs do not share one list API). The choice is stored on the harness and appended as `--model <id>`. Unknown ids are rejected. Pause and Reconnect keep the saved model. Empty means the harness default.
-6. **Custom** — paste `OTONOM_LLM_AGENT_COMMAND` under *API keys / custom CLI* (no shell metacharacters).
+4. **Routing policy** — set **primary** + ordered **fallbacks** (API providers or `agent:<connector_id>` / bare `agent`). Stored in `OTONOM_LLM_ROUTING_JSON`. Create → Writing model **auto** follows this chain.
+5. **Runtime** — `llm_provider=auto` tries primary then fallbacks on `LLMError` / missing credentials. `llm_provider=agent` still tries enabled harnesses in catalog order.
+6. **Model** — each connected harness shows a documented catalog (these CLIs do not share one list API). The choice is stored on the harness and appended as `--model <id>`. Unknown ids are rejected. Pause and Reconnect keep the saved model. Empty means the harness default.
+7. **Custom** — paste `OTONOM_LLM_AGENT_COMMAND` under *API keys / custom CLI* (no shell metacharacters).
 
-Connector state (`GET /api/llm-status`): `undetected` → `detected` → `configured` → `ready` (after test), `error` (last test failed), or `stale` (active connector id no longer matches the stored command — use **Reconnect**).
+Connector state (`GET /api/llm-status`): `undetected` → `detected` → `configured` → `ready` (after test), `error` (last test failed), or `stale` (active connector id no longer matches the stored command — use **Reconnect**). Payload also includes `routing`.
 
-Connect, Test, and Save LLM settings responses include `llm_status` so the dashboard can refresh without a race. Agent pills on `/api/credentials` use the same `state` field (`configured` vs `ready`) as the connector list.
+Connect, Test, Save LLM settings, and Save routing responses include `llm_status` so the dashboard can refresh without a race. Agent pills on `/api/credentials` use the same `state` field (`configured` vs `ready`) as the connector list.
 
 ```bash
 curl -s "http://127.0.0.1:8765/api/llm-status?profile_id=workspace" | jq .
@@ -48,9 +49,12 @@ curl -s -X POST http://127.0.0.1:8765/api/llm-connector-connect \
 curl -s -X POST http://127.0.0.1:8765/api/llm-connector-test \
   -H 'Content-Type: application/json' \
   -d '{"profile_id":"workspace"}'
+curl -s -X POST http://127.0.0.1:8765/api/llm-routing \
+  -H 'Content-Type: application/json' \
+  -d '{"profile_id":"workspace","primary":"deepseek","fallbacks":["agent:cursor_agent","groq"]}'
 ```
 
-Vault keys: `OTONOM_LLM_AGENT_COMMAND`, `OTONOM_LLM_AGENT_CONNECTOR`, `OTONOM_LLM_AGENT_TEST_OK`, `OTONOM_LLM_AGENT_LAST_ERROR`.
+Vault keys: `OTONOM_LLM_CONNECTORS_JSON`, `OTONOM_LLM_ROUTING_JSON`, plus legacy `OTONOM_LLM_AGENT_COMMAND` / `OTONOM_LLM_AGENT_CONNECTOR` / `OTONOM_LLM_AGENT_TEST_OK` / `OTONOM_LLM_AGENT_LAST_ERROR`.
 
 ## Agent CLI (`llm_provider=agent`)
 
@@ -76,6 +80,6 @@ If the command is missing, package creation falls back to `none` (stub) and reco
 
 ## MCP / API
 
-`create_content_package` accepts `llm_provider`: `none` | `openai` | `deepseek` | `groq` | `agent`.
+`create_content_package` accepts `llm_provider`: `none` | `openai` | `deepseek` | `groq` | `agent` | `auto` (workspace routing policy).
 
 Same providers as clip generation on the Create tab.

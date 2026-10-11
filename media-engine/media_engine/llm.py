@@ -12,7 +12,7 @@ from typing import Any
 from .credential_vault import resolve_env_value
 
 
-LLM_PROVIDERS = {"none", "openai", "deepseek", "groq", "agent"}
+LLM_PROVIDERS = {"none", "openai", "deepseek", "groq", "agent", "auto"}
 LLM_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
@@ -80,6 +80,11 @@ def provider_config(provider: str) -> dict[str, str]:
 def llm_provider_ready(provider: str, profile_id: str | None = None) -> dict[str, Any]:
     if provider == "none":
         return {"ready": True, "mode": "stub"}
+    if provider == "auto":
+        from .llm_connectors import load_routing_policy
+
+        policy = load_routing_policy(profile_id or "")
+        return {"ready": True, "mode": "routing", "routing": policy, "missing": []}
     if provider == "agent":
         from .llm_connectors import agent_provider_ready
 
@@ -133,21 +138,14 @@ def call_llm_agent_json(system_prompt: str, user_prompt: str, *, profile_id: str
     )
 
 
-def call_llm_json(
+def _call_llm_api_json(
     provider: str,
     system_prompt: str,
     user_prompt: str,
-    timeout_seconds: int = 45,
+    timeout_seconds: int,
     *,
-    profile_id: str | None = None,
+    profile_id: str | None,
 ) -> Any:
-    if provider == "none":
-        return None
-    if provider not in LLM_PROVIDERS:
-        raise ValueError(f"unsupported LLM provider: {provider}")
-    if provider == "agent":
-        return call_llm_agent_json(system_prompt, user_prompt, profile_id=profile_id, timeout_seconds=timeout_seconds)
-
     config = provider_config(provider)
     provider_secret = resolve_env_value(config["api_key_env"], profile_id=profile_id)
     if not provider_secret:
@@ -171,3 +169,85 @@ def call_llm_json(
 
     content = body.get("choices", [{}])[0].get("message", {}).get("content", "")
     return parse_strict_json(content)
+
+
+def call_llm_json_routed(
+    system_prompt: str,
+    user_prompt: str,
+    timeout_seconds: int = 45,
+    *,
+    profile_id: str | None = None,
+) -> Any:
+    """Try workspace routing policy (primary then fallbacks)."""
+    from .llm_connectors import (
+        call_agent_json_for_connector,
+        call_agent_json_for_profile,
+        routing_chain,
+    )
+
+    pid = (profile_id or "").strip()
+    if not pid:
+        raise LLMError("profile_id is required for llm_provider=auto routing")
+    errors: list[str] = []
+    for entry in routing_chain(pid):
+        try:
+            if entry == "none":
+                return None
+            if entry in {"openai", "deepseek", "groq"}:
+                return _call_llm_api_json(
+                    entry,
+                    system_prompt,
+                    user_prompt,
+                    timeout_seconds,
+                    profile_id=pid,
+                )
+            if entry == "agent":
+                return call_agent_json_for_profile(
+                    system_prompt,
+                    user_prompt,
+                    profile_id=pid,
+                    timeout_seconds=timeout_seconds,
+                )
+            if entry.startswith("agent:"):
+                return call_agent_json_for_connector(
+                    entry.split(":", 1)[1],
+                    system_prompt,
+                    user_prompt,
+                    profile_id=pid,
+                    timeout_seconds=timeout_seconds,
+                )
+            errors.append(f"{entry}: unknown")
+        except (LLMError, ValueError) as exc:
+            errors.append(f"{entry}: {exc}")
+    raise LLMError("; ".join(errors)[:800] if errors else "routing policy empty")
+
+
+def call_llm_json(
+    provider: str,
+    system_prompt: str,
+    user_prompt: str,
+    timeout_seconds: int = 45,
+    *,
+    profile_id: str | None = None,
+) -> Any:
+    if provider == "none":
+        return None
+    if provider not in LLM_PROVIDERS:
+        raise ValueError(f"unsupported LLM provider: {provider}")
+    if provider == "auto":
+        return call_llm_json_routed(
+            system_prompt,
+            user_prompt,
+            timeout_seconds,
+            profile_id=profile_id,
+        )
+    if provider == "agent":
+        return call_llm_agent_json(system_prompt, user_prompt, profile_id=profile_id, timeout_seconds=timeout_seconds)
+
+    return _call_llm_api_json(
+        provider,
+        system_prompt,
+        user_prompt,
+        timeout_seconds,
+        profile_id=profile_id,
+    )
