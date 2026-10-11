@@ -31,6 +31,7 @@ from .explainer_stitch import (
     write_stitch_manifest,
 )
 from .autonomy import reconcile_caption_holds
+from .heygen_client import HeyGenApiError, HeyGenConfig, generate_avatar_clips_for_scenes
 from .hyperframes_templates import normalize_hyperframes_template
 
 
@@ -220,6 +221,41 @@ def save_explainer_scene_plan(
         "status": status,
         "rerender_started": rerender_after,
     }
+
+
+def _avatar_fixture_missing(scene: dict[str, Any], fixtures: Path) -> bool:
+    from .explainer_stitch import resolve_avatar_source
+
+    try:
+        resolve_avatar_source(scene, fixtures)
+        return False
+    except FileNotFoundError:
+        return True
+
+
+def ensure_avatar_clips_via_heygen(
+    plan: dict[str, Any],
+    fixtures: Path,
+    *,
+    generate: bool = False,
+    config: HeyGenConfig | None = None,
+) -> dict[str, Any] | None:
+    """
+    Fill missing avatar fixtures via HeyGen Direct API (issue #7).
+
+    When ``generate`` is False, returns None (fixture-only / Path A import path).
+    When True, batch-creates short clips for avatar scenes that lack files.
+    """
+    if not generate:
+        return None
+    scenes = [s for s in (plan.get("scenes") or []) if isinstance(s, dict)]
+    missing = [s for s in scenes if str(s.get("type") or "").lower() == "avatar" and _avatar_fixture_missing(s, fixtures)]
+    if not missing:
+        return {"ok": True, "skipped": True, "reason": "all avatar fixtures present", "clips": []}
+    try:
+        return generate_avatar_clips_for_scenes(missing, fixtures, config=config, skip_existing=True)
+    except HeyGenApiError:
+        raise
 
 
 def import_avatar_clip(
@@ -502,6 +538,7 @@ def run_explainer(
     sources: list[str] | None = None,
     prefer_hyperframes: bool = False,
     register_review: bool = True,
+    generate_heygen_avatars: bool = False,
     db_path: str | Path = DEFAULT_DB,
 ) -> dict[str, Any]:
     """
@@ -513,6 +550,7 @@ def run_explainer(
 
     Default stitch uses FFmpeg TechTalk v2 cards (non-avatar happy path).
     Set prefer_hyperframes=True only when HyperFrames runtime is known-good.
+    Set generate_heygen_avatars=True to fill missing avatar fixtures via Direct API (#7).
     """
     conn = connect(db_path)
     initialize(conn)
@@ -551,6 +589,24 @@ def run_explainer(
     _write_status(root, status)
 
     try:
+        heygen_batch = ensure_avatar_clips_via_heygen(
+            plan,
+            fixtures,
+            generate=generate_heygen_avatars,
+        )
+        if heygen_batch is not None:
+            status["heygen_avatars"] = {
+                "dry_run": heygen_batch.get("dry_run"),
+                "estimated_seconds": heygen_batch.get("estimated_seconds"),
+                "estimated_usd": heygen_batch.get("estimated_usd"),
+                "clip_count": len(heygen_batch.get("clips") or []),
+            }
+            _write_status(root, status)
+            if heygen_batch.get("dry_run") and not heygen_batch.get("skipped"):
+                raise HeyGenApiError(
+                    "HEYGEN_API_DRY_RUN=1 — avatar clips were not downloaded. "
+                    "Unset dry-run and ensure HEYGEN_API_KEY + API wallet top-up for a real run."
+                )
         work_dir = root / "segments"
         candidate_id = _candidate_id(job_id)
         segments = build_scene_segments(

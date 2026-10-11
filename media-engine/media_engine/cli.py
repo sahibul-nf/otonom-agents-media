@@ -162,7 +162,38 @@ def cmd_explainer_run(args: argparse.Namespace) -> None:
         sources=sources,
         prefer_hyperframes=prefer_hf,
         register_review=not args.skip_review,
+        generate_heygen_avatars=bool(getattr(args, "heygen_avatars", False)),
         db_path=args.db,
+    )
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+
+def cmd_heygen_avatar_clips(args: argparse.Namespace) -> None:
+    """Batch-generate avatar fixtures for an explainer job (or scenes JSON) via Direct API."""
+    from .explainer_stitch import explainer_artifact_dir
+    from .heygen_client import HeyGenConfig, generate_avatar_clips_for_scenes
+    from .explainer_planner import load_plan_file
+
+    profile_id = args.profile
+    if args.job_id:
+        root = explainer_artifact_dir(profile_id, args.job_id)
+        plan = load_plan_file(str(root / "scenes.json"))
+        dest = Path(args.out_dir) if args.out_dir else (root / "fixtures")
+    elif args.scenes:
+        plan = load_plan_file(args.scenes)
+        if not args.out_dir:
+            raise SystemExit("--out-dir is required when using --scenes without --job-id")
+        dest = Path(args.out_dir)
+    else:
+        raise SystemExit("Provide --job-id or --scenes")
+
+    cfg = HeyGenConfig.from_env(dry_run=True if args.dry_run else None)
+    result = generate_avatar_clips_for_scenes(
+        list(plan.get("scenes") or []),
+        dest,
+        config=cfg,
+        max_seconds=args.max_seconds,
+        skip_existing=not args.force,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 
@@ -1204,7 +1235,25 @@ def build_parser() -> argparse.ArgumentParser:
     explainer_run.add_argument("--profile", default=DEFAULT_WORKSPACE_PROFILE_ID)
     explainer_run.add_argument("--ffmpeg-only", action="store_true", help="Skip HyperFrames; use FFmpeg title cards")
     explainer_run.add_argument("--skip-review", action="store_true", help="Do not register in dashboard review queue")
+    explainer_run.add_argument(
+        "--heygen-avatars",
+        action="store_true",
+        help="Fill missing avatar fixtures via HeyGen Direct API (HEYGEN_API_KEY / wallet; see docs/heygen-paths.md)",
+    )
     explainer_run.set_defaults(func=cmd_explainer_run)
+
+    heygen_avatars = sub.add_parser(
+        "heygen-avatar-clips",
+        help="Batch-create short avatar MP4s for explainer scenes via HeyGen Direct API (#7)",
+    )
+    heygen_avatars.add_argument("--job-id", default="", help="Existing explainer job id")
+    heygen_avatars.add_argument("--scenes", default="", help="Path to scenes.json when not using --job-id")
+    heygen_avatars.add_argument("--out-dir", default="", help="Fixture output directory (default: job fixtures/)")
+    heygen_avatars.add_argument("--profile", default=DEFAULT_WORKSPACE_PROFILE_ID)
+    heygen_avatars.add_argument("--max-seconds", type=float, default=None, help="Cost guard override")
+    heygen_avatars.add_argument("--dry-run", action="store_true", help="No network; estimate only")
+    heygen_avatars.add_argument("--force", action="store_true", help="Regenerate even if fixture exists")
+    heygen_avatars.set_defaults(func=cmd_heygen_avatar_clips)
 
     return parser
 

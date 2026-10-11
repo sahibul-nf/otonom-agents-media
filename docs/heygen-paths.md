@@ -85,20 +85,37 @@ Whisper ASR + short window curation + ffmpeg cuts into Review as 9:16-ready cand
 
 ---
 
-## Path B (future) — Direct API / USD wallet
+## Path B — Direct API / USD wallet
 
-Scaffold: `media-engine/media_engine/heygen_client.py`
+Client: `media-engine/media_engine/heygen_client.py`
 
 | Env | Purpose |
 |-----|---------|
-| `HEYGEN_API_KEY` | Direct API (`X-Api-Key`) |
-| `HEYGEN_API_DRY_RUN=1` | No network; returns dry-run payload |
-| `HEYGEN_VOICE_ID` | Default Sahibul voice |
-| `HEYGEN_AVATAR_LOOK_ID` | Default look (not group id) |
+| `HEYGEN_API_KEY` | Direct API (`X-Api-Key`) — **API wallet USD**, not Creator credits |
+| `HEYGEN_API_DRY_RUN=1` | No network; returns dry-run payload / estimates |
+| `HEYGEN_VOICE_ID` | Default TechTalk voice (`LXpG1p9h8viifHEGQiFJ`) |
+| `HEYGEN_AVATAR_LOOK_ID` | Default look id (`0f4dca86e0bd42d8a8afdae9948338ce`) — not group id |
+| `HEYGEN_ENGINE` | Default `avatar_iii` (`POST /v3/videos` engine.type) |
+| `HEYGEN_MAX_SECONDS_PER_JOB` | Cost guard (default `90`) |
+| `HEYGEN_USD_PER_SECOND` | Estimate log rate (default `0.05`) |
 
-MCP tools (Path B only): `heygen_video_agent_create`, `heygen_video_agent_status`.
+### Avatar clips for Explainer (#7)
 
-**Creator avatar/voice IDs still work** on the API. **Creator premium credits do not pay for API calls** — top up the API wallet (from ~$5). Video Agent API ≈ **$0.0333/sec (~$2/min)**.
+```bash
+# Dry-run estimate (no wallet spend)
+HEYGEN_API_DRY_RUN=1 python3 -m media_engine.cli heygen-avatar-clips --job-id expl_xxx --dry-run
+
+# Real batch → job fixtures/ (needs API key + ~$5–15 wallet top-up for first tests)
+unset HEYGEN_API_DRY_RUN
+python3 -m media_engine.cli heygen-avatar-clips --job-id expl_xxx
+
+# Or stitch with auto-fill of missing avatar fixtures
+python3 -m media_engine.cli explainer-run --job-id expl_xxx --heygen-avatars --ffmpeg-only
+```
+
+MCP tools (Path B): `heygen_video_agent_create`, `heygen_video_agent_status` (Video Agent). Avatar talking clips use `create_avatar_video` / CLI above.
+
+**Creator avatar/voice IDs still work** on the API. **Creator premium credits do not pay for API calls** — top up the API wallet separately. Video Agent API ≈ **$0.0333/sec (~$2/min)**; short avatar clips are estimated via `HEYGEN_USD_PER_SECOND`.
 
 Default product path stays Path A until Creator is exhausted or multi-tenant BYOK is required.
 

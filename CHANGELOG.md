@@ -7,6 +7,7 @@
 - **Watch poll (#60):** default per-channel `poll_interval_minutes` is **1440** (24h); background worker sleeps ~24h without `--force` so channel intervals apply. Existing rows still at 30m are one-shot migrated to 1440. UI **Poll now** still forces an immediate poll.
 
 ### Added
+- **HeyGen avatar Direct API (#7):** `POST /v3/videos` talking-avatar batch for Explainer scenes (`heygen-avatar-clips` CLI, `explainer-run --heygen-avatars`), TechTalk look/voice defaults, cost guard (`HEYGEN_MAX_SECONDS_PER_JOB`) + dry-run estimates; docs in `docs/heygen-paths.md`.
 - **Ship generate + Postiz publish on Mac Mini (#92):** topology in `docs/local-ops.md` (PM2 native vs Postiz Docker/cloud vs isolated `:8766`/`:3101`); workspace Connect/map Postiz in Publish; due-worker uploads MP4 → Postiz `type: now` with native legacy fallback; unit tests for URL normalize, vault map, due routing.
 - **Watch PM2 worker (#60):** `otonom-media-watch` in `scripts/media-engine-pm2.config.cjs` (`WATCH_POLL_INTERVAL_SECONDS`, optional `WATCH_POLL_PROFILE`); documented in `docs/local-ops.md`.
 - **Studio Kinetic Reel engine (#118):** high-end kinetic talking-head reel recipe (`studio_kinetic_reel`) featuring:
