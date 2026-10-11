@@ -235,6 +235,45 @@ class HyperframesPreviewTests(unittest.TestCase):
             self.assertTrue((project_dir / "compositions" / "components" / "vignette.html").exists())
             self.assertTrue((project_dir / "assets" / "avatar.jpg").exists())
 
+    def test_brand_studio_fixture_passes_hyperframes_lint(self):
+        """#101 — catalog-wired Brand Studio project must lint with 0 errors."""
+        import shutil
+
+        from media_engine.db import ROOT
+        from media_engine.hyperframes_renderer import _run_hyperframes
+
+        contract = hyperframes_previews._brand_studio_preview_contract(
+            "spiritual_reflective",
+            "short_9_16",
+            1080,
+            1920,
+            "Niche signals become short clips.",
+            {"caption": {"font_family": "Lora"}, "brand": {"watermark_text": "TechTalk"}},
+            {
+                "cta_overlay": "yt-lower-third",
+                "caption_style": "caption-editorial-emphasis",
+                "texture_effects": ["grain-overlay"],
+                "intro_layout": "template-hook",
+            },
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "project"
+            hyperframes_previews._write_brand_studio_project(
+                project_dir,
+                contract,
+                "spiritual_reflective",
+                "short_9_16",
+            )
+            shutil.copy2(ROOT / "render" / "hyperframes" / "hyperframes.json", project_dir / "hyperframes.json")
+            media_dir = project_dir / "media"
+            media_dir.mkdir(parents=True, exist_ok=True)
+            # Lint only checks the path exists (render is not run here).
+            (media_dir / "source.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom")
+            lint = _run_hyperframes(["lint"], project_dir)
+            output = lint.get("raw_output") or lint.get("output") or ""
+            self.assertEqual(lint["returncode"], 0, output)
+            self.assertRegex(output.lower(), r"0 error")
+
     def test_brand_studio_overlay_slots_differ_from_caption(self):
         contract = hyperframes_previews._brand_studio_preview_contract(
             "story_handwritten",
