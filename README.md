@@ -63,6 +63,18 @@ pip install -r media-engine/requirements-dev.txt
 cd media-engine && PYTHONPATH=. python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
+## PM2 (Mac Mini ops)
+
+Ops checkout on **`main`** only — see [docs/local-ops.md](docs/local-ops.md). Ecosystem: `scripts/media-engine-pm2.config.cjs`.
+
+| App | Role |
+|-----|------|
+| `otonom-media-api` | media-engine `:8765` |
+| `otonom-media-dashboard` | Next `:3100` |
+| `otonom-media-health` | health monitor |
+| `otonom-media-publisher` | `publish-due` loop |
+| `otonom-media-watch` | channel `watch-poll` (~daily; `WATCH_POLL_INTERVAL_SECONDS`, optional `WATCH_POLL_PROFILE`) |
+
 ## Related experiments (not merged)
 
 - [social-media-content-ai-generation](https://github.com/sahibul-nf/social-media-content-ai-generation) — multi-format UI prototype

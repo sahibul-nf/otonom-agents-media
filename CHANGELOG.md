@@ -2,7 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- **Watch poll (#60):** default per-channel `poll_interval_minutes` is **1440** (24h); background worker sleeps ~24h without `--force` so channel intervals apply. Existing rows still at 30m are one-shot migrated to 1440. UI **Poll now** still forces an immediate poll.
+
 ### Added
+- **Watch PM2 worker (#60):** `otonom-media-watch` in `scripts/media-engine-pm2.config.cjs` (`WATCH_POLL_INTERVAL_SECONDS`, optional `WATCH_POLL_PROFILE`); documented in `docs/local-ops.md`.
 - **Studio Kinetic Reel engine (#118):** high-end kinetic talking-head reel recipe (`studio_kinetic_reel`) featuring:
   - Visual hierarchy typography: thin filler words (600 weight, 78% opacity) vs. 2-3x bold punch words with neon mint/cyan glow and GSAP scale punch.
   - Floating tilted 3D proof card overlay with glassmorphism, perspective tilt, verified metrics, and subtle ambient sine floating.

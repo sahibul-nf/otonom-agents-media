@@ -23,8 +23,11 @@ from .db import (
 from .generation_jobs import create_generation_job
 from .youtube_pipeline import find_ytdlp
 
-DEFAULT_POLL_INTERVAL_MINUTES = 30
+# Background watch: long-form channels rarely publish more than daily (#60).
+DEFAULT_POLL_INTERVAL_MINUTES = 1440
 DEFAULT_PLAYLIST_END = 8
+MIN_POLL_INTERVAL_MINUTES = 5
+MAX_POLL_INTERVAL_MINUTES = 24 * 60
 
 
 def _now_iso() -> str:
@@ -128,7 +131,10 @@ def add_watch_channel(
             normalized,
             display,
             permission_status or "user_attested",
-            max(5, min(int(poll_interval_minutes or DEFAULT_POLL_INTERVAL_MINUTES), 24 * 60)),
+            max(
+                MIN_POLL_INTERVAL_MINUTES,
+                min(int(poll_interval_minutes or DEFAULT_POLL_INTERVAL_MINUTES), MAX_POLL_INTERVAL_MINUTES),
+            ),
             json.dumps(defaults, ensure_ascii=False),
         ),
     )
@@ -175,8 +181,11 @@ def update_watch_channel(conn: sqlite3.Connection, channel_id: str, payload: dic
     permission_status = str(payload.get("permission_status", current["permission_status"])).strip() or current["permission_status"]
     enabled = int(bool(payload["enabled"])) if "enabled" in payload else int(current["enabled"])
     poll_interval = max(
-        5,
-        min(int(payload.get("poll_interval_minutes", current["poll_interval_minutes"])), 24 * 60),
+        MIN_POLL_INTERVAL_MINUTES,
+        min(
+            int(payload.get("poll_interval_minutes", current["poll_interval_minutes"])),
+            MAX_POLL_INTERVAL_MINUTES,
+        ),
     )
     defaults = payload.get("generation_defaults", current.get("generation_defaults") or {})
     if not isinstance(defaults, dict):

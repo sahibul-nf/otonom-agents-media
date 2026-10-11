@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS watch_channels (
   label TEXT NOT NULL DEFAULT '',
   permission_status TEXT NOT NULL DEFAULT 'user_attested',
   enabled INTEGER NOT NULL DEFAULT 1,
-  poll_interval_minutes INTEGER NOT NULL DEFAULT 30,
+  poll_interval_minutes INTEGER NOT NULL DEFAULT 1440,
   last_polled_at TEXT NOT NULL DEFAULT '',
   last_seen_video_id TEXT NOT NULL DEFAULT '',
   last_new_video_id TEXT NOT NULL DEFAULT '',
@@ -312,11 +312,33 @@ def ensure_schema_upgrades(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def migrate_watch_poll_interval_defaults(conn: sqlite3.Connection) -> int:
+    """One-shot: old product default was 30m; bump those rows to daily (1440).
+
+    Operators who still want sub-daily polling can edit the channel after upgrade.
+    """
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'watch_channels'"
+    ).fetchone()
+    if not table_exists:
+        return 0
+    result = conn.execute(
+        """
+        UPDATE watch_channels
+        SET poll_interval_minutes = 1440, updated_at = CURRENT_TIMESTAMP
+        WHERE poll_interval_minutes = 30
+        """
+    )
+    return int(result.rowcount or 0)
+
+
 def normalize_schema_values(conn: sqlite3.Connection) -> None:
+    migrate_watch_poll_interval_defaults(conn)
     table_exists = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'generation_jobs'"
     ).fetchone()
     if not table_exists:
+        conn.commit()
         return
     for row in conn.execute("SELECT id, clip_length_preset, hyperframes_template FROM generation_jobs"):
         canonical = resolve_duration_preset(row["clip_length_preset"]).id

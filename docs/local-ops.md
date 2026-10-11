@@ -10,6 +10,7 @@ Otonom ops (PM2 on this Mini)
   :8765  media-engine API
   :3100  dashboard (next start)
   publisher worker  publish-due every 60s → Postiz Public API
+  watch worker      watch-poll ~daily (no --force; channel interval gates)
 
 Dev (optional git worktree)
   :8766 / :3101  own SQLite + artifacts
@@ -51,7 +52,23 @@ npm run dev:isolated
 
 That starts engine `:8766`, dashboard `:3101`, DB `media-engine/data/media_engine.dev.sqlite`, artifacts in `media-engine/artifacts-dev`.
 
-Promote: merge to ops `main`, `cd` ops checkout, `npm run pm2:restart` (includes publisher). Rebuild dashboard if UI changed: `(cd apps/dashboard && npm run build) && pm2 restart otonom-media-dashboard`.
+Promote: merge to ops `main`, `cd` ops checkout, `npm run pm2:restart` (includes publisher + watch). Rebuild dashboard if UI changed: `(cd apps/dashboard && npm run build) && pm2 restart otonom-media-dashboard`.
+
+## Watch poll worker (`otonom-media-watch`)
+
+Background channel watch is a first-class PM2 app (`scripts/media-engine-pm2.config.cjs` → `run_watch_poll_worker_pm2.sh`).
+
+| Knob | Default | Meaning |
+|------|---------|---------|
+| `WATCH_POLL_INTERVAL_SECONDS` | `86400` (24h) | Sleep between worker loop iterations |
+| `WATCH_POLL_PROFILE` | empty (all workspaces) | Optional single `profile_id` |
+| Per-channel `poll_interval_minutes` | **1440** for new channels | Gate inside `watch-poll` (worker does **not** pass `--force`) |
+
+UI **Poll now** still calls `/api/watch-poll` with `force: true` for an immediate check.
+
+**Existing DB rows:** on `initialize()`, rows still at the old default **30** minutes are one-shot migrated to **1440**. If you intentionally want sub-daily polling, edit the channel after upgrade (min 5, max 1440).
+
+Ad-hoc (no PM2): `bash scripts/run_watch_poll_worker.sh`.
 
 ## Ports vs Postiz
 

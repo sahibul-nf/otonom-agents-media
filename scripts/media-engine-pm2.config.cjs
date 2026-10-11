@@ -81,5 +81,27 @@ module.exports = {
       out_file: "./logs/otonom-media-publisher-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
     },
+    {
+      name: "otonom-media-watch",
+      namespace: "media",
+      script: "./scripts/run_watch_poll_worker_pm2.sh",
+      interpreter: "/bin/bash",
+      cwd: "/Volumes/XPG SSD 1T/projects/otonom-agents-media",
+      autorestart: true,
+      watch: false,
+      instances: 1,
+      exec_mode: "fork",
+      env: {
+        TZ: "Asia/Jakarta",
+        NODE_ENV: "production",
+        // Sleep between worker loops (seconds). Channel poll_interval_minutes still gates.
+        WATCH_POLL_INTERVAL_SECONDS: "86400",
+        // Optional: limit to one workspace id, e.g. "techtalk"
+        // WATCH_POLL_PROFILE: "",
+      },
+      error_file: "./logs/otonom-media-watch-error.log",
+      out_file: "./logs/otonom-media-watch-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+    },
   ],
 };
