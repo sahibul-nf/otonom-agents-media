@@ -9,16 +9,17 @@ npx skills add heygen-com/hyperframes
 # Select Core Skills for Cursor / Antigravity
 ```
 
-Non-interactive refresh:
+Non-interactive refresh (verified for #100):
 
 ```bash
 npx hyperframes skills update
 npx hyperframes skills check
+# Expect: "Installed skills are up to date" (skills live under ~/.claude/skills + agent links)
 ```
 
 ## Repo layout
 
-Skills install into `.agents/skills/` (Antigravity-compatible). Cursor discovers them via the skills symlink chain created by the installer.
+Skills install into the operator agent directories (`~/.claude/skills`, `~/.agents/skills`, Cursor skill links) — not into this app git tree. Catalog/runtime assets for renders live in `media-engine/render/hyperframes/`.
 
 ## When agents should use skills
 
