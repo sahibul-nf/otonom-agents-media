@@ -6,6 +6,7 @@
 - **Autonomous topic engine (#23):** niche-ranked proposals from Hacker News (+ optional GitHub), `POST /api/propose-topic` + `POST /api/generate-next` (and Path A `generate_next`), Explainer **Generate next** / **Propose topics**, MCP `propose_topic` / `generate_next`, audit `topic_proposal` on Path A jobs; docs in `docs/topic-engine.md`. No auto-publish.
 - **HyperFrames overlay lifecycle (#100):** staggered enter + ambient + timed exit for `.template-layer`, CTA/caption dedupe (no dual `brand-social-pill` + shell `.cta`), catalog lifecycle metadata from vendored OSS; skills refresh docs; unit tests for timing/dedupe/catalog.
 - **HyperFrames OSS wire-up (#101):** Brand Builder presets use only wired intro layouts (`none` / `template-hook` / `lower-third-hook`); dead transition-family preset fields removed; Brand Studio fixture asserts `hyperframes lint` with 0 errors when OSS CTA/caption/texture are selected.
+- **Text + image posts (#24):** product note `docs/text-image-posts.md` (formats, platforms, approve gate, Postiz gaps); north-star link; Create content-package path remains the dashboard surface (text/still/carousel → Review → publish).
 
 ### Changed
 - **Mac Mini ops (#92):** PM2 ecosystem `cwd` is checkout-relative (`__dirname`); publisher worker runs `publish-due --profile all` (every workspace vault) unless `PUBLISH_WORKER_PROFILE` is set.
