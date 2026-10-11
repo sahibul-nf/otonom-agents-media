@@ -266,6 +266,10 @@ export function BrandBuilderWorkspace({
   const [bakedPreviewUrl, setBakedPreviewUrl] = useState<string | null>(null);
   const [bakeBusy, setBakeBusy] = useState(false);
   const [bakeError, setBakeError] = useState<string | null>(null);
+  const [stylePrompt, setStylePrompt] = useState("");
+  const [promptBusy, setPromptBusy] = useState(false);
+  const [promptNote, setPromptNote] = useState("");
+  const [defaultBusy, setDefaultBusy] = useState(false);
   const starterTemplates = hyperframesTemplates.length
     ? hyperframesTemplates
     : ([{id: "spiritual_reflective", label: "Spiritual Reflective", best_for: "Reflective clips"}] as HyperframesTemplate[]);
@@ -520,6 +524,61 @@ export function BrandBuilderWorkspace({
     router.push("/?section=generate");
   }
 
+  async function generateFromPrompt() {
+    const prompt = stylePrompt.trim();
+    if (prompt.length < 8) {
+      setPromptNote("Describe tone, colors, and use-case in a short sentence.");
+      return;
+    }
+    setPromptBusy(true);
+    setPromptNote("Generating look…");
+    try {
+      const result = await apiPost<{
+        label: string;
+        rationale?: string;
+        starter_template: string;
+        style: StyleProfile;
+        brand_system: Record<string, unknown>;
+        source?: string;
+      }>("brand-studio-generate", {prompt, llm_provider: "auto", allow_heuristic_fallback: true});
+      const next = editorFromStyle(
+        {
+          ...(result.style || {}),
+          brand_system: result.brand_system,
+          label: result.label,
+        } as StyleProfile,
+        result.starter_template || editor.starterTemplate,
+      );
+      setEditor(next);
+      setLabel(result.label || "AI Brand Look");
+      setActivePresetId("");
+      setEditingPath(undefined);
+      setSavedHandoff(null);
+      const src = result.source === "llm" ? "LLM" : "keyword map";
+      setPromptNote(result.rationale ? `${src}: ${result.rationale}` : `Applied from ${src} — preview, then Save.`);
+      setDockTab("identity");
+    } catch (error) {
+      setPromptNote(error instanceof Error ? error.message : "Generate failed");
+    } finally {
+      setPromptBusy(false);
+    }
+  }
+
+  async function setAsWorkspaceDefault() {
+    if (!savedHandoff) return;
+    setDefaultBusy(true);
+    try {
+      await apiPost<{default_template: string}>("workspace-default-template", {
+        template_ref: savedHandoff.brandId,
+      });
+      setSaveState("Workspace default updated");
+    } catch (error) {
+      setSaveState(error instanceof Error ? error.message : "Default update failed");
+    } finally {
+      setDefaultBusy(false);
+    }
+  }
+
   return (
     <main className="app-shell flex h-dvh flex-col overflow-hidden bg-canvas-deep text-text-primary">
       <header className="z-40 flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-canvas-deep/95 px-3 py-2.5 backdrop-blur-md sm:px-5">
@@ -561,13 +620,25 @@ export function BrandBuilderWorkspace({
             </button>
           ) : null}
           {savedHandoff && !dirty ? (
-            <button
-              type="button"
-              onClick={useInCreate}
-              className="hidden h-9 items-center rounded-full border border-cyan/35 px-3.5 text-[11px] font-semibold text-cyan sm:inline-flex"
-            >
-              Use in Create
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={useInCreate}
+                className="hidden h-9 items-center rounded-full border border-cyan/35 px-3.5 text-[11px] font-semibold text-cyan sm:inline-flex"
+              >
+                Use in Create
+              </button>
+              <button
+                type="button"
+                disabled={defaultBusy}
+                onClick={() => void setAsWorkspaceDefault()}
+                className="hidden h-9 items-center rounded-full border border-white/15 px-3.5 text-[11px] font-semibold text-zinc-300 sm:inline-flex disabled:opacity-40"
+                title="Point workspace hyperframes.default_template at this custom look"
+              >
+                {defaultBusy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                Set workspace default
+              </button>
+            </>
           ) : null}
           <button
             type="button"
@@ -610,8 +681,29 @@ export function BrandBuilderWorkspace({
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4">
               {dockTab === "presets" ? (
                 <div className="space-y-4">
+                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Describe a look</p>
+                    <textarea
+                      value={stylePrompt}
+                      onChange={(event) => setStylePrompt(event.target.value)}
+                      rows={3}
+                      placeholder="e.g. Neon cyber edutainment — hot pink highlights, bold captions, Instagram CTA"
+                      className="mt-2 w-full rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-cyan/40"
+                    />
+                    <button
+                      type="button"
+                      disabled={promptBusy || stylePrompt.trim().length < 8}
+                      onClick={() => void generateFromPrompt()}
+                      className="mt-2 inline-flex items-center gap-2 rounded-full bg-cyan px-4 py-2 text-xs font-semibold text-black disabled:opacity-40"
+                    >
+                      {promptBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Generate from prompt
+                    </button>
+                    {promptNote ? <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">{promptNote}</p> : null}
+                    <p className="mt-2 text-[10px] text-zinc-600">Maps to an existing starter recipe — preview, then Save as custom.</p>
+                  </div>
                   <p className="text-xs leading-relaxed text-zinc-400">
-                    Pick a starting look, then refine colors, captions, and finishing.
+                    Or pick a starting look, then refine colors, captions, and finishing.
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     {brandPresets.map((preset) => {
@@ -1049,14 +1141,25 @@ export function BrandBuilderWorkspace({
       {savedHandoff && !dirty && saveState.startsWith("Saved") ? (
         <div className="border-t border-cyan/[0.18] bg-teal/[0.08] px-4 py-3 text-center sm:px-5">
           <p className="text-sm font-semibold text-white">Brand style saved</p>
-          <p className="mt-1 text-xs text-zinc-400">Use it in Create or keep editing this template.</p>
-          <button
-            type="button"
-            onClick={useInCreate}
-            className="mt-3 inline-flex h-9 items-center rounded-full bg-cyan px-4 text-sm font-semibold text-ink"
-          >
-            Use in Create
-          </button>
+          <p className="mt-1 text-xs text-zinc-400">Use it in Create, set as workspace default, or keep editing.</p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={useInCreate}
+              className="inline-flex h-9 items-center rounded-full bg-cyan px-4 text-sm font-semibold text-ink"
+            >
+              Use in Create
+            </button>
+            <button
+              type="button"
+              disabled={defaultBusy}
+              onClick={() => void setAsWorkspaceDefault()}
+              className="inline-flex h-9 items-center gap-2 rounded-full border border-white/20 px-4 text-sm font-semibold text-zinc-200 disabled:opacity-40"
+            >
+              {defaultBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Set workspace default
+            </button>
+          </div>
         </div>
       ) : null}
 

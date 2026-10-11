@@ -1,8 +1,8 @@
 # Explainer Mode & SaaS Render Architecture
 
-**Status:** Phase 0 + MCP + TechTalk pack + dashboard Explainer tab on `main` (see #5 #6 #8 #10)  
+**Status:** Epic #4 delivery complete on `dev` — Phase 0 (#5), MCP (#6), dashboard Explainer + shorts flywheel (#8), Direct API avatar clips (#7, Human Review). Operator reviews/approves in dashboard; Path A uses Creator+HeyGen MCP.  
 **Related issue:** [#4 — Explainer Mode](https://github.com/sahibul-nf/otonom-agents-media/issues/4)  
-**Last updated:** 2026-08-19
+**Last updated:** 2026-10-11
 
 ---
 
@@ -204,11 +204,15 @@ Keep **platform recipes**, **workspace defaults**, and **user-owned styles** in 
 │    profiles/custom_*.json → catalog id brand:custom_*       │
 │    Brand Builder save; inherits starter recipe + overrides  │
 ├─────────────────────────────────────────────────────────────┤
-│ 4. LLM-generated styles (future — tracked on GitHub)         │
-│    Prompt → brand_system JSON → save as custom_*              │
+│ 4. LLM-generated styles (#80)                                 │
+│    Brand Builder prompt → brand_system JSON → preview → Save  │
+│    as profiles/custom_*.json (brand:custom_*); optional       │
+│    workspace hyperframes.default_template = brand:custom_*    │
 │    Not a new builtin per niche/channel                        │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+API: `POST /api/brand-studio-generate` `{prompt, llm_provider?}` · `POST /api/workspace-default-template` `{template_ref}`.
 
 ### Rules
 
