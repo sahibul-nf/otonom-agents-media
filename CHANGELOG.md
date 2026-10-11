@@ -2,9 +2,6 @@
 
 ## [Unreleased]
 
-### Changed
-- **Docs (public clarity):** `docs/README.md` index; root README “Start here” + Python venv quick start; `media-engine/README.md` aligned with product loops (not Nourbit-only V1); stale TBD notes removed from `AGENTS.md` / troubleshooting.
-
 ### Added
 - **Autonomous topic engine (#23):** niche-ranked proposals from Hacker News (+ optional GitHub), `POST /api/propose-topic` + `POST /api/generate-next` (and Path A `generate_next`), Explainer **Generate next** / **Propose topics**, MCP `propose_topic` / `generate_next`, audit `topic_proposal` on Path A jobs; docs in `docs/topic-engine.md`. No auto-publish.
 - **HyperFrames overlay lifecycle (#100):** staggered enter + ambient + timed exit for `.template-layer`, CTA/caption dedupe (no dual `brand-social-pill` + shell `.cta`), catalog lifecycle metadata from vendored OSS; skills refresh docs; unit tests for timing/dedupe/catalog.
@@ -12,12 +9,6 @@
 - **Text + image posts (#24):** product note `docs/text-image-posts.md` (formats, platforms, approve gate, Postiz gaps); north-star link; Create content-package path remains the dashboard surface (text/still/carousel → Review → publish).
 - **LLM Brand Studio (#80):** Brand Builder prompt → validated `brand_system` (existing starter only), preview, save as `brand:custom_*`; `POST /api/brand-studio-generate` + workspace default template; architecture layer 4 documented.
 - **Explainer epic (#4):** architecture status updated — children #5/#6/#8 closed, #7 Direct API shipped (pending human QA); no auto-publish.
-
-### Changed
-- **Mac Mini ops (#92):** PM2 ecosystem `cwd` is checkout-relative (`__dirname`); publisher worker runs `publish-due --profile all` (every workspace vault) unless `PUBLISH_WORKER_PROFILE` is set.
-- **Watch poll (#60):** default per-channel `poll_interval_minutes` is **1440** (24h); background worker sleeps ~24h without `--force` so channel intervals apply. Existing rows still at 30m are one-shot migrated to 1440. UI **Poll now** still forces an immediate poll.
-
-### Added
 - **LLM routing policy (#115):** vault `OTONOM_LLM_ROUTING_JSON` (primary + ordered fallbacks), `POST /api/llm-routing`, Publish → Models editor, Create writing model **auto** uses the chain; `call_llm_json("auto")` falls back on failure.
 - **HeyGen avatar Direct API (#7):** `POST /v3/videos` talking-avatar batch for Explainer scenes (`heygen-avatar-clips` CLI, `explainer-run --heygen-avatars`), TechTalk look/voice defaults, cost guard (`HEYGEN_MAX_SECONDS_PER_JOB`) + dry-run estimates; docs in `docs/heygen-paths.md`.
 - **Ship generate + Postiz publish on Mac Mini (#92):** topology in `docs/local-ops.md` (PM2 native vs Postiz Docker/cloud vs isolated `:8766`/`:3101`); workspace Connect/map Postiz in Publish; due-worker uploads MP4 → Postiz `type: now` with native legacy fallback; unit tests for URL normalize, vault map, due routing.
@@ -51,6 +42,9 @@
 - Dashboard **appearance**: manual System / Light / Dark toggle (sidebar + header); preference in `localStorage` (`otonom-color-theme`).
 
 ### Changed
+- **Docs (public clarity):** `docs/README.md` index; root README “Start here” + Python venv quick start; `media-engine/README.md` aligned with product loops; stale TBD notes removed from `AGENTS.md` / troubleshooting.
+- **Mac Mini ops (#92):** PM2 ecosystem `cwd` is checkout-relative (`__dirname`); publisher worker runs `publish-due --profile all` (every workspace vault) unless `PUBLISH_WORKER_PROFILE` is set.
+- **Watch poll (#60):** default per-channel `poll_interval_minutes` is **1440** (24h); background worker sleeps ~24h without `--force` so channel intervals apply. Existing rows still at 30m are one-shot migrated to 1440. UI **Poll now** still forces an immediate poll.
 - Dashboard **Main Flow UX (#105)**:
   - Synchronized active section state with URL (`?section=`), supporting browser back/forward and deep linking while preserving extra query params.
   - Main loop stepper in sidebar and home rail streamlined to **Create → Review → Schedule → Publish**, relocating Brand, Templates, and Long video into the dedicated **Setup & tools** section.
