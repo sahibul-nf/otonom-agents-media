@@ -60,13 +60,13 @@ Not video-only. Same platform should eventually handle:
 1. Clip → Review → schedule → publish reliability (OpusClip replacement)
 2. Path A: HeyGen MCP (Creator) → `ingest_longform` → Review → schedule (`docs/heygen-paths.md`)
 3. Optional: Path B Direct API when Creator exhausted / no Cursor (`heygen_client.py`)
-4. Unify text/image post flows into the same dashboard
+4. Unify text/image post flows into the same dashboard — see `docs/text-image-posts.md` (#24)
 5. Defer: Virtuals Protocol / A2A until Web2 loop runs weekly without babysitting
 6. Do **not**: chase FFmpeg/HyperFrames parity with Video Agent Quality Mode
 
 ## Related
 
 - Strategy canvas (session): `platform-direction-advice`
-- Docs: `docs/heygen-paths.md`, `docs/explainer-saas-architecture.md`, `docs/explainer-mode.md`
+- Docs: `docs/heygen-paths.md`, `docs/explainer-saas-architecture.md`, `docs/explainer-mode.md`, `docs/text-image-posts.md`
 - Brand/content: TechTalk **edutainment** positioning lives in this file (Tech & Finance ≠ Top-100 volume chase)
-- Issues: #19 Path A ingest, #20 Path B scaffold, #7 avatar Direct API
+- Issues: #19 Path A ingest, #20 Path B scaffold, #7 avatar Direct API, #24 text/image posts

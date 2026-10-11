@@ -187,8 +187,8 @@ export function ContentPackageCreateSection({
       </summary>
 
       <p className="mt-3 text-xs leading-relaxed text-zinc-500">
-        Build publish-ready packages from one source. Select multiple outputs — each becomes its own row in Review → Content
-        packages (shared batch id).
+        Pick the outcome (text, still, carousel, or video), drop a source, then approve in Review before anything publishes.
+        Multiple outputs share one batch. See <span className="text-zinc-400">docs/text-image-posts.md</span>.
       </p>
 
       <div className="mt-4">
