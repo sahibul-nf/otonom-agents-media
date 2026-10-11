@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **Docs (public clarity):** `docs/README.md` index; root README “Start here” + Python venv quick start; `media-engine/README.md` aligned with product loops (not Nourbit-only V1); stale TBD notes removed from `AGENTS.md` / troubleshooting.
+
 ### Added
 - **Autonomous topic engine (#23):** niche-ranked proposals from Hacker News (+ optional GitHub), `POST /api/propose-topic` + `POST /api/generate-next` (and Path A `generate_next`), Explainer **Generate next** / **Propose topics**, MCP `propose_topic` / `generate_next`, audit `topic_proposal` on Path A jobs; docs in `docs/topic-engine.md`. No auto-publish.
 - **HyperFrames overlay lifecycle (#100):** staggered enter + ambient + timed exit for `.template-layer`, CTA/caption dedupe (no dual `brand-social-pill` + shell `.cta`), catalog lifecycle metadata from vendored OSS; skills refresh docs; unit tests for timing/dedupe/catalog.

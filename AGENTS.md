@@ -298,7 +298,8 @@ If the user has not given a task, briefly list open issues with **Focus = This w
 - `docs/github-workflow.md` — cheatsheet, board Status, daily flow
 - `docs/orchestrator-integration.md` — optional Paperclip-style board polling
 - `docs/agent-platforms.md` — per-platform official setup
-- `docs/how-to-run.md` — dev URL, emulator, tests (replace all `TBD`)
+- `docs/how-to-run.md` — local URL, start command, tests
+- `docs/README.md` — docs index for humans and agents
 - `docs/troubleshooting.md` — common script & verify issues
 - `docs/updating-workflow-kit.md` — refresh when solo-dev-ai-kit repo updates
 - `docs/uninstalling-workflow-kit.md` — remove kit files locally (not GitHub board)
