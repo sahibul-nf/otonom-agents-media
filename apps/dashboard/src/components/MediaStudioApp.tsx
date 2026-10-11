@@ -56,6 +56,8 @@ import {
   EngineHealth,
   ExplainerJob,
   PathAJob,
+  ProposeTopicResponse,
+  TopicProposal,
   formatDuration,
   formatTimestamp,
   GenerationJob,
@@ -1092,6 +1094,42 @@ export function MediaStudioApp() {
       window.setTimeout(() => void refreshAll(), 2000);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Long video generate failed");
+    }
+  }
+
+  async function proposeTopics(): Promise<TopicProposal[]> {
+    const key = "path-a:propose";
+    const result = await runAction(
+      key,
+      "Ranking niche signals…",
+      () => apiPost<ProposeTopicResponse>("propose-topic", {limit: 5}),
+      "Topic proposals ready",
+    );
+    return result.candidates || [];
+  }
+
+  async function generateNextTopic(candidateId?: string) {
+    const key = "path-a:generate";
+    try {
+      const result = await runAction(
+        key,
+        "Picking next topic + starting Path A…",
+        () =>
+          apiPost<{path_a?: PathAJob; candidate?: TopicProposal} & PathAJob>("generate-next", {
+            candidate_id: candidateId || "",
+            start_path_a: true,
+          }),
+        "Generate next started — approve in Review when ready",
+      );
+      const job = (result.path_a || result) as PathAJob;
+      if (job?.job_id) {
+        setPathAJobs((items) => [job, ...items.filter((item) => item.job_id !== job.job_id)]);
+        setStatus(`Generate next: ${job.job_id}${result.candidate?.title ? ` — ${result.candidate.title}` : ""}`);
+      }
+      pushToast("Topic selected — Path A running; nothing will publish until you approve", "success");
+      window.setTimeout(() => void refreshAll(), 2000);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Generate next failed");
     }
   }
 
@@ -2167,6 +2205,7 @@ export function MediaStudioApp() {
               templates={hyperframesTemplates}
               actionState={
                 actionStates["path-a:generate"] ||
+                actionStates["path-a:propose"] ||
                 actionStates["ingest:longform"] ||
                 actionStates["explainer:create"] ||
                 Object.entries(actionStates).find(([key]) => key.startsWith("explainer:") && key.endsWith(":run"))?.[1]
@@ -2181,8 +2220,11 @@ export function MediaStudioApp() {
               }}
               onIngest={ingestLongformMedia}
               onPathAGenerate={startPathAGenerate}
+              onProposeTopics={proposeTopics}
+              onGenerateNext={generateNextTopic}
               ingesting={actionStates["ingest:longform"]?.status === "running"}
               pathAGenerating={actionStates["path-a:generate"]?.status === "running"}
+              proposingTopics={actionStates["path-a:propose"]?.status === "running"}
               renderActionStatus={(state) => (state ? <InlineActionStatus state={state} /> : null)}
               renderEmptyState={renderEmpty}
             />

@@ -78,6 +78,7 @@ def start_path_a_generate(
     script: str = "",
     profile_id: str = DEFAULT_WORKSPACE_PROFILE_ID,
     config: CursorCloudConfig | None = None,
+    topic_proposal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a Path A job and run Cursor→ingest→Telegram in a background thread."""
     topic = (topic or "").strip()
@@ -111,6 +112,8 @@ def start_path_a_generate(
         "created_at": _now(),
         "prompt": prompt,
     }
+    if topic_proposal:
+        status["topic_proposal"] = topic_proposal
     _write_status(root, status)
 
     def _worker() -> None:

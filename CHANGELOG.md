@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **Autonomous topic engine (#23):** niche-ranked proposals from Hacker News (+ optional GitHub), `POST /api/propose-topic` + `POST /api/generate-next` (and Path A `generate_next`), Explainer **Generate next** / **Propose topics**, MCP `propose_topic` / `generate_next`, audit `topic_proposal` on Path A jobs; docs in `docs/topic-engine.md`. No auto-publish.
+
 ### Changed
 - **Mac Mini ops (#92):** PM2 ecosystem `cwd` is checkout-relative (`__dirname`); publisher worker runs `publish-due --profile all` (every workspace vault) unless `PUBLISH_WORKER_PROFILE` is set.
 - **Watch poll (#60):** default per-channel `poll_interval_minutes` is **1440** (24h); background worker sleeps ~24h without `--force` so channel intervals apply. Existing rows still at 30m are one-shot migrated to 1440. UI **Poll now** still forces an immediate poll.

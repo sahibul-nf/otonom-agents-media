@@ -29,6 +29,7 @@ from .content_package_service import (
 )
 from .content_package_store import list_packages
 from .ingest_longform import ingest_longform
+from .topic_engine import TopicEngineError, generate_next_topic, propose_topics
 from .heygen_client import (
     DEFAULT_AVATAR_LOOK_ID,
     DEFAULT_VOICE_ID,
@@ -279,6 +280,42 @@ TOOLS = [
         },
     },
     {
+        "name": "propose_topic",
+        "description": (
+            "Rank niche topic candidates from public signals (Hacker News + optional GitHub). "
+            "Returns title, angle, sources, confidence, storyboard — does not start Path A or publish."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
+                "limit": {"type": "integer", "default": 5},
+            },
+        },
+    },
+    {
+        "name": "generate_next",
+        "description": (
+            "Pick the top (or selected) topic proposal and start Path A generate → Review. "
+            "Never auto-approves or publishes. Prefer propose_topic first when the operator wants a pick list."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "profile_id": {"type": "string", "default": DEFAULT_WORKSPACE_PROFILE_ID},
+                "candidate_id": {
+                    "type": "string",
+                    "description": "Optional id from propose_topic (e.g. topic_2); default top candidate",
+                },
+                "start_path_a": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "When false, return the chosen candidate only (no Cursor Path A)",
+                },
+            },
+        },
+    },
+    {
         "name": "heygen_video_agent_create",
         "description": (
             "Path B only: create a HeyGen Video Agent session via Direct API (HEYGEN_API_KEY / "
@@ -442,6 +479,29 @@ def call_tool(name: str, arguments: dict[str, Any] | None) -> dict[str, Any]:
                 language=str(args.get("language") or "id"),
                 db_path=DEFAULT_DB,
             )
+            return _tool_result(result)
+
+        if name == "propose_topic":
+            try:
+                result = propose_topics(
+                    profile_id=str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
+                    limit=int(args.get("limit") or 5),
+                    db_path=DEFAULT_DB,
+                )
+            except TopicEngineError as exc:
+                return _tool_result({"error": str(exc)}, is_error=True)
+            return _tool_result(result)
+
+        if name == "generate_next":
+            try:
+                result = generate_next_topic(
+                    profile_id=str(args.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID),
+                    candidate_id=str(args.get("candidate_id") or "").strip(),
+                    db_path=DEFAULT_DB,
+                    start_path_a=bool(args.get("start_path_a", True)),
+                )
+            except (TopicEngineError, ValueError, OSError) as exc:
+                return _tool_result({"error": str(exc)}, is_error=True)
             return _tool_result(result)
 
         if name == "heygen_video_agent_create":

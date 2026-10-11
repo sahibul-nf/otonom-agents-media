@@ -43,6 +43,7 @@ from .content_package_service import (
 from .content_package_store import approve_package
 from .ingest_longform import ingest_longform
 from .path_a_jobs import list_path_a_jobs, read_path_a_status, start_path_a_generate
+from .topic_engine import TopicEngineError, generate_next_topic, propose_topics
 from .cursor_cloud import CursorCloudError
 from .angle_recommend import cheap_caption_excerpt, recommend_content_angles
 from .generation_jobs import create_generation_job, list_brand_templates, list_generation_jobs
@@ -1363,13 +1364,73 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             self._send_json(result, status=202 if result.get("route") == "generation_job" else 201)
             return
 
+        if parsed.path == "/api/propose-topic":
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            try:
+                limit = int(payload.get("limit") or 5)
+            except (TypeError, ValueError):
+                limit = 5
+            try:
+                result = propose_topics(profile_id=profile_id, limit=limit, db_path=DEFAULT_DB)
+            except TopicEngineError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result)
+            return
+
+        if parsed.path == "/api/generate-next":
+            profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            candidate_id = str(payload.get("candidate_id") or "").strip()
+            start_path_a = bool(payload.get("start_path_a", True))
+            load_env_file(ENV_FILE)
+            try:
+                result = generate_next_topic(
+                    profile_id=profile_id,
+                    candidate_id=candidate_id,
+                    db_path=DEFAULT_DB,
+                    start_path_a=start_path_a,
+                )
+            except TopicEngineError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            except (CursorCloudError, ValueError, OSError) as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json(result, status=202 if result.get("path_a") else 200)
+            return
+
         if parsed.path == "/api/path-a-generate":
             topic = str(payload.get("topic") or "").strip()
-            if not topic:
-                self._send_json({"error": "topic is required"}, status=400)
-                return
             profile_id = str(payload.get("profile_id") or DEFAULT_WORKSPACE_PROFILE_ID).strip() or DEFAULT_WORKSPACE_PROFILE_ID
+            generate_next = bool(payload.get("generate_next") or payload.get("auto_topic"))
             load_env_file(ENV_FILE)
+            if not topic and generate_next:
+                candidate_id = str(payload.get("candidate_id") or "").strip()
+                try:
+                    result = generate_next_topic(
+                        profile_id=profile_id,
+                        candidate_id=candidate_id,
+                        db_path=DEFAULT_DB,
+                        start_path_a=True,
+                    )
+                except TopicEngineError as exc:
+                    self._send_json({"error": str(exc)}, status=400)
+                    return
+                except (CursorCloudError, ValueError, OSError) as exc:
+                    self._send_json({"error": str(exc)}, status=400)
+                    return
+                created = result.get("path_a") or result
+                self._send_json(created, status=202)
+                return
+            if not topic:
+                self._send_json(
+                    {"error": "topic is required (or set generate_next=true for autonomous pick)"},
+                    status=400,
+                )
+                return
             try:
                 created = start_path_a_generate(
                     topic=topic,
